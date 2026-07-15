@@ -1,6 +1,8 @@
 class_name RunState
 extends RefCounted
 
+const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+
 signal changed
 signal message_changed(text: String)
 
@@ -30,6 +32,9 @@ var player_attack_startup := 0.38
 var player_attack_active_end := 0.68
 var player_damage_min := 2
 var player_damage_max := 3
+var player_attack_technique := "diagonal_cut"
+var player_attack_reach := 136.0
+var player_attack_posture := 2.0
 var loadout_id := "duelist"
 var defense_id := "dodge"
 var player_action := _idle_action()
@@ -174,6 +179,9 @@ func _apply_loadout() -> void:
 			player_attack_active_end = 0.82
 			player_damage_min = 2
 			player_damage_max = 4
+			player_attack_technique = "heavy_chop"
+			player_attack_reach = 142.0
+			player_attack_posture = 3.5
 		"reaver":
 			defense_id = "endure"
 			player_max_hp = 11
@@ -183,6 +191,9 @@ func _apply_loadout() -> void:
 			player_attack_active_end = 0.90
 			player_damage_min = 3
 			player_damage_max = 4
+			player_attack_technique = "broad_sweep"
+			player_attack_reach = 150.0
+			player_attack_posture = 3.0
 		_:
 			defense_id = "dodge"
 			player_max_hp = 9
@@ -192,6 +203,9 @@ func _apply_loadout() -> void:
 			player_attack_active_end = 0.58
 			player_damage_min = 2
 			player_damage_max = 3
+			player_attack_technique = "diagonal_cut"
+			player_attack_reach = 136.0
+			player_attack_posture = 2.0
 
 func _idle_action() -> Dictionary:
 	return {
@@ -232,11 +246,11 @@ func request_attack(target: Vector2) -> bool:
 	if direction.length_squared() < 0.01:
 		direction = player_facing
 	player_facing = direction.normalized()
-	player_action = _action("attack", player_attack_duration, player_facing)
-	player_action["startup"] = player_attack_startup
-	player_action["active_end"] = player_attack_active_end
-	player_action["reach"] = 136.0
-	_set_message("You commit to the swing.")
+	player_action = _melee_action(player_attack_duration, player_attack_startup, player_attack_active_end, player_attack_reach, player_damage_max, player_facing, player_attack_technique, "attack")
+	player_action["damage_min"] = player_damage_min
+	player_action["damage_max"] = player_damage_max
+	player_action["posture_damage"] = player_attack_posture
+	_set_message("You commit to the %s." % AttackGeometryScript.label(player_attack_technique).to_lower())
 	_simulate_until_ready()
 	return true
 
@@ -248,10 +262,7 @@ func request_sweeping_cut(direction: Vector2) -> bool:
 	if not is_player_ready() or wave_clear or trial_complete or upgrade_pending or skill_cooldown > 0.0001 or direction.length_squared() < 0.01:
 		return false
 	player_facing = direction.normalized()
-	player_action = _action("sweep", 1.32, player_facing)
-	player_action["startup"] = 0.44
-	player_action["active_end"] = 0.84
-	player_action["reach"] = 158.0
+	player_action = _melee_action(1.32, 0.44, 0.84, 158.0, 3, player_facing, "broad_sweep", "sweep")
 	player_action["posture_damage"] = 5.0
 	player_action["damage_min"] = 2
 	player_action["damage_max"] = 3
@@ -444,35 +455,39 @@ func _update_player(dt: float) -> void:
 		player_action = _idle_action()
 
 func _resolve_player_attack_tick(elapsed: float) -> void:
-	var startup := float(player_action["startup"])
-	var active_end := float(player_action["active_end"])
-	var progress := clampf((elapsed - startup) / (active_end - startup), 0.0, 1.0)
 	var is_sweep := String(player_action["kind"]) == "sweep"
-	var blade_direction := player_facing.rotated(lerpf(-1.38 if is_sweep else -0.95, 1.38 if is_sweep else 0.95, progress))
-	var blade_start := player_pos + blade_direction * 25.0
-	var bonus_reach := 22.0 if upgrades.has("long_blade") else 0.0
-	var blade_end := player_pos + blade_direction * (float(player_action["reach"]) + bonus_reach)
+	var sampled_action := player_action.duplicate()
+	if upgrades.has("long_blade"): sampled_action["reach"] = float(sampled_action["reach"]) + 22.0
+	var sample: Dictionary = AttackGeometryScript.pose(sampled_action, player_pos, player_facing, walls)
+	if not bool(sample.get("multi", false)) and bool(player_action.get("hit_done", false)): return
 	var hit_ids: Array = player_action["hit_ids"]
+	var contacts: Array[Dictionary] = []
 	for enemy in enemies:
 		var enemy_id := int(enemy["id"])
-		if hit_ids.has(enemy_id):
-			continue
-		if _segment_distance_to_point(blade_start, blade_end, Vector2(enemy["pos"])) <= float(enemy["radius"]) + 11.0 and _has_line_of_sight(player_pos, Vector2(enemy["pos"])):
-			hit_ids.append(enemy_id)
-			if _enemy_blocks_attack(enemy):
-				_apply_posture_damage(enemy, 2.0 if is_sweep else 0.5)
-				_add_effect("block", Vector2(enemy["pos"]))
-				_set_message("The shield catches your swing.")
-			else:
-				var bonus := 2 if strength_remaining > 0.0 else 0
-				var damage_min := int(player_action.get("damage_min", player_damage_min))
-				var damage_max := int(player_action.get("damage_max", player_damage_max))
-				var dealt := rng.randi_range(damage_min + bonus, damage_max + bonus)
-				enemy["hp"] = int(enemy["hp"]) - dealt
-				damage_dealt += dealt
-				_apply_posture_damage(enemy, float(player_action.get("posture_damage", 2.0)))
-				_add_effect("hit", Vector2(enemy["pos"]), dealt)
-				_set_message("The sweeping cut connects." if is_sweep else "The blade connects.")
+		if hit_ids.has(enemy_id): continue
+		if AttackGeometryScript.hits_circle(sample, Vector2(enemy["pos"]), float(enemy["radius"])):
+			contacts.append({"enemy": enemy, "order": AttackGeometryScript.contact_order(sample, Vector2(enemy["pos"])), "point": AttackGeometryScript.contact_point(sample, Vector2(enemy["pos"]))})
+	contacts.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["order"]) < float(b["order"]))
+	if not bool(sample.get("multi", false)) and contacts.size() > 1: contacts.resize(1)
+	if not bool(sample.get("multi", false)) and not contacts.is_empty(): player_action["hit_done"] = true
+	for contact in contacts:
+		var enemy: Dictionary = contact["enemy"]
+		hit_ids.append(int(enemy["id"]))
+		var hit_point := Vector2(contact["point"])
+		if _enemy_blocks_attack(enemy):
+			_apply_posture_damage(enemy, 2.0 if is_sweep else 0.5)
+			_add_effect("block", hit_point)
+			_set_message("The shield catches your weapon.")
+		else:
+			var bonus := 2 if strength_remaining > 0.0 else 0
+			var damage_min := int(player_action.get("damage_min", player_damage_min))
+			var damage_max := int(player_action.get("damage_max", player_damage_max))
+			var dealt := rng.randi_range(damage_min + bonus, damage_max + bonus)
+			enemy["hp"] = int(enemy["hp"]) - dealt
+			damage_dealt += dealt
+			_apply_posture_damage(enemy, float(player_action.get("posture_damage", 2.0)))
+			_add_effect("hit", hit_point, dealt)
+			_set_message("The %s connects." % AttackGeometryScript.label(String(player_action.get("technique_id", "diagonal_cut"))).to_lower())
 	player_action["hit_ids"] = hit_ids
 
 func _enemy_blocks_attack(enemy: Dictionary) -> bool:
@@ -562,17 +577,17 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	var enemy_kind := String(enemy["kind"])
 	if enemy_kind == "blade":
 		if distance <= 125.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 128.0, 2, direction)
+			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 128.0, 2, direction, "diagonal_cut")
 		else:
 			enemy["action"] = _action("move", 0.48, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "knife":
 		if distance <= 92.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(0.88, 0.28, 0.46, 92.0, 1, direction)
+			enemy["action"] = _melee_action(0.88, 0.28, 0.46, 92.0, 1, direction, "quick_cut")
 		else:
 			enemy["action"] = _action("move", 0.32, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "polearm":
 		if distance <= 218.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(2.25, 0.90, 1.35, 218.0, 3, direction)
+			enemy["action"] = _melee_action(2.25, 0.90, 1.35, 218.0, 3, direction, "thrust")
 		else:
 			enemy["action"] = _action("move", 0.70, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "shield":
@@ -581,13 +596,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	elif enemy_kind == "hound":
 		if distance <= 330.0 and distance >= 82.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _charge_action(1.28, 0.42, 0.78, 405.0, 2, direction)
-		elif distance < 82.0: enemy["action"] = _melee_action(0.95, 0.28, 0.48, 88.0, 1, direction)
+		elif distance < 82.0: enemy["action"] = _melee_action(0.95, 0.28, 0.48, 88.0, 1, direction, "bite")
 		else: enemy["action"] = _action("move", 0.38, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "brute":
-		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction)
+		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction, "forward_smash")
 		else: enemy["action"] = _action("move", 0.78, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "captain":
-		if distance <= 138.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.22, 0.42, 0.70, 140.0, 2, direction)
+		if distance <= 138.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.22, 0.42, 0.70, 140.0, 2, direction, "thrust")
 		else: enemy["action"] = _action("move", 0.44, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "hexer":
 		if distance <= 620.0 and distance >= 150.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
@@ -605,7 +620,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 				enemy["action"]["active_end"] = 1.22
 				enemy["action"]["reach"] = 215.0
 				enemy["action"]["damage"] = 4
-			else: enemy["action"] = _melee_action(2.15, 0.76, 1.30, 205.0, 4, direction)
+			else: enemy["action"] = _melee_action(2.15, 0.76, 1.30, 205.0, 4, direction, "heavy_cleave")
 		elif distance <= 520.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _charge_action(1.80, 0.62, 1.05, 300.0, 4, direction)
 		else: enemy["action"] = _action("move", 0.72, _navigation_direction(enemy, player_pos))
@@ -640,20 +655,19 @@ func _charge_action(duration: float, startup: float, active_end: float, speed: f
 
 func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 	var action: Dictionary = enemy["action"]
-	var progress := clampf((elapsed - float(action["startup"])) / (float(action["active_end"]) - float(action["startup"])), 0.0, 1.0)
-	var blade_direction := Vector2(enemy["facing"]).rotated(lerpf(-0.9, 0.9, progress))
-	var blade_start := Vector2(enemy["pos"]) + blade_direction * 22.0
-	var blade_end := Vector2(enemy["pos"]) + blade_direction * float(action["reach"])
-	if _segment_distance_to_point(blade_start, blade_end, player_pos) <= PLAYER_RADIUS + 11.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+	var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]), Vector2(enemy["facing"]), walls)
+	if AttackGeometryScript.hits_circle(sample, player_pos, PLAYER_RADIUS):
 		enemy["action"]["hit_done"] = true
-		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]))
+		var contact := AttackGeometryScript.contact_point(sample, player_pos)
+		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]), Vector2.ZERO, contact)
 
-func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2) -> Dictionary:
-	var result := _action("melee", duration, direction)
+func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2, technique_id: String = "diagonal_cut", action_kind: String = "melee") -> Dictionary:
+	var result := _action(action_kind, duration, direction)
 	result["startup"] = startup
 	result["active_end"] = active_end
 	result["reach"] = reach
 	result["damage"] = damage
+	result["technique_id"] = technique_id
 	return result
 
 func _spawn_projectile(enemy: Dictionary) -> void:
@@ -696,13 +710,14 @@ func _update_projectiles(dt: float) -> void:
 		survivors.append(projectile)
 	projectiles = survivors
 
-func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO) -> void:
+func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF) -> void:
+	var impact := player_pos if not contact_position.is_finite() else contact_position
 	if _is_perfect_dodge():
 		perfect_dodges += 1
 		if not bool(player_action["perfect_triggered"]):
 			player_action["perfect_triggered"] = true
 			_counter_source(source_id)
-		_add_effect("perfect", player_pos)
+		_add_effect("perfect", impact)
 		_set_message("Perfect dodge.")
 		return
 	if _is_blocking(source_id, incoming_from):
@@ -710,7 +725,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		player_action["effect_done"] = true
 		var chip_damage := 1 if damage >= 3 else 0
 		player_hp = maxi(0, player_hp - chip_damage)
-		_add_effect("block", player_pos, chip_damage)
+		_add_effect("block", impact, chip_damage)
 		if chip_damage > 0:
 			_set_message("The heavy blow crashes through part of your guard.")
 		else:
@@ -722,18 +737,18 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		var endured_damage := maxi(1, int(ceil(float(damage) * 0.70)))
 		player_hp = maxi(0, player_hp - endured_damage)
 		strength_remaining = maxf(strength_remaining, 5.0)
-		_add_effect("endure", player_pos, endured_damage)
+		_add_effect("endure", impact, endured_damage)
 		_set_message("You take the hit and gain Strength for 5 seconds.")
 		if player_hp <= 0:
 			player_action = _idle_action()
 			_set_message("You have fallen. Use Reset to try again.")
 		return
 	if _is_evasive():
-		_add_effect("evade", player_pos)
+		_add_effect("evade", impact)
 		_set_message("The %s misses your evasive movement." % source_name)
 		return
 	player_hp = maxi(0, player_hp - damage)
-	_add_effect("hurt", player_pos, damage)
+	_add_effect("hurt", impact, damage)
 	_set_message("The %s hits during your commitment." % source_name)
 	if player_hp <= 0:
 		player_action = _idle_action()
@@ -966,7 +981,7 @@ func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 3
+	payload["save_version"] = 4
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
@@ -990,7 +1005,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if not [1, 2, 3].has(save_version): return false
+	if not [1, 2, 3, 4].has(save_version): return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	_apply_loadout()
 	player_pos = Vector2(payload.get("player_pos", Vector2(800, 1900)))
@@ -1004,7 +1019,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_damage_min = int(payload.get("player_damage_min", player_damage_min))
 	player_damage_max = int(payload.get("player_damage_max", player_damage_max))
 	player_action = Dictionary(payload.get("player_action", _idle_action())).duplicate(true)
-	if String(player_action.get("kind", "idle")) == "lunge": player_action = _idle_action()
+	if String(player_action.get("kind", "idle")) == "lunge" or (save_version < 4 and String(player_action.get("kind", "idle")) in ["attack", "sweep", "melee"]): player_action = _idle_action()
 	enemies.assign(Array(payload.get("enemies", [])))
 	walls.assign(Array(payload.get("walls", [])))
 	projectiles.assign(Array(payload.get("projectiles", [])))
@@ -1050,6 +1065,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	rng.state = int(payload.get("rng_state", rng.state))
 	_next_enemy_id = 1
 	for enemy in enemies:
+		if save_version < 4 and String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "melee": enemy["action"] = _idle_action()
 		_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)
 		if not enemy.has("posture_max"):
 			enemy["posture_max"] = _enemy_posture_max(String(enemy["kind"]))

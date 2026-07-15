@@ -1,6 +1,7 @@
 extends Control
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
+const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const BG := Color("0d151b")
 const FLOOR := Color("17272d")
 const WALL := Color("344148")
@@ -382,7 +383,8 @@ func _draw_wall(wall: Rect2) -> void:
 	draw_polyline(PackedVector2Array([top[0], top[1], top[2], top[3], top[0]]), Color("59666b"), 1.5)
 
 func _draw_player() -> void:
-	var pos := _world_to_screen(Vector2(visual.get("player_pos", state.player_pos)))
+	var world_pos := Vector2(visual.get("player_pos", state.player_pos))
+	var pos := _world_to_screen(world_pos)
 	var facing := _screen_direction(Vector2(visual.get("player_facing", Vector2.UP)).normalized())
 	var action: Dictionary = visual.get("player_action", {})
 	var radius := state.PLAYER_RADIUS * world_scale
@@ -391,7 +393,7 @@ func _draw_player() -> void:
 		draw_arc(pos, radius * 1.65, 0.0, TAU, 24, Color("e85c3f"), maxf(2.0, radius * 0.12))
 	if String(action.get("kind", "idle")) == "dodge": draw_circle(pos - facing * radius * 0.7, radius * 1.25, Color(DODGE_COLOR, 0.16))
 	_draw_actor(pos, facing, radius, PLAYER_COLOR)
-	if String(action.get("kind", "idle")) in ["attack", "sweep"]: _draw_weapon(pos, facing, radius, action, true)
+	if String(action.get("kind", "idle")) in ["attack", "sweep"]: _draw_weapon(world_pos, action, true)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
 	elif String(action.get("kind", "idle")) == "potion": draw_circle(pos + Vector2(radius * 0.7, -radius * 0.8), radius * 0.25, Color("e35f62"))
@@ -399,7 +401,8 @@ func _draw_player() -> void:
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
 
 func _draw_enemy(enemy: Dictionary) -> void:
-	var pos := _world_to_screen(Vector2(enemy["pos"]))
+	var world_pos := Vector2(enemy["pos"])
+	var pos := _world_to_screen(world_pos)
 	var facing := _screen_direction(Vector2(enemy["facing"]).normalized())
 	var radius := float(enemy["radius"]) * world_scale
 	var kind := String(enemy["kind"])
@@ -410,7 +413,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if kind == "shield": _draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
 	var action: Dictionary = enemy["action"]
-	if String(action["kind"]) == "melee": _draw_weapon(pos, facing, radius, action, false)
+	if String(action["kind"]) == "melee": _draw_weapon(world_pos, action, false)
 	elif String(action["kind"]) == "shoot": _draw_bow(pos, facing, radius, action)
 	elif String(action["kind"]) == "charge": draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "slam": draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, radius * 0.13))
@@ -445,18 +448,33 @@ func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: f
 	elif kind == "warden":
 		draw_polyline(PackedVector2Array([pos - side * radius * 0.55 - facing * radius * 0.45, pos - side * radius * 0.25 - facing * radius * 0.85, pos - facing * radius * 0.5, pos + side * radius * 0.25 - facing * radius * 0.85, pos + side * radius * 0.55 - facing * radius * 0.45]), Color("f1c25e"), maxf(2.0, radius * 0.09))
 
-func _draw_weapon(pos: Vector2, facing: Vector2, radius: float, action: Dictionary, player_weapon: bool) -> void:
-	var elapsed := float(action.get("elapsed", 0.0))
-	var startup := float(action.get("startup", 0.38 if player_weapon else 0.52))
-	var active_end := float(action.get("active_end", 0.68 if player_weapon else 0.82))
-	var progress := clampf((elapsed - startup) / maxf(0.01, active_end - startup), 0.0, 1.0)
-	var angle := lerpf(-1.35, 1.05, progress)
-	var direction := facing.rotated(angle)
-	var visual_reach := float(action.get("reach", 136.0)) * world_scale
-	if elapsed >= startup and elapsed <= active_end:
-		var trail_color := Color(0.93, 0.78, 0.53, 0.24)
-		draw_arc(pos, visual_reach, facing.angle() - 0.95, direction.angle(), 18, trail_color, maxf(3.0, radius * 0.26))
-	draw_line(pos + direction * radius * 0.5, pos + direction * visual_reach, Color("ead9c8"), maxf(2.0, radius * 0.13))
+func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool) -> void:
+	var facing := Vector2(action.get("direction", Vector2.UP)).normalized()
+	var sample: Dictionary = AttackGeometryScript.pose(action, world_pos, facing, state.walls)
+	var technique := String(sample.get("technique_id", "diagonal_cut"))
+	var weapon_start := _world_to_screen(Vector2(sample["weapon_start"]))
+	var weapon_end := _world_to_screen(Vector2(sample["weapon_end"]))
+	var screen_direction := (weapon_end - weapon_start).normalized()
+	var side := screen_direction.rotated(PI * 0.5)
+	var active := bool(sample.get("active", false))
+	var color := Color("fff1b8") if player_weapon else Color("ead9c8")
+	var width := maxf(2.0, world_scale * (4.0 if technique in ["heavy_chop", "heavy_cleave", "forward_smash"] else 2.7))
+	if technique == "bite":
+		var jaw := maxf(8.0, float(sample.get("head_radius", 20.0)) * world_scale * 0.55)
+		draw_line(weapon_end - screen_direction * jaw + side * jaw * 0.55, weapon_end + screen_direction * jaw * 0.35, color, width)
+		draw_line(weapon_end - screen_direction * jaw - side * jaw * 0.55, weapon_end + screen_direction * jaw * 0.35, color, width)
+		return
+	draw_line(weapon_start, weapon_end, color, width)
+	if technique == "thrust":
+		var tip := maxf(5.0, world_scale * 8.0)
+		draw_colored_polygon(PackedVector2Array([weapon_end + screen_direction * tip, weapon_end - screen_direction * tip * 0.65 + side * tip * 0.55, weapon_end - screen_direction * tip * 0.65 - side * tip * 0.55]), color)
+	elif technique == "forward_smash":
+		var head := maxf(9.0, float(sample.get("head_radius", 30.0)) * world_scale)
+		draw_circle(weapon_end, head, Color(color, 0.92))
+		draw_arc(weapon_end, head, 0.0, TAU, 16, color.lightened(0.2), maxf(2.0, width * 0.5))
+	elif technique in ["heavy_chop", "heavy_cleave"]:
+		draw_line(weapon_end - screen_direction * maxf(12.0, world_scale * 20.0), weapon_end, color.lightened(0.16), width * 1.8)
+	if active: draw_circle(weapon_end, maxf(2.0, width * 0.55), Color(color, 0.75))
 
 func _draw_guard(pos: Vector2, facing: Vector2, radius: float, action: Dictionary) -> void:
 	var elapsed := float(action.get("elapsed", 0.0))
@@ -537,11 +555,9 @@ func _draw_selected_action_hint() -> void:
 	var center := Vector2(visual.get("player_pos", state.player_pos))
 	var facing := Vector2(visual.get("player_facing", state.player_facing)).normalized()
 	if selected_action == "skill":
-		var points := PackedVector2Array()
-		for index in range(25):
-			var angle := lerpf(-1.38, 1.38, float(index) / 24.0)
-			points.append(_world_to_screen(center + facing.rotated(angle) * 158.0))
-		draw_polyline(points, Color("e8c35d"), maxf(2.0, world_scale * 9.0))
+		var screen_center := _world_to_screen(center)
+		var direction := _screen_direction(facing)
+		draw_line(screen_center, screen_center + direction * 62.0 * world_scale, Color("e8c35d"), maxf(2.0, world_scale * 5.0))
 	elif selected_action == "defense":
 		var screen_center := _world_to_screen(center)
 		var direction := _screen_direction(facing)
@@ -656,6 +672,9 @@ func _draw_inspection() -> void:
 	var traits := {"knife": "Low stability", "hound": "Charge; low stability", "archer": "Ranged pressure", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "hexer": "Delayed danger zones", "captain": "Strengthens nearby movement", "warden": "Grounded boss", "blade": "Balanced melee"}
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
+	var signature_techniques := {"knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "hound": "bite", "brute": "forward_smash", "captain": "thrust", "warden": "heavy_cleave"}
+	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", signature_techniques.get(kind, "")))
+	var technique_text := AttackGeometryScript.label(technique_id) if technique_id != "" else "Ranged"
 	var posture_ratio := float(enemy.get("posture", 1.0)) / maxf(0.01, float(enemy.get("posture_max", 1.0)))
 	var stability := "Strained" if posture_ratio < 0.45 else "Unsteady" if posture_ratio < 0.8 else "Stable"
 	var width := minf(board_rect.size.x * 0.82, 520.0)
@@ -666,7 +685,7 @@ func _draw_inspection() -> void:
 	var title_font := maxi(13, int(height * 0.16))
 	var body_font := maxi(10, int(title_font * 0.65))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.25), String(names.get(kind, kind.capitalize())).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, width - 20, title_font, Color("eef0e9"))
-	var line_one := "%s  |  %s speed  |  %s reach" % [action_text.capitalize(), String(speeds.get(kind, "Medium")), String(reaches.get(kind, "Medium"))]
+	var line_one := "%s  |  %s  |  %s speed  |  %s reach" % [action_text.capitalize(), technique_text, String(speeds.get(kind, "Medium")), String(reaches.get(kind, "Medium"))]
 	var line_two := "%s  |  %s" % [stability, String(traits.get(kind, ""))]
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.56), line_one, HORIZONTAL_ALIGNMENT_LEFT, width - 20, body_font, Color("d8ddd8"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.80), line_two, HORIZONTAL_ALIGNMENT_LEFT, width - 20, body_font, Color("d7aa58"))

@@ -2,6 +2,7 @@ extends SceneTree
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const GameBoardScript = preload("res://scripts/presentation/game_board.gd")
+const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 
 func _init() -> void:
 	test_idle_freezes_time()
@@ -17,6 +18,11 @@ func _init() -> void:
 	test_endure_trades_health_for_strength()
 	test_loadout_identities()
 	test_duelist_sweeping_cut()
+	test_signature_attack_roster()
+	test_attack_geometry_boundaries()
+	test_first_contact_and_multi_target_rules()
+	test_attack_geometry_stops_at_walls()
+	test_projected_weapon_endpoints_round_trip()
 	test_fast_enemy_posture_break()
 	test_grounded_heavy_resists_break()
 	test_navigation_routes_around_wall()
@@ -30,6 +36,7 @@ func _init() -> void:
 	test_hex_hazard()
 	test_save_round_trip()
 	test_version_one_save_migration()
+	test_version_three_attack_migration()
 	test_restart_restores_expedition()
 	print("Expedition and committed-action simulation tests passed.")
 	quit(0)
@@ -184,6 +191,71 @@ func test_duelist_sweeping_cut() -> void:
 	assert(state.skill_cooldown > 2.7)
 	assert(int(state.enemies[0]["hp"]) < 8 and int(state.enemies[1]["hp"]) < 8)
 	assert(state.simulation_time >= 1.30)
+
+func test_signature_attack_roster() -> void:
+	var state: RunState = RunStateScript.new()
+	assert(state.player_attack_technique == "diagonal_cut")
+	assert(state.select_loadout("guardian") and state.player_attack_technique == "heavy_chop")
+	assert(state.select_loadout("reaver") and state.player_attack_technique == "broad_sweep")
+	state.walls.clear()
+	var expected := {"knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "hound": "bite", "brute": "forward_smash", "captain": "thrust"}
+	var distances := {"knife": 80.0, "blade": 110.0, "polearm": 190.0, "hound": 70.0, "brute": 140.0, "captain": 120.0}
+	for kind in expected:
+		var enemy := state._make_enemy(String(kind), state.player_pos + Vector2.UP * float(distances[kind]), state._enemy_base_hp(String(kind)))
+		state._choose_enemy_action(enemy)
+		assert(String(Dictionary(enemy["action"]).get("technique_id", "")) == String(expected[kind]))
+
+func test_attack_geometry_boundaries() -> void:
+	var origin := Vector2(500, 500)
+	var thrust := {"technique_id": "thrust", "elapsed": 0.76, "startup": 0.4, "active_end": 0.8, "duration": 1.2, "reach": 200.0}
+	var thrust_pose: Dictionary = AttackGeometryScript.pose(thrust, origin, Vector2.RIGHT)
+	assert(AttackGeometryScript.hits_circle(thrust_pose, origin + Vector2(150, 5), 6.0))
+	assert(not AttackGeometryScript.hits_circle(thrust_pose, origin + Vector2(150, 30), 6.0))
+	var cut := {"technique_id": "quick_cut", "elapsed": 0.60, "startup": 0.4, "active_end": 0.8, "duration": 1.2, "reach": 92.0}
+	var cut_pose: Dictionary = AttackGeometryScript.pose(cut, origin, Vector2.RIGHT)
+	var blade_mid := Vector2(cut_pose["start"]).lerp(Vector2(cut_pose["end"]), 0.8)
+	assert(AttackGeometryScript.hits_circle(cut_pose, blade_mid, 4.0))
+	assert(not AttackGeometryScript.hits_circle(cut_pose, origin + Vector2.LEFT * 75.0, 4.0))
+
+func test_first_contact_and_multi_target_rules() -> void:
+	var state: RunState = RunStateScript.new()
+	state.walls.clear()
+	state.player_facing = Vector2.RIGHT
+	var near := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 90.0, 9)
+	var far := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 145.0, 9)
+	state.enemies = [far, near]
+	state.player_action = state._melee_action(1.2, 0.2, 0.8, 190.0, 2, Vector2.RIGHT, "thrust", "attack")
+	state.player_action["elapsed"] = 0.72
+	state.player_action["damage_min"] = 2
+	state.player_action["damage_max"] = 2
+	state._resolve_player_attack_tick(0.72)
+	assert(int(near["hp"]) == 7)
+	assert(int(far["hp"]) == 9)
+	assert(bool(state.player_action["hit_done"]))
+	assert(bool(AttackGeometryScript.technique("broad_sweep")["multi"]))
+
+func test_attack_geometry_stops_at_walls() -> void:
+	var origin := Vector2(100, 100)
+	var wall := Rect2(180, 50, 50, 100)
+	var action := {"technique_id": "thrust", "elapsed": 0.79, "startup": 0.4, "active_end": 0.8, "duration": 1.2, "reach": 240.0}
+	var sample: Dictionary = AttackGeometryScript.pose(action, origin, Vector2.RIGHT, [wall])
+	assert(Vector2(sample["end"]).x <= wall.position.x + 0.01)
+	assert(not AttackGeometryScript.hits_circle(sample, Vector2(260, 100), 20.0))
+
+func test_projected_weapon_endpoints_round_trip() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.visual = board.state.snapshot()
+	board.board_area = Rect2(0, 0, 720, 960)
+	board.view_mode = "isometric"
+	board._update_projection()
+	var action: Dictionary = board.state._melee_action(1.2, 0.3, 0.7, 180.0, 2, Vector2.UP, "thrust")
+	action["elapsed"] = 0.66
+	var sample: Dictionary = AttackGeometryScript.pose(action, board.state.player_pos, Vector2.UP, board.state.walls)
+	for key in ["weapon_start", "weapon_end"]:
+		var world_point := Vector2(sample[key])
+		assert(board._screen_to_world(board._world_to_screen(world_point)).distance_to(world_point) < 0.01)
+	board.free()
 
 func test_fast_enemy_posture_break() -> void:
 	var state: RunState = RunStateScript.new()
@@ -354,6 +426,25 @@ func test_version_one_save_migration() -> void:
 		assert(enemy.has("posture") and enemy.has("posture_max"))
 		assert(String(enemy["kind"]) != "shield")
 	assert(restored.player_pos.x > 700.0 and restored.player_pos.y > 1700.0)
+
+func test_version_three_attack_migration() -> void:
+	var state: RunState = RunStateScript.new()
+	var path := "user://waystone-test-v3-attack-migration.save"
+	assert(state.save_run(path))
+	var reader := FileAccess.open(path, FileAccess.READ)
+	var payload: Dictionary = reader.get_var(true)
+	reader = null
+	payload["save_version"] = 3
+	payload["player_action"] = state._melee_action(1.2, 0.3, 0.7, 136.0, 3, Vector2.UP, "diagonal_cut", "attack")
+	var old_enemy: Dictionary = payload["enemies"][0]
+	old_enemy["action"] = state._melee_action(1.45, 0.52, 0.82, 128.0, 2, Vector2.DOWN)
+	var writer := FileAccess.open(path, FileAccess.WRITE)
+	writer.store_var(payload, true)
+	writer = null
+	var restored: RunState = RunStateScript.new()
+	assert(restored.load_run(path))
+	assert(String(restored.player_action["kind"]) == "idle")
+	for enemy in restored.enemies: assert(String(Dictionary(enemy["action"])["kind"]) != "melee")
 
 func test_restart_restores_expedition() -> void:
 	var state: RunState = RunStateScript.new()
