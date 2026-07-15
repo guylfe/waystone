@@ -1,0 +1,26 @@
+.godot/
+.runtime/
+tools/
+builds/
+export_templates/
+
+# Generated Android packages and signatures
+*.apk
+*.aab
+*.idsig
+
+# Signing keys and local secrets
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# Local saves, authentication helpers, and OS metadata
+*.save
+.gh-auth-*.txt
+.DS_Store
+Thumbs.db
