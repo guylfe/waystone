@@ -38,13 +38,22 @@ var loadout_rects: Dictionary = {}
 var upgrade_rects: Dictionary = {}
 var reset_rect := Rect2()
 var view_rect := Rect2()
+var map_rect := Rect2()
+var map_mode_rect := Rect2()
+var start_rect := Rect2()
+var progression_rects: Dictionary = {}
+var map_open := false
+var setup_loadout := "duelist"
+var setup_progression := "auto"
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
 		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR)
 	Input.emulate_mouse_from_touch = false
-	state = RunStateScript.new()
+	state = RunStateScript.new(false)
 	state.load_run()
+	setup_loadout = state.loadout_id
+	setup_progression = state.progression_mode
 	visual = state.snapshot()
 	state.changed.connect(_on_state_changed)
 	resized.connect(_layout)
@@ -58,6 +67,7 @@ func _layout() -> void:
 	buttons.clear()
 	loadout_rects.clear()
 	upgrade_rects.clear()
+	progression_rects.clear()
 	var names := ["potion", "defense", "skill", "wait"]
 	var loadouts := ["duelist", "guardian", "reaver"]
 	if portrait:
@@ -88,6 +98,16 @@ func _layout() -> void:
 	var reset_size := Vector2(clampf(size.x * 0.13, 68.0, 104.0), clampf(size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
+	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
+	var setup_width := minf(size.x * 0.76, 640.0)
+	var setup_left := (size.x - setup_width) * 0.5
+	var setup_center_y := size.y * 0.52
+	var setup_gap := clampf(minf(size.x, size.y) * 0.025, 12.0, 28.0)
+	var option_width := (setup_width - setup_gap) * 0.5
+	progression_rects["auto"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
+	progression_rects["bonfire"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
+	start_rect = Rect2(setup_left, setup_center_y + 98.0, setup_width, 82.0)
+	map_mode_rect = Rect2(Vector2(size.x - 142.0, 18.0), Vector2(124.0, 48.0))
 	queue_redraw()
 
 func _update_projection() -> void:
@@ -129,13 +149,46 @@ func _gui_input(event: InputEvent) -> void:
 		_pointer_dragged(event.position)
 
 func _pointer_pressed(position: Vector2) -> void:
+	if not state.run_active:
+		for choice in ["duelist", "guardian", "reaver"]:
+			if _setup_class_rect(choice).has_point(position):
+				setup_loadout = choice
+				queue_redraw()
+				return
+		for mode in progression_rects:
+			if Rect2(progression_rects[mode]).has_point(position):
+				setup_progression = String(mode)
+				queue_redraw()
+				return
+		if start_rect.has_point(position): _start_run()
+		return
+	if map_rect.has_point(position):
+		if not playing: map_open = not map_open
+		queue_redraw()
+		return
+	if map_open:
+		if map_mode_rect.has_point(position):
+			state.map_presentation = "overlay" if state.map_presentation == "full" else "full"
+			state.save_run()
+			queue_redraw()
+		return
 	if reset_rect.has_point(position):
 		_restart()
+		return
+	if state.death_pending:
+		state.return_after_death()
+		visual = state.snapshot()
+		queue_redraw()
 		return
 	if view_rect.has_point(position):
 		if not playing: _toggle_view()
 		return
 	if state.upgrade_pending:
+		if state.upgrade_context == "bonfire" and _upgrade_leave_rect().has_point(position):
+			state.leave_upgrade_menu()
+			visual = state.snapshot()
+			queue_redraw()
+			return
 		for index in upgrade_rects:
 			if Rect2(upgrade_rects[index]).has_point(position) and int(index) < state.upgrade_choices.size():
 				state.choose_upgrade(state.upgrade_choices[int(index)])
@@ -143,10 +196,6 @@ func _pointer_pressed(position: Vector2) -> void:
 				queue_redraw()
 				return
 		return
-	for choice in loadout_rects:
-		if Rect2(loadout_rects[choice]).has_point(position):
-			_select_loadout(String(choice))
-			return
 	if playing or state.player_hp <= 0:
 		return
 	pointer_down = true
@@ -192,6 +241,18 @@ func _pointer_released(position: Vector2) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed or event.echo or playing: return
+	if event.keycode == KEY_M and state.run_active:
+		map_open = not map_open
+		queue_redraw()
+		return
+	if event.keycode == KEY_ESCAPE and map_open:
+		map_open = false
+		queue_redraw()
+		return
+	if map_open or not state.run_active: return
+	if state.death_pending:
+		if event.keycode in [KEY_ENTER, KEY_SPACE]: state.return_after_death()
+		return
 	match event.keycode:
 		KEY_W, KEY_UP: _commit_direction(Vector2.UP)
 		KEY_S, KEY_DOWN: _commit_direction(Vector2.DOWN)
@@ -275,7 +336,8 @@ func _commit(did_commit: bool) -> void:
 	queue_redraw()
 
 func _restart() -> void:
-	state.restart()
+	state.abandon_run()
+	state.save_run()
 	selected_action = ""
 	playing = false
 	pointer_down = false
@@ -283,6 +345,15 @@ func _restart() -> void:
 	held_direction = Vector2.ZERO
 	timeline.clear()
 	visual = state.snapshot()
+	queue_redraw()
+
+func _start_run() -> void:
+	state.start_run(setup_loadout, setup_progression)
+	map_open = false
+	selected_action = ""
+	timeline.clear()
+	visual = state.snapshot()
+	state.save_run()
 	queue_redraw()
 
 func _select_loadout(choice: String) -> void:
@@ -297,14 +368,12 @@ func _select_loadout(choice: String) -> void:
 	queue_redraw()
 
 func _advance_or_wait() -> void:
-	if state.wave_clear:
-		state.advance_wave()
-		selected_action = ""
-		timeline.clear()
+	var interaction := state.interaction_label()
+	if interaction == "WAIT": _commit(state.request_wait())
+	else:
+		state.request_context_action()
 		visual = state.snapshot()
 		queue_redraw()
-	else:
-		_commit(state.request_wait())
 
 func _defense_cooldown() -> float:
 	if state.defense_id == "block": return state.block_cooldown
@@ -319,26 +388,39 @@ func _on_state_changed() -> void:
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), BG)
+	if not state.run_active:
+		_draw_setup()
+		return
 	_draw_world()
 	_draw_hud()
 	if inspected_enemy_id >= 0: _draw_inspection()
 	if state.trial_complete: _draw_results()
 	_draw_reset_button()
 	_draw_view_button()
+	_draw_map_button()
+	if map_open: _draw_map()
+	if state.death_pending: _draw_death_overlay()
 
 func _draw_world() -> void:
-	draw_rect(board_rect, FLOOR)
+	draw_rect(board_rect, Color("05080a"))
+	_draw_discovered_floor()
 	_draw_grid()
+	var discovered: Dictionary = visual.get("discovered_cells", state.discovered_cells)
+	var visible: Dictionary = visual.get("visible_cells", state.visible_cells)
 	for wall in state.walls:
-		_draw_wall(wall)
+		if state.is_discovered(wall.get_center(), discovered): _draw_wall(wall)
+	_draw_landmarks(visible, discovered)
 	for projectile in Array(visual.get("projectiles", [])):
+		if not state.is_visible(Vector2(projectile["pos"]), visible): continue
 		var center := _world_to_screen(Vector2(projectile["pos"]))
 		var direction := _screen_direction(Vector2(projectile["vel"]).normalized())
 		draw_line(center - direction * 15.0, center + direction * 9.0, Color("f1ce72"), maxf(2.0, world_scale * 8.0))
-	for hazard in Array(visual.get("hazards", [])): _draw_hazard(hazard)
+	for hazard in Array(visual.get("hazards", [])):
+		if state.is_visible(Vector2(hazard["pos"]), visible): _draw_hazard(hazard)
 	if view_mode == "isometric":
 		var actors: Array[Dictionary] = []
 		for enemy in Array(visual.get("enemies", [])):
+			if not state.is_visible(Vector2(enemy["pos"]), visible): continue
 			var entry: Dictionary = enemy.duplicate()
 			entry["_player"] = false
 			actors.append(entry)
@@ -348,25 +430,44 @@ func _draw_world() -> void:
 			if bool(actor["_player"]): _draw_player()
 			else: _draw_enemy(actor)
 	else:
-		for enemy in Array(visual.get("enemies", [])): _draw_enemy(enemy)
+		for enemy in Array(visual.get("enemies", [])):
+			if state.is_visible(Vector2(enemy["pos"]), visible): _draw_enemy(enemy)
 		_draw_player()
-	for effect in Array(visual.get("effects", [])): _draw_effect(effect)
+	for effect in Array(visual.get("effects", [])):
+		if state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
 	var color := Color("f0b45a") if playing else DODGE_COLOR
 	var font := maxi(14, int(minf(size.x, size.y) * 0.026))
 	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, font + 10), label, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.5, font, color)
-	var wave_text := "ROOM %d/%d" % [int(visual.get("wave", state.wave)), state.ROOM_COUNT]
-	var wave_width := minf(board_rect.size.x * 0.34, 180.0)
-	var wave_x := board_rect.position.x + (board_rect.size.x - wave_width) * 0.5
-	draw_string(ThemeDB.fallback_font, Vector2(wave_x, board_rect.position.y + font + 10), wave_text, HORIZONTAL_ALIGNMENT_CENTER, wave_width, font, Color("9fb2b7"))
+	var area_text := "AREA %d  •  %d XP" % [int(visual.get("current_area_id", state.current_area_id)) + 1, int(visual.get("carried_xp", state.carried_xp))]
+	var area_width := minf(board_rect.size.x * 0.34, 180.0)
+	var area_x := board_rect.position.x + (board_rect.size.x - area_width) * 0.5
+	draw_string(ThemeDB.fallback_font, Vector2(area_x, board_rect.position.y + font + 10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
 	_draw_player_health_bar(font)
 
 func _draw_grid() -> void:
 	var color := Color(0.18, 0.29, 0.32, 0.35)
-	for x in range(0, int(state.WORLD_SIZE.x / 100.0) + 1): draw_line(_world_to_screen(Vector2(x * 100.0, 0)), _world_to_screen(Vector2(x * 100.0, state.WORLD_SIZE.y)), color)
-	for y in range(0, int(state.WORLD_SIZE.y / 100.0) + 1): draw_line(_world_to_screen(Vector2(0, y * 100.0)), _world_to_screen(Vector2(state.WORLD_SIZE.x, y * 100.0)), color)
+	var visible: Dictionary = visual.get("visible_cells", state.visible_cells)
+	for cell in visible:
+		var top_left := Vector2(cell) * state.VISIBILITY_CELL
+		var center := top_left + Vector2.ONE * state.VISIBILITY_CELL * 0.5
+		if int(cell.x) % 2 == 0: draw_line(_world_to_screen(Vector2(top_left.x, top_left.y)), _world_to_screen(Vector2(top_left.x, top_left.y + state.VISIBILITY_CELL)), color)
+		if int(cell.y) % 2 == 0: draw_line(_world_to_screen(Vector2(top_left.x, top_left.y)), _world_to_screen(Vector2(top_left.x + state.VISIBILITY_CELL, top_left.y)), color)
+
+func _draw_discovered_floor() -> void:
+	var discovered: Dictionary = visual.get("discovered_cells", state.discovered_cells)
+	var visible: Dictionary = visual.get("visible_cells", state.visible_cells)
+	for cell in discovered:
+		var top_left := Vector2(cell) * state.VISIBILITY_CELL
+		var is_current := visible.has(cell)
+		var color := FLOOR if is_current else Color("0c1418")
+		if view_mode == "top_down":
+			draw_rect(Rect2(_world_to_screen(top_left), Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE), color)
+		else:
+			var points := PackedVector2Array([_world_to_screen(top_left), _world_to_screen(top_left + Vector2(state.VISIBILITY_CELL, 0)), _world_to_screen(top_left + Vector2.ONE * state.VISIBILITY_CELL), _world_to_screen(top_left + Vector2(0, state.VISIBILITY_CELL))])
+			draw_colored_polygon(points, color)
 
 func _draw_wall(wall: Rect2) -> void:
 	if view_mode == "top_down":
@@ -418,6 +519,11 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) == "charge": draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "slam": draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, radius * 0.13))
 	elif String(action["kind"]) == "hex": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 12.0, Color("b57bea"))
+	var awareness := String(enemy.get("awareness", "idle"))
+	if awareness in ["suspicious", "alerted"]:
+		var marker := "?" if awareness == "suspicious" else "!"
+		var marker_color := Color("e8c35d") if awareness == "suspicious" else Color("ef665c")
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-radius, -radius * 2.5), marker, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(16, int(radius * 0.8)), marker_color)
 	_draw_health(pos, radius, int(enemy["hp"]), int(enemy["max_hp"]), color)
 	_draw_posture(pos, radius, float(enemy.get("posture", 1.0)), float(enemy.get("posture_max", 1.0)))
 	var phase := _phase(action)
@@ -623,13 +729,12 @@ func _phase(action: Dictionary) -> String:
 	return ""
 
 func _draw_hud() -> void:
-	for choice in loadout_rects: _draw_loadout_tab(String(choice), Rect2(loadout_rects[choice]))
 	if state.upgrade_pending: _draw_upgrade_choices()
 	else:
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
-	var hp_text := "HP %d/%d" % [int(visual.get("player_hp", state.player_hp)), int(visual.get("player_max_hp", state.player_max_hp))]
-	hp_text += "  SEED %d" % state.run_seed
+	var hp_text := "HP %d/%d  •  XP %d/%d" % [int(visual.get("player_hp", state.player_hp)), int(visual.get("player_max_hp", state.player_max_hp)), int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
+	hp_text += "  •  %s" % state.progression_mode.to_upper()
 	if float(visual.get("strength_remaining", 0.0)) > 0.0:
 		hp_text += "  STR ACTIVE"
 	var text := String(visual.get("message", state.message))
@@ -651,12 +756,115 @@ func _draw_reset_button() -> void:
 	var font := maxi(9, int(reset_rect.size.y * 0.30))
 	draw_string(ThemeDB.fallback_font, reset_rect.position + Vector2(0.0, reset_rect.size.y * 0.61), "RESET", HORIZONTAL_ALIGNMENT_CENTER, reset_rect.size.x, font, Color("b7c0c2"))
 
+func _draw_map_button() -> void:
+	draw_rect(map_rect, Color(0.06, 0.09, 0.11, 0.86))
+	draw_rect(map_rect, Color("d7aa58") if map_open else Color("718087"), false, 1.5)
+	var font := maxi(8, int(map_rect.size.y * 0.27))
+	draw_string(ThemeDB.fallback_font, map_rect.position + Vector2(0.0, map_rect.size.y * 0.61), "MAP", HORIZONTAL_ALIGNMENT_CENTER, map_rect.size.x, font, Color("d7dddd"))
+
 func _draw_view_button() -> void:
 	draw_rect(view_rect, Color(0.06, 0.09, 0.11, 0.86))
 	draw_rect(view_rect, DODGE_COLOR if view_mode == "isometric" else Color("718087"), false, 1.5)
 	var font := maxi(8, int(view_rect.size.y * 0.27))
 	var label := "TOP" if view_mode == "isometric" else "ISO"
 	draw_string(ThemeDB.fallback_font, view_rect.position + Vector2(0.0, view_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, view_rect.size.x, font, Color("d7dddd"))
+
+func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
+	if state.is_discovered(state.bonfire_pos, discovered):
+		var bonfire := _world_to_screen(state.bonfire_pos)
+		var bright := state.is_visible(state.bonfire_pos, visible)
+		draw_circle(bonfire, 25.0 * world_scale, Color("e89145") if bright else Color("62452f"))
+		draw_circle(bonfire + Vector2(0, -12.0 * world_scale), 13.0 * world_scale, Color("f4d36b") if bright else Color("695b3c"))
+	if state.is_discovered(state.shortcut_gate.get_center(), discovered):
+		var gate := _world_to_screen(state.shortcut_gate.get_center())
+		draw_circle(gate, 15.0 * world_scale, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
+	if bool(state.lost_xp.get("active", false)) and state.is_discovered(Vector2(state.lost_xp["pos"]), discovered):
+		var mark := _world_to_screen(Vector2(state.lost_xp["pos"]))
+		draw_circle(mark, 24.0 * world_scale, Color(0.78, 0.90, 0.42, 0.22))
+		draw_arc(mark, 20.0 * world_scale, 0.0, TAU, 20, Color("d8ed78"), maxf(3.0, world_scale * 4.0))
+		draw_string(ThemeDB.fallback_font, mark + Vector2(-32, -30), "%d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 64, maxi(10, int(13 * world_scale)), Color("e9f4b1"))
+
+func _draw_setup() -> void:
+	var title_font := maxi(28, int(minf(size.x, size.y) * 0.055))
+	var body_font := maxi(14, int(title_font * 0.44))
+	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.16), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, size.x, title_font, Color("f2e7c8"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and XP progression rule", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
+	for choice in ["duelist", "guardian", "reaver"]:
+		var rect: Rect2 = _setup_class_rect(String(choice))
+		var selected: bool = setup_loadout == String(choice)
+		draw_rect(rect, Color("17272d"))
+		draw_rect(rect, Color("58d2cf") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.58), String(choice).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+	for mode in progression_rects:
+		var rect := Rect2(progression_rects[mode])
+		var selected: bool = setup_progression == String(mode)
+		draw_rect(rect, Color("17272d"))
+		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
+		var label := "AUTO UPGRADES" if String(mode) == "auto" else "WAYSTONE UPGRADES"
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.57), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+	draw_rect(start_rect, Color("24433f"))
+	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
+	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
+
+func _setup_class_rect(choice: String) -> Rect2:
+	var choices := ["duelist", "guardian", "reaver"]
+	var index := choices.find(choice)
+	var total_width := minf(size.x * 0.84, 760.0)
+	var gap := clampf(total_width * 0.025, 10.0, 20.0)
+	var width := (total_width - gap * 2.0) / 3.0
+	return Rect2(Vector2((size.x - total_width) * 0.5 + index * (width + gap), size.y * 0.33), Vector2(width, 82.0))
+
+func _upgrade_leave_rect() -> Rect2:
+	return Rect2(Vector2(board_rect.get_center().x - 80.0, board_rect.end.y - 72.0), Vector2(160.0, 48.0))
+
+func _draw_death_overlay() -> void:
+	draw_rect(board_rect, Color(0.02, 0.02, 0.025, 0.78))
+	var font := maxi(30, int(minf(size.x, size.y) * 0.065))
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y - 28.0), "FALLEN", HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("d76a68"))
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y + 40.0), "Tap to return to the Waystone", HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
+
+func _draw_map() -> void:
+	var rect := board_rect.grow(-18.0) if state.map_presentation == "overlay" else Rect2(Vector2(14, 14), size - Vector2(28, 28))
+	draw_rect(rect, Color(0.025, 0.04, 0.05, 0.78 if state.map_presentation == "overlay" else 0.98))
+	draw_rect(rect, Color("9fb2b7"), false, 2.0)
+	var map_bounds := _discovered_map_bounds().grow(120.0)
+	var scale := minf((rect.size.x - 72.0) / map_bounds.size.x, (rect.size.y - 110.0) / map_bounds.size.y)
+	var origin := rect.get_center() - map_bounds.get_center() * scale + Vector2(0, 18)
+	for connection in state.connections:
+		var corridor := Rect2(connection["corridor"])
+		if not state.is_discovered(corridor.get_center()): continue
+		var mapped := Rect2(origin + corridor.position * scale, corridor.size * scale)
+		draw_rect(mapped, Color("42555a"))
+	for area in state.areas:
+		if not bool(area.get("discovered", false)): continue
+		var world_rect := Rect2(area["rect"])
+		var mapped := Rect2(origin + world_rect.position * scale, world_rect.size * scale)
+		draw_rect(mapped, Color("26383d"))
+		draw_rect(mapped, Color("6c7e82"), false, 1.5)
+	var player := origin + state.player_pos * scale
+	var bonfire := origin + state.bonfire_pos * scale
+	draw_circle(bonfire, 8.0, Color("e89b52"))
+	draw_circle(player, 7.0, PLAYER_COLOR)
+	if bool(state.areas[6].get("discovered", false)):
+		var exit_center := origin + Vector2(state.areas[6]["center"]) * scale
+		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
+	if state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
+	if bool(state.lost_xp.get("active", false)): draw_circle(origin + Vector2(state.lost_xp["pos"]) * scale, 7.0, Color("d8ed78"))
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), "DISCOVERED AREAS", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.6, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
+	draw_rect(map_mode_rect, Color("17272d"))
+	draw_rect(map_mode_rect, Color("d7aa58"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, map_mode_rect.position + Vector2(0, map_mode_rect.size.y * 0.62), "OVERLAY" if state.map_presentation == "full" else "FULL", HORIZONTAL_ALIGNMENT_CENTER, map_mode_rect.size.x, 13, Color("f1e8d0"))
+
+func _discovered_map_bounds() -> Rect2:
+	var bounds := Rect2(state.player_pos - Vector2.ONE * 40.0, Vector2.ONE * 80.0)
+	for area in state.areas:
+		if bool(area.get("discovered", false)): bounds = bounds.merge(Rect2(area["rect"]))
+	for connection in state.connections:
+		var corridor := Rect2(connection["corridor"])
+		if state.is_discovered(corridor.get_center()): bounds = bounds.merge(corridor)
+	if bool(state.lost_xp.get("active", false)):
+		bounds = bounds.merge(Rect2(Vector2(state.lost_xp["pos"]) - Vector2.ONE * 30.0, Vector2.ONE * 60.0))
+	return bounds
 
 func _draw_inspection() -> void:
 	var enemy: Dictionary = {}
@@ -715,8 +923,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		available = state.loadout_id == "duelist" and state.skill_cooldown <= 0.0001
 		subtitle = "SLOW / WIDE" if available else "COOLING" if state.loadout_id == "duelist" else ""
 	elif name == "wait":
-		title = "COMPLETE" if state.wave_clear and state.wave >= state.ROOM_COUNT else "NEXT ROOM" if state.wave_clear else "WAIT"
-		subtitle = "" if state.wave_clear else "+0.5s"
+		title = state.interaction_label()
+		subtitle = "RESTORE / RESPAWN" if title == "REST" else "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
 		available = not state.trial_complete
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("d7aa58") if name == "wait" else Color("db6463")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
@@ -745,6 +953,13 @@ func _draw_upgrade_choices() -> void:
 		var description_font := mini(maxi(8, int(title_font * 0.58)), maxi(7, int((rect.size.x - 18.0) / maxf(1.0, description.length() * 0.60))))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.38), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8, title_font, Color("f2e7c8"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, rect.size.y * 0.66), description, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 12, description_font, Color("d2d8d4"))
+	var cost_text := "SPEND %d XP" % state.next_upgrade_cost()
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.end.y - 84.0), cost_text, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, 14, Color("d7aa58"))
+	if state.upgrade_context == "bonfire":
+		var leave := _upgrade_leave_rect()
+		draw_rect(leave, Color("17272d"))
+		draw_rect(leave, Color("718087"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, leave.position + Vector2(0, leave.size.y * 0.62), "LEAVE", HORIZONTAL_ALIGNMENT_CENTER, leave.size.x, 13, Color("d7dddd"))
 
 func _draw_results() -> void:
 	var width := minf(board_rect.size.x * 0.78, 620.0)
@@ -762,6 +977,7 @@ func _draw_results() -> void:
 
 func _enemy_near(screen_position: Vector2, radius: float) -> Dictionary:
 	for enemy in state.enemies:
+		if not state.is_visible(Vector2(enemy["pos"]), Dictionary(visual.get("visible_cells", state.visible_cells))): continue
 		if _world_to_screen(Vector2(enemy["pos"])).distance_to(screen_position) <= radius: return enemy
 	return {}
 
@@ -810,4 +1026,5 @@ func _toggle_view() -> void:
 	_update_projection()
 	reset_rect.position = board_rect.end - reset_rect.size - Vector2(8.0, board_rect.size.y - reset_rect.size.y - 8.0)
 	view_rect.position = reset_rect.position - Vector2(view_rect.size.x + 8.0, 0.0)
+	map_rect.position = view_rect.position - Vector2(map_rect.size.x + 8.0, 0.0)
 	queue_redraw()

@@ -33,6 +33,9 @@ func _init() -> void:
 	test_progressive_expedition_rooms()
 	test_generated_rooms_have_no_shields()
 	test_room_reward_progression()
+	test_shortcut_and_waystone_persistence()
+	test_visibility_memory_and_awareness()
+	test_xp_death_recovery()
 	test_hex_hazard()
 	test_save_round_trip()
 	test_version_one_save_migration()
@@ -338,44 +341,112 @@ func test_new_enemy_roles() -> void:
 	assert(state._enemy_move_speed(blade) > 190.0)
 
 func test_progressive_expedition_rooms() -> void:
-	var state: RunState = RunStateScript.new()
-	state.wave = 1
-	state.build_expedition_room()
-	var early_hp := 0
-	for enemy in state.enemies: early_hp += int(enemy["max_hp"])
-	state.wave = 6
-	state.build_expedition_room()
-	var late_hp := 0
-	var kinds: Array[String] = []
-	for enemy in state.enemies:
-		late_hp += int(enemy["max_hp"])
-		kinds.append(String(enemy["kind"]))
-	assert(late_hp > early_hp)
-	assert(kinds.has("brute") and kinds.has("hexer"))
-	state.wave = state.ROOM_COUNT
-	state.build_expedition_room()
-	assert(state.enemies.size() == 1 and String(state.enemies[0]["kind"]) == "warden")
+	for seed in [11, 22, 33, 44, 55, 739391]:
+		var state: RunState = RunStateScript.new(false)
+		state.start_run("duelist", "auto", seed)
+		assert(state.areas.size() == 8)
+		assert(state.connections.size() == 8)
+		assert(String(state.areas[0]["kind"]) == "start")
+		assert(String(state.areas[6]["kind"]) == "boss")
+		assert(String(state.areas[7]["kind"]) == "optional")
+		var shortcut_count := 0
+		for connection in state.connections:
+			if bool(connection["shortcut"]):
+				shortcut_count += 1
+				assert(int(connection["from"]) == 3 and int(connection["to"]) == 0)
+		assert(shortcut_count == 1 and not state.shortcut_unlocked)
+		var start_cell := state._nearest_open_cell(state._world_to_nav(state.player_pos))
+		var boss_cell := state._nearest_open_cell(state._world_to_nav(Vector2(state.areas[6]["center"])))
+		var branch_cell := state._nearest_open_cell(state._world_to_nav(Vector2(state.areas[7]["center"])))
+		assert(not state.navigation.get_id_path(start_cell, boss_cell, true).is_empty())
+		assert(not state.navigation.get_id_path(start_cell, branch_cell, true).is_empty())
+		var kinds: Array[String] = []
+		for enemy in state.enemies: kinds.append(String(enemy["kind"]))
+		assert(kinds.has("warden") and kinds.has("brute") and kinds.has("hexer"))
 
 func test_generated_rooms_have_no_shields() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.WORLD_SIZE.x >= 1600.0 and state.WORLD_SIZE.y >= 2200.0)
-	for room in range(1, state.ROOM_COUNT + 1):
-		state.wave = room
-		state.build_expedition_room()
-		for enemy in state.enemies:
-			assert(String(enemy["kind"]) != "shield")
+	assert(state.WORLD_SIZE.x >= 5000.0 and state.WORLD_SIZE.y >= 4400.0)
+	for enemy in state.enemies: assert(String(enemy["kind"]) != "shield")
 
 func test_room_reward_progression() -> void:
-	var state: RunState = RunStateScript.new()
-	for enemy in state.enemies: enemy["hp"] = 0
-	state._remove_dead_enemies()
-	assert(state.wave_clear and state.upgrade_pending)
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "auto", 101)
+	state.carried_xp = state.next_upgrade_cost()
+	state._roll_upgrade_choices("auto")
 	assert(state.upgrade_choices.size() == 3)
 	var choice := state.upgrade_choices[0]
 	assert(state.choose_upgrade(choice))
-	assert(not state.upgrade_pending and state.upgrades.has(choice))
-	assert(state.advance_wave())
-	assert(state.wave == 2 and not state.wave_clear)
+	assert(not state.upgrade_pending and state.upgrades.has(choice) and state.carried_xp == 0)
+	assert(state.upgrade_count == 1 and state.next_upgrade_cost() == 10)
+	state.start_run("guardian", "bonfire", 102)
+	state.carried_xp = 16
+	state.player_pos = state.bonfire_pos
+	assert(state.rest_at_waystone() and state.upgrade_pending)
+	assert(state.choose_upgrade(state.upgrade_choices[0]))
+	assert(state.upgrade_pending and state.carried_xp == 10)
+	assert(state.choose_upgrade(state.upgrade_choices[0]))
+	assert(state.upgrade_count == 2 and state.carried_xp == 0)
+
+func test_shortcut_and_waystone_persistence() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("reaver", "bonfire", 303)
+	var original_count := state.enemies.size()
+	state.player_pos = state.shortcut_start_pos
+	assert(not state.unlock_shortcut())
+	state.player_pos = state.shortcut_unlock_pos
+	assert(state.unlock_shortcut() and state.shortcut_unlocked)
+	assert(not state.walls.has(state.shortcut_gate))
+	state.carried_xp = 5
+	state.player_hp = 1
+	state.potions = 0
+	state.enemies[0]["hp"] = 0
+	state._remove_dead_enemies()
+	state.player_pos = state.bonfire_pos
+	assert(state.rest_at_waystone())
+	assert(state.player_hp == state.player_max_hp and state.potions == 1)
+	assert(state.enemies.size() == original_count and state.shortcut_unlocked)
+	assert(state.carried_xp >= 5)
+
+func test_visibility_memory_and_awareness() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "auto", 404)
+	var discovered_before := state.discovered_cells.size()
+	var old_pos := state.player_pos
+	state.player_pos += Vector2(0, -120)
+	state._update_exploration(true)
+	assert(state.discovered_cells.size() >= discovered_before)
+	assert(state.is_discovered(old_pos))
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 220.0, 7, 1)
+	enemy["facing"] = Vector2.RIGHT
+	state.enemies = [enemy]
+	state._emit_sound(state.player_pos, 300.0)
+	var frozen := state.simulation_time
+	state.snapshot()
+	assert(state.simulation_time == frozen and String(enemy["awareness"]) == "idle")
+	state._update_enemy_awareness(enemy, 0.1)
+	assert(String(enemy["awareness"]) == "suspicious")
+
+func test_xp_death_recovery() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "bonfire", 505)
+	state.carried_xp = 9
+	var death_pos := state.player_pos + Vector2.UP * 80.0
+	state.player_pos = death_pos
+	state._begin_death()
+	assert(state.death_pending and state.carried_xp == 0)
+	assert(bool(state.lost_xp["active"]) and int(state.lost_xp["amount"]) == 9)
+	assert(state.return_after_death())
+	state.player_pos = death_pos
+	state._try_recover_xp()
+	assert(state.carried_xp == 9 and not bool(state.lost_xp["active"]))
+	state.carried_xp = 7
+	state._begin_death()
+	assert(state.return_after_death())
+	state.carried_xp = 3
+	state.player_pos += Vector2.RIGHT * 90.0
+	state._begin_death()
+	assert(int(state.lost_xp["amount"]) == 3)
 
 func test_hex_hazard() -> void:
 	var state: RunState = RunStateScript.new()
@@ -389,17 +460,19 @@ func test_hex_hazard() -> void:
 	assert(saw_hex)
 
 func test_save_round_trip() -> void:
-	var state: RunState = RunStateScript.new()
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("guardian", "bonfire", 606)
 	state.player_hp -= 2
-	state.wave = 4
-	state.upgrades = ["keen_edge"]
+	state.carried_xp = 13
+	state.player_pos = state.shortcut_unlock_pos
+	assert(state.unlock_shortcut())
 	var path := "user://waystone-test-expedition.save"
 	assert(state.save_run(path))
-	var restored: RunState = RunStateScript.new()
+	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
 	assert(restored.player_hp == state.player_hp)
-	assert(restored.wave == 4)
-	assert(restored.upgrades == ["keen_edge"])
+	assert(restored.progression_mode == "bonfire" and restored.carried_xp == 13)
+	assert(restored.shortcut_unlocked and restored.run_seed == 606)
 
 func test_version_one_save_migration() -> void:
 	var state: RunState = RunStateScript.new()
@@ -419,13 +492,10 @@ func test_version_one_save_migration() -> void:
 	var writer := FileAccess.open(path, FileAccess.WRITE)
 	writer.store_var(payload, true)
 	writer = null
-	var restored: RunState = RunStateScript.new()
+	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
-	assert(is_equal_approx(restored.skill_cooldown, 2.25))
-	for enemy in restored.enemies:
-		assert(enemy.has("posture") and enemy.has("posture_max"))
-		assert(String(enemy["kind"]) != "shield")
-	assert(restored.player_pos.x > 700.0 and restored.player_pos.y > 1700.0)
+	assert(not restored.run_active)
+	assert(restored.loadout_id == state.loadout_id and restored.progression_mode == "auto")
 
 func test_version_three_attack_migration() -> void:
 	var state: RunState = RunStateScript.new()
@@ -441,10 +511,9 @@ func test_version_three_attack_migration() -> void:
 	var writer := FileAccess.open(path, FileAccess.WRITE)
 	writer.store_var(payload, true)
 	writer = null
-	var restored: RunState = RunStateScript.new()
+	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
-	assert(String(restored.player_action["kind"]) == "idle")
-	for enemy in restored.enemies: assert(String(Dictionary(enemy["action"])["kind"]) != "melee")
+	assert(not restored.run_active)
 
 func test_restart_restores_expedition() -> void:
 	var state: RunState = RunStateScript.new()
@@ -461,5 +530,4 @@ func test_restart_restores_expedition() -> void:
 	assert(state.projectiles.is_empty())
 	assert(not state.enemies.is_empty())
 	assert(String(state.enemies[0]["kind"]) == "blade")
-	assert(state.wave == 1)
 	assert(state.upgrades.is_empty())

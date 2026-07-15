@@ -7,16 +7,20 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	await process_frame
-	scene._toggle_view()
-	await process_frame
-	scene._toggle_view()
+	if not scene.state.run_active:
+		if not _capture("res://builds/setup-smoke.png"): return
+	if not scene.state.run_active:
+		scene.state.start_run("duelist", "auto", 739391)
+		scene.visual = scene.state.snapshot()
 	await process_frame
 	await process_frame
 	scene.queue_redraw()
 	await process_frame
-	var impact_enemy: Dictionary = scene.state._make_enemy("blade", scene.state.player_pos + Vector2(0, -125), 7)
+	var impact_enemy: Dictionary = scene.state._make_enemy("blade", scene.state.player_pos + Vector2(0, -125), 7, 1)
+	impact_enemy["awareness"] = "alerted"
 	impact_enemy["hp"] = 4
-	scene.state.enemies = [impact_enemy]
+	scene.state.enemies.clear()
+	scene.state.enemies.append(impact_enemy)
 	scene.state.player_hp = maxi(1, scene.state.player_max_hp - 3)
 	scene.state._add_effect("hit", Vector2(impact_enemy["pos"]), 3)
 	scene.visual = scene.state.snapshot()
@@ -26,6 +30,11 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	if not _capture("res://builds/phone-smoke.png"): return
+	scene.map_open = true
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/map-smoke.png"): return
+	scene.map_open = false
 	scene._toggle_view()
 	await process_frame
 	await process_frame
@@ -36,8 +45,8 @@ func _initialize() -> void:
 	if not _capture("res://builds/isometric-smoke.png"): return
 	scene._toggle_view()
 	await process_frame
-	for enemy in scene.state.enemies: enemy["hp"] = 0
-	scene.state._remove_dead_enemies()
+	scene.state.carried_xp = scene.state.next_upgrade_cost()
+	scene.state._roll_upgrade_choices("auto")
 	scene.visual = scene.state.snapshot()
 	scene.queue_redraw()
 	await process_frame

@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.10`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.11`. Android version codes increase independently so newer APKs can always upgrade older installations.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -20,7 +20,9 @@ An original Android-first committed-action roguelike prototype inspired by the l
 
 The first expedition uses continuous positions, world-space weapon hitboxes, physical projectiles, persistent hazards, and a 120 Hz fixed-step simulation. Time is frozen whenever the player is ready. Locomotion is granular and interruptible, while strikes and skills commit through startup, active, and recovery phases.
 
-Seven seeded rooms grow progressively harder through terrain, encounter budgets, and enemy-role combinations. Rooms now occupy a larger continuous space under a close player-following camera, so only part of the battlefield is visible at once. Blade, Knife, Archer, Polearm, Hound, Brute, Hexer, Captain, and Warden enemies each apply different spatial pressure; Shieldbearers are temporarily removed from encounter generation. Room rewards offer one of three lightweight run upgrades, and the current expedition is saved locally when the app closes.
+The seeded expedition is now one connected floor: a seven-area main path, an optional high-risk branch, and a halfway shortcut that opens back to the starting Waystone only from its far side. Fog of war remembers explored terrain, while enemy sight, sound, suspicion, and alert states determine when combat begins. The Map button switches between full-screen and translucent discovered-area views.
+
+Enemies award XP. Before each run, Auto mode offers an immediate three-choice upgrade when a threshold is reached, while Waystone mode requires carrying XP back before buying upgrades. Death leaves unspent XP at a recoverable mark and returns the player to the Waystone; dying again replaces the old mark. Resting restores combat resources and respawns undefeated enemies without erasing discovered terrain, upgrades, XP, or opened shortcuts.
 
 The prototype Duelist combines Dodge with a diagonal cut and directional Sweeping Cut; Guardian uses a compact heavy chop, while Reaver uses a broad sweep. Enemy weapons now have distinct reusable techniques: quick cuts, thrusts, bites, forward smashes, and heavy cleaves. The same world-space pose drives collision and both visual projections. Fast enemies have deliberately low posture and can be interrupted, while grounded Brute and Warden attacks resist interruption after becoming active. Physical contact is deterministic, action information is qualitative, and cooldowns use visual progress rather than decimal timing.
 

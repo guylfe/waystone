@@ -2,11 +2,12 @@ class_name RunState
 extends RefCounted
 
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 signal changed
 signal message_changed(text: String)
 
-const WORLD_SIZE := Vector2(1600.0, 2200.0)
+const WORLD_SIZE := Vector2(5000.0, 4400.0)
 const SIM_DT := 1.0 / 120.0
 const FRAME_DT := 1.0 / 60.0
 const PLAYER_RADIUS := 30.0
@@ -19,8 +20,9 @@ const DODGE_COOLDOWN := 4.0
 const BLOCK_COOLDOWN := 3.5
 const ENDURE_COOLDOWN := 4.5
 const SWEEP_COOLDOWN := 4.2
-const ROOM_COUNT := 7
 const NAV_CELL := 50.0
+const VISIBILITY_CELL := 50.0
+const SIGHT_RANGE := 520.0
 
 var player_pos := Vector2(800.0, 1900.0)
 var player_facing := Vector2.UP
@@ -47,8 +49,6 @@ var endure_cooldown := 0.0
 var skill_cooldown := 0.0
 var strength_remaining := 0.0
 var potions := 1
-var wave := 1
-var wave_clear := false
 var trial_complete := false
 var run_seed := 739391
 var upgrades: Array[String] = []
@@ -69,83 +69,133 @@ var last_timeline: Array[Dictionary] = []
 var rng := RandomNumberGenerator.new()
 var _next_enemy_id := 1
 var navigation := AStarGrid2D.new()
+var run_active := false
+var progression_mode := "auto"
+var map_presentation := "full"
+var areas: Array[Dictionary] = []
+var connections: Array[Dictionary] = []
+var encounter_templates: Dictionary = {}
+var base_walls: Array[Rect2] = []
+var bonfire_pos := Vector2.ZERO
+var shortcut_gate := Rect2()
+var shortcut_unlock_pos := Vector2.ZERO
+var shortcut_start_pos := Vector2.ZERO
+var shortcut_unlocked := false
+var visible_cells: Dictionary = {}
+var discovered_cells: Dictionary = {}
+var _visibility_anchor := Vector2.INF
+var current_area_id := 0
+var carried_xp := 0
+var lost_xp := {"active": false, "amount": 0, "pos": Vector2.ZERO}
+var upgrade_count := 0
+var upgrade_ranks: Dictionary = {}
+var death_pending := false
+var upgrade_context := ""
+var _sound_sequence := 0
+var last_sound := {"sequence": 0, "pos": Vector2.ZERO, "radius": 0.0}
+var _defense_cooldown_multiplier := 1.0
+var _skill_cooldown_multiplier := 1.0
+var _player_start := Vector2.ZERO
+var _boss_defeated := false
 
-func _init() -> void:
+func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
 	_apply_loadout()
 	player_hp = player_max_hp
-	build_expedition_room()
+	if auto_start: start_run(loadout_id, progression_mode, run_seed)
 
 func build_laboratory() -> void:
-	build_expedition_room()
+	start_run(loadout_id, progression_mode, run_seed)
 
 func build_expedition_room() -> void:
-	rng.seed = run_seed + wave * 104729
-	walls = _room_walls(wave)
-	_build_navigation()
+	start_run(loadout_id, progression_mode, run_seed)
+
+func start_run(chosen_loadout: String, chosen_progression: String, seed_override: int = -1) -> void:
+	loadout_id = chosen_loadout if chosen_loadout in ["duelist", "guardian", "reaver"] else "duelist"
+	progression_mode = chosen_progression if chosen_progression in ["auto", "bonfire"] else "auto"
+	if seed_override >= 0: run_seed = seed_override
+	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
+	_apply_loadout()
+	player_hp = player_max_hp
+	player_facing = Vector2.UP
+	player_action = _idle_action()
+	dodge_cooldown = 0.0
+	block_cooldown = 0.0
+	endure_cooldown = 0.0
+	skill_cooldown = 0.0
+	strength_remaining = 0.0
+	potions = 1
+	trial_complete = false
+	upgrade_pending = false
+	upgrade_choices.clear()
+	upgrades.clear()
+	upgrade_ranks.clear()
+	upgrade_count = 0
+	upgrade_context = ""
+	_defense_cooldown_multiplier = 1.0
+	_skill_cooldown_multiplier = 1.0
+	_sound_sequence = 0
+	last_sound = {"sequence": 0, "pos": Vector2.ZERO, "radius": 0.0}
+	carried_xp = 0
+	lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+	rooms_cleared = 0
+	enemies_defeated = 0
+	damage_dealt = 0
+	simulation_time = 0.0
+	perfect_dodges = 0
+	counter_hits = 0
+	successful_blocks = 0
+	successful_endures = 0
+	effects.clear()
 	hazards.clear()
-	_next_enemy_id = 1
-	_spawn_wave(wave)
-
-func _room_walls(number: int) -> Array[Rect2]:
-	match number % 5:
-		1: return [Rect2(260.0, 720.0, 150.0, 500.0), Rect2(1190.0, 720.0, 150.0, 500.0), Rect2(650.0, 1320.0, 300.0, 120.0)]
-		2: return [Rect2(180.0, 560.0, 430.0, 120.0), Rect2(990.0, 1110.0, 430.0, 120.0), Rect2(690.0, 790.0, 220.0, 270.0)]
-		3: return [Rect2(665.0, 420.0, 270.0, 300.0), Rect2(665.0, 1130.0, 270.0, 300.0), Rect2(230.0, 900.0, 260.0, 110.0), Rect2(1110.0, 900.0, 260.0, 110.0)]
-		4: return [Rect2(190.0, 840.0, 340.0, 120.0), Rect2(1070.0, 840.0, 340.0, 120.0), Rect2(700.0, 360.0, 200.0, 260.0), Rect2(700.0, 1270.0, 200.0, 260.0)]
-		_: return [Rect2(330.0, 560.0, 160.0, 380.0), Rect2(1110.0, 560.0, 160.0, 380.0), Rect2(650.0, 1050.0, 300.0, 120.0), Rect2(310.0, 1370.0, 300.0, 110.0), Rect2(990.0, 1370.0, 300.0, 110.0)]
-
-func _spawn_wave(number: int) -> void:
-	enemies.clear()
 	projectiles.clear()
-	if number >= ROOM_COUNT:
-		enemies.append(_make_enemy("warden", _find_spawn(Vector2(800.0, 300.0)), 26))
-		return
-	var budget := 3 + number * 2
-	var maximum := 2 + int(ceil(float(number) * 0.55))
-	var pool: Array[String] = ["blade", "knife"]
-	if number >= 2: pool.append_array(["archer", "hound"])
-	if number >= 4: pool.append_array(["polearm", "hexer"])
-	if number >= 5: pool.append_array(["brute", "captain"])
-	var costs := {"knife": 1, "blade": 2, "hound": 2, "archer": 2, "polearm": 4, "hexer": 4, "brute": 5, "captain": 5}
-	var positions := [Vector2(800, 1600), Vector2(450, 1450), Vector2(1150, 1450), Vector2(330, 1120), Vector2(1270, 1120), Vector2(800, 930), Vector2(420, 720), Vector2(1180, 720)]
-	var remaining := budget
-	var count := 0
-	var required_by_depth := {1: ["blade"], 2: ["hound"], 3: ["archer", "blade"], 4: ["hexer"], 5: ["captain"], 6: ["brute", "hexer"]}
-	for required_kind in Array(required_by_depth.get(number, [])):
-		var required := String(required_kind)
-		enemies.append(_make_enemy(required, _find_spawn(positions[(count + number) % positions.size()]), _enemy_base_hp(required)))
-		remaining -= int(costs[required])
-		count += 1
-	while remaining > 0 and count < maximum:
-		var affordable: Array[String] = []
-		for candidate in pool:
-			if int(costs[candidate]) <= remaining: affordable.append(candidate)
-		if affordable.is_empty(): break
-		var kind := affordable[rng.randi_range(0, affordable.size() - 1)]
-		enemies.append(_make_enemy(kind, _find_spawn(positions[(count + number) % positions.size()]), _enemy_base_hp(kind)))
-		remaining -= int(costs[kind])
-		count += 1
-	if enemies.is_empty(): enemies.append(_make_enemy("blade", _find_spawn(Vector2(500, 260)), 7))
+	death_pending = false
+	shortcut_unlocked = false
+	_boss_defeated = false
+	rng.seed = run_seed
+	var layout: Dictionary = FloorGeneratorScript.generate(run_seed)
+	areas.assign(Array(layout["areas"]).duplicate(true))
+	connections.assign(Array(layout["connections"]).duplicate(true))
+	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
+	base_walls.assign(Array(layout["base_walls"]))
+	walls.assign(Array(layout["walls"]))
+	bonfire_pos = Vector2(layout["bonfire_pos"])
+	_player_start = Vector2(layout["player_start"])
+	player_pos = _player_start
+	shortcut_gate = Rect2(layout["shortcut_gate"])
+	shortcut_unlock_pos = Vector2(layout["shortcut_unlock_pos"])
+	shortcut_start_pos = Vector2(layout["shortcut_start_pos"])
+	discovered_cells.clear()
+	visible_cells.clear()
+	_visibility_anchor = Vector2.INF
+	_respawn_enemies()
+	_build_navigation()
+	run_active = true
+	_update_exploration(true)
+	message = "The Waystone burns behind you. Time is frozen."
+	last_timeline.clear()
+	changed.emit()
+	message_changed.emit(message)
+
+func abandon_run() -> void:
+	run_active = false
+	death_pending = false
+	upgrade_pending = false
+	player_action = _idle_action()
+	last_timeline.clear()
+	changed.emit()
 
 func _enemy_base_hp(kind: String) -> int:
 	return {"knife": 4, "blade": 7, "hound": 6, "archer": 5, "shield": 10, "polearm": 12, "hexer": 7, "brute": 16, "captain": 12, "warden": 26}.get(kind, 7)
 
-func _find_spawn(preferred: Vector2) -> Vector2:
-	var candidates := [preferred, preferred + Vector2(130, 0), preferred + Vector2(-130, 0), preferred + Vector2(0, 150), Vector2(800, 260), Vector2(260, 520), Vector2(1340, 520)]
-	for candidate in candidates:
-		var blocked := false
-		for wall in walls:
-			if _circle_intersects_rect(candidate, 48.0, wall): blocked = true
-		if not blocked and candidate.distance_to(player_pos) > 250.0: return candidate
-	return Vector2(800, 180)
-
-func _make_enemy(kind: String, position: Vector2, hp: int) -> Dictionary:
+func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var posture_max := _enemy_posture_max(kind)
 	var enemy := {
 		"id": _next_enemy_id,
 		"kind": kind,
 		"pos": position,
+		"spawn_pos": position,
+		"area_id": area_id,
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
@@ -154,9 +204,28 @@ func _make_enemy(kind: String, position: Vector2, hp: int) -> Dictionary:
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
 		"action": _idle_action(),
+		"awareness": "idle",
+		"alert_remaining": 0.0,
+		"suspicious_remaining": 0.0,
+		"last_known_player": position,
+		"heard_sound_sequence": 0,
 	}
 	_next_enemy_id += 1
 	return enemy
+
+func _respawn_enemies() -> void:
+	enemies.clear()
+	projectiles.clear()
+	hazards.clear()
+	_next_enemy_id = 1
+	for area_key in encounter_templates:
+		var area_id := int(area_key)
+		for template in Array(encounter_templates[area_key]):
+			var kind := String(template["kind"])
+			if kind == "warden" and _boss_defeated: continue
+			var enemy := _make_enemy(kind, Vector2(template["pos"]), _enemy_base_hp(kind), area_id)
+			enemy["heard_sound_sequence"] = _sound_sequence
+			enemies.append(enemy)
 
 func _enemy_posture_max(kind: String) -> float:
 	return {"knife": 2.0, "hound": 3.0, "archer": 3.0, "hexer": 3.0, "blade": 5.0, "captain": 6.0, "shield": 8.0, "polearm": 8.0, "brute": 14.0, "warden": 18.0}.get(kind, 5.0)
@@ -165,7 +234,8 @@ func select_loadout(choice: String) -> bool:
 	if not ["duelist", "guardian", "reaver"].has(choice):
 		return false
 	loadout_id = choice
-	restart()
+	if run_active: start_run(loadout_id, progression_mode, run_seed)
+	else: _apply_loadout()
 	return true
 
 func _apply_loadout() -> void:
@@ -220,10 +290,10 @@ func _idle_action() -> Dictionary:
 	}
 
 func is_player_ready() -> bool:
-	return String(player_action["kind"]) == "idle" and player_hp > 0
+	return run_active and not death_pending and not upgrade_pending and String(player_action["kind"]) == "idle" and player_hp > 0
 
 func request_move(direction: Vector2, distance: float = MOVE_RANGE) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01:
 		return false
 	var travel := clampf(distance, 4.0, MOVE_RANGE)
 	var normalized := direction.normalized()
@@ -231,6 +301,7 @@ func request_move(direction: Vector2, distance: float = MOVE_RANGE) -> bool:
 	player_action = _action("move", travel / player_move_speed, normalized)
 	player_action["distance"] = travel
 	player_action["speed"] = player_move_speed
+	_emit_sound(player_pos, 130.0)
 	_set_message("You commit to a step.")
 	_simulate_until_ready()
 	return true
@@ -240,7 +311,7 @@ func request_move_to(target: Vector2) -> bool:
 	return request_move(delta, minf(delta.length(), MOVE_RANGE))
 
 func request_attack(target: Vector2) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete:
+	if not is_player_ready() or trial_complete:
 		return false
 	var direction := target - player_pos
 	if direction.length_squared() < 0.01:
@@ -250,6 +321,7 @@ func request_attack(target: Vector2) -> bool:
 	player_action["damage_min"] = player_damage_min
 	player_action["damage_max"] = player_damage_max
 	player_action["posture_damage"] = player_attack_posture
+	_emit_sound(player_pos, 350.0)
 	_set_message("You commit to the %s." % AttackGeometryScript.label(player_attack_technique).to_lower())
 	_simulate_until_ready()
 	return true
@@ -259,50 +331,52 @@ func request_skill(direction: Vector2) -> bool:
 	return request_sweeping_cut(direction)
 
 func request_sweeping_cut(direction: Vector2) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete or upgrade_pending or skill_cooldown > 0.0001 or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01:
 		return false
 	player_facing = direction.normalized()
 	player_action = _melee_action(1.32, 0.44, 0.84, 158.0, 3, player_facing, "broad_sweep", "sweep")
 	player_action["posture_damage"] = 5.0
 	player_action["damage_min"] = 2
 	player_action["damage_max"] = 3
-	skill_cooldown = maxf(2.0, SWEEP_COOLDOWN - upgrades.count("relentless"))
+	skill_cooldown = SWEEP_COOLDOWN * _skill_cooldown_multiplier
+	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
 	_simulate_until_ready()
 	return true
 
 func request_dodge(direction: Vector2) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete or dodge_cooldown > 0.0001 or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or dodge_cooldown > 0.0001 or direction.length_squared() < 0.01:
 		return false
 	player_facing = direction.normalized()
 	player_action = _action("dodge", 0.66, player_facing)
 	player_action["speed"] = DODGE_SPEED
-	dodge_cooldown = DODGE_COOLDOWN
+	dodge_cooldown = DODGE_COOLDOWN * _defense_cooldown_multiplier
+	_emit_sound(player_pos, 270.0)
 	_set_message("You commit to a dodge.")
 	_simulate_until_ready()
 	return true
 
 func request_block(direction: Vector2) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete or block_cooldown > 0.0001 or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or block_cooldown > 0.0001 or direction.length_squared() < 0.01:
 		return false
 	player_facing = direction.normalized()
 	player_action = _action("block", 1.10, player_facing)
 	player_action["startup"] = 0.16
 	player_action["active_end"] = 0.78
-	block_cooldown = BLOCK_COOLDOWN
+	block_cooldown = BLOCK_COOLDOWN * _defense_cooldown_multiplier
 	_set_message("You commit to a directional guard.")
 	_simulate_until_ready()
 	return true
 
 func request_endure(direction: Vector2) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete or endure_cooldown > 0.0001:
+	if not is_player_ready() or trial_complete or endure_cooldown > 0.0001:
 		return false
 	if direction.length_squared() > 0.01:
 		player_facing = direction.normalized()
 	player_action = _action("endure", 1.05, player_facing)
 	player_action["startup"] = 0.14
 	player_action["active_end"] = 0.72
-	endure_cooldown = ENDURE_COOLDOWN
+	endure_cooldown = ENDURE_COOLDOWN * _defense_cooldown_multiplier
 	_set_message("You brace to turn pain into strength.")
 	_simulate_until_ready()
 	return true
@@ -318,72 +392,139 @@ func request_potion() -> bool:
 		return false
 	potions -= 1
 	player_action = _action("potion", 0.72, Vector2.ZERO)
+	_emit_sound(player_pos, 90.0)
 	_set_message("You uncork the last restorative.")
 	_simulate_until_ready()
 	return true
 
 func request_wait(duration: float = 0.50) -> bool:
-	if not is_player_ready() or wave_clear or trial_complete:
+	if not is_player_ready() or trial_complete:
 		return false
+	if interaction_label() != "WAIT": return request_context_action()
 	player_action = _action("wait", clampf(duration, 0.1, 1.0), Vector2.ZERO)
 	_set_message("You deliberately surrender time.")
 	_simulate_until_ready()
 	return true
 
-func advance_wave() -> bool:
-	if not is_player_ready() or not wave_clear or trial_complete or upgrade_pending:
-		return false
-	if wave >= ROOM_COUNT:
-		trial_complete = true
-		_set_message("Expedition complete. The Warden is defeated.")
-		changed.emit()
-		return true
-	wave += 1
-	wave_clear = false
-	player_hp = mini(player_max_hp, player_hp + 2)
-	potions = 1
-	player_pos = Vector2(800.0, 1900.0)
-	player_facing = Vector2.UP
-	build_expedition_room()
-	_set_message("Room %d begins." % wave)
+func interaction_label() -> String:
+	if not run_active or death_pending: return "WAIT"
+	if not shortcut_unlocked and player_pos.distance_to(shortcut_unlock_pos) <= 115.0: return "UNLOCK"
+	if player_pos.distance_to(bonfire_pos) <= 125.0: return "REST"
+	return "WAIT"
+
+func request_context_action() -> bool:
+	if not is_player_ready(): return false
+	match interaction_label():
+		"REST": return rest_at_waystone()
+		"UNLOCK": return unlock_shortcut()
+		_: return request_wait()
+
+func rest_at_waystone() -> bool:
+	if player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+	_restore_at_waystone()
+	_respawn_enemies()
+	_update_exploration(true)
+	if progression_mode == "bonfire" and carried_xp >= next_upgrade_cost(): _roll_upgrade_choices("bonfire")
+	else: _set_message("The Waystone restores you. The world stirs again.")
 	changed.emit()
 	return true
 
+func unlock_shortcut() -> bool:
+	if shortcut_unlocked or player_pos.distance_to(shortcut_unlock_pos) > 115.0 or not is_player_ready(): return false
+	shortcut_unlocked = true
+	walls.assign(base_walls)
+	for connection in connections:
+		if bool(connection.get("shortcut", false)): connection["unlocked"] = true
+	_build_navigation()
+	_update_exploration(true)
+	_set_message("The sealed way opens back to the Waystone.")
+	changed.emit()
+	return true
+
+func return_after_death() -> bool:
+	if not death_pending: return false
+	death_pending = false
+	_restore_at_waystone()
+	player_pos = _player_start
+	player_facing = (bonfire_pos - player_pos).normalized()
+	_respawn_enemies()
+	_update_exploration(true)
+	_set_message("You reform at the Waystone. Reclaim your lost XP.")
+	changed.emit()
+	return true
+
+func _restore_at_waystone() -> void:
+	player_hp = player_max_hp
+	potions = 1
+	dodge_cooldown = 0.0
+	block_cooldown = 0.0
+	endure_cooldown = 0.0
+	skill_cooldown = 0.0
+	strength_remaining = 0.0
+	player_action = _idle_action()
+	projectiles.clear()
+	hazards.clear()
+	effects.clear()
+
 func choose_upgrade(choice: String) -> bool:
-	if not upgrade_pending or not upgrade_choices.has(choice): return false
+	if not upgrade_pending or not upgrade_choices.has(choice) or carried_xp < next_upgrade_cost(): return false
+	var cost := next_upgrade_cost()
+	carried_xp -= cost
 	upgrades.append(choice)
+	upgrade_ranks[choice] = int(upgrade_ranks.get(choice, 0)) + 1
+	upgrade_count += 1
 	match choice:
 		"keen_edge": player_damage_max += 1
 		"vitality":
 			player_max_hp += 2
 			player_hp += 2
-		"quick_hands":
-			player_attack_duration = maxf(player_attack_active_end + 0.16, player_attack_duration - 0.12)
-		"long_blade": pass
-		"relentless": pass
-		"restoration": player_hp = mini(player_max_hp, player_hp + 5)
+		"quick_hands": player_attack_duration = maxf(player_attack_active_end + 0.16, player_attack_duration - 0.10)
+		"long_reach": player_attack_reach += 14.0
+		"footwork": player_move_speed *= 1.05
+		"readiness":
+			_defense_cooldown_multiplier *= 0.92
+			_skill_cooldown_multiplier *= 0.92
 	upgrade_pending = false
 	upgrade_choices.clear()
-	_set_message("Upgrade gained: %s. Enter the next room." % upgrade_name(choice))
+	var context := upgrade_context
+	upgrade_context = ""
+	_set_message("Upgrade gained: %s." % upgrade_name(choice))
+	if carried_xp >= next_upgrade_cost() and (progression_mode == "auto" or context == "bonfire"):
+		_roll_upgrade_choices(context if context != "" else progression_mode)
 	changed.emit()
 	return true
 
+func leave_upgrade_menu() -> bool:
+	if not upgrade_pending or upgrade_context != "bonfire": return false
+	upgrade_pending = false
+	upgrade_choices.clear()
+	upgrade_context = ""
+	_set_message("You leave the XP unspent.")
+	changed.emit()
+	return true
+
+func next_upgrade_cost() -> int:
+	return 6 + 4 * upgrade_count
+
 func upgrade_name(id: String) -> String:
-	return {"keen_edge": "Keen Edge", "vitality": "Vitality", "quick_hands": "Quick Hands", "long_blade": "Long Blade", "relentless": "Relentless", "restoration": "Restoration"}.get(id, id.capitalize())
+	return {"keen_edge": "Keen Edge", "vitality": "Vitality", "quick_hands": "Quick Hands", "long_reach": "Long Reach", "footwork": "Footwork", "readiness": "Readiness"}.get(id, id.capitalize())
 
 func upgrade_description(id: String) -> String:
-	return {"keen_edge": "+1 maximum damage", "vitality": "+2 maximum health", "quick_hands": "Shorter attack recovery", "long_blade": "+22 attack reach", "relentless": "Sweep cools faster", "restoration": "Recover 5 health"}.get(id, "")
+	return {"keen_edge": "+1 maximum damage", "vitality": "+2 maximum health", "quick_hands": "Shorter attack recovery", "long_reach": "+14 attack reach", "footwork": "+5% movement speed", "readiness": "Shorter cooldowns"}.get(id, "")
 
-func _roll_upgrade_choices() -> void:
-	var pool: Array[String] = ["keen_edge", "vitality", "quick_hands", "long_blade", "restoration"]
-	if loadout_id == "duelist": pool.append("relentless")
+func _roll_upgrade_choices(context: String = "auto") -> void:
+	var pool: Array[String] = ["keen_edge", "vitality", "quick_hands", "long_reach", "footwork", "readiness"]
+	for index in range(pool.size() - 1, -1, -1):
+		if int(upgrade_ranks.get(pool[index], 0)) >= 3: pool.remove_at(index)
+	if pool.is_empty(): return
 	for index in range(pool.size() - 1, 0, -1):
 		var swap_index := rng.randi_range(0, index)
 		var temporary := pool[index]
 		pool[index] = pool[swap_index]
 		pool[swap_index] = temporary
-	upgrade_choices.assign(pool.slice(0, 3))
+	upgrade_choices.assign(pool.slice(0, mini(3, pool.size())))
 	upgrade_pending = true
+	upgrade_context = context
 
 func _action(kind: String, duration: float, direction: Vector2) -> Dictionary:
 	var result := _idle_action()
@@ -417,10 +558,21 @@ func _tick(dt: float) -> void:
 	strength_remaining = maxf(0.0, strength_remaining - dt)
 	_update_effects(dt)
 	_update_player(dt)
+	_update_exploration()
+	_try_recover_xp()
 	_update_enemies(dt)
 	_update_projectiles(dt)
 	_update_hazards(dt)
 	_remove_dead_enemies()
+
+func _try_recover_xp() -> void:
+	if bool(lost_xp.get("active", false)) and player_pos.distance_to(Vector2(lost_xp.get("pos", Vector2.ZERO))) <= 58.0:
+		var amount := int(lost_xp.get("amount", 0))
+		carried_xp += amount
+		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+		_add_effect("recover", player_pos, amount)
+		_set_message("Recovered %d XP." % amount)
+		if progression_mode == "auto" and carried_xp >= next_upgrade_cost(): _roll_upgrade_choices("auto")
 
 func _update_player(dt: float) -> void:
 	var kind := String(player_action["kind"])
@@ -457,7 +609,6 @@ func _update_player(dt: float) -> void:
 func _resolve_player_attack_tick(elapsed: float) -> void:
 	var is_sweep := String(player_action["kind"]) == "sweep"
 	var sampled_action := player_action.duplicate()
-	if upgrades.has("long_blade"): sampled_action["reach"] = float(sampled_action["reach"]) + 22.0
 	var sample: Dictionary = AttackGeometryScript.pose(sampled_action, player_pos, player_facing, walls)
 	if not bool(sample.get("multi", false)) and bool(player_action.get("hit_done", false)): return
 	var hit_ids: Array = player_action["hit_ids"]
@@ -472,6 +623,9 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 	if not bool(sample.get("multi", false)) and not contacts.is_empty(): player_action["hit_done"] = true
 	for contact in contacts:
 		var enemy: Dictionary = contact["enemy"]
+		enemy["awareness"] = "alerted"
+		enemy["alert_remaining"] = 3.0
+		enemy["last_known_player"] = player_pos
 		hit_ids.append(int(enemy["id"]))
 		var hit_point := Vector2(contact["point"])
 		if _enemy_blocks_attack(enemy):
@@ -520,17 +674,66 @@ func _break_posture(enemy: Dictionary) -> void:
 	_add_effect("posture_break", Vector2(enemy["pos"]))
 	_set_message("The %s loses its footing." % kind)
 
+func _emit_sound(position: Vector2, radius: float) -> void:
+	_sound_sequence += 1
+	last_sound = {"sequence": _sound_sequence, "pos": position, "radius": radius}
+
+func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
+	var enemy_pos := Vector2(enemy["pos"])
+	var offset := player_pos - enemy_pos
+	var distance := offset.length()
+	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
+	var vision_range := 620.0 if String(enemy["kind"]) in ["archer", "hexer", "warden"] else SIGHT_RANGE
+	var within_cone := distance <= 105.0 or (distance <= vision_range and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
+	var sees_player := within_cone and _has_line_of_sight(enemy_pos, player_pos)
+	if sees_player:
+		enemy["awareness"] = "alerted"
+		enemy["alert_remaining"] = 3.0
+		enemy["last_known_player"] = player_pos
+		return
+	var sound_sequence := int(last_sound.get("sequence", 0))
+	if sound_sequence > int(enemy.get("heard_sound_sequence", 0)):
+		enemy["heard_sound_sequence"] = sound_sequence
+		if enemy_pos.distance_to(Vector2(last_sound.get("pos", player_pos))) <= float(last_sound.get("radius", 0.0)):
+			enemy["last_known_player"] = Vector2(last_sound["pos"])
+			if String(enemy.get("awareness", "idle")) != "alerted":
+				enemy["awareness"] = "suspicious"
+				enemy["suspicious_remaining"] = 2.6
+	if String(enemy.get("awareness", "idle")) == "alerted":
+		enemy["alert_remaining"] = maxf(0.0, float(enemy.get("alert_remaining", 0.0)) - dt)
+		if float(enemy["alert_remaining"]) <= 0.0:
+			enemy["awareness"] = "suspicious"
+			enemy["suspicious_remaining"] = 2.6
+	elif String(enemy.get("awareness", "idle")) == "suspicious":
+		enemy["suspicious_remaining"] = maxf(0.0, float(enemy.get("suspicious_remaining", 0.0)) - dt)
+		if float(enemy["suspicious_remaining"]) <= 0.0:
+			enemy["awareness"] = "idle"
+		enemy["action"] = _idle_action()
+
 func _update_enemies(dt: float) -> void:
 	for index in range(enemies.size()):
 		var enemy := enemies[index]
 		if int(enemy["hp"]) <= 0:
 			continue
+		_update_enemy_awareness(enemy, dt)
 		enemy["posture_recovery_delay"] = maxf(0.0, float(enemy.get("posture_recovery_delay", 0.0)) - dt)
 		if float(enemy["posture_recovery_delay"]) <= 0.0 and String(Dictionary(enemy["action"])["kind"]) == "idle":
 			enemy["posture"] = minf(float(enemy["posture_max"]), float(enemy["posture"]) + dt * 1.8)
 		var action: Dictionary = enemy["action"]
 		if String(action["kind"]) == "idle":
-			_choose_enemy_action(enemy)
+			var awareness := String(enemy.get("awareness", "idle"))
+			if awareness == "idle":
+				enemies[index] = enemy
+				continue
+			elif awareness == "suspicious":
+				var target := Vector2(enemy.get("last_known_player", enemy["spawn_pos"]))
+				if Vector2(enemy["pos"]).distance_to(target) > 45.0:
+					enemy["action"] = _action("move", 0.40, _navigation_direction(enemy, target))
+				else:
+					enemy["facing"] = (target - Vector2(enemy["pos"])).normalized()
+					enemies[index] = enemy
+					continue
+			else: _choose_enemy_action(enemy)
 			action = enemy["action"]
 		action["elapsed"] = float(action["elapsed"]) + dt
 		var kind := String(action["kind"])
@@ -637,12 +840,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
 	var speed: float = float({"knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 135.0, "shield": 120.0, "hound": 245.0, "brute": 82.0, "hexer": 125.0, "captain": 180.0, "warden": 105.0}.get(kind, 135.0))
-	if kind != "captain" and _captain_alive(): speed *= 1.14
+	if kind != "captain" and _captain_near(enemy): speed *= 1.14
 	return speed
 
-func _captain_alive() -> bool:
+func _captain_near(subject: Dictionary) -> bool:
 	for enemy in enemies:
-		if String(enemy["kind"]) == "captain" and int(enemy["hp"]) > 0: return true
+		if String(enemy["kind"]) == "captain" and int(enemy["hp"]) > 0 and Vector2(enemy["pos"]).distance_to(Vector2(subject["pos"])) <= 720.0: return true
 	return false
 
 func _charge_action(duration: float, startup: float, active_end: float, speed: float, damage: int, direction: Vector2) -> Dictionary:
@@ -740,8 +943,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		_add_effect("endure", impact, endured_damage)
 		_set_message("You take the hit and gain Strength for 5 seconds.")
 		if player_hp <= 0:
-			player_action = _idle_action()
-			_set_message("You have fallen. Use Reset to try again.")
+			_begin_death()
 		return
 	if _is_evasive():
 		_add_effect("evade", impact)
@@ -751,8 +953,21 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	_add_effect("hurt", impact, damage)
 	_set_message("The %s hits during your commitment." % source_name)
 	if player_hp <= 0:
-		player_action = _idle_action()
-		_set_message("You have fallen. Use Reset to begin a new expedition.")
+		_begin_death()
+
+func _begin_death() -> void:
+	if death_pending: return
+	if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+	if carried_xp > 0: lost_xp = {"active": true, "amount": carried_xp, "pos": player_pos}
+	carried_xp = 0
+	death_pending = true
+	player_action = _idle_action()
+	projectiles.clear()
+	hazards.clear()
+	upgrade_pending = false
+	upgrade_choices.clear()
+	upgrade_context = ""
+	_set_message("You have fallen. Your unspent XP remains where you died.")
 
 func _counter_source(source_id: int) -> void:
 	for enemy in enemies:
@@ -807,25 +1022,41 @@ func _add_effect(kind: String, position: Vector2, amount: int = 0) -> void:
 	effects.append({"kind": kind, "pos": position, "elapsed": 0.0, "duration": duration, "amount": amount})
 
 func _remove_dead_enemies() -> void:
-	var had_enemies := not enemies.is_empty()
 	var living: Array[Dictionary] = []
+	var defeated_areas: Dictionary = {}
 	for enemy in enemies:
 		if int(enemy["hp"]) > 0:
 			living.append(enemy)
 		else:
 			enemies_defeated += 1
-			_set_message("The %s falls." % String(enemy["kind"]))
+			var kind := String(enemy["kind"])
+			carried_xp += _xp_for_enemy(kind)
+			defeated_areas[int(enemy.get("area_id", 0))] = true
+			if kind == "warden":
+				_boss_defeated = true
+				trial_complete = true
+				_set_message("The Warden falls. The expedition is complete.")
+			else: _set_message("The %s falls. XP gained." % kind)
 	enemies = living
-	if had_enemies and enemies.is_empty() and player_hp > 0:
-		wave_clear = true
-		projectiles.clear()
-		hazards.clear()
-		rooms_cleared = maxi(rooms_cleared, wave)
-		if wave >= ROOM_COUNT:
-			_set_message("The Warden falls. Tap COMPLETE.")
-		else:
-			_roll_upgrade_choices()
-			_set_message("Room %d clear. Choose an upgrade." % wave)
+	for area_id in defeated_areas:
+		var still_alive := false
+		for enemy in enemies:
+			if int(enemy.get("area_id", -1)) == int(area_id): still_alive = true
+		if not still_alive and int(area_id) > 0:
+			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
+	if progression_mode == "auto" and not upgrade_pending and carried_xp >= next_upgrade_cost() and not death_pending:
+		_roll_upgrade_choices("auto")
+
+func _xp_for_enemy(kind: String) -> int:
+	return int({"knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "brute": 5, "captain": 5, "warden": 12}.get(kind, 2))
+
+func _cleared_area_count() -> int:
+	var occupied: Dictionary = {}
+	for enemy in enemies: occupied[int(enemy.get("area_id", -1))] = true
+	var count := 0
+	for area_id in range(1, 7):
+		if not occupied.has(area_id): count += 1
+	return count
 
 func _build_navigation() -> void:
 	var columns := int(ceil(WORLD_SIZE.x / NAV_CELL))
@@ -931,6 +1162,48 @@ func _has_line_of_sight(from: Vector2, to: Vector2) -> bool:
 			return false
 	return true
 
+func _update_exploration(force: bool = false) -> void:
+	if not run_active: return
+	if not force and _visibility_anchor.is_finite() and _visibility_anchor.distance_to(player_pos) < VISIBILITY_CELL * 0.45: return
+	_visibility_anchor = player_pos
+	visible_cells.clear()
+	var center_cell := _visibility_cell(player_pos)
+	var radius_cells := int(ceil(SIGHT_RANGE / VISIBILITY_CELL))
+	for x in range(center_cell.x - radius_cells, center_cell.x + radius_cells + 1):
+		for y in range(center_cell.y - radius_cells, center_cell.y + radius_cells + 1):
+			var cell := Vector2i(x, y)
+			var point := (Vector2(cell) + Vector2(0.5, 0.5)) * VISIBILITY_CELL
+			if point.distance_to(player_pos) > SIGHT_RANGE or not _point_on_floor(point): continue
+			if _has_line_of_sight(player_pos, point):
+				visible_cells[cell] = true
+				discovered_cells[cell] = true
+	current_area_id = 0
+	for area in areas:
+		if Rect2(area["rect"]).has_point(player_pos): current_area_id = int(area["id"])
+		if _rect_has_discovered_cell(Rect2(area["rect"])): area["discovered"] = true
+
+func _visibility_cell(position: Vector2) -> Vector2i:
+	return Vector2i(int(floor(position.x / VISIBILITY_CELL)), int(floor(position.y / VISIBILITY_CELL)))
+
+func is_visible(position: Vector2, cells: Dictionary = visible_cells) -> bool:
+	return cells.has(_visibility_cell(position))
+
+func is_discovered(position: Vector2, cells: Dictionary = discovered_cells) -> bool:
+	return cells.has(_visibility_cell(position))
+
+func _point_on_floor(point: Vector2) -> bool:
+	for area in areas:
+		if Rect2(area["rect"]).has_point(point): return true
+	for connection in connections:
+		if Rect2(connection["corridor"]).has_point(point): return true
+	return false
+
+func _rect_has_discovered_cell(rect: Rect2) -> bool:
+	for cell in discovered_cells:
+		var point := (Vector2(cell) + Vector2(0.5, 0.5)) * VISIBILITY_CELL
+		if rect.has_point(point): return true
+	return false
+
 func _within_arc(facing: Vector2, offset: Vector2, half_angle: float) -> bool:
 	if offset.length_squared() < 0.01:
 		return true
@@ -964,8 +1237,6 @@ func snapshot() -> Dictionary:
 		"skill_cooldown": skill_cooldown,
 		"strength_remaining": strength_remaining,
 		"potions": potions,
-		"wave": wave,
-		"wave_clear": wave_clear,
 		"trial_complete": trial_complete,
 		"run_seed": run_seed,
 		"upgrade_pending": upgrade_pending,
@@ -975,19 +1246,40 @@ func snapshot() -> Dictionary:
 		"enemies_defeated": enemies_defeated,
 		"damage_dealt": damage_dealt,
 		"message": message,
+		"run_active": run_active,
+		"progression_mode": progression_mode,
+		"map_presentation": map_presentation,
+		"areas": areas.duplicate(true),
+		"connections": connections.duplicate(true),
+		"shortcut_unlocked": shortcut_unlocked,
+		"bonfire_pos": bonfire_pos,
+		"shortcut_unlock_pos": shortcut_unlock_pos,
+		"shortcut_start_pos": shortcut_start_pos,
+		"visible_cells": visible_cells.duplicate(),
+		"discovered_cells": discovered_cells.duplicate(),
+		"current_area_id": current_area_id,
+		"carried_xp": carried_xp,
+		"lost_xp": lost_xp.duplicate(true),
+		"upgrade_count": upgrade_count,
+		"upgrade_ranks": upgrade_ranks.duplicate(true),
+		"upgrade_context": upgrade_context,
+		"death_pending": death_pending,
 	}
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 4
+	payload["save_version"] = 5
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
 	payload["player_attack_active_end"] = player_attack_active_end
 	payload["player_damage_min"] = player_damage_min
 	payload["player_damage_max"] = player_damage_max
+	payload["player_attack_reach"] = player_attack_reach
+	payload["defense_cooldown_multiplier"] = _defense_cooldown_multiplier
+	payload["skill_cooldown_multiplier"] = _skill_cooldown_multiplier
 	payload["player_facing"] = player_facing
 	payload["perfect_dodges"] = perfect_dodges
 	payload["counter_hits"] = counter_hits
@@ -1005,10 +1297,20 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if not [1, 2, 3, 4].has(save_version): return false
+	if save_version < 1 or save_version > 5: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
-	_apply_loadout()
-	player_pos = Vector2(payload.get("player_pos", Vector2(800, 1900)))
+	map_presentation = String(payload.get("map_presentation", "full"))
+	if save_version < 5:
+		_apply_loadout()
+		run_active = false
+		progression_mode = "auto"
+		message = "Choose a class and progression mode for the connected expedition."
+		return true
+	progression_mode = String(payload.get("progression_mode", "auto"))
+	run_seed = int(payload.get("run_seed", run_seed))
+	start_run(loadout_id, progression_mode, run_seed)
+	run_active = bool(payload.get("run_active", true))
+	player_pos = Vector2(payload.get("player_pos", player_pos))
 	player_facing = Vector2(payload.get("player_facing", Vector2.UP))
 	player_hp = int(payload.get("player_hp", player_max_hp))
 	player_max_hp = int(payload.get("player_max_hp", player_max_hp))
@@ -1018,41 +1320,39 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_attack_active_end = float(payload.get("player_attack_active_end", player_attack_active_end))
 	player_damage_min = int(payload.get("player_damage_min", player_damage_min))
 	player_damage_max = int(payload.get("player_damage_max", player_damage_max))
-	player_action = Dictionary(payload.get("player_action", _idle_action())).duplicate(true)
-	if String(player_action.get("kind", "idle")) == "lunge" or (save_version < 4 and String(player_action.get("kind", "idle")) in ["attack", "sweep", "melee"]): player_action = _idle_action()
-	enemies.assign(Array(payload.get("enemies", [])))
-	walls.assign(Array(payload.get("walls", [])))
-	projectiles.assign(Array(payload.get("projectiles", [])))
-	hazards.assign(Array(payload.get("hazards", [])))
-	effects.assign(Array(payload.get("effects", [])))
-	if save_version < 3:
-		var room_scale := Vector2(WORLD_SIZE.x / 1000.0, WORLD_SIZE.y / 1400.0)
-		player_pos *= room_scale
-		walls = _room_walls(int(payload.get("wave", wave)))
-		projectiles.clear()
-		hazards.clear()
-		effects.clear()
-		player_action = _idle_action()
-		for enemy in enemies:
-			enemy["pos"] = Vector2(enemy["pos"]) * room_scale
-			enemy["action"] = _idle_action()
-	var shield_free: Array[Dictionary] = []
-	for enemy in enemies:
-		if String(enemy.get("kind", "")) != "shield": shield_free.append(enemy)
-	enemies = shield_free
+	player_attack_reach = float(payload.get("player_attack_reach", player_attack_reach))
+	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
+	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
+	player_action = _idle_action()
+	enemies.assign(Array(payload.get("enemies", enemies)).duplicate(true))
+	projectiles.assign(Array(payload.get("projectiles", [])).duplicate(true))
+	hazards.assign(Array(payload.get("hazards", [])).duplicate(true))
+	effects.assign(Array(payload.get("effects", [])).duplicate(true))
 	dodge_cooldown = float(payload.get("dodge_cooldown", 0.0))
 	block_cooldown = float(payload.get("block_cooldown", 0.0))
 	endure_cooldown = float(payload.get("endure_cooldown", 0.0))
-	skill_cooldown = float(payload.get("skill_cooldown", payload.get("lunge_cooldown", 0.0)))
+	skill_cooldown = float(payload.get("skill_cooldown", 0.0))
 	strength_remaining = float(payload.get("strength_remaining", 0.0))
 	potions = int(payload.get("potions", 1))
-	wave = int(payload.get("wave", 1))
-	wave_clear = bool(payload.get("wave_clear", false))
 	trial_complete = bool(payload.get("trial_complete", false))
-	run_seed = int(payload.get("run_seed", run_seed))
+	_boss_defeated = trial_complete
 	upgrade_pending = bool(payload.get("upgrade_pending", false))
 	upgrade_choices.assign(Array(payload.get("upgrade_choices", [])))
+	upgrade_context = String(payload.get("upgrade_context", ""))
 	upgrades.assign(Array(payload.get("upgrades", [])))
+	upgrade_count = int(payload.get("upgrade_count", upgrades.size()))
+	upgrade_ranks = Dictionary(payload.get("upgrade_ranks", {})).duplicate(true)
+	carried_xp = int(payload.get("carried_xp", 0))
+	lost_xp = Dictionary(payload.get("lost_xp", {"active": false, "amount": 0, "pos": Vector2.ZERO})).duplicate(true)
+	shortcut_unlocked = bool(payload.get("shortcut_unlocked", false))
+	if shortcut_unlocked:
+		walls.assign(base_walls)
+		for connection in connections:
+			if bool(connection.get("shortcut", false)): connection["unlocked"] = true
+	visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()
+	discovered_cells = Dictionary(payload.get("discovered_cells", {})).duplicate()
+	current_area_id = int(payload.get("current_area_id", 0))
+	death_pending = bool(payload.get("death_pending", false))
 	rooms_cleared = int(payload.get("rooms_cleared", 0))
 	enemies_defeated = int(payload.get("enemies_defeated", 0))
 	damage_dealt = int(payload.get("damage_dealt", 0))
@@ -1065,50 +1365,16 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	rng.state = int(payload.get("rng_state", rng.state))
 	_next_enemy_id = 1
 	for enemy in enemies:
-		if save_version < 4 and String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "melee": enemy["action"] = _idle_action()
+		enemy["action"] = _idle_action()
 		_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)
-		if not enemy.has("posture_max"):
-			enemy["posture_max"] = _enemy_posture_max(String(enemy["kind"]))
-			enemy["posture"] = float(enemy["posture_max"])
-			enemy["posture_recovery_delay"] = 0.0
 	_build_navigation()
+	_visibility_anchor = Vector2.INF
+	_update_exploration(true)
 	last_timeline.clear()
 	return true
 
 func restart() -> void:
-	_apply_loadout()
-	player_pos = Vector2(800.0, 1900.0)
-	player_facing = Vector2.UP
-	player_hp = player_max_hp
-	player_action = _idle_action()
-	dodge_cooldown = 0.0
-	block_cooldown = 0.0
-	endure_cooldown = 0.0
-	skill_cooldown = 0.0
-	strength_remaining = 0.0
-	potions = 1
-	wave = 1
-	wave_clear = false
-	trial_complete = false
-	upgrade_pending = false
-	upgrade_choices.clear()
-	upgrades.clear()
-	rooms_cleared = 0
-	enemies_defeated = 0
-	damage_dealt = 0
-	simulation_time = 0.0
-	perfect_dodges = 0
-	counter_hits = 0
-	successful_blocks = 0
-	successful_endures = 0
-	effects.clear()
-	hazards.clear()
-	rng.seed = run_seed
-	message = "Time is frozen. Choose an action."
-	last_timeline.clear()
-	build_expedition_room()
-	changed.emit()
-	message_changed.emit(message)
+	start_run(loadout_id, progression_mode, run_seed)
 
 func _set_message(text: String) -> void:
 	message = text
