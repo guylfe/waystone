@@ -3,6 +3,7 @@ extends SceneTree
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const GameBoardScript = preload("res://scripts/presentation/game_board.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 func _init() -> void:
 	test_idle_freezes_time()
@@ -31,6 +32,8 @@ func _init() -> void:
 	test_shield_front_arc()
 	test_new_enemy_roles()
 	test_progressive_expedition_rooms()
+	test_required_passages_have_generous_clearance()
+	test_overlay_map_passes_input_through()
 	test_generated_rooms_have_no_shields()
 	test_room_reward_progression()
 	test_shortcut_and_waystone_persistence()
@@ -363,6 +366,45 @@ func test_progressive_expedition_rooms() -> void:
 		var kinds: Array[String] = []
 		for enemy in state.enemies: kinds.append(String(enemy["kind"]))
 		assert(kinds.has("warden") and kinds.has("brute") and kinds.has("hexer"))
+
+func test_required_passages_have_generous_clearance() -> void:
+	# This is intentionally much wider than the player's collision radius. A
+	# generated route should remain comfortable rather than merely possible.
+	const TEST_CLEARANCE_RADIUS := 74.0
+	for seed in range(1, 501):
+		var layout: Dictionary = FloorGeneratorScript.generate(seed * 7919)
+		var areas: Array = layout["areas"]
+		var walls: Array = layout["base_walls"]
+		for connection in Array(layout["connections"]):
+			if bool(connection["shortcut"]): continue
+			var start := Vector2(areas[int(connection["from"])]["center"])
+			var finish := Vector2(areas[int(connection["to"])]["center"])
+			var steps := maxi(1, int(ceil(start.distance_to(finish) / 18.0)))
+			for step in range(steps + 1):
+				var point := start.lerp(finish, float(step) / float(steps))
+				for wall in walls:
+					assert(not _test_circle_intersects_rect(point, TEST_CLEARANCE_RADIUS, Rect2(wall)))
+
+func _test_circle_intersects_rect(center: Vector2, radius: float, rect: Rect2) -> bool:
+	var nearest := Vector2(clampf(center.x, rect.position.x, rect.end.x), clampf(center.y, rect.position.y, rect.end.y))
+	return center.distance_squared_to(nearest) < radius * radius
+
+func test_overlay_map_passes_input_through() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.visual = board.state.snapshot()
+	board.size = Vector2(720, 1280)
+	board.board_area = Rect2(0, 0, 720, 960)
+	board._update_projection()
+	board.map_open = true
+	board.state.map_presentation = "overlay"
+	board._pointer_pressed(board.board_rect.get_center())
+	assert(board.pointer_down)
+	board.pointer_down = false
+	board.state.map_presentation = "full"
+	board._pointer_pressed(board.board_rect.get_center())
+	assert(not board.pointer_down)
+	board.free()
 
 func test_generated_rooms_have_no_shields() -> void:
 	var state: RunState = RunStateScript.new()

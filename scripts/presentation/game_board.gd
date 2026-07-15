@@ -40,11 +40,14 @@ var reset_rect := Rect2()
 var view_rect := Rect2()
 var map_rect := Rect2()
 var map_mode_rect := Rect2()
+var seed_copy_rect := Rect2()
 var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var map_open := false
 var setup_loadout := "duelist"
 var setup_progression := "auto"
+var seed_input: LineEdit
+var setup_seed_error := ""
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -52,6 +55,7 @@ func _ready() -> void:
 	Input.emulate_mouse_from_touch = false
 	state = RunStateScript.new(false)
 	state.load_run()
+	_create_seed_input()
 	setup_loadout = state.loadout_id
 	setup_progression = state.progression_mode
 	visual = state.snapshot()
@@ -59,6 +63,32 @@ func _ready() -> void:
 	resized.connect(_layout)
 	_layout()
 	call_deferred("_layout")
+	_sync_setup_controls()
+
+func _create_seed_input() -> void:
+	seed_input = LineEdit.new()
+	seed_input.placeholder_text = "WORLD SEED — BLANK FOR RANDOM"
+	seed_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	seed_input.max_length = 19
+	seed_input.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	seed_input.add_theme_font_size_override("font_size", 18)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color("17272d")
+	normal.border_color = Color("718087")
+	normal.set_border_width_all(2)
+	normal.set_corner_radius_all(4)
+	var focused: StyleBoxFlat = normal.duplicate() as StyleBoxFlat
+	focused.border_color = Color("58d2cf")
+	seed_input.add_theme_stylebox_override("normal", normal)
+	seed_input.add_theme_stylebox_override("focus", focused)
+	seed_input.text_submitted.connect(_on_seed_submitted)
+	add_child(seed_input)
+
+func _on_seed_submitted(_text: String) -> void:
+	if not state.run_active: _start_run()
+
+func _sync_setup_controls() -> void:
+	if seed_input != null: seed_input.visible = not state.run_active
 
 func _layout() -> void:
 	var portrait := size.y >= size.x
@@ -106,8 +136,11 @@ func _layout() -> void:
 	var option_width := (setup_width - setup_gap) * 0.5
 	progression_rects["auto"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
 	progression_rects["bonfire"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
-	start_rect = Rect2(setup_left, setup_center_y + 98.0, setup_width, 82.0)
-	map_mode_rect = Rect2(Vector2(size.x - 142.0, 18.0), Vector2(124.0, 48.0))
+	seed_input.position = Vector2(setup_left, setup_center_y + 94.0)
+	seed_input.size = Vector2(setup_width, 58.0)
+	start_rect = Rect2(setup_left, setup_center_y + 168.0, setup_width, 78.0)
+	map_mode_rect = _map_action_rect(1)
+	seed_copy_rect = _map_action_rect(2)
 	queue_redraw()
 
 func _update_projection() -> void:
@@ -162,14 +195,24 @@ func _pointer_pressed(position: Vector2) -> void:
 				return
 		if start_rect.has_point(position): _start_run()
 		return
-	if map_rect.has_point(position):
-		if not playing: map_open = not map_open
+	if map_open and _map_close_rect().has_point(position):
+		map_open = false
 		queue_redraw()
 		return
-	if map_open:
+	if not map_open and map_rect.has_point(position):
+		if not playing:
+			map_open = true
+			state.map_presentation = "full"
+		queue_redraw()
+		return
+	if map_open and state.map_presentation == "full":
 		if map_mode_rect.has_point(position):
-			state.map_presentation = "overlay" if state.map_presentation == "full" else "full"
+			state.map_presentation = "overlay"
 			state.save_run()
+			queue_redraw()
+		elif seed_copy_rect.has_point(position):
+			DisplayServer.clipboard_set(str(state.run_seed))
+			state.message = "Seed %d copied." % state.run_seed
 			queue_redraw()
 		return
 	if reset_rect.has_point(position):
@@ -249,7 +292,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		map_open = false
 		queue_redraw()
 		return
-	if map_open or not state.run_active: return
+	if (map_open and state.map_presentation == "full") or not state.run_active: return
 	if state.death_pending:
 		if event.keycode in [KEY_ENTER, KEY_SPACE]: state.return_after_death()
 		return
@@ -345,15 +388,27 @@ func _restart() -> void:
 	held_direction = Vector2.ZERO
 	timeline.clear()
 	visual = state.snapshot()
+	_sync_setup_controls()
 	queue_redraw()
 
 func _start_run() -> void:
-	state.start_run(setup_loadout, setup_progression)
+	var entered_seed := seed_input.text.strip_edges()
+	var chosen_seed := -1
+	if entered_seed != "":
+		if not entered_seed.is_valid_int() or entered_seed.begins_with("-"):
+			setup_seed_error = "Enter a positive whole number, or leave this blank."
+			queue_redraw()
+			return
+		chosen_seed = int(entered_seed)
+	setup_seed_error = ""
+	seed_input.release_focus()
+	state.start_run(setup_loadout, setup_progression, chosen_seed)
 	map_open = false
 	selected_action = ""
 	timeline.clear()
 	visual = state.snapshot()
 	state.save_run()
+	_sync_setup_controls()
 	queue_redraw()
 
 func _select_loadout(choice: String) -> void:
@@ -382,6 +437,7 @@ func _defense_cooldown() -> float:
 
 func _on_state_changed() -> void:
 	state.save_run()
+	_sync_setup_controls()
 	if not playing:
 		visual = state.snapshot()
 	queue_redraw()
@@ -805,6 +861,8 @@ func _draw_setup() -> void:
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
+	if setup_seed_error != "":
+		draw_string(ThemeDB.fallback_font, Vector2(start_rect.position.x, start_rect.end.y + 24.0), setup_seed_error, HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(12, int(body_font * 0.8)), Color("e46c63"))
 
 func _setup_class_rect(choice: String) -> Rect2:
 	var choices := ["duelist", "guardian", "reaver"]
@@ -824,9 +882,10 @@ func _draw_death_overlay() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y + 40.0), "Tap to return to the Waystone", HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
 
 func _draw_map() -> void:
-	var rect := board_rect.grow(-18.0) if state.map_presentation == "overlay" else Rect2(Vector2(14, 14), size - Vector2(28, 28))
-	draw_rect(rect, Color(0.025, 0.04, 0.05, 0.78 if state.map_presentation == "overlay" else 0.98))
-	draw_rect(rect, Color("9fb2b7"), false, 2.0)
+	var overlay := state.map_presentation == "overlay"
+	var rect := _map_panel_rect()
+	draw_rect(rect, Color(0.025, 0.04, 0.05, 0.36 if overlay else 0.98))
+	draw_rect(rect, Color(0.62, 0.70, 0.72, 0.62 if overlay else 1.0), false, 2.0)
 	var map_bounds := _discovered_map_bounds().grow(120.0)
 	var scale := minf((rect.size.x - 72.0) / map_bounds.size.x, (rect.size.y - 110.0) / map_bounds.size.y)
 	var origin := rect.get_center() - map_bounds.get_center() * scale + Vector2(0, 18)
@@ -834,13 +893,13 @@ func _draw_map() -> void:
 		var corridor := Rect2(connection["corridor"])
 		if not state.is_discovered(corridor.get_center()): continue
 		var mapped := Rect2(origin + corridor.position * scale, corridor.size * scale)
-		draw_rect(mapped, Color("42555a"))
+		draw_rect(mapped, Color(0.26, 0.33, 0.35, 0.58 if overlay else 1.0))
 	for area in state.areas:
 		if not bool(area.get("discovered", false)): continue
 		var world_rect := Rect2(area["rect"])
 		var mapped := Rect2(origin + world_rect.position * scale, world_rect.size * scale)
-		draw_rect(mapped, Color("26383d"))
-		draw_rect(mapped, Color("6c7e82"), false, 1.5)
+		draw_rect(mapped, Color(0.15, 0.22, 0.24, 0.55 if overlay else 1.0))
+		draw_rect(mapped, Color(0.42, 0.49, 0.51, 0.7 if overlay else 1.0), false, 1.5)
 	var player := origin + state.player_pos * scale
 	var bonfire := origin + state.bonfire_pos * scale
 	draw_circle(bonfire, 8.0, Color("e89b52"))
@@ -850,10 +909,28 @@ func _draw_map() -> void:
 		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
 	if state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
 	if bool(state.lost_xp.get("active", false)): draw_circle(origin + Vector2(state.lost_xp["pos"]) * scale, 7.0, Color("d8ed78"))
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), "DISCOVERED AREAS", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.6, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
-	draw_rect(map_mode_rect, Color("17272d"))
-	draw_rect(map_mode_rect, Color("d7aa58"), false, 2.0)
-	draw_string(ThemeDB.fallback_font, map_mode_rect.position + Vector2(0, map_mode_rect.size.y * 0.62), "OVERLAY" if state.map_presentation == "full" else "FULL", HORIZONTAL_ALIGNMENT_CENTER, map_mode_rect.size.x, 13, Color("f1e8d0"))
+	var header := "DISCOVERED AREAS  •  SEED %d" % state.run_seed
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), header, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 170.0, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
+	_draw_map_action(_map_close_rect(), "CLOSE")
+	if not overlay:
+		_draw_map_action(map_mode_rect, "OVERLAY")
+		_draw_map_action(seed_copy_rect, "COPY SEED")
+
+func _map_panel_rect() -> Rect2:
+	return board_rect.grow(-18.0) if state.map_presentation == "overlay" else Rect2(Vector2(14, 14), size - Vector2(28, 28))
+
+func _map_close_rect() -> Rect2:
+	var rect := _map_panel_rect()
+	return Rect2(rect.position + Vector2(rect.size.x - 132.0, 12.0), Vector2(120.0, 46.0))
+
+func _map_action_rect(row: int) -> Rect2:
+	var rect := Rect2(Vector2(14, 14), size - Vector2(28, 28))
+	return Rect2(rect.position + Vector2(rect.size.x - 132.0, 12.0 + row * 56.0), Vector2(120.0, 46.0))
+
+func _draw_map_action(rect: Rect2, label: String) -> void:
+	draw_rect(rect, Color(0.09, 0.15, 0.17, 0.88))
+	draw_rect(rect, Color("d7aa58"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.62), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("f1e8d0"))
 
 func _discovered_map_bounds() -> Rect2:
 	var bounds := Rect2(state.player_pos - Vector2.ONE * 40.0, Vector2.ONE * 80.0)

@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.11`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.12`. Android version codes increase independently so newer APKs can always upgrade older installations.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -21,6 +21,8 @@ An original Android-first committed-action roguelike prototype inspired by the l
 The first expedition uses continuous positions, world-space weapon hitboxes, physical projectiles, persistent hazards, and a 120 Hz fixed-step simulation. Time is frozen whenever the player is ready. Locomotion is granular and interruptible, while strikes and skills commit through startup, active, and recovery phases.
 
 The seeded expedition is now one connected floor: a seven-area main path, an optional high-risk branch, and a halfway shortcut that opens back to the starting Waystone only from its far side. Fog of war remembers explored terrain, while enemy sight, sound, suspicion, and alert states determine when combat begins. The Map button switches between full-screen and translucent discovered-area views.
+
+The active world seed is shown on the map and can be copied, while the pre-run screen accepts an optional seed for repeatable expeditions. Required passages use deliberately wide doors and corridors, and room dressing preserves a generous direct route between every connected entrance. The translucent map is non-modal: movement, combat, and HUD controls remain usable behind it, with only its Close button capturing input.
 
 Enemies award XP. Before each run, Auto mode offers an immediate three-choice upgrade when a threshold is reached, while Waystone mode requires carrying XP back before buying upgrades. Death leaves unspent XP at a recoverable mark and returns the player to the Waystone; dying again replaces the old mark. Resting restores combat resources and respawns undefeated enemies without erasing discovered terrain, upgrades, XP, or opened shortcuts.
 

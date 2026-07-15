@@ -31,9 +31,14 @@ func _initialize() -> void:
 	await process_frame
 	if not _capture("res://builds/phone-smoke.png"): return
 	scene.map_open = true
+	scene.state.map_presentation = "full"
 	scene.queue_redraw()
 	await process_frame
 	if not _capture("res://builds/map-smoke.png"): return
+	scene.state.map_presentation = "overlay"
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/map-overlay-smoke.png"): return
 	scene.map_open = false
 	scene._toggle_view()
 	await process_frame

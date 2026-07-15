@@ -4,8 +4,10 @@ extends RefCounted
 const WORLD_SIZE := Vector2(5000.0, 4400.0)
 const ROOM_SIZE := Vector2(760.0, 640.0)
 const WALL_THICKNESS := 56.0
-const DOOR_WIDTH := 180.0
-const CORRIDOR_WIDTH := 180.0
+## Required routes deliberately use much more clearance than an actor needs.
+## Room dressing must never turn navigation into a pixel-perfect squeeze.
+const DOOR_WIDTH := 320.0
+const CORRIDOR_WIDTH := 320.0
 
 static func generate(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -162,13 +164,22 @@ static func _corridor_walls(rect: Rect2, a: Vector2, b: Vector2) -> Array[Rect2]
 
 static func _room_obstacles(rect: Rect2, area_id: int, rng: RandomNumberGenerator) -> Array[Rect2]:
 	var center := rect.get_center()
-	var result: Array[Rect2] = []
-	match (area_id + rng.randi_range(0, 2)) % 4:
-		0: result = [Rect2(center - Vector2(75, 180), Vector2(150, 150)), Rect2(center - Vector2(75, -30), Vector2(150, 150))]
-		1: result = [Rect2(center - Vector2(250, 60), Vector2(170, 120)), Rect2(center + Vector2(80, -60), Vector2(170, 120))]
-		2: result = [Rect2(center - Vector2(65, 210), Vector2(130, 140)), Rect2(center - Vector2(65, -70), Vector2(130, 140))]
-		_: result = [Rect2(center - Vector2(250, 55), Vector2(145, 110)), Rect2(center + Vector2(105, -55), Vector2(145, 110))]
-	return result
+	# Openings are centered on each wall. Keeping the entire central cross clear
+	# gives every pair of doors a generous, direct route through the room.
+	# Small corner pillars still create cover without forming choke points.
+	var corner_offsets := [
+		Vector2(-260, -200),
+		Vector2(260, -200),
+		Vector2(-260, 200),
+		Vector2(260, 200),
+	]
+	var first := (area_id + rng.randi_range(0, 3)) % corner_offsets.size()
+	var second := (first + 2) % corner_offsets.size()
+	var pillar_size := Vector2(68, 68)
+	return [
+		Rect2(center + corner_offsets[first] - pillar_size * 0.5, pillar_size),
+		Rect2(center + corner_offsets[second] - pillar_size * 0.5, pillar_size),
+	]
 
 static func _encounter_for(area_id: int, center: Vector2, seed_value: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
