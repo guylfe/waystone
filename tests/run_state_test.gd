@@ -35,6 +35,7 @@ func _init() -> void:
 	test_required_passages_have_generous_clearance()
 	test_overlay_map_passes_input_through()
 	test_generated_rooms_have_no_shields()
+	test_mode_policies_and_death()
 	test_room_reward_progression()
 	test_shortcut_and_waystone_persistence()
 	test_visibility_memory_and_awareness()
@@ -413,42 +414,87 @@ func test_generated_rooms_have_no_shields() -> void:
 
 func test_room_reward_progression() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "auto", 101)
+	state.start_run("duelist", "expedition", 101)
 	state.carried_xp = state.next_upgrade_cost()
-	state._roll_upgrade_choices("auto")
+	for enemy in state.enemies:
+		if int(enemy["area_id"]) == 1: enemy["hp"] = 0
+	state._remove_dead_enemies()
+	state.carried_xp = state.next_upgrade_cost()
+	state.current_area_id = 1
+	state.player_pos = Rect2(state.connections[0]["corridor"]).get_center()
+	state._update_exploration(true)
+	assert(state.upgrade_pending and state.upgrade_context == "area_exit")
 	assert(state.upgrade_choices.size() == 3)
 	var choice := state.upgrade_choices[0]
 	assert(state.choose_upgrade(choice))
 	assert(not state.upgrade_pending and state.upgrades.has(choice) and state.carried_xp == 0)
 	assert(state.upgrade_count == 1 and state.next_upgrade_cost() == 10)
-	state.start_run("guardian", "bonfire", 102)
+	state.start_run("guardian", "campaign_lab", 102)
 	state.carried_xp = 16
 	state.player_pos = state.bonfire_pos
-	assert(state.rest_at_waystone() and state.upgrade_pending)
+	state.player_hp = 1
+	assert(state.rest_at_waystone() and not state.upgrade_pending and state.player_hp == state.player_max_hp)
+	assert(state.learn_at_waystone() and state.upgrade_pending and state.upgrade_context == "waystone")
 	assert(state.choose_upgrade(state.upgrade_choices[0]))
 	assert(state.upgrade_pending and state.carried_xp == 10)
 	assert(state.choose_upgrade(state.upgrade_choices[0]))
 	assert(state.upgrade_count == 2 and state.carried_xp == 0)
 
+func test_mode_policies_and_death() -> void:
+	var expedition: RunState = RunStateScript.new(false)
+	expedition.start_run("duelist", "expedition", 201)
+	assert(expedition.mode_id == "expedition")
+	assert(String(expedition.mode_rules()["death_policy"]) == "end_run")
+	assert(not bool(expedition.mode_rules()["waystone_available"]))
+	expedition.carried_xp = 9
+	expedition._begin_death()
+	assert(expedition.death_pending and not bool(expedition.lost_xp["active"]))
+	assert(expedition.return_after_death())
+	assert(not expedition.run_active and expedition.run_failed)
+
+	var campaign: RunState = RunStateScript.new(false)
+	campaign.start_run("duelist", "campaign_lab", 202)
+	assert(campaign.mode_id == "campaign_lab")
+	assert(String(campaign.mode_rules()["death_policy"]) == "waystone")
+	assert(bool(campaign.mode_rules()["waystone_available"]))
+	campaign.carried_xp = 9
+	campaign._begin_death()
+	assert(bool(campaign.lost_xp["active"]) and int(campaign.lost_xp["amount"]) == 9)
+	assert(campaign.return_after_death() and campaign.run_active and not campaign.run_failed)
+
 func test_shortcut_and_waystone_persistence() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("reaver", "bonfire", 303)
+	state.start_run("reaver", "campaign_lab", 303)
 	var original_count := state.enemies.size()
 	state.player_pos = state.shortcut_start_pos
 	assert(not state.unlock_shortcut())
 	state.player_pos = state.shortcut_unlock_pos
 	assert(state.unlock_shortcut() and state.shortcut_unlocked)
 	assert(not state.walls.has(state.shortcut_gate))
+	state._begin_death()
+	assert(state.return_after_death() and not state.shortcut_unlocked)
+	state.player_pos = state.shortcut_unlock_pos
+	assert(state.unlock_shortcut() and state.shortcut_unlocked)
 	state.carried_xp = 5
+	var anchored_cell := Vector2i(77, 77)
+	state.discovered_cells[anchored_cell] = true
 	state.player_hp = 1
 	state.potions = 0
 	state.enemies[0]["hp"] = 0
 	state._remove_dead_enemies()
 	state.player_pos = state.bonfire_pos
+	assert(state.anchor_at_waystone())
 	assert(state.rest_at_waystone())
 	assert(state.player_hp == state.player_max_hp and state.potions == 1)
 	assert(state.enemies.size() == original_count and state.shortcut_unlocked)
-	assert(state.carried_xp >= 5)
+	assert(state.carried_xp >= 5 and state.secured_xp == state.carried_xp)
+	state.carried_xp += 3
+	state.discovered_cells[Vector2i(88, 88)] = true
+	state._begin_death()
+	assert(int(state.lost_xp["amount"]) == 3)
+	assert(state.return_after_death())
+	assert(state.shortcut_unlocked and state.discovered_cells.has(anchored_cell))
+	assert(not state.discovered_cells.has(Vector2i(88, 88)))
 
 func test_visibility_memory_and_awareness() -> void:
 	var state: RunState = RunStateScript.new(false)
@@ -471,7 +517,7 @@ func test_visibility_memory_and_awareness() -> void:
 
 func test_xp_death_recovery() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "bonfire", 505)
+	state.start_run("duelist", "campaign_lab", 505)
 	state.carried_xp = 9
 	var death_pos := state.player_pos + Vector2.UP * 80.0
 	state.player_pos = death_pos
@@ -503,18 +549,20 @@ func test_hex_hazard() -> void:
 
 func test_save_round_trip() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("guardian", "bonfire", 606)
+	state.start_run("guardian", "campaign_lab", 606)
 	state.player_hp -= 2
 	state.carried_xp = 13
 	state.player_pos = state.shortcut_unlock_pos
 	assert(state.unlock_shortcut())
+	state.player_pos = state.bonfire_pos
+	assert(state.anchor_at_waystone())
 	var path := "user://waystone-test-expedition.save"
 	assert(state.save_run(path))
 	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
 	assert(restored.player_hp == state.player_hp)
-	assert(restored.progression_mode == "bonfire" and restored.carried_xp == 13)
-	assert(restored.shortcut_unlocked and restored.run_seed == 606)
+	assert(restored.mode_id == "campaign_lab" and restored.progression_mode == "waystone" and restored.carried_xp == 13)
+	assert(restored.secured_xp == 13 and restored.shortcut_unlocked and restored.run_seed == 606)
 
 func test_version_one_save_migration() -> void:
 	var state: RunState = RunStateScript.new()
@@ -537,7 +585,7 @@ func test_version_one_save_migration() -> void:
 	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
 	assert(not restored.run_active)
-	assert(restored.loadout_id == state.loadout_id and restored.progression_mode == "auto")
+	assert(restored.loadout_id == state.loadout_id and restored.mode_id == "expedition" and restored.progression_mode == "area_exit")
 
 func test_version_three_attack_migration() -> void:
 	var state: RunState = RunStateScript.new()

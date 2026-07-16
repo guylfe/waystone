@@ -10,7 +10,7 @@ func _initialize() -> void:
 	if not scene.state.run_active:
 		if not _capture("res://builds/setup-smoke.png"): return
 	if not scene.state.run_active:
-		scene.state.start_run("duelist", "auto", 739391)
+		scene.state.start_run("duelist", "expedition", 739391)
 		scene.visual = scene.state.snapshot()
 	await process_frame
 	await process_frame
@@ -51,12 +51,21 @@ func _initialize() -> void:
 	scene._toggle_view()
 	await process_frame
 	scene.state.carried_xp = scene.state.next_upgrade_cost()
-	scene.state._roll_upgrade_choices("auto")
+	scene.state._roll_upgrade_choices("area_exit")
 	scene.visual = scene.state.snapshot()
 	scene.queue_redraw()
 	await process_frame
 	await process_frame
 	if not _capture("res://builds/upgrade-smoke.png"): return
+	scene.state.start_run("duelist", "campaign_lab", 739391)
+	scene.state.player_pos = scene.state.bonfire_pos
+	scene.visual = scene.state.snapshot()
+	scene.waystone_menu_open = true
+	scene.queue_redraw()
+	await process_frame
+	await process_frame
+	if not _capture("res://builds/waystone-menu-smoke.png"): return
+	scene.waystone_menu_open = false
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame

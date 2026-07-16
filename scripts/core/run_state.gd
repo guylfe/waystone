@@ -3,6 +3,7 @@ extends RefCounted
 
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
+const ModeRulesScript = preload("res://scripts/core/mode_rules.gd")
 
 signal changed
 signal message_changed(text: String)
@@ -70,7 +71,9 @@ var rng := RandomNumberGenerator.new()
 var _next_enemy_id := 1
 var navigation := AStarGrid2D.new()
 var run_active := false
-var progression_mode := "auto"
+var mode_id := ModeRulesScript.EXPEDITION
+var mode_config: Dictionary = ModeRulesScript.definition(mode_id)
+var progression_mode := "area_exit"
 var map_presentation := "full"
 var areas: Array[Dictionary] = []
 var connections: Array[Dictionary] = []
@@ -86,11 +89,14 @@ var discovered_cells: Dictionary = {}
 var _visibility_anchor := Vector2.INF
 var current_area_id := 0
 var carried_xp := 0
+var secured_xp := 0
 var lost_xp := {"active": false, "amount": 0, "pos": Vector2.ZERO}
 var upgrade_count := 0
 var upgrade_ranks: Dictionary = {}
 var death_pending := false
+var run_failed := false
 var upgrade_context := ""
+var anchor_state: Dictionary = {}
 var _sound_sequence := 0
 var last_sound := {"sequence": 0, "pos": Vector2.ZERO, "radius": 0.0}
 var _defense_cooldown_multiplier := 1.0
@@ -102,17 +108,19 @@ func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
 	_apply_loadout()
 	player_hp = player_max_hp
-	if auto_start: start_run(loadout_id, progression_mode, run_seed)
+	if auto_start: start_run(loadout_id, mode_id, run_seed)
 
 func build_laboratory() -> void:
-	start_run(loadout_id, progression_mode, run_seed)
+	start_run(loadout_id, ModeRulesScript.CAMPAIGN_LAB, run_seed)
 
 func build_expedition_room() -> void:
-	start_run(loadout_id, progression_mode, run_seed)
+	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
-func start_run(chosen_loadout: String, chosen_progression: String, seed_override: int = -1) -> void:
+func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1) -> void:
 	loadout_id = chosen_loadout if chosen_loadout in ["duelist", "guardian", "reaver"] else "duelist"
-	progression_mode = chosen_progression if chosen_progression in ["auto", "bonfire"] else "auto"
+	mode_id = ModeRulesScript.normalize(chosen_mode)
+	mode_config = ModeRulesScript.definition(mode_id)
+	progression_mode = String(mode_config["upgrade_policy"])
 	if seed_override >= 0: run_seed = seed_override
 	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
 	_apply_loadout()
@@ -137,6 +145,7 @@ func start_run(chosen_loadout: String, chosen_progression: String, seed_override
 	_sound_sequence = 0
 	last_sound = {"sequence": 0, "pos": Vector2.ZERO, "radius": 0.0}
 	carried_xp = 0
+	secured_xp = 0
 	lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
 	rooms_cleared = 0
 	enemies_defeated = 0
@@ -150,6 +159,8 @@ func start_run(chosen_loadout: String, chosen_progression: String, seed_override
 	hazards.clear()
 	projectiles.clear()
 	death_pending = false
+	run_failed = false
+	anchor_state.clear()
 	shortcut_unlocked = false
 	_boss_defeated = false
 	rng.seed = run_seed
@@ -172,7 +183,11 @@ func start_run(chosen_loadout: String, chosen_progression: String, seed_override
 	_build_navigation()
 	run_active = true
 	_update_exploration(true)
-	message = "The Waystone burns behind you. Time is frozen."
+	if bool(mode_config["waystone_available"]):
+		_capture_anchor_history()
+		message = "The Waystone anchors this moment. Time is frozen."
+	else:
+		message = "The starting Waystone fades behind you. Death ends the expedition."
 	last_timeline.clear()
 	changed.emit()
 	message_changed.emit(message)
@@ -184,6 +199,12 @@ func abandon_run() -> void:
 	player_action = _idle_action()
 	last_timeline.clear()
 	changed.emit()
+
+func mode_rules() -> Dictionary:
+	return mode_config.duplicate(true)
+
+func mode_label() -> String:
+	return ModeRulesScript.label(mode_id)
 
 func _enemy_base_hp(kind: String) -> int:
 	return {"knife": 4, "blade": 7, "hound": 6, "archer": 5, "shield": 10, "polearm": 12, "hexer": 7, "brute": 16, "captain": 12, "warden": 26}.get(kind, 7)
@@ -234,7 +255,7 @@ func select_loadout(choice: String) -> bool:
 	if not ["duelist", "guardian", "reaver"].has(choice):
 		return false
 	loadout_id = choice
-	if run_active: start_run(loadout_id, progression_mode, run_seed)
+	if run_active: start_run(loadout_id, mode_id, run_seed)
 	else: _apply_loadout()
 	return true
 
@@ -409,23 +430,39 @@ func request_wait(duration: float = 0.50) -> bool:
 func interaction_label() -> String:
 	if not run_active or death_pending: return "WAIT"
 	if not shortcut_unlocked and player_pos.distance_to(shortcut_unlock_pos) <= 115.0: return "UNLOCK"
-	if player_pos.distance_to(bonfire_pos) <= 125.0: return "REST"
+	if bool(mode_config["waystone_available"]) and player_pos.distance_to(bonfire_pos) <= 125.0: return "WAYSTONE"
 	return "WAIT"
 
 func request_context_action() -> bool:
 	if not is_player_ready(): return false
 	match interaction_label():
-		"REST": return rest_at_waystone()
 		"UNLOCK": return unlock_shortcut()
 		_: return request_wait()
 
 func rest_at_waystone() -> bool:
-	if player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
 	_restore_at_waystone()
 	_respawn_enemies()
 	_update_exploration(true)
-	if progression_mode == "bonfire" and carried_xp >= next_upgrade_cost(): _roll_upgrade_choices("bonfire")
-	else: _set_message("The Waystone restores you. The world stirs again.")
+	_set_message("The Waystone restores you. The world stirs again.")
+	changed.emit()
+	return true
+
+func learn_at_waystone() -> bool:
+	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+	if carried_xp < next_upgrade_cost():
+		_set_message("More experience is needed before another lesson can be integrated.")
+		changed.emit()
+		return false
+	_roll_upgrade_choices("waystone")
+	changed.emit()
+	return true
+
+func anchor_at_waystone() -> bool:
+	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+	secured_xp = carried_xp
+	_capture_anchor_history()
+	_set_message("Your experience, map, and opened paths settle into the Waystone.")
 	changed.emit()
 	return true
 
@@ -443,8 +480,18 @@ func unlock_shortcut() -> bool:
 
 func return_after_death() -> bool:
 	if not death_pending: return false
+	if String(mode_config["death_policy"]) == "end_run":
+		death_pending = false
+		run_failed = true
+		run_active = false
+		player_action = _idle_action()
+		last_timeline.clear()
+		message = "The expedition has ended."
+		changed.emit()
+		return true
 	death_pending = false
 	_restore_at_waystone()
+	_restore_anchor_history()
 	player_pos = _player_start
 	player_facing = (bonfire_pos - player_pos).normalized()
 	_respawn_enemies()
@@ -452,6 +499,33 @@ func return_after_death() -> bool:
 	_set_message("You reform at the Waystone. Reclaim your lost XP.")
 	changed.emit()
 	return true
+
+func _capture_anchor_history() -> void:
+	var discovered_areas: Array[bool] = []
+	for area in areas: discovered_areas.append(bool(area.get("discovered", false)))
+	anchor_state = {
+		"shortcut_unlocked": shortcut_unlocked,
+		"discovered_cells": discovered_cells.duplicate(),
+		"discovered_areas": discovered_areas,
+	}
+
+func _restore_anchor_history() -> void:
+	if anchor_state.is_empty(): return
+	shortcut_unlocked = bool(anchor_state.get("shortcut_unlocked", false))
+	_apply_shortcut_world_state()
+	discovered_cells = Dictionary(anchor_state.get("discovered_cells", {})).duplicate()
+	var discovered_areas: Array = anchor_state.get("discovered_areas", [])
+	for index in range(areas.size()):
+		areas[index]["discovered"] = bool(discovered_areas[index]) if index < discovered_areas.size() else index == 0
+	visible_cells.clear()
+	_visibility_anchor = Vector2.INF
+
+func _apply_shortcut_world_state() -> void:
+	walls.assign(base_walls)
+	if not shortcut_unlocked: walls.append(shortcut_gate)
+	for connection in connections:
+		if bool(connection.get("shortcut", false)): connection["unlocked"] = shortcut_unlocked
+	_build_navigation()
 
 func _restore_at_waystone() -> void:
 	player_hp = player_max_hp
@@ -470,6 +544,7 @@ func choose_upgrade(choice: String) -> bool:
 	if not upgrade_pending or not upgrade_choices.has(choice) or carried_xp < next_upgrade_cost(): return false
 	var cost := next_upgrade_cost()
 	carried_xp -= cost
+	secured_xp = mini(secured_xp, carried_xp)
 	upgrades.append(choice)
 	upgrade_ranks[choice] = int(upgrade_ranks.get(choice, 0)) + 1
 	upgrade_count += 1
@@ -489,13 +564,13 @@ func choose_upgrade(choice: String) -> bool:
 	var context := upgrade_context
 	upgrade_context = ""
 	_set_message("Upgrade gained: %s." % upgrade_name(choice))
-	if carried_xp >= next_upgrade_cost() and (progression_mode == "auto" or context == "bonfire"):
-		_roll_upgrade_choices(context if context != "" else progression_mode)
+	if carried_xp >= next_upgrade_cost() and context in ["area_exit", "waystone"]:
+		_roll_upgrade_choices(context)
 	changed.emit()
 	return true
 
 func leave_upgrade_menu() -> bool:
-	if not upgrade_pending or upgrade_context != "bonfire": return false
+	if not upgrade_pending or upgrade_context != "waystone": return false
 	upgrade_pending = false
 	upgrade_choices.clear()
 	upgrade_context = ""
@@ -512,7 +587,7 @@ func upgrade_name(id: String) -> String:
 func upgrade_description(id: String) -> String:
 	return {"keen_edge": "+1 maximum damage", "vitality": "+2 maximum health", "quick_hands": "Shorter attack recovery", "long_reach": "+14 attack reach", "footwork": "+5% movement speed", "readiness": "Shorter cooldowns"}.get(id, "")
 
-func _roll_upgrade_choices(context: String = "auto") -> void:
+func _roll_upgrade_choices(context: String = "area_exit") -> void:
 	var pool: Array[String] = ["keen_edge", "vitality", "quick_hands", "long_reach", "footwork", "readiness"]
 	for index in range(pool.size() - 1, -1, -1):
 		if int(upgrade_ranks.get(pool[index], 0)) >= 3: pool.remove_at(index)
@@ -572,7 +647,6 @@ func _try_recover_xp() -> void:
 		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
 		_add_effect("recover", player_pos, amount)
 		_set_message("Recovered %d XP." % amount)
-		if progression_mode == "auto" and carried_xp >= next_upgrade_cost(): _roll_upgrade_choices("auto")
 
 func _update_player(dt: float) -> void:
 	var kind := String(player_action["kind"])
@@ -957,9 +1031,13 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 
 func _begin_death() -> void:
 	if death_pending: return
-	if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
-	if carried_xp > 0: lost_xp = {"active": true, "amount": carried_xp, "pos": player_pos}
-	carried_xp = 0
+	if bool(mode_config["shadow_enabled"]):
+		if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+		var provisional_xp := maxi(0, carried_xp - secured_xp)
+		if provisional_xp > 0: lost_xp = {"active": true, "amount": provisional_xp, "pos": player_pos}
+		carried_xp = secured_xp
+	else:
+		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
 	death_pending = true
 	player_action = _idle_action()
 	projectiles.clear()
@@ -967,7 +1045,10 @@ func _begin_death() -> void:
 	upgrade_pending = false
 	upgrade_choices.clear()
 	upgrade_context = ""
-	_set_message("You have fallen. Your unspent XP remains where you died.")
+	if String(mode_config["death_policy"]) == "end_run":
+		_set_message("You have fallen. The expedition is over.")
+	else:
+		_set_message("You have fallen. Your unanchored XP remains where you died.")
 
 func _counter_source(source_id: int) -> void:
 	for enemy in enemies:
@@ -1044,8 +1125,6 @@ func _remove_dead_enemies() -> void:
 			if int(enemy.get("area_id", -1)) == int(area_id): still_alive = true
 		if not still_alive and int(area_id) > 0:
 			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
-	if progression_mode == "auto" and not upgrade_pending and carried_xp >= next_upgrade_cost() and not death_pending:
-		_roll_upgrade_choices("auto")
 
 func _xp_for_enemy(kind: String) -> int:
 	return int({"knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "brute": 5, "captain": 5, "warden": 12}.get(kind, 2))
@@ -1177,10 +1256,19 @@ func _update_exploration(force: bool = false) -> void:
 			if _has_line_of_sight(player_pos, point):
 				visible_cells[cell] = true
 				discovered_cells[cell] = true
+	var previous_area_id := current_area_id
 	current_area_id = 0
 	for area in areas:
 		if Rect2(area["rect"]).has_point(player_pos): current_area_id = int(area["id"])
 		if _rect_has_discovered_cell(Rect2(area["rect"])): area["discovered"] = true
+	if String(mode_config["upgrade_policy"]) == "area_exit" and previous_area_id > 0 and current_area_id != previous_area_id:
+		if _area_is_clear(previous_area_id) and carried_xp >= next_upgrade_cost() and not upgrade_pending and not trial_complete:
+			_roll_upgrade_choices("area_exit")
+
+func _area_is_clear(area_id: int) -> bool:
+	for enemy in enemies:
+		if int(enemy.get("area_id", -1)) == area_id and int(enemy.get("hp", 0)) > 0: return false
+	return true
 
 func _visibility_cell(position: Vector2) -> Vector2i:
 	return Vector2i(int(floor(position.x / VISIBILITY_CELL)), int(floor(position.y / VISIBILITY_CELL)))
@@ -1247,6 +1335,8 @@ func snapshot() -> Dictionary:
 		"damage_dealt": damage_dealt,
 		"message": message,
 		"run_active": run_active,
+		"mode_id": mode_id,
+		"mode_config": mode_config.duplicate(true),
 		"progression_mode": progression_mode,
 		"map_presentation": map_presentation,
 		"areas": areas.duplicate(true),
@@ -1259,18 +1349,21 @@ func snapshot() -> Dictionary:
 		"discovered_cells": discovered_cells.duplicate(),
 		"current_area_id": current_area_id,
 		"carried_xp": carried_xp,
+		"secured_xp": secured_xp,
 		"lost_xp": lost_xp.duplicate(true),
 		"upgrade_count": upgrade_count,
 		"upgrade_ranks": upgrade_ranks.duplicate(true),
 		"upgrade_context": upgrade_context,
 		"death_pending": death_pending,
+		"run_failed": run_failed,
+		"anchor_state": anchor_state.duplicate(true),
 	}
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 5
+	payload["save_version"] = 6
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
@@ -1297,18 +1390,23 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if save_version < 1 or save_version > 5: return false
+	if save_version < 1 or save_version > 6: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
 		_apply_loadout()
 		run_active = false
-		progression_mode = "auto"
-		message = "Choose a class and progression mode for the connected expedition."
+		mode_id = ModeRulesScript.EXPEDITION
+		mode_config = ModeRulesScript.definition(mode_id)
+		progression_mode = String(mode_config["upgrade_policy"])
+		message = "Choose a class and mode for the prototype world."
 		return true
-	progression_mode = String(payload.get("progression_mode", "auto"))
+	var saved_mode := String(payload.get("mode_id", payload.get("progression_mode", "auto")))
+	mode_id = ModeRulesScript.normalize(saved_mode)
+	mode_config = ModeRulesScript.definition(mode_id)
+	progression_mode = String(mode_config["upgrade_policy"])
 	run_seed = int(payload.get("run_seed", run_seed))
-	start_run(loadout_id, progression_mode, run_seed)
+	start_run(loadout_id, mode_id, run_seed)
 	run_active = bool(payload.get("run_active", true))
 	player_pos = Vector2(payload.get("player_pos", player_pos))
 	player_facing = Vector2(payload.get("player_facing", Vector2.UP))
@@ -1343,16 +1441,15 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	upgrade_count = int(payload.get("upgrade_count", upgrades.size()))
 	upgrade_ranks = Dictionary(payload.get("upgrade_ranks", {})).duplicate(true)
 	carried_xp = int(payload.get("carried_xp", 0))
+	secured_xp = int(payload.get("secured_xp", carried_xp if save_version < 6 and mode_id == ModeRulesScript.CAMPAIGN_LAB else 0))
 	lost_xp = Dictionary(payload.get("lost_xp", {"active": false, "amount": 0, "pos": Vector2.ZERO})).duplicate(true)
 	shortcut_unlocked = bool(payload.get("shortcut_unlocked", false))
-	if shortcut_unlocked:
-		walls.assign(base_walls)
-		for connection in connections:
-			if bool(connection.get("shortcut", false)): connection["unlocked"] = true
+	_apply_shortcut_world_state()
 	visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()
 	discovered_cells = Dictionary(payload.get("discovered_cells", {})).duplicate()
 	current_area_id = int(payload.get("current_area_id", 0))
 	death_pending = bool(payload.get("death_pending", false))
+	run_failed = bool(payload.get("run_failed", false))
 	rooms_cleared = int(payload.get("rooms_cleared", 0))
 	enemies_defeated = int(payload.get("enemies_defeated", 0))
 	damage_dealt = int(payload.get("damage_dealt", 0))
@@ -1367,6 +1464,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	for enemy in enemies:
 		enemy["action"] = _idle_action()
 		_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)
+	anchor_state = Dictionary(payload.get("anchor_state", {})).duplicate(true)
+	if bool(mode_config["waystone_available"]) and anchor_state.is_empty(): _capture_anchor_history()
 	_build_navigation()
 	_visibility_anchor = Vector2.INF
 	_update_exploration(true)
@@ -1374,7 +1473,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	return true
 
 func restart() -> void:
-	start_run(loadout_id, progression_mode, run_seed)
+	start_run(loadout_id, mode_id, run_seed)
 
 func _set_message(text: String) -> void:
 	message = text

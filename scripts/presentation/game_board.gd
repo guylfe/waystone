@@ -45,7 +45,8 @@ var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var map_open := false
 var setup_loadout := "duelist"
-var setup_progression := "auto"
+var setup_mode := "expedition"
+var waystone_menu_open := false
 var seed_input: LineEdit
 var setup_seed_error := ""
 
@@ -57,7 +58,7 @@ func _ready() -> void:
 	state.load_run()
 	_create_seed_input()
 	setup_loadout = state.loadout_id
-	setup_progression = state.progression_mode
+	setup_mode = state.mode_id
 	visual = state.snapshot()
 	state.changed.connect(_on_state_changed)
 	resized.connect(_layout)
@@ -134,8 +135,8 @@ func _layout() -> void:
 	var setup_center_y := size.y * 0.52
 	var setup_gap := clampf(minf(size.x, size.y) * 0.025, 12.0, 28.0)
 	var option_width := (setup_width - setup_gap) * 0.5
-	progression_rects["auto"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
-	progression_rects["bonfire"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
+	progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
+	progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
 	seed_input.position = Vector2(setup_left, setup_center_y + 94.0)
 	seed_input.size = Vector2(setup_width, 58.0)
 	start_rect = Rect2(setup_left, setup_center_y + 168.0, setup_width, 78.0)
@@ -190,7 +191,7 @@ func _pointer_pressed(position: Vector2) -> void:
 				return
 		for mode in progression_rects:
 			if Rect2(progression_rects[mode]).has_point(position):
-				setup_progression = String(mode)
+				setup_mode = String(mode)
 				queue_redraw()
 				return
 		if start_rect.has_point(position): _start_run()
@@ -220,14 +221,19 @@ func _pointer_pressed(position: Vector2) -> void:
 		return
 	if state.death_pending:
 		state.return_after_death()
+		waystone_menu_open = false
 		visual = state.snapshot()
+		_sync_setup_controls()
 		queue_redraw()
 		return
 	if view_rect.has_point(position):
 		if not playing: _toggle_view()
 		return
+	if waystone_menu_open:
+		_handle_waystone_menu_press(position)
+		return
 	if state.upgrade_pending:
-		if state.upgrade_context == "bonfire" and _upgrade_leave_rect().has_point(position):
+		if state.upgrade_context == "waystone" and _upgrade_leave_rect().has_point(position):
 			state.leave_upgrade_menu()
 			visual = state.snapshot()
 			queue_redraw()
@@ -290,6 +296,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_ESCAPE and map_open:
 		map_open = false
+		queue_redraw()
+		return
+	if event.keycode == KEY_ESCAPE and waystone_menu_open:
+		waystone_menu_open = false
 		queue_redraw()
 		return
 	if (map_open and state.map_presentation == "full") or not state.run_active: return
@@ -386,6 +396,7 @@ func _restart() -> void:
 	pointer_down = false
 	held_movement = false
 	held_direction = Vector2.ZERO
+	waystone_menu_open = false
 	timeline.clear()
 	visual = state.snapshot()
 	_sync_setup_controls()
@@ -402,8 +413,9 @@ func _start_run() -> void:
 		chosen_seed = int(entered_seed)
 	setup_seed_error = ""
 	seed_input.release_focus()
-	state.start_run(setup_loadout, setup_progression, chosen_seed)
+	state.start_run(setup_loadout, setup_mode, chosen_seed)
 	map_open = false
+	waystone_menu_open = false
 	selected_action = ""
 	timeline.clear()
 	visual = state.snapshot()
@@ -424,11 +436,29 @@ func _select_loadout(choice: String) -> void:
 
 func _advance_or_wait() -> void:
 	var interaction := state.interaction_label()
-	if interaction == "WAIT": _commit(state.request_wait())
+	if interaction == "WAYSTONE":
+		waystone_menu_open = true
+		selected_action = ""
+		queue_redraw()
+	elif interaction == "WAIT": _commit(state.request_wait())
 	else:
 		state.request_context_action()
 		visual = state.snapshot()
 		queue_redraw()
+
+func _handle_waystone_menu_press(position: Vector2) -> void:
+	var actions := {"potion": "rest", "defense": "learn", "skill": "anchor", "wait": "leave"}
+	for button_name in actions:
+		if not Rect2(buttons[button_name]).has_point(position): continue
+		match String(actions[button_name]):
+			"rest": state.rest_at_waystone()
+			"learn":
+				if state.learn_at_waystone(): waystone_menu_open = false
+			"anchor": state.anchor_at_waystone()
+			"leave": waystone_menu_open = false
+		visual = state.snapshot()
+		queue_redraw()
+		return
 
 func _defense_cooldown() -> float:
 	if state.defense_id == "block": return state.block_cooldown
@@ -786,11 +816,12 @@ func _phase(action: Dictionary) -> String:
 
 func _draw_hud() -> void:
 	if state.upgrade_pending: _draw_upgrade_choices()
+	elif waystone_menu_open: _draw_waystone_menu()
 	else:
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "HP %d/%d  •  XP %d/%d" % [int(visual.get("player_hp", state.player_hp)), int(visual.get("player_max_hp", state.player_max_hp)), int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
-	hp_text += "  •  %s" % state.progression_mode.to_upper()
+	hp_text += "  •  %s" % state.mode_label().to_upper()
 	if float(visual.get("strength_remaining", 0.0)) > 0.0:
 		hp_text += "  STR ACTIVE"
 	var text := String(visual.get("message", state.message))
@@ -844,7 +875,7 @@ func _draw_setup() -> void:
 	var title_font := maxi(28, int(minf(size.x, size.y) * 0.055))
 	var body_font := maxi(14, int(title_font * 0.44))
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.16), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, size.x, title_font, Color("f2e7c8"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and XP progression rule", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
+	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
 	for choice in ["duelist", "guardian", "reaver"]:
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
@@ -853,11 +884,13 @@ func _draw_setup() -> void:
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.58), String(choice).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 	for mode in progression_rects:
 		var rect := Rect2(progression_rects[mode])
-		var selected: bool = setup_progression == String(mode)
+		var selected: bool = setup_mode == String(mode)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		var label := "AUTO UPGRADES" if String(mode) == "auto" else "WAYSTONE UPGRADES"
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.57), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN LAB"
+		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS"
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
@@ -878,8 +911,10 @@ func _upgrade_leave_rect() -> Rect2:
 func _draw_death_overlay() -> void:
 	draw_rect(board_rect, Color(0.02, 0.02, 0.025, 0.78))
 	var font := maxi(30, int(minf(size.x, size.y) * 0.065))
-	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y - 28.0), "FALLEN", HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("d76a68"))
-	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y + 40.0), "Tap to return to the Waystone", HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
+	var title := "EXPEDITION ENDED" if state.mode_id == "expedition" else "FALLEN"
+	var prompt := "Tap to return to setup" if state.mode_id == "expedition" else "Tap to return to the Waystone"
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y - 28.0), title, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("d76a68"))
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y + 40.0), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
 
 func _draw_map() -> void:
 	var overlay := state.map_presentation == "overlay"
@@ -909,7 +944,7 @@ func _draw_map() -> void:
 		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
 	if state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
 	if bool(state.lost_xp.get("active", false)): draw_circle(origin + Vector2(state.lost_xp["pos"]) * scale, 7.0, Color("d8ed78"))
-	var header := "DISCOVERED AREAS  •  SEED %d" % state.run_seed
+	var header := "DISCOVERED AREAS  •  %s  •  SEED %d" % [state.mode_label().to_upper(), state.run_seed]
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), header, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 170.0, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
 	_draw_map_action(_map_close_rect(), "CLOSE")
 	if not overlay:
@@ -1001,7 +1036,11 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "SLOW / WIDE" if available else "COOLING" if state.loadout_id == "duelist" else ""
 	elif name == "wait":
 		title = state.interaction_label()
-		subtitle = "RESTORE / RESPAWN" if title == "REST" else "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
+		if title == "WAYSTONE":
+			title = "STONE"
+			subtitle = "REST / LEARN"
+		else:
+			subtitle = "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
 		available = not state.trial_complete
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("d7aa58") if name == "wait" else Color("db6463")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
@@ -1015,6 +1054,22 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.46), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f0ece0") if available else Color("68777c"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(title_font * 0.6)), color if available else Color("59666b"))
+
+func _draw_waystone_menu() -> void:
+	var definitions := {
+		"potion": ["REST", "HEAL • RESPAWN"],
+		"defense": ["LEARN", "SPEND XP"],
+		"skill": ["ANCHOR", "SECURE PROGRESS"],
+		"wait": ["LEAVE", "CLOSE"],
+	}
+	for name in definitions:
+		var rect := Rect2(buttons[name])
+		var definition: Array = definitions[name]
+		draw_rect(rect, Color("17272d"))
+		draw_rect(rect, Color("d7aa58"), false, 2.0)
+		var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.19))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.44), String(definition[0]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f2e7c8"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.72), String(definition[1]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 8, maxi(8, int(title_font * 0.52)), Color("9fb2b7"))
 
 func _draw_upgrade_choices() -> void:
 	for index in upgrade_rects:
@@ -1032,7 +1087,7 @@ func _draw_upgrade_choices() -> void:
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, rect.size.y * 0.66), description, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 12, description_font, Color("d2d8d4"))
 	var cost_text := "SPEND %d XP" % state.next_upgrade_cost()
 	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.end.y - 84.0), cost_text, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, 14, Color("d7aa58"))
-	if state.upgrade_context == "bonfire":
+	if state.upgrade_context == "waystone":
 		var leave := _upgrade_leave_rect()
 		draw_rect(leave, Color("17272d"))
 		draw_rect(leave, Color("718087"), false, 2.0)
@@ -1046,7 +1101,8 @@ func _draw_results() -> void:
 	draw_rect(rect, Color("d7aa58"), false, 3.0)
 	var title_font := maxi(18, int(minf(size.x, size.y) * 0.04))
 	var body_font := maxi(12, int(title_font * 0.55))
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, height * 0.24), "EXPEDITION COMPLETE", HORIZONTAL_ALIGNMENT_CENTER, width, title_font, Color("f2e7c8"))
+	var result_title := "EXPEDITION COMPLETE" if state.mode_id == "expedition" else "CAMPAIGN LAB COMPLETE"
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, height * 0.24), result_title, HORIZONTAL_ALIGNMENT_CENTER, width, title_font, Color("f2e7c8"))
 	var results := "%s  |  %d rooms  |  %d enemies\n%d damage dealt  |  %d perfect dodges\nSeed %d" % [state.loadout_id.capitalize(), state.rooms_cleared, state.enemies_defeated, state.damage_dealt, state.perfect_dodges, state.run_seed]
 	for line_index in range(results.split("\n").size()):
 		var line := results.split("\n")[line_index]
