@@ -325,6 +325,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 			_handle_button(String(name))
 			return
 	if not board_rect.has_point(end_position): return
+	if _try_waystone_press(end_position): return
 	var drag := end_position - touch_start
 	var threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
 	if drag.length() >= threshold:
@@ -436,29 +437,39 @@ func _select_loadout(choice: String) -> void:
 
 func _advance_or_wait() -> void:
 	var interaction := state.interaction_label()
-	if interaction == "WAYSTONE":
-		waystone_menu_open = true
-		selected_action = ""
-		queue_redraw()
-	elif interaction == "WAIT": _commit(state.request_wait())
+	if interaction == "WAIT": _commit(state.request_wait())
 	else:
 		state.request_context_action()
 		visual = state.snapshot()
 		queue_redraw()
 
-func _handle_waystone_menu_press(position: Vector2) -> void:
-	var actions := {"potion": "rest", "defense": "learn", "skill": "anchor", "wait": "leave"}
-	for button_name in actions:
-		if not Rect2(buttons[button_name]).has_point(position): continue
-		match String(actions[button_name]):
-			"rest": state.rest_at_waystone()
-			"learn":
-				if state.learn_at_waystone(): waystone_menu_open = false
-			"anchor": state.anchor_at_waystone()
-			"leave": waystone_menu_open = false
+func _try_waystone_press(position: Vector2) -> bool:
+	if not bool(state.mode_config["waystone_available"]): return false
+	var marker := _world_to_screen(state.bonfire_pos)
+	if marker.distance_to(position) > maxf(38.0, 42.0 * world_scale): return false
+	if state.player_pos.distance_to(state.bonfire_pos) > state.WAYSTONE_RANGE:
+		state.message = "Move closer to activate the Waystone."
 		visual = state.snapshot()
 		queue_redraw()
-		return
+		return true
+	if not state.activate_waystone(): return true
+	waystone_menu_open = state.can_learn_at_waystone()
+	selected_action = ""
+	visual = state.snapshot()
+	queue_redraw()
+	return true
+
+func _waystone_option_rect(option: String) -> Rect2:
+	return Rect2(buttons["potion"]).merge(Rect2(buttons["defense"])) if option == "learn" else Rect2(buttons["skill"]).merge(Rect2(buttons["wait"]))
+
+func _handle_waystone_menu_press(position: Vector2) -> void:
+	if _waystone_option_rect("learn").has_point(position):
+		if state.learn_at_waystone(): waystone_menu_open = false
+	elif _waystone_option_rect("continue").has_point(position):
+		waystone_menu_open = false
+	else: return
+	visual = state.snapshot()
+	queue_redraw()
 
 func _defense_cooldown() -> float:
 	if state.defense_id == "block": return state.block_cooldown
@@ -736,7 +747,7 @@ func _draw_effect(effect: Dictionary) -> void:
 			var direction := Vector2.RIGHT.rotated(TAU * float(index) / 10.0)
 			draw_line(center + direction * radius * 0.35, center + direction * radius * 1.25, Color(color, alpha), maxf(2.0, 5.0 * alpha))
 		var amount := int(effect.get("amount", 0))
-		var label := "+%d XP RECLAIMED" % amount if kind == "recover" else "ANCHORED" if amount == 0 else "+%d XP ANCHORED" % amount
+		var label := "+%d XP RECLAIMED" % amount if kind == "recover" else "INTEGRATED" if amount == 0 else "+%d XP INTEGRATED" % amount
 		draw_string(ThemeDB.fallback_font, center + Vector2(-100.0, -40.0 - progress * 35.0), label, HORIZONTAL_ALIGNMENT_CENTER, 200.0, maxi(14, int(18.0 * world_scale)), Color(color, alpha))
 	draw_arc(center, radius, 0.0, TAU, 18, Color(color, alpha), maxf(2.0, 5.0 * alpha))
 
@@ -782,7 +793,7 @@ func _draw_player_progress_bar(header_font: int) -> void:
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * float(carried) / float(target), bar.size.y)), Color("d7aa58"))
 	draw_rect(bar, Color("d8ddd8"), false, 1.5)
 	var label := "XP  %d / %d" % [carried, state.next_upgrade_cost()]
-	if state.mode_id == "campaign_lab": label = "SAFE %d   •   AT RISK %d   •   NEXT %d" % [secured, risk, state.next_upgrade_cost()]
+	if state.mode_id == "campaign_lab": label = "INTEGRATED %d   •   AT RISK %d   •   NEXT %d" % [secured, risk, state.next_upgrade_cost()]
 	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.78), label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(9, int(height * 0.66)), Color("f4f2e9"))
 
 func _draw_hazard(hazard: Dictionary) -> void:
@@ -881,7 +892,7 @@ func _draw_hud() -> void:
 	if state.mode_id == "campaign_lab":
 		var safe := int(visual.get("secured_xp", state.secured_xp))
 		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
-		hp_text = "SAFE %d  •  RISK %d" % [safe, risk]
+		hp_text = "INT %d  •  RISK %d" % [safe, risk]
 	if float(visual.get("strength_remaining", 0.0)) > 0.0:
 		hp_text += "  STR ACTIVE"
 	var text := String(visual.get("message", state.message))
@@ -917,12 +928,15 @@ func _draw_view_button() -> void:
 	draw_string(ThemeDB.fallback_font, view_rect.position + Vector2(0.0, view_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, view_rect.size.x, font, Color("d7dddd"))
 
 func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
-	if state.is_discovered(state.bonfire_pos, discovered):
+	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.bonfire_pos, discovered):
 		var bonfire := _world_to_screen(state.bonfire_pos)
 		var bright := state.is_visible(state.bonfire_pos, visible)
 		draw_circle(bonfire, 25.0 * world_scale, Color("e89145") if bright else Color("62452f"))
 		draw_circle(bonfire + Vector2(0, -12.0 * world_scale), 13.0 * world_scale, Color("f4d36b") if bright else Color("695b3c"))
-	if state.is_discovered(state.shortcut_gate.get_center(), discovered):
+		if state.player_pos.distance_to(state.bonfire_pos) <= state.WAYSTONE_RANGE:
+			draw_arc(bonfire, 38.0 * world_scale, 0.0, TAU, 24, Color("f3d46a"), maxf(2.0, 3.0 * world_scale))
+			draw_string(ThemeDB.fallback_font, bonfire + Vector2(-45.0, -48.0 * world_scale), "TAP", HORIZONTAL_ALIGNMENT_CENTER, 90.0, maxi(11, int(13.0 * world_scale)), Color("f4e2a1"))
+	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.shortcut_gate.get_center(), discovered):
 		var gate := _world_to_screen(state.shortcut_gate.get_center())
 		draw_circle(gate, 15.0 * world_scale, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
 	if bool(state.lost_xp.get("active", false)) and state.is_discovered(Vector2(state.lost_xp["pos"]), discovered):
@@ -980,7 +994,7 @@ func _draw_death_overlay() -> void:
 	if state.mode_id == "expedition":
 		lines.append("XP LOST  %d" % int(report.get("lost_xp", 0)))
 	else:
-		lines.append("ANCHORED  %d XP" % int(report.get("retained_xp", 0)))
+		lines.append("INTEGRATED  %d XP" % int(report.get("retained_xp", 0)))
 		lines.append("SHADOW  %d XP" % int(report.get("shadow_xp", 0)))
 		var forgotten := int(report.get("forgotten_cells", 0))
 		lines.append("MEMORY  SECURE" if forgotten == 0 else "MEMORY LOST  %d TRACES" % forgotten)
@@ -988,7 +1002,7 @@ func _draw_death_overlay() -> void:
 		if bool(report.get("previous_shadow_erased", false)): lines.append("OLDER SHADOW ERASED")
 	var report_font := maxi(13, int(font * 0.42))
 	for index in range(lines.size()):
-		var line_color := Color("e9f4b1") if String(lines[index]).begins_with("SHADOW") else Color("f0c36b") if String(lines[index]).begins_with("ANCHORED") else Color("d6d3c7")
+		var line_color := Color("e9f4b1") if String(lines[index]).begins_with("SHADOW") else Color("f0c36b") if String(lines[index]).begins_with("INTEGRATED") else Color("d6d3c7")
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, center_y - 42.0 + index * (report_font + 10.0)), lines[index], HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, report_font, line_color)
 	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, center_y + 118.0), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
 
@@ -1012,13 +1026,14 @@ func _draw_map() -> void:
 		draw_rect(mapped, Color(0.15, 0.22, 0.24, 0.55 if overlay else 1.0))
 		draw_rect(mapped, Color(0.42, 0.49, 0.51, 0.7 if overlay else 1.0), false, 1.5)
 	var player := origin + state.player_pos * scale
-	var bonfire := origin + state.bonfire_pos * scale
-	draw_circle(bonfire, 8.0, Color("e89b52"))
+	if bool(state.mode_config["waystone_available"]):
+		var bonfire := origin + state.bonfire_pos * scale
+		draw_circle(bonfire, 8.0, Color("e89b52"))
 	draw_circle(player, 7.0, PLAYER_COLOR)
 	if bool(state.areas[6].get("discovered", false)):
 		var exit_center := origin + Vector2(state.areas[6]["center"]) * scale
 		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
-	if state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
+	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
 	if bool(state.lost_xp.get("active", false)):
 		var shadow := origin + Vector2(state.lost_xp["pos"]) * scale
 		var segments := 18
@@ -1120,11 +1135,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "SLOW / WIDE" if available else "COOLING" if state.loadout_id == "duelist" else ""
 	elif name == "wait":
 		title = state.interaction_label()
-		if title == "WAYSTONE":
-			title = "STONE"
-			subtitle = "REST / LEARN"
-		else:
-			subtitle = "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
+		subtitle = "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
 		available = not state.trial_complete
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("d7aa58") if name == "wait" else Color("db6463")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
@@ -1140,17 +1151,10 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(title_font * 0.6)), color if available else Color("59666b"))
 
 func _draw_waystone_menu() -> void:
-	var risk := state.provisional_xp()
-	var anchor_description := "SECURE %d XP" % risk if risk > 0 else "SECURE PROGRESS" if state.has_unanchored_progress() else "ALL SECURE"
-	var definitions := {
-		"potion": ["REST", "HEAL • NO ANCHOR" if state.has_unanchored_progress() else "HEAL • RESPAWN"],
-		"defense": ["LEARN", "SPEND XP"],
-		"skill": ["ANCHOR", anchor_description],
-		"wait": ["LEAVE", "CLOSE"],
-	}
-	for name in definitions:
-		var rect := Rect2(buttons[name])
-		var definition: Array = definitions[name]
+	var definitions := {"learn": ["LEARN", "SPEND %d XP" % state.next_upgrade_cost()], "continue": ["CONTINUE", "RETURN TO THE WORLD"]}
+	for option in definitions:
+		var rect := _waystone_option_rect(String(option))
+		var definition: Array = definitions[option]
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58"), false, 2.0)
 		var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.19))

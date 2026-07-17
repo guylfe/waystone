@@ -36,6 +36,7 @@ func _init() -> void:
 	test_overlay_map_passes_input_through()
 	test_generated_rooms_have_no_shields()
 	test_mode_policies_and_death()
+	test_waystone_requires_deliberate_activation()
 	test_room_reward_progression()
 	test_shortcut_and_waystone_persistence()
 	test_provisional_progress_accounting()
@@ -350,16 +351,13 @@ func test_progressive_expedition_rooms() -> void:
 		var state: RunState = RunStateScript.new(false)
 		state.start_run("duelist", "auto", seed)
 		assert(state.areas.size() == 8)
-		assert(state.connections.size() == 8)
+		assert(state.connections.size() == 7)
 		assert(String(state.areas[0]["kind"]) == "start")
 		assert(String(state.areas[6]["kind"]) == "boss")
 		assert(String(state.areas[7]["kind"]) == "optional")
-		var shortcut_count := 0
 		for connection in state.connections:
-			if bool(connection["shortcut"]):
-				shortcut_count += 1
-				assert(int(connection["from"]) == 3 and int(connection["to"]) == 0)
-		assert(shortcut_count == 1 and not state.shortcut_unlocked)
+			assert(not bool(connection["shortcut"]))
+		assert(not state.shortcut_unlocked and state.shortcut_gate == Rect2())
 		var start_cell := state._nearest_open_cell(state._world_to_nav(state.player_pos))
 		var boss_cell := state._nearest_open_cell(state._world_to_nav(Vector2(state.areas[6]["center"])))
 		var branch_cell := state._nearest_open_cell(state._world_to_nav(Vector2(state.areas[7]["center"])))
@@ -434,7 +432,8 @@ func test_room_reward_progression() -> void:
 	state.carried_xp = 16
 	state.player_pos = state.bonfire_pos
 	state.player_hp = 1
-	assert(state.rest_at_waystone() and not state.upgrade_pending and state.player_hp == state.player_max_hp)
+	assert(state.activate_waystone() and not state.upgrade_pending and state.player_hp == state.player_max_hp)
+	assert(state.secured_xp == 16 and state.can_learn_at_waystone())
 	assert(state.learn_at_waystone() and state.upgrade_pending and state.upgrade_context == "waystone")
 	assert(state.choose_upgrade(state.upgrade_choices[0]))
 	assert(state.upgrade_pending and state.carried_xp == 10)
@@ -447,6 +446,9 @@ func test_mode_policies_and_death() -> void:
 	assert(expedition.mode_id == "expedition")
 	assert(String(expedition.mode_rules()["death_policy"]) == "end_run")
 	assert(not bool(expedition.mode_rules()["waystone_available"]))
+	assert(expedition.connections.size() == 7)
+	for connection in expedition.connections: assert(not bool(connection["shortcut"]))
+	assert(not expedition.unlock_shortcut() and not expedition.activate_waystone())
 	expedition.carried_xp = 9
 	expedition._begin_death()
 	assert(expedition.death_pending and not bool(expedition.lost_xp["active"]))
@@ -458,10 +460,27 @@ func test_mode_policies_and_death() -> void:
 	assert(campaign.mode_id == "campaign_lab")
 	assert(String(campaign.mode_rules()["death_policy"]) == "waystone")
 	assert(bool(campaign.mode_rules()["waystone_available"]))
+	assert(campaign.connections.size() == 8)
+	assert(campaign.connections.any(func(connection: Dictionary) -> bool: return bool(connection["shortcut"])))
 	campaign.carried_xp = 9
 	campaign._begin_death()
 	assert(bool(campaign.lost_xp["active"]) and int(campaign.lost_xp["amount"]) == 9)
 	assert(campaign.return_after_death() and campaign.run_active and not campaign.run_failed)
+
+func test_waystone_requires_deliberate_activation() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 203)
+	state.carried_xp = 6
+	state.player_hp = 2
+	state.player_pos = state.bonfire_pos + Vector2.RIGHT * (state.WAYSTONE_RANGE + 1.0)
+	assert(not state.activate_waystone())
+	assert(state.player_hp == 2 and state.secured_xp == 0)
+	state.player_pos = state.bonfire_pos
+	assert(state.player_hp == 2 and state.secured_xp == 0)
+	assert(state.activate_waystone())
+	assert(state.player_hp == state.player_max_hp and state.secured_xp == 6)
+	assert(state.can_learn_at_waystone())
+	assert(int(state.last_anchor_report["xp"]) == 6 and bool(state.last_anchor_report["restored"]))
 
 func test_shortcut_and_waystone_persistence() -> void:
 	var state: RunState = RunStateScript.new(false)
@@ -484,8 +503,7 @@ func test_shortcut_and_waystone_persistence() -> void:
 	state.enemies[0]["hp"] = 0
 	state._remove_dead_enemies()
 	state.player_pos = state.bonfire_pos
-	assert(state.anchor_at_waystone())
-	assert(state.rest_at_waystone())
+	assert(state.activate_waystone())
 	assert(state.player_hp == state.player_max_hp and state.potions == 1)
 	assert(state.enemies.size() == original_count and state.shortcut_unlocked)
 	assert(state.carried_xp >= 5 and state.secured_xp == state.carried_xp)
@@ -506,9 +524,7 @@ func test_provisional_progress_accounting() -> void:
 	assert(state.provisional_xp() == 5 and state.unanchored_discovery_count() == 1)
 	assert(state.has_unanchored_progress())
 	state.player_pos = state.bonfire_pos
-	assert(state.rest_at_waystone())
-	assert(state.secured_xp == 0 and state.message.contains("remain unanchored"))
-	assert(state.anchor_at_waystone())
+	assert(state.activate_waystone())
 	assert(state.secured_xp == 5 and state.provisional_xp() == 0)
 	assert(int(state.last_anchor_report["xp"]) == 5 and int(state.last_anchor_report["memories"]) >= 1)
 	assert(state.effects.any(func(effect: Dictionary) -> bool: return String(effect["kind"]) == "anchor"))
@@ -593,7 +609,7 @@ func test_save_round_trip() -> void:
 	state.player_pos = state.shortcut_unlock_pos
 	assert(state.unlock_shortcut())
 	state.player_pos = state.bonfire_pos
-	assert(state.anchor_at_waystone())
+	assert(state.activate_waystone())
 	var path := "user://waystone-test-expedition.save"
 	assert(state.save_run(path))
 	var restored: RunState = RunStateScript.new(false)

@@ -7,11 +7,11 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	await process_frame
-	if not scene.state.run_active:
-		if not _capture("res://builds/setup-smoke.png"): return
-	if not scene.state.run_active:
-		scene.state.start_run("duelist", "expedition", 739391)
-		scene.visual = scene.state.snapshot()
+	scene.state.abandon_run()
+	scene.visual = scene.state.snapshot()
+	if not _capture("res://builds/setup-smoke.png"): return
+	scene.state.start_run("duelist", "expedition", 739391)
+	scene.visual = scene.state.snapshot()
 	await process_frame
 	await process_frame
 	scene.queue_redraw()
@@ -59,8 +59,10 @@ func _initialize() -> void:
 	if not _capture("res://builds/upgrade-smoke.png"): return
 	scene.state.start_run("duelist", "campaign_lab", 739391)
 	scene.state.player_pos = scene.state.bonfire_pos
+	scene.state.carried_xp = scene.state.next_upgrade_cost()
 	scene.visual = scene.state.snapshot()
-	scene.waystone_menu_open = true
+	assert(scene._try_waystone_press(scene._world_to_screen(scene.state.bonfire_pos)))
+	assert(scene.waystone_menu_open and scene.state.secured_xp == scene.state.carried_xp)
 	scene.queue_redraw()
 	await process_frame
 	await process_frame

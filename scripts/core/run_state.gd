@@ -24,6 +24,7 @@ const SWEEP_COOLDOWN := 4.2
 const NAV_CELL := 50.0
 const VISIBILITY_CELL := 50.0
 const SIGHT_RANGE := 520.0
+const WAYSTONE_RANGE := 145.0
 
 var player_pos := Vector2(800.0, 1900.0)
 var player_facing := Vector2.UP
@@ -168,7 +169,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	shortcut_unlocked = false
 	_boss_defeated = false
 	rng.seed = run_seed
-	var layout: Dictionary = FloorGeneratorScript.generate(run_seed)
+	var layout: Dictionary = FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
 	areas.assign(Array(layout["areas"]).duplicate(true))
 	connections.assign(Array(layout["connections"]).duplicate(true))
 	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
@@ -191,7 +192,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 		_capture_anchor_history()
 		message = "The Waystone anchors this moment. Time is frozen."
 	else:
-		message = "The starting Waystone fades behind you. Death ends the expedition."
+		message = "The expedition begins. Death ends the run."
 	last_timeline.clear()
 	changed.emit()
 	message_changed.emit(message)
@@ -450,8 +451,7 @@ func request_wait(duration: float = 0.50) -> bool:
 
 func interaction_label() -> String:
 	if not run_active or death_pending: return "WAIT"
-	if not shortcut_unlocked and player_pos.distance_to(shortcut_unlock_pos) <= 115.0: return "UNLOCK"
-	if bool(mode_config["waystone_available"]) and player_pos.distance_to(bonfire_pos) <= 125.0: return "WAYSTONE"
+	if bool(mode_config["waystone_available"]) and not shortcut_unlocked and player_pos.distance_to(shortcut_unlock_pos) <= 115.0: return "UNLOCK"
 	return "WAIT"
 
 func request_context_action() -> bool:
@@ -460,21 +460,32 @@ func request_context_action() -> bool:
 		"UNLOCK": return unlock_shortcut()
 		_: return request_wait()
 
-func rest_at_waystone() -> bool:
-	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+func can_learn_at_waystone() -> bool:
+	return bool(mode_config["waystone_available"]) and secured_xp >= next_upgrade_cost()
+
+func activate_waystone() -> bool:
+	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > WAYSTONE_RANGE or not is_player_ready(): return false
 	_restore_at_waystone()
 	_respawn_enemies()
 	_update_exploration(true)
-	if has_unanchored_progress():
-		_set_message("Restored, but your new experience and memories remain unanchored.")
-	else:
-		_set_message("The Waystone restores you. The world stirs again.")
+	var xp_gained := provisional_xp()
+	var memories_gained := unanchored_discovery_count()
+	var shortcut_gained := unanchored_shortcut()
+	secured_xp = carried_xp
+	_capture_anchor_history()
+	last_anchor_report = {"xp": xp_gained, "memories": memories_gained, "shortcut": shortcut_gained, "restored": true}
+	_add_effect("anchor", bonfire_pos, xp_gained)
+	var parts: Array[String] = ["health restored", "enemies revived"]
+	if xp_gained > 0: parts.append("%d XP integrated" % xp_gained)
+	if memories_gained > 0: parts.append("%d map traces anchored" % memories_gained)
+	if shortcut_gained: parts.append("shortcut remembered")
+	_set_message("Waystone: %s." % ", ".join(parts))
 	changed.emit()
 	return true
 
 func learn_at_waystone() -> bool:
-	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
-	if carried_xp < next_upgrade_cost():
+	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > WAYSTONE_RANGE or not is_player_ready(): return false
+	if secured_xp < next_upgrade_cost():
 		_set_message("More experience is needed before another lesson can be integrated.")
 		changed.emit()
 		return false
@@ -482,25 +493,8 @@ func learn_at_waystone() -> bool:
 	changed.emit()
 	return true
 
-func anchor_at_waystone() -> bool:
-	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
-	var xp_gained := provisional_xp()
-	var memories_gained := unanchored_discovery_count()
-	var shortcut_gained := unanchored_shortcut()
-	secured_xp = carried_xp
-	_capture_anchor_history()
-	last_anchor_report = {"xp": xp_gained, "memories": memories_gained, "shortcut": shortcut_gained}
-	_add_effect("anchor", bonfire_pos, xp_gained)
-	var parts: Array[String] = []
-	if xp_gained > 0: parts.append("%d XP" % xp_gained)
-	if memories_gained > 0: parts.append("%d map traces" % memories_gained)
-	if shortcut_gained: parts.append("the shortcut")
-	_set_message("Already anchored." if parts.is_empty() else "Anchored %s." % ", ".join(parts))
-	changed.emit()
-	return true
-
 func unlock_shortcut() -> bool:
-	if shortcut_unlocked or player_pos.distance_to(shortcut_unlock_pos) > 115.0 or not is_player_ready(): return false
+	if not bool(mode_config["waystone_available"]) or shortcut_unlocked or player_pos.distance_to(shortcut_unlock_pos) > 115.0 or not is_player_ready(): return false
 	shortcut_unlocked = true
 	walls.assign(base_walls)
 	for connection in connections:
@@ -555,7 +549,7 @@ func _restore_anchor_history() -> void:
 
 func _apply_shortcut_world_state() -> void:
 	walls.assign(base_walls)
-	if not shortcut_unlocked: walls.append(shortcut_gate)
+	if bool(mode_config["waystone_available"]) and not shortcut_unlocked: walls.append(shortcut_gate)
 	for connection in connections:
 		if bool(connection.get("shortcut", false)): connection["unlocked"] = shortcut_unlocked
 	_build_navigation()
@@ -1410,7 +1404,7 @@ func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 7
+	payload["save_version"] = 8
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
@@ -1437,7 +1431,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if save_version < 1 or save_version > 7: return false
+	if save_version < 1 or save_version > 8: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
@@ -1456,6 +1450,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	start_run(loadout_id, mode_id, run_seed)
 	run_active = bool(payload.get("run_active", true))
 	player_pos = Vector2(payload.get("player_pos", player_pos))
+	var position_was_migrated := false
+	if not _point_on_floor(player_pos):
+		player_pos = _player_start
+		position_was_migrated = true
 	player_facing = Vector2(payload.get("player_facing", Vector2.UP))
 	player_hp = int(payload.get("player_hp", player_max_hp))
 	player_max_hp = int(payload.get("player_max_hp", player_max_hp))
@@ -1508,6 +1506,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	successful_endures = int(payload.get("successful_endures", 0))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
+	if position_was_migrated: message = "The expedition route shifted. You return to its beginning."
 	rng.state = int(payload.get("rng_state", rng.state))
 	_next_enemy_id = 1
 	for enemy in enemies:

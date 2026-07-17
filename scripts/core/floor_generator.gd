@@ -9,7 +9,7 @@ const WALL_THICKNESS := 56.0
 const DOOR_WIDTH := 320.0
 const CORRIDOR_WIDTH := 320.0
 
-static func generate(seed_value: int) -> Dictionary:
+static func generate(seed_value: int, include_shortcut: bool = true) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var centers := [
@@ -43,13 +43,14 @@ static func generate(seed_value: int) -> Dictionary:
 			"discovered": index == 0,
 		})
 
-	var edge_pairs := [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [2, 7], [3, 0]]
+	var edge_pairs := [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [2, 7]]
+	if include_shortcut: edge_pairs.append([3, 0])
 	var connections: Array[Dictionary] = []
 	for edge_index in range(edge_pairs.size()):
 		var pair: Array = edge_pairs[edge_index]
 		var from_id := int(pair[0])
 		var to_id := int(pair[1])
-		var shortcut := edge_index == edge_pairs.size() - 1
+		var shortcut := include_shortcut and edge_index == edge_pairs.size() - 1
 		connections.append({
 			"id": edge_index,
 			"from": from_id,
@@ -76,17 +77,19 @@ static func generate(seed_value: int) -> Dictionary:
 		if int(area["id"]) == 0 or String(area["kind"]) == "boss": continue
 		walls.append_array(_room_obstacles(Rect2(area["rect"]), int(area["id"]), rng))
 
-	var shortcut: Dictionary = connections[-1]
-	var shortcut_corridor := Rect2(shortcut["corridor"])
 	var start_center := Vector2(areas[0]["center"])
 	var far_center := Vector2(areas[3]["center"])
-	var gate_center := shortcut_corridor.get_center()
-	var gate_rect: Rect2
-	if absf(far_center.x - start_center.x) > absf(far_center.y - start_center.y):
-		gate_rect = Rect2(gate_center - Vector2(WALL_THICKNESS * 0.5, CORRIDOR_WIDTH * 0.5), Vector2(WALL_THICKNESS, CORRIDOR_WIDTH))
-	else:
-		gate_rect = Rect2(gate_center - Vector2(CORRIDOR_WIDTH * 0.5, WALL_THICKNESS * 0.5), Vector2(CORRIDOR_WIDTH, WALL_THICKNESS))
-	walls.append(gate_rect)
+	var gate_center := Vector2.ZERO
+	var gate_rect := Rect2()
+	if include_shortcut:
+		var shortcut: Dictionary = connections[-1]
+		var shortcut_corridor := Rect2(shortcut["corridor"])
+		gate_center = shortcut_corridor.get_center()
+		if absf(far_center.x - start_center.x) > absf(far_center.y - start_center.y):
+			gate_rect = Rect2(gate_center - Vector2(WALL_THICKNESS * 0.5, CORRIDOR_WIDTH * 0.5), Vector2(WALL_THICKNESS, CORRIDOR_WIDTH))
+		else:
+			gate_rect = Rect2(gate_center - Vector2(CORRIDOR_WIDTH * 0.5, WALL_THICKNESS * 0.5), Vector2(CORRIDOR_WIDTH, WALL_THICKNESS))
+		walls.append(gate_rect)
 
 	var encounter_templates: Dictionary = {}
 	for area_id in range(1, areas.size()):
@@ -97,14 +100,14 @@ static func generate(seed_value: int) -> Dictionary:
 		"areas": areas,
 		"connections": connections,
 		"walls": walls,
-		"base_walls": walls.slice(0, walls.size() - 1),
+		"base_walls": walls.slice(0, walls.size() - 1) if include_shortcut else walls.duplicate(),
 		"encounters": encounter_templates,
 		"bonfire_pos": Vector2(areas[0]["center"]),
 		"player_start": Vector2(areas[0]["center"]) + (Vector2.DOWN if not mirror_y else Vector2.UP) * 170.0,
 		"exit_pos": Vector2(areas[6]["center"]),
 		"shortcut_gate": gate_rect,
-		"shortcut_unlock_pos": gate_center.lerp(far_center, 0.56),
-		"shortcut_start_pos": gate_center.lerp(start_center, 0.56),
+		"shortcut_unlock_pos": gate_center.lerp(far_center, 0.56) if include_shortcut else Vector2.ZERO,
+		"shortcut_start_pos": gate_center.lerp(start_center, 0.56) if include_shortcut else Vector2.ZERO,
 	}
 
 static func _corridor_between(a: Rect2, b: Rect2) -> Rect2:
