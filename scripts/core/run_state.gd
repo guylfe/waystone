@@ -91,6 +91,8 @@ var current_area_id := 0
 var carried_xp := 0
 var secured_xp := 0
 var lost_xp := {"active": false, "amount": 0, "pos": Vector2.ZERO}
+var death_report: Dictionary = {}
+var last_anchor_report: Dictionary = {}
 var upgrade_count := 0
 var upgrade_ranks: Dictionary = {}
 var death_pending := false
@@ -147,6 +149,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	carried_xp = 0
 	secured_xp = 0
 	lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+	death_report.clear()
+	last_anchor_report.clear()
 	rooms_cleared = 0
 	enemies_defeated = 0
 	damage_dealt = 0
@@ -205,6 +209,23 @@ func mode_rules() -> Dictionary:
 
 func mode_label() -> String:
 	return ModeRulesScript.label(mode_id)
+
+func provisional_xp() -> int:
+	return maxi(0, carried_xp - secured_xp) if bool(mode_config["waystone_available"]) else carried_xp
+
+func unanchored_discovery_count() -> int:
+	if not bool(mode_config["waystone_available"]): return 0
+	var anchored: Dictionary = anchor_state.get("discovered_cells", {})
+	var count := 0
+	for cell in discovered_cells:
+		if not anchored.has(cell): count += 1
+	return count
+
+func unanchored_shortcut() -> bool:
+	return shortcut_unlocked and not bool(anchor_state.get("shortcut_unlocked", false))
+
+func has_unanchored_progress() -> bool:
+	return provisional_xp() > 0 or unanchored_discovery_count() > 0 or unanchored_shortcut()
 
 func _enemy_base_hp(kind: String) -> int:
 	return {"knife": 4, "blade": 7, "hound": 6, "archer": 5, "shield": 10, "polearm": 12, "hexer": 7, "brute": 16, "captain": 12, "warden": 26}.get(kind, 7)
@@ -444,7 +465,10 @@ func rest_at_waystone() -> bool:
 	_restore_at_waystone()
 	_respawn_enemies()
 	_update_exploration(true)
-	_set_message("The Waystone restores you. The world stirs again.")
+	if has_unanchored_progress():
+		_set_message("Restored, but your new experience and memories remain unanchored.")
+	else:
+		_set_message("The Waystone restores you. The world stirs again.")
 	changed.emit()
 	return true
 
@@ -460,9 +484,18 @@ func learn_at_waystone() -> bool:
 
 func anchor_at_waystone() -> bool:
 	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > 125.0 or not is_player_ready(): return false
+	var xp_gained := provisional_xp()
+	var memories_gained := unanchored_discovery_count()
+	var shortcut_gained := unanchored_shortcut()
 	secured_xp = carried_xp
 	_capture_anchor_history()
-	_set_message("Your experience, map, and opened paths settle into the Waystone.")
+	last_anchor_report = {"xp": xp_gained, "memories": memories_gained, "shortcut": shortcut_gained}
+	_add_effect("anchor", bonfire_pos, xp_gained)
+	var parts: Array[String] = []
+	if xp_gained > 0: parts.append("%d XP" % xp_gained)
+	if memories_gained > 0: parts.append("%d map traces" % memories_gained)
+	if shortcut_gained: parts.append("the shortcut")
+	_set_message("Already anchored." if parts.is_empty() else "Anchored %s." % ", ".join(parts))
 	changed.emit()
 	return true
 
@@ -646,7 +679,7 @@ func _try_recover_xp() -> void:
 		carried_xp += amount
 		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
 		_add_effect("recover", player_pos, amount)
-		_set_message("Recovered %d XP." % amount)
+		_set_message("Reclaimed %d XP. It remains at risk until anchored." % amount)
 
 func _update_player(dt: float) -> void:
 	var kind := String(player_action["kind"])
@@ -1031,6 +1064,10 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 
 func _begin_death() -> void:
 	if death_pending: return
+	var previous_shadow_erased := bool(lost_xp.get("active", false))
+	var xp_before_death := carried_xp
+	var forgotten_cells := unanchored_discovery_count()
+	var shortcut_forgotten := unanchored_shortcut()
 	if bool(mode_config["shadow_enabled"]):
 		if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
 		var provisional_xp := maxi(0, carried_xp - secured_xp)
@@ -1038,6 +1075,14 @@ func _begin_death() -> void:
 		carried_xp = secured_xp
 	else:
 		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+	death_report = {
+		"retained_xp": carried_xp,
+		"shadow_xp": int(lost_xp.get("amount", 0)),
+		"lost_xp": xp_before_death if not bool(mode_config["shadow_enabled"]) else 0,
+		"forgotten_cells": forgotten_cells,
+		"shortcut_forgotten": shortcut_forgotten,
+		"previous_shadow_erased": previous_shadow_erased,
+	}
 	death_pending = true
 	player_action = _idle_action()
 	projectiles.clear()
@@ -1099,7 +1144,7 @@ func _update_effects(dt: float) -> void:
 	effects = active
 
 func _add_effect(kind: String, position: Vector2, amount: int = 0) -> void:
-	var duration := 0.62 if kind in ["hit", "hurt", "endure"] else 0.42
+	var duration := 1.10 if kind == "anchor" else 0.90 if kind == "recover" else 0.62 if kind in ["hit", "hurt", "endure"] else 0.42
 	effects.append({"kind": kind, "pos": position, "elapsed": 0.0, "duration": duration, "amount": amount})
 
 func _remove_dead_enemies() -> void:
@@ -1351,6 +1396,8 @@ func snapshot() -> Dictionary:
 		"carried_xp": carried_xp,
 		"secured_xp": secured_xp,
 		"lost_xp": lost_xp.duplicate(true),
+		"death_report": death_report.duplicate(true),
+		"last_anchor_report": last_anchor_report.duplicate(true),
 		"upgrade_count": upgrade_count,
 		"upgrade_ranks": upgrade_ranks.duplicate(true),
 		"upgrade_context": upgrade_context,
@@ -1363,7 +1410,7 @@ func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 6
+	payload["save_version"] = 7
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
@@ -1390,7 +1437,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if save_version < 1 or save_version > 6: return false
+	if save_version < 1 or save_version > 7: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
@@ -1443,6 +1490,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	carried_xp = int(payload.get("carried_xp", 0))
 	secured_xp = int(payload.get("secured_xp", carried_xp if save_version < 6 and mode_id == ModeRulesScript.CAMPAIGN_LAB else 0))
 	lost_xp = Dictionary(payload.get("lost_xp", {"active": false, "amount": 0, "pos": Vector2.ZERO})).duplicate(true)
+	death_report = Dictionary(payload.get("death_report", {})).duplicate(true)
+	last_anchor_report = Dictionary(payload.get("last_anchor_report", {})).duplicate(true)
 	shortcut_unlocked = bool(payload.get("shortcut_unlocked", false))
 	_apply_shortcut_world_state()
 	visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()

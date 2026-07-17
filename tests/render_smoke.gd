@@ -66,6 +66,28 @@ func _initialize() -> void:
 	await process_frame
 	if not _capture("res://builds/waystone-menu-smoke.png"): return
 	scene.waystone_menu_open = false
+	scene.state.carried_xp = 8
+	scene.state.secured_xp = 5
+	scene.state.player_pos += Vector2.UP * 240.0
+	scene.state._begin_death()
+	scene.visual = scene.state.snapshot()
+	scene.queue_redraw()
+	await process_frame
+	await process_frame
+	if not _capture("res://builds/death-accounting-smoke.png"): return
+	scene.state.return_after_death()
+	scene.visual = scene.state.snapshot()
+	scene.map_open = true
+	scene.state.map_presentation = "full"
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/shadow-map-smoke.png"): return
+	scene.map_open = false
+	scene.state.player_pos = Vector2(scene.state.lost_xp["pos"]) + Vector2.DOWN * 260.0
+	scene.visual = scene.state.snapshot()
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/shadow-guidance-smoke.png"): return
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame

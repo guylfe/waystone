@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.13`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.14`. Android version codes increase independently so newer APKs can always upgrade older installations.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -25,6 +25,8 @@ The seeded expedition is now one connected floor: a seven-area main path, an opt
 The active world seed is shown on the map and can be copied, while the pre-run screen accepts an optional seed for repeatable expeditions. Required passages use deliberately wide doors and corridors, and room dressing preserves a generous direct route between every connected entrance. The translucent map is non-modal: movement, combat, and HUD controls remain usable behind it, with only its Close button capturing input.
 
 The prototype now runs the same floor under two explicit rule sets. Expedition uses permadeath and offers earned upgrades when leaving cleared areas. Campaign Lab restores the player at the Waystone after death and restricts learning to the Waystone. Its Rest, Learn, Anchor, and Leave actions separate healing and enemy respawn from securing XP, explored map memory, and opened shortcuts. The current connected floor remains laboratory content; biome-quality procedural generation is a later dedicated milestone.
+
+Campaign Lab now makes provisional life explicit: anchored and at-risk XP occupy separate portions of the XP bar, the Shadow is marked and gently guides nearby recovery, and death accounts for retained XP, recoverable XP, forgotten map memory, and unanchored shortcuts. Reclaiming a Shadow and anchoring progress have stronger visual feedback, while resting explicitly does not secure progress.
 
 Enemies award XP. Expedition offers a three-choice upgrade after leaving a cleared area with enough XP. Campaign Lab leaves only unanchored XP at a recoverable Shadow and returns the player to the Waystone; dying again replaces the old Shadow. Resting restores combat resources and respawns enemies, while anchoring separately secures carried XP, discovered terrain, and opened shortcuts.
 

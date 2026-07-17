@@ -38,6 +38,7 @@ func _init() -> void:
 	test_mode_policies_and_death()
 	test_room_reward_progression()
 	test_shortcut_and_waystone_persistence()
+	test_provisional_progress_accounting()
 	test_visibility_memory_and_awareness()
 	test_xp_death_recovery()
 	test_hex_hazard()
@@ -495,6 +496,43 @@ func test_shortcut_and_waystone_persistence() -> void:
 	assert(state.return_after_death())
 	assert(state.shortcut_unlocked and state.discovered_cells.has(anchored_cell))
 	assert(not state.discovered_cells.has(Vector2i(88, 88)))
+
+func test_provisional_progress_accounting() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 304)
+	state.carried_xp = 5
+	var first_trace := Vector2i(91, 91)
+	state.discovered_cells[first_trace] = true
+	assert(state.provisional_xp() == 5 and state.unanchored_discovery_count() == 1)
+	assert(state.has_unanchored_progress())
+	state.player_pos = state.bonfire_pos
+	assert(state.rest_at_waystone())
+	assert(state.secured_xp == 0 and state.message.contains("remain unanchored"))
+	assert(state.anchor_at_waystone())
+	assert(state.secured_xp == 5 and state.provisional_xp() == 0)
+	assert(int(state.last_anchor_report["xp"]) == 5 and int(state.last_anchor_report["memories"]) >= 1)
+	assert(state.effects.any(func(effect: Dictionary) -> bool: return String(effect["kind"]) == "anchor"))
+	state.carried_xp += 3
+	state.discovered_cells[Vector2i(92, 92)] = true
+	state.shortcut_unlocked = true
+	state.player_pos += Vector2.UP * 180.0
+	state._begin_death()
+	assert(int(state.death_report["retained_xp"]) == 5)
+	assert(int(state.death_report["shadow_xp"]) == 3)
+	assert(int(state.death_report["forgotten_cells"]) == 1)
+	assert(bool(state.death_report["shortcut_forgotten"]))
+	assert(not bool(state.death_report["previous_shadow_erased"]))
+	assert(state.return_after_death())
+	state.carried_xp += 2
+	state._begin_death()
+	assert(int(state.death_report["shadow_xp"]) == 2)
+	assert(bool(state.death_report["previous_shadow_erased"]))
+	assert(state.return_after_death())
+	var shadow_pos := Vector2(state.lost_xp["pos"])
+	state.player_pos = shadow_pos
+	state._try_recover_xp()
+	assert(state.provisional_xp() == 2 and state.message.contains("at risk until anchored"))
+	assert(state.effects.any(func(effect: Dictionary) -> bool: return String(effect["kind"]) == "recover"))
 
 func test_visibility_memory_and_awareness() -> void:
 	var state: RunState = RunStateScript.new(false)

@@ -521,17 +521,44 @@ func _draw_world() -> void:
 		_draw_player()
 	for effect in Array(visual.get("effects", [])):
 		if state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
+	_draw_shadow_guidance()
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
 	var color := Color("f0b45a") if playing else DODGE_COLOR
 	var font := maxi(14, int(minf(size.x, size.y) * 0.026))
 	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, font + 10), label, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.5, font, color)
-	var area_text := "AREA %d  •  %d XP" % [int(visual.get("current_area_id", state.current_area_id)) + 1, int(visual.get("carried_xp", state.carried_xp))]
+	var current_xp := int(visual.get("carried_xp", state.carried_xp))
+	var safe_xp := int(visual.get("secured_xp", state.secured_xp))
+	var risk_xp := maxi(0, current_xp - safe_xp)
+	var area_text := "AREA %d  •  %d XP" % [int(visual.get("current_area_id", state.current_area_id)) + 1, current_xp]
+	if state.mode_id == "campaign_lab":
+		area_text = "AREA %d  •  TIMELINE SECURE" % (int(visual.get("current_area_id", state.current_area_id)) + 1) if risk_xp == 0 else "AREA %d  •  %d XP AT RISK" % [int(visual.get("current_area_id", state.current_area_id)) + 1, risk_xp]
 	var area_width := minf(board_rect.size.x * 0.34, 180.0)
 	var area_x := board_rect.position.x + (board_rect.size.x - area_width) * 0.5
 	draw_string(ThemeDB.fallback_font, Vector2(area_x, board_rect.position.y + font + 10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
 	_draw_player_health_bar(font)
+	_draw_player_progress_bar(font)
+
+func _draw_shadow_guidance() -> void:
+	var shadow: Dictionary = visual.get("lost_xp", state.lost_xp)
+	if not bool(shadow.get("active", false)): return
+	var player_world := Vector2(visual.get("player_pos", state.player_pos))
+	var shadow_world := Vector2(shadow.get("pos", Vector2.ZERO))
+	var distance := player_world.distance_to(shadow_world)
+	if distance > 850.0 or distance < 70.0: return
+	var direction := (shadow_world - player_world).normalized()
+	var side := direction.rotated(PI * 0.5)
+	var strength := clampf(1.0 - (distance - 70.0) / 780.0, 0.18, 0.78)
+	for index in range(4):
+		var center_world := player_world + direction * (75.0 + index * 48.0)
+		var center := _world_to_screen(center_world)
+		var radius := (5.0 + index * 1.5) * world_scale
+		draw_circle(center, radius, Color(0.85, 0.95, 0.48, strength * (0.35 + index * 0.12)))
+		if index == 3:
+			var facing := _screen_direction(direction)
+			var screen_side := _screen_direction(side)
+			draw_colored_polygon(PackedVector2Array([center + facing * radius * 2.3, center - facing * radius + screen_side * radius, center - facing * radius - screen_side * radius]), Color(0.85, 0.95, 0.48, strength))
 
 func _draw_grid() -> void:
 	var color := Color(0.18, 0.29, 0.32, 0.35)
@@ -691,6 +718,8 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif kind == "endure": color = Color("ee6645")
 	elif kind in ["hex", "slam"]: color = Color("b57bea") if kind == "hex" else Color("e15c54")
 	elif kind in ["miss", "glance"]: color = Color("a9b1b2")
+	elif kind == "recover": color = Color("d8ed78")
+	elif kind == "anchor": color = Color("f0b45a")
 	var radius := lerpf(10.0, 46.0, progress)
 	var alpha := 1.0 - progress
 	if kind in ["hit", "hurt", "endure"]:
@@ -702,6 +731,13 @@ func _draw_effect(effect: Dictionary) -> void:
 		if amount > 0:
 			var text_pos := center + Vector2(-36.0, -34.0 - progress * 30.0)
 			draw_string(ThemeDB.fallback_font, text_pos, "-%d" % amount, HORIZONTAL_ALIGNMENT_CENTER, 72.0, maxi(18, int(22.0 * world_scale)), Color(color, alpha))
+	elif kind in ["recover", "anchor"]:
+		for index in range(10):
+			var direction := Vector2.RIGHT.rotated(TAU * float(index) / 10.0)
+			draw_line(center + direction * radius * 0.35, center + direction * radius * 1.25, Color(color, alpha), maxf(2.0, 5.0 * alpha))
+		var amount := int(effect.get("amount", 0))
+		var label := "+%d XP RECLAIMED" % amount if kind == "recover" else "ANCHORED" if amount == 0 else "+%d XP ANCHORED" % amount
+		draw_string(ThemeDB.fallback_font, center + Vector2(-100.0, -40.0 - progress * 35.0), label, HORIZONTAL_ALIGNMENT_CENTER, 200.0, maxi(14, int(18.0 * world_scale)), Color(color, alpha))
 	draw_arc(center, radius, 0.0, TAU, 18, Color(color, alpha), maxf(2.0, 5.0 * alpha))
 
 func _draw_player_damage_overlay() -> void:
@@ -727,6 +763,27 @@ func _draw_player_health_bar(header_font: int) -> void:
 	draw_rect(bar, Color("d8ddd8"), false, 2.0)
 	var label_font := maxi(12, int(height * 0.72))
 	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.77), "HP  %d / %d" % [hp, maximum], HORIZONTAL_ALIGNMENT_CENTER, width, label_font, Color("f4f2e9"))
+
+func _draw_player_progress_bar(header_font: int) -> void:
+	var carried := int(visual.get("carried_xp", state.carried_xp))
+	var secured := mini(carried, int(visual.get("secured_xp", state.secured_xp))) if state.mode_id == "campaign_lab" else 0
+	var risk := maxi(0, carried - secured)
+	var target := maxi(1, maxi(state.next_upgrade_cost(), carried))
+	var width := minf(board_rect.size.x * 0.50, 340.0)
+	var health_height := clampf(board_rect.size.y * 0.016, 15.0, 24.0)
+	var height := clampf(board_rect.size.y * 0.013, 12.0, 19.0)
+	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 42.0 + health_height), Vector2(width, height))
+	draw_rect(bar.grow(3.0), Color(0.03, 0.05, 0.06, 0.94))
+	draw_rect(bar, Color("171d20"))
+	if state.mode_id == "campaign_lab":
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * float(secured) / float(target), bar.size.y)), Color("d7aa58"))
+		draw_rect(Rect2(bar.position + Vector2(bar.size.x * float(secured) / float(target), 0.0), Vector2(bar.size.x * float(risk) / float(target), bar.size.y)), Color("b9d85d"))
+	else:
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * float(carried) / float(target), bar.size.y)), Color("d7aa58"))
+	draw_rect(bar, Color("d8ddd8"), false, 1.5)
+	var label := "XP  %d / %d" % [carried, state.next_upgrade_cost()]
+	if state.mode_id == "campaign_lab": label = "SAFE %d   •   AT RISK %d   •   NEXT %d" % [secured, risk, state.next_upgrade_cost()]
+	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.78), label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(9, int(height * 0.66)), Color("f4f2e9"))
 
 func _draw_hazard(hazard: Dictionary) -> void:
 	var center := _world_to_screen(Vector2(hazard["pos"]))
@@ -820,8 +877,11 @@ func _draw_hud() -> void:
 	else:
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
-	var hp_text := "HP %d/%d  •  XP %d/%d" % [int(visual.get("player_hp", state.player_hp)), int(visual.get("player_max_hp", state.player_max_hp)), int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
-	hp_text += "  •  %s" % state.mode_label().to_upper()
+	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
+	if state.mode_id == "campaign_lab":
+		var safe := int(visual.get("secured_xp", state.secured_xp))
+		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
+		hp_text = "SAFE %d  •  RISK %d" % [safe, risk]
 	if float(visual.get("strength_remaining", 0.0)) > 0.0:
 		hp_text += "  STR ACTIVE"
 	var text := String(visual.get("message", state.message))
@@ -913,8 +973,24 @@ func _draw_death_overlay() -> void:
 	var font := maxi(30, int(minf(size.x, size.y) * 0.065))
 	var title := "EXPEDITION ENDED" if state.mode_id == "expedition" else "FALLEN"
 	var prompt := "Tap to return to setup" if state.mode_id == "expedition" else "Tap to return to the Waystone"
-	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y - 28.0), title, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("d76a68"))
-	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.get_center().y + 40.0), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
+	var report: Dictionary = state.death_report
+	var center_y := board_rect.get_center().y
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, center_y - 120.0), title, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("d76a68"))
+	var lines: Array[String] = []
+	if state.mode_id == "expedition":
+		lines.append("XP LOST  %d" % int(report.get("lost_xp", 0)))
+	else:
+		lines.append("ANCHORED  %d XP" % int(report.get("retained_xp", 0)))
+		lines.append("SHADOW  %d XP" % int(report.get("shadow_xp", 0)))
+		var forgotten := int(report.get("forgotten_cells", 0))
+		lines.append("MEMORY  SECURE" if forgotten == 0 else "MEMORY LOST  %d TRACES" % forgotten)
+		if bool(report.get("shortcut_forgotten", false)): lines.append("SHORTCUT KNOWLEDGE LOST")
+		if bool(report.get("previous_shadow_erased", false)): lines.append("OLDER SHADOW ERASED")
+	var report_font := maxi(13, int(font * 0.42))
+	for index in range(lines.size()):
+		var line_color := Color("e9f4b1") if String(lines[index]).begins_with("SHADOW") else Color("f0c36b") if String(lines[index]).begins_with("ANCHORED") else Color("d6d3c7")
+		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, center_y - 42.0 + index * (report_font + 10.0)), lines[index], HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, report_font, line_color)
+	draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, center_y + 118.0), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, maxi(14, int(font * 0.42)), Color("d6d3c7"))
 
 func _draw_map() -> void:
 	var overlay := state.map_presentation == "overlay"
@@ -943,7 +1019,15 @@ func _draw_map() -> void:
 		var exit_center := origin + Vector2(state.areas[6]["center"]) * scale
 		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
 	if state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
-	if bool(state.lost_xp.get("active", false)): draw_circle(origin + Vector2(state.lost_xp["pos"]) * scale, 7.0, Color("d8ed78"))
+	if bool(state.lost_xp.get("active", false)):
+		var shadow := origin + Vector2(state.lost_xp["pos"]) * scale
+		var segments := 18
+		for index in range(0, segments, 2):
+			var from := player.lerp(shadow, float(index) / float(segments))
+			var to := player.lerp(shadow, float(index + 1) / float(segments))
+			draw_line(from, to, Color(0.85, 0.93, 0.48, 0.52), 2.0)
+		draw_circle(shadow, 8.0, Color("d8ed78"))
+		draw_string(ThemeDB.fallback_font, shadow + Vector2(-55.0, -14.0), "SHADOW %d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 110.0, 11, Color("e9f4b1"))
 	var header := "DISCOVERED AREAS  •  %s  •  SEED %d" % [state.mode_label().to_upper(), state.run_seed]
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), header, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 170.0, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
 	_draw_map_action(_map_close_rect(), "CLOSE")
@@ -1056,10 +1140,12 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(title_font * 0.6)), color if available else Color("59666b"))
 
 func _draw_waystone_menu() -> void:
+	var risk := state.provisional_xp()
+	var anchor_description := "SECURE %d XP" % risk if risk > 0 else "SECURE PROGRESS" if state.has_unanchored_progress() else "ALL SECURE"
 	var definitions := {
-		"potion": ["REST", "HEAL • RESPAWN"],
+		"potion": ["REST", "HEAL • NO ANCHOR" if state.has_unanchored_progress() else "HEAL • RESPAWN"],
 		"defense": ["LEARN", "SPEND XP"],
-		"skill": ["ANCHOR", "SECURE PROGRESS"],
+		"skill": ["ANCHOR", anchor_description],
 		"wait": ["LEAVE", "CLOSE"],
 	}
 	for name in definitions:
