@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.15`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.17`. Android version codes increase independently so newer APKs can always upgrade older installations.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -24,7 +24,11 @@ The seeded expedition is now a forward-directed floor: a seven-area main path pl
 
 The active world seed is shown on the map and can be copied, while the pre-run screen accepts an optional seed for repeatable expeditions. Required passages use deliberately wide doors and corridors, and room dressing preserves a generous direct route between every connected entrance. The translucent map is non-modal: movement, combat, and HUD controls remain usable behind it, with only its Close button capturing input.
 
-The prototype now runs the same content under two explicit rule sets and traversal graphs. Expedition uses permadeath, forward-only geography, and earned upgrades when leaving cleared areas. Campaign Lab restores the player after death and restricts learning to its interconnected Waystone structure. The current floor remains laboratory content; biome-quality procedural generation is a later dedicated milestone.
+The prototype now runs under two explicit rule sets and traversal graphs. Expedition preserves its permadeath, forward-directed floor and exit-earned upgrades. Campaign Lab begins its own larger Friendly Forest region with three Waystones, broad light-green clearings, two independently remembered bidirectional shortcuts, and an underground ruin layer reached through explicit stairs and a return ladder. Combat remains 2D: actors, projectiles, hazards, shadows, and interactions carry a discrete layer identity, while traversal links move between otherwise separate 2D spaces.
+
+The Campaign route first reaches the Moss Waystone, then eventually opens a local root-gate return to it. Near the region's end, the Sunken Ruin descends into buried halls and emerges into a forgotten grove beside the Dawn Waystone, where a second shortcut can be opened from its far side. The map automatically frames the current layer and labels it independently; area and layer palettes are data-driven so later biomes can advertise their identity through ground color.
+
+Shortcut activation now sits directly against the accessible face of each locked gate and has a visible gold interaction marker; the closed gate cannot be unlocked through its wrong side. Normal play renders only camera-adjacent terrain, walls, actors, hazards, landmarks, and effects, while the map retains full discovered-area presentation. Action playback uses lightweight snapshots that omit the growing discovered-world and static-layout payload. The player uses a cyan silhouette with a dark separation halo, white keyline, and facing point so every biome palette preserves contrast.
 
 Campaign Lab now makes provisional life explicit: integrated and at-risk XP occupy separate portions of the XP bar, the Shadow is marked and gently guides nearby recovery, and death accounts for retained XP, recoverable XP, forgotten map memory, and unanchored shortcuts. The Waystone activates only when deliberately tapped in range; that single action restores resources, revives enemies, and integrates XP, map memory, and shortcuts before optionally offering Learn or Continue.
 

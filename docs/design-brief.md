@@ -19,15 +19,21 @@ An Android-first tactical fantasy roguelike that is immediately understandable, 
 - **Campaign:** long procedural interconnected world; checkpoint recovery by default, optional permadeath.
 - **Custom:** lower-priority rule modifiers and seed controls.
 
-## Vertical slice
+## Current world-foundation slice
 
-- One original pathfinder class.
-- Four shared verbs: move/melee, aimed shot, evasive step, placed snare.
-- Three enemy roles: pursuer, cautious ranged threat, area-denial guardian.
-- One compact two-chamber ruin with a long route, lever, locked shortcut, and restorative waystone.
-- One build choice that modifies an existing verb instead of adding another button.
-- Swipe and tap input, keyboard fallback, responsive portrait/landscape layout.
-- Code-drawn clean-modern placeholder presentation with chunky silhouettes and limited color language.
+- Expedition remains a forward-directed, permadeath run without Waystones or campaign return loops.
+- Campaign begins in a large Friendly Forest containing several Waystones and naturally reconnecting routes.
+- A local shortcut opens back toward the second Waystone after further progress.
+- A late Sunken Ruin descends into a separate 2D underground layer, emerges near the first Waystone, and opens a second bidirectional shortcut from its far side.
+- Discrete layer identity scopes combat, collision, awareness, projectiles, hazards, shadows, map discovery, and traversal; stairs and ladders explicitly connect layers without continuous vertical physics.
+- Area presentation is data-driven, beginning with light-green forest ground and a darker ruin-depths palette.
+- Swipe and tap input, keyboard fallback, and responsive portrait/landscape layout remain shared by every mode.
+
+## Immediate geometry track
+
+- `0.0.18`: replace rectangular room boundaries with a continuous-region representation and one semi-curated Friendly Forest using irregular clearings, broad trails, natural boundaries, and landmark-shaped junctions.
+- `0.0.19`: make that representation generative through curated spatial grammars and topology templates, while preserving generous mandatory passages, Waystone relationships, and shortcut guarantees.
+- Block rooms and straight bridge-like corridors are scaffolding for topology tests, not the intended campaign geography or a content-production format.
 
 ## Achievement philosophy
 

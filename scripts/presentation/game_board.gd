@@ -5,7 +5,7 @@ const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const BG := Color("0d151b")
 const FLOOR := Color("17272d")
 const WALL := Color("344148")
-const PLAYER_COLOR := Color("8fd178")
+const PLAYER_COLOR := Color("39ddff")
 const BLADE_COLOR := Color("e46c63")
 const ARCHER_COLOR := Color("c68be4")
 const POLEARM_COLOR := Color("d08a48")
@@ -326,6 +326,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 			return
 	if not board_rect.has_point(end_position): return
 	if _try_waystone_press(end_position): return
+	if _try_transition_press(end_position): return
 	var drag := end_position - touch_start
 	var threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
 	if drag.length() >= threshold:
@@ -445,9 +446,11 @@ func _advance_or_wait() -> void:
 
 func _try_waystone_press(position: Vector2) -> bool:
 	if not bool(state.mode_config["waystone_available"]): return false
-	var marker := _world_to_screen(state.bonfire_pos)
-	if marker.distance_to(position) > maxf(38.0, 42.0 * world_scale): return false
-	if state.player_pos.distance_to(state.bonfire_pos) > state.WAYSTONE_RANGE:
+	var selected: Dictionary = {}
+	for stone in state.waystones:
+		if String(stone.get("layer", state.current_layer)) == state.current_layer and _world_to_screen(Vector2(stone["pos"])).distance_to(position) <= maxf(38.0, 42.0 * world_scale): selected = stone
+	if selected.is_empty(): return false
+	if state.player_pos.distance_to(Vector2(selected["pos"])) > state.WAYSTONE_RANGE:
 		state.message = "Move closer to activate the Waystone."
 		visual = state.snapshot()
 		queue_redraw()
@@ -458,6 +461,24 @@ func _try_waystone_press(position: Vector2) -> bool:
 	visual = state.snapshot()
 	queue_redraw()
 	return true
+
+func _try_transition_press(position: Vector2) -> bool:
+	for transition in state.transitions:
+		var marker := Vector2.ZERO
+		if String(transition["from_layer"]) == state.current_layer: marker = Vector2(transition["from_pos"])
+		elif String(transition["to_layer"]) == state.current_layer: marker = Vector2(transition["to_pos"])
+		else: continue
+		if _world_to_screen(marker).distance_to(position) > maxf(38.0, 42.0 * world_scale): continue
+		if state.player_pos.distance_to(marker) > 120.0:
+			state.message = "Move closer to use this passage."
+			visual = state.snapshot()
+			queue_redraw()
+			return true
+		state.use_transition()
+		visual = state.snapshot()
+		queue_redraw()
+		return true
+	return false
 
 func _waystone_option_rect(option: String) -> Rect2:
 	return Rect2(buttons["potion"]).merge(Rect2(buttons["defense"])) if option == "learn" else Rect2(buttons["skill"]).merge(Rect2(buttons["wait"]))
@@ -502,21 +523,27 @@ func _draw_world() -> void:
 	draw_rect(board_rect, Color("05080a"))
 	_draw_discovered_floor()
 	_draw_grid()
-	var discovered: Dictionary = visual.get("discovered_cells", state.discovered_cells)
+	var discovered := _render_discovered_cells()
 	var visible: Dictionary = visual.get("visible_cells", state.visible_cells)
 	for wall in state.walls:
-		if state.is_discovered(wall.get_center(), discovered): _draw_wall(wall)
+		if _world_rect_on_camera(wall) and state.is_discovered(wall.get_center(), discovered): _draw_wall(wall)
 	_draw_landmarks(visible, discovered)
 	for projectile in Array(visual.get("projectiles", [])):
+		if String(projectile.get("layer", state.current_layer)) != state.current_layer: continue
+		if not _world_point_on_camera(Vector2(projectile["pos"]), 30.0): continue
 		if not state.is_visible(Vector2(projectile["pos"]), visible): continue
 		var center := _world_to_screen(Vector2(projectile["pos"]))
 		var direction := _screen_direction(Vector2(projectile["vel"]).normalized())
 		draw_line(center - direction * 15.0, center + direction * 9.0, Color("f1ce72"), maxf(2.0, world_scale * 8.0))
 	for hazard in Array(visual.get("hazards", [])):
+		if String(hazard.get("layer", state.current_layer)) != state.current_layer: continue
+		if not _world_point_on_camera(Vector2(hazard["pos"]), float(hazard.get("radius", 100.0))): continue
 		if state.is_visible(Vector2(hazard["pos"]), visible): _draw_hazard(hazard)
 	if view_mode == "isometric":
 		var actors: Array[Dictionary] = []
 		for enemy in Array(visual.get("enemies", [])):
+			if String(enemy.get("layer", state.current_layer)) != state.current_layer: continue
+			if not _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5): continue
 			if not state.is_visible(Vector2(enemy["pos"]), visible): continue
 			var entry: Dictionary = enemy.duplicate()
 			entry["_player"] = false
@@ -528,10 +555,10 @@ func _draw_world() -> void:
 			else: _draw_enemy(actor)
 	else:
 		for enemy in Array(visual.get("enemies", [])):
-			if state.is_visible(Vector2(enemy["pos"]), visible): _draw_enemy(enemy)
+			if String(enemy.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5) and state.is_visible(Vector2(enemy["pos"]), visible): _draw_enemy(enemy)
 		_draw_player()
 	for effect in Array(visual.get("effects", [])):
-		if state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
+		if String(effect.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(effect["pos"]), 80.0) and state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
 	_draw_shadow_guidance()
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
@@ -542,9 +569,9 @@ func _draw_world() -> void:
 	var current_xp := int(visual.get("carried_xp", state.carried_xp))
 	var safe_xp := int(visual.get("secured_xp", state.secured_xp))
 	var risk_xp := maxi(0, current_xp - safe_xp)
-	var area_text := "AREA %d  •  %d XP" % [int(visual.get("current_area_id", state.current_area_id)) + 1, current_xp]
+	var area_text := "%s  •  %d XP" % [state.current_area_name().to_upper(), current_xp]
 	if state.mode_id == "campaign_lab":
-		area_text = "AREA %d  •  TIMELINE SECURE" % (int(visual.get("current_area_id", state.current_area_id)) + 1) if risk_xp == 0 else "AREA %d  •  %d XP AT RISK" % [int(visual.get("current_area_id", state.current_area_id)) + 1, risk_xp]
+		area_text = "%s  •  TIMELINE SECURE" % state.current_area_name().to_upper() if risk_xp == 0 else "%s  •  %d XP AT RISK" % [state.current_area_name().to_upper(), risk_xp]
 	var area_width := minf(board_rect.size.x * 0.34, 180.0)
 	var area_x := board_rect.position.x + (board_rect.size.x - area_width) * 0.5
 	draw_string(ThemeDB.fallback_font, Vector2(area_x, board_rect.position.y + font + 10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
@@ -581,17 +608,21 @@ func _draw_grid() -> void:
 		if int(cell.y) % 2 == 0: draw_line(_world_to_screen(Vector2(top_left.x, top_left.y)), _world_to_screen(Vector2(top_left.x + state.VISIBILITY_CELL, top_left.y)), color)
 
 func _draw_discovered_floor() -> void:
-	var discovered: Dictionary = visual.get("discovered_cells", state.discovered_cells)
+	var discovered := _render_discovered_cells()
 	var visible: Dictionary = visual.get("visible_cells", state.visible_cells)
-	for cell in discovered:
-		var top_left := Vector2(cell) * state.VISIBILITY_CELL
-		var is_current := visible.has(cell)
-		var color := FLOOR if is_current else Color("0c1418")
-		if view_mode == "top_down":
-			draw_rect(Rect2(_world_to_screen(top_left), Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE), color)
-		else:
-			var points := PackedVector2Array([_world_to_screen(top_left), _world_to_screen(top_left + Vector2(state.VISIBILITY_CELL, 0)), _world_to_screen(top_left + Vector2.ONE * state.VISIBILITY_CELL), _world_to_screen(top_left + Vector2(0, state.VISIBILITY_CELL))])
-			draw_colored_polygon(points, color)
+	var bounds := _camera_cell_bounds()
+	for x in range(bounds.position.x, bounds.end.x):
+		for y in range(bounds.position.y, bounds.end.y):
+			var cell := Vector2i(x, y)
+			if not discovered.has(cell): continue
+			var top_left := Vector2(cell) * state.VISIBILITY_CELL
+			var is_current := visible.has(cell)
+			var color := state.current_ground_color() if is_current else state.current_ground_color().darkened(0.72)
+			if view_mode == "top_down":
+				draw_rect(Rect2(_world_to_screen(top_left), Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE), color)
+			else:
+				var points := PackedVector2Array([_world_to_screen(top_left), _world_to_screen(top_left + Vector2(state.VISIBILITY_CELL, 0)), _world_to_screen(top_left + Vector2.ONE * state.VISIBILITY_CELL), _world_to_screen(top_left + Vector2(0, state.VISIBILITY_CELL))])
+				draw_colored_polygon(points, color)
 
 func _draw_wall(wall: Rect2) -> void:
 	if view_mode == "top_down":
@@ -613,11 +644,16 @@ func _draw_player() -> void:
 	var facing := _screen_direction(Vector2(visual.get("player_facing", Vector2.UP)).normalized())
 	var action: Dictionary = visual.get("player_action", {})
 	var radius := state.PLAYER_RADIUS * world_scale
+	# A dark separation halo plus a white keyline keeps the cyan player readable
+	# on light forest, dark ruins, and future biome palettes.
+	draw_circle(pos, radius * 1.38, Color(0.015, 0.025, 0.035, 0.92))
+	draw_arc(pos, radius * 1.20, 0.0, TAU, 28, Color("f5fbff"), maxf(2.5, radius * 0.13))
 	if float(visual.get("strength_remaining", 0.0)) > 0.0:
 		draw_circle(pos, radius * 1.65, Color(0.91, 0.32, 0.20, 0.16))
 		draw_arc(pos, radius * 1.65, 0.0, TAU, 24, Color("e85c3f"), maxf(2.0, radius * 0.12))
 	if String(action.get("kind", "idle")) == "dodge": draw_circle(pos - facing * radius * 0.7, radius * 1.25, Color(DODGE_COLOR, 0.16))
 	_draw_actor(pos, facing, radius, PLAYER_COLOR)
+	draw_circle(pos + facing * radius * 0.28, maxf(2.5, radius * 0.13), Color("ffffff"))
 	if String(action.get("kind", "idle")) in ["attack", "sweep"]: _draw_weapon(world_pos, action, true)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
@@ -928,17 +964,39 @@ func _draw_view_button() -> void:
 	draw_string(ThemeDB.fallback_font, view_rect.position + Vector2(0.0, view_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, view_rect.size.x, font, Color("d7dddd"))
 
 func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
-	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.bonfire_pos, discovered):
-		var bonfire := _world_to_screen(state.bonfire_pos)
-		var bright := state.is_visible(state.bonfire_pos, visible)
-		draw_circle(bonfire, 25.0 * world_scale, Color("e89145") if bright else Color("62452f"))
-		draw_circle(bonfire + Vector2(0, -12.0 * world_scale), 13.0 * world_scale, Color("f4d36b") if bright else Color("695b3c"))
-		if state.player_pos.distance_to(state.bonfire_pos) <= state.WAYSTONE_RANGE:
-			draw_arc(bonfire, 38.0 * world_scale, 0.0, TAU, 24, Color("f3d46a"), maxf(2.0, 3.0 * world_scale))
-			draw_string(ThemeDB.fallback_font, bonfire + Vector2(-45.0, -48.0 * world_scale), "TAP", HORIZONTAL_ALIGNMENT_CENTER, 90.0, maxi(11, int(13.0 * world_scale)), Color("f4e2a1"))
-	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.shortcut_gate.get_center(), discovered):
-		var gate := _world_to_screen(state.shortcut_gate.get_center())
-		draw_circle(gate, 15.0 * world_scale, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
+	if bool(state.mode_config["waystone_available"]):
+		for stone in state.waystones:
+			if String(stone.get("layer", state.current_layer)) != state.current_layer or not state.is_discovered(Vector2(stone["pos"]), discovered): continue
+			if not _world_point_on_camera(Vector2(stone["pos"]), 70.0): continue
+			var bonfire := _world_to_screen(Vector2(stone["pos"]))
+			var bright := state.is_visible(Vector2(stone["pos"]), visible)
+			draw_circle(bonfire, 25.0 * world_scale, Color("e89145") if bright else Color("62452f"))
+			draw_circle(bonfire + Vector2(0, -12.0 * world_scale), 13.0 * world_scale, Color("f4d36b") if bright else Color("695b3c"))
+			if state.player_pos.distance_to(Vector2(stone["pos"])) <= state.WAYSTONE_RANGE:
+				draw_arc(bonfire, 38.0 * world_scale, 0.0, TAU, 24, Color("f3d46a"), maxf(2.0, 3.0 * world_scale))
+				draw_string(ThemeDB.fallback_font, bonfire + Vector2(-45.0, -48.0 * world_scale), "TAP", HORIZONTAL_ALIGNMENT_CENTER, 90.0, maxi(11, int(13.0 * world_scale)), Color("f4e2a1"))
+	for transition in state.transitions:
+		var transition_pos := Vector2.ZERO
+		if String(transition["from_layer"]) == state.current_layer: transition_pos = Vector2(transition["from_pos"])
+		elif String(transition["to_layer"]) == state.current_layer: transition_pos = Vector2(transition["to_pos"])
+		else: continue
+		if not state.is_discovered(transition_pos, discovered): continue
+		if not _world_point_on_camera(transition_pos, 60.0): continue
+		var marker := _world_to_screen(transition_pos)
+		draw_rect(Rect2(marker - Vector2(18, 12) * world_scale, Vector2(36, 24) * world_scale), Color("b9a46c"), true)
+		draw_line(marker + Vector2(-12, -6) * world_scale, marker + Vector2(12, 6) * world_scale, Color("4b4234"), maxf(2.0, 3.0 * world_scale))
+	for shortcut in state.shortcuts:
+		if String(shortcut.get("layer", state.current_layer)) != state.current_layer or not state.is_discovered(Rect2(shortcut["gate"]).get_center(), discovered): continue
+		if not _world_rect_on_camera(Rect2(shortcut["gate"]).grow(90.0)): continue
+		var gate := _world_to_screen(Rect2(shortcut["gate"]).get_center())
+		draw_circle(gate, 15.0 * world_scale, Color("65c5b5") if bool(shortcut.get("unlocked", false)) else Color("bb5960"))
+		if not bool(shortcut.get("unlocked", false)):
+			var activation_world := Vector2(shortcut["unlock_pos"])
+			var activation := _world_to_screen(activation_world)
+			draw_circle(activation, maxf(7.0, 10.0 * world_scale), Color(0.96, 0.78, 0.29, 0.28))
+			draw_arc(activation, maxf(9.0, 13.0 * world_scale), 0.0, TAU, 20, Color("f0c84b"), maxf(2.0, 2.5 * world_scale))
+			if state.player_pos.distance_to(activation_world) <= 150.0:
+				draw_string(ThemeDB.fallback_font, activation + Vector2(-46, -24), "UNLOCK", HORIZONTAL_ALIGNMENT_CENTER, 92, maxi(10, int(12 * world_scale)), Color("fff0a6"))
 	if bool(state.lost_xp.get("active", false)) and state.is_discovered(Vector2(state.lost_xp["pos"]), discovered):
 		var mark := _world_to_screen(Vector2(state.lost_xp["pos"]))
 		draw_circle(mark, 24.0 * world_scale, Color(0.78, 0.90, 0.42, 0.22))
@@ -1015,11 +1073,13 @@ func _draw_map() -> void:
 	var scale := minf((rect.size.x - 72.0) / map_bounds.size.x, (rect.size.y - 110.0) / map_bounds.size.y)
 	var origin := rect.get_center() - map_bounds.get_center() * scale + Vector2(0, 18)
 	for connection in state.connections:
+		if String(connection.get("layer", state.current_layer)) != state.current_layer: continue
 		var corridor := Rect2(connection["corridor"])
 		if not state.is_discovered(corridor.get_center()): continue
 		var mapped := Rect2(origin + corridor.position * scale, corridor.size * scale)
 		draw_rect(mapped, Color(0.26, 0.33, 0.35, 0.58 if overlay else 1.0))
 	for area in state.areas:
+		if String(area.get("layer", state.current_layer)) != state.current_layer: continue
 		if not bool(area.get("discovered", false)): continue
 		var world_rect := Rect2(area["rect"])
 		var mapped := Rect2(origin + world_rect.position * scale, world_rect.size * scale)
@@ -1027,13 +1087,22 @@ func _draw_map() -> void:
 		draw_rect(mapped, Color(0.42, 0.49, 0.51, 0.7 if overlay else 1.0), false, 1.5)
 	var player := origin + state.player_pos * scale
 	if bool(state.mode_config["waystone_available"]):
-		var bonfire := origin + state.bonfire_pos * scale
-		draw_circle(bonfire, 8.0, Color("e89b52"))
+		for stone in state.waystones:
+			if String(stone.get("layer", state.current_layer)) == state.current_layer and state.is_discovered(Vector2(stone["pos"])):
+				draw_circle(origin + Vector2(stone["pos"]) * scale, 8.0, Color("f3d16a") if String(stone["id"]) == state.active_waystone_id else Color("e89b52"))
 	draw_circle(player, 7.0, PLAYER_COLOR)
-	if bool(state.areas[6].get("discovered", false)):
-		var exit_center := origin + Vector2(state.areas[6]["center"]) * scale
-		draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
-	if bool(state.mode_config["waystone_available"]) and state.is_discovered(state.shortcut_gate.get_center()): draw_circle(origin + state.shortcut_gate.get_center() * scale, 7.0, Color("65c5b5") if state.shortcut_unlocked else Color("bb5960"))
+	for area in state.areas:
+		if String(area.get("kind", "")) == "boss" and String(area.get("layer", state.current_layer)) == state.current_layer and bool(area.get("discovered", false)):
+			var exit_center := origin + Vector2(area["center"]) * scale
+			draw_colored_polygon(PackedVector2Array([exit_center + Vector2(0, -9), exit_center + Vector2(9, 8), exit_center + Vector2(-9, 8)]), Color("d76a68"))
+	for shortcut in state.shortcuts:
+		if String(shortcut.get("layer", state.current_layer)) == state.current_layer and state.is_discovered(Rect2(shortcut["gate"]).get_center()):
+			draw_circle(origin + Rect2(shortcut["gate"]).get_center() * scale, 7.0, Color("65c5b5") if bool(shortcut.get("unlocked", false)) else Color("bb5960"))
+	for transition in state.transitions:
+		var point := Vector2.INF
+		if String(transition["from_layer"]) == state.current_layer: point = Vector2(transition["from_pos"])
+		elif String(transition["to_layer"]) == state.current_layer: point = Vector2(transition["to_pos"])
+		if point.is_finite() and state.is_discovered(point): draw_rect(Rect2(origin + point * scale - Vector2(5, 5), Vector2(10, 10)), Color("b9a46c"))
 	if bool(state.lost_xp.get("active", false)):
 		var shadow := origin + Vector2(state.lost_xp["pos"]) * scale
 		var segments := 18
@@ -1043,7 +1112,8 @@ func _draw_map() -> void:
 			draw_line(from, to, Color(0.85, 0.93, 0.48, 0.52), 2.0)
 		draw_circle(shadow, 8.0, Color("d8ed78"))
 		draw_string(ThemeDB.fallback_font, shadow + Vector2(-55.0, -14.0), "SHADOW %d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 110.0, 11, Color("e9f4b1"))
-	var header := "DISCOVERED AREAS  •  %s  •  SEED %d" % [state.mode_label().to_upper(), state.run_seed]
+	var layer_name := String(Dictionary(state.world_layers.get(state.current_layer, {})).get("name", state.current_layer)).to_upper()
+	var header := "%s  •  %s  •  SEED %d" % [layer_name, state.mode_label().to_upper(), state.run_seed]
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18, 34), header, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 170.0, maxi(15, int(minf(size.x, size.y) * 0.026)), Color("e6e7dc"))
 	_draw_map_action(_map_close_rect(), "CLOSE")
 	if not overlay:
@@ -1069,8 +1139,9 @@ func _draw_map_action(rect: Rect2, label: String) -> void:
 func _discovered_map_bounds() -> Rect2:
 	var bounds := Rect2(state.player_pos - Vector2.ONE * 40.0, Vector2.ONE * 80.0)
 	for area in state.areas:
-		if bool(area.get("discovered", false)): bounds = bounds.merge(Rect2(area["rect"]))
+		if String(area.get("layer", state.current_layer)) == state.current_layer and bool(area.get("discovered", false)): bounds = bounds.merge(Rect2(area["rect"]))
 	for connection in state.connections:
+		if String(connection.get("layer", state.current_layer)) != state.current_layer: continue
 		var corridor := Rect2(connection["corridor"])
 		if state.is_discovered(corridor.get_center()): bounds = bounds.merge(corridor)
 	if bool(state.lost_xp.get("active", false)):
@@ -1135,7 +1206,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "SLOW / WIDE" if available else "COOLING" if state.loadout_id == "duelist" else ""
 	elif name == "wait":
 		title = state.interaction_label()
-		subtitle = "OPEN SHORTCUT" if title == "UNLOCK" else "+0.5s"
+		subtitle = "OPEN SHORTCUT" if title == "UNLOCK" else "USE PASSAGE" if title == "TRAVERSE" else "+0.5s"
 		available = not state.trial_complete
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("d7aa58") if name == "wait" else Color("db6463")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
@@ -1215,6 +1286,34 @@ func _screen_to_world(screen: Vector2) -> Vector2:
 		var projected := (screen - origin) / world_scale
 		return Vector2(projected.x + projected.y * 2.0, projected.y * 2.0 - projected.x)
 	return (screen - origin) / world_scale
+
+func _render_discovered_cells() -> Dictionary:
+	var cells: Dictionary = visual.get("discovered_cells", {})
+	return state.discovered_cells if cells.is_empty() and not state.discovered_cells.is_empty() else cells
+
+func _camera_cell_bounds() -> Rect2i:
+	var expanded := board_rect.grow(80.0)
+	var corners := [expanded.position, Vector2(expanded.end.x, expanded.position.y), expanded.end, Vector2(expanded.position.x, expanded.end.y)]
+	var minimum := _screen_to_world(corners[0])
+	var maximum := minimum
+	for corner in corners:
+		var world := _screen_to_world(corner)
+		minimum.x = minf(minimum.x, world.x)
+		minimum.y = minf(minimum.y, world.y)
+		maximum.x = maxf(maximum.x, world.x)
+		maximum.y = maxf(maximum.y, world.y)
+	var start := Vector2i(maxi(0, int(floor(minimum.x / state.VISIBILITY_CELL)) - 1), maxi(0, int(floor(minimum.y / state.VISIBILITY_CELL)) - 1))
+	var finish := Vector2i(mini(int(ceil(state.WORLD_SIZE.x / state.VISIBILITY_CELL)), int(ceil(maximum.x / state.VISIBILITY_CELL)) + 2), mini(int(ceil(state.WORLD_SIZE.y / state.VISIBILITY_CELL)), int(ceil(maximum.y / state.VISIBILITY_CELL)) + 2))
+	return Rect2i(start, Vector2i(maxi(0, finish.x - start.x), maxi(0, finish.y - start.y)))
+
+func _world_point_on_camera(world: Vector2, margin_world: float = 80.0) -> bool:
+	return board_rect.grow(maxf(48.0, margin_world * world_scale)).has_point(_world_to_screen(world))
+
+func _world_rect_on_camera(world_rect: Rect2) -> bool:
+	var points := [_world_to_screen(world_rect.position), _world_to_screen(Vector2(world_rect.end.x, world_rect.position.y)), _world_to_screen(world_rect.end), _world_to_screen(Vector2(world_rect.position.x, world_rect.end.y))]
+	var screen_rect := Rect2(points[0], Vector2.ZERO)
+	for point in points: screen_rect = screen_rect.expand(point)
+	return screen_rect.intersects(board_rect.grow(72.0), true)
 
 func _projection_origin() -> Vector2:
 	var camera := _camera_world_position()

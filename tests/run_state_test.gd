@@ -29,6 +29,8 @@ func _init() -> void:
 	test_navigation_routes_around_wall()
 	test_isometric_projection_round_trip()
 	test_close_camera_tracks_player()
+	test_camera_culls_offscreen_world()
+	test_lightweight_timeline_snapshots()
 	test_shield_front_arc()
 	test_new_enemy_roles()
 	test_progressive_expedition_rooms()
@@ -36,6 +38,7 @@ func _init() -> void:
 	test_overlay_map_passes_input_through()
 	test_generated_rooms_have_no_shields()
 	test_mode_policies_and_death()
+	test_layered_friendly_forest_topology()
 	test_waystone_requires_deliberate_activation()
 	test_room_reward_progression()
 	test_shortcut_and_waystone_persistence()
@@ -406,6 +409,33 @@ func test_overlay_map_passes_input_through() -> void:
 	assert(not board.pointer_down)
 	board.free()
 
+func test_camera_culls_offscreen_world() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.start_run("duelist", "campaign_lab", 1784339476686)
+	board.visual = board.state.snapshot()
+	board.board_area = Rect2(0, 0, 720, 960)
+	board.view_mode = "top_down"
+	board._update_projection()
+	assert(board._world_point_on_camera(board.state.player_pos))
+	assert(not board._world_point_on_camera(Vector2(7000, 800)))
+	assert(board._world_rect_on_camera(Rect2(board.state.player_pos - Vector2.ONE * 40.0, Vector2.ONE * 80.0)))
+	assert(not board._world_rect_on_camera(Rect2(6900, 700, 100, 100)))
+	var bounds: Rect2i = board._camera_cell_bounds()
+	assert(bounds.has_point(board.state._visibility_cell(board.state.player_pos)))
+	assert(bounds.size.x * bounds.size.y < 1200)
+	board.free()
+
+func test_lightweight_timeline_snapshots() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 717)
+	var full := state.snapshot()
+	var light := state.snapshot(true)
+	assert(not Dictionary(full["discovered_cells"]).is_empty())
+	assert(Dictionary(light["discovered_cells"]).is_empty())
+	assert(not Array(full["walls"]).is_empty() and Array(light["walls"]).is_empty())
+	assert(Array(light["enemies"]).size() == state.enemies.size())
+
 func test_generated_rooms_have_no_shields() -> void:
 	var state: RunState = RunStateScript.new()
 	assert(state.WORLD_SIZE.x >= 5000.0 and state.WORLD_SIZE.y >= 4400.0)
@@ -460,12 +490,49 @@ func test_mode_policies_and_death() -> void:
 	assert(campaign.mode_id == "campaign_lab")
 	assert(String(campaign.mode_rules()["death_policy"]) == "waystone")
 	assert(bool(campaign.mode_rules()["waystone_available"]))
-	assert(campaign.connections.size() == 8)
-	assert(campaign.connections.any(func(connection: Dictionary) -> bool: return bool(connection["shortcut"])))
+	assert(campaign.connections.size() == 14)
+	assert(campaign.waystones.size() == 3 and campaign.shortcuts.size() == 2 and campaign.transitions.size() == 2)
+	assert(campaign.connections.filter(func(connection: Dictionary) -> bool: return bool(connection["shortcut"])).size() == 2)
 	campaign.carried_xp = 9
 	campaign._begin_death()
 	assert(bool(campaign.lost_xp["active"]) and int(campaign.lost_xp["amount"]) == 9)
 	assert(campaign.return_after_death() and campaign.run_active and not campaign.run_failed)
+
+func test_layered_friendly_forest_topology() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 212)
+	assert(state.current_layer == "forest_surface")
+	assert(state.current_ground_color().is_equal_approx(Color("8fbd72")))
+	assert(state.areas.filter(func(area: Dictionary) -> bool: return String(area.get("layer", "")) == "ruin_depths").size() == 2)
+	var second: Dictionary = state.waystones[1]
+	state.player_pos = Vector2(second["pos"])
+	assert(state.activate_waystone() and state.active_waystone_id == "moss")
+	state._begin_death()
+	assert(state.return_after_death() and state.player_pos.distance_to(Vector2(second["pos"])) < 200.0)
+	var stairs: Dictionary = state.transitions[0]
+	state.player_pos = Vector2(stairs["from_pos"])
+	assert(state.use_transition() and state.current_layer == "ruin_depths")
+	assert(state.current_ground_color().is_equal_approx(Color("596653")))
+	state.player_pos = Vector2(stairs["to_pos"])
+	assert(state.use_transition() and state.current_layer == "forest_surface")
+	var ladder: Dictionary = state.transitions[1]
+	state.current_layer = "ruin_depths"
+	state.player_pos = Vector2(ladder["from_pos"])
+	assert(state.use_transition() and state.current_layer == "forest_surface")
+	var ruin_shortcut: Dictionary = state.shortcuts.filter(func(item: Dictionary) -> bool: return String(item["id"]) == "ruin_return")[0]
+	for shortcut in state.shortcuts:
+		assert(is_equal_approx(Vector2(shortcut["unlock_pos"]).distance_to(Rect2(shortcut["gate"]).get_center()), FloorGeneratorScript.SHORTCUT_INTERACTION_OFFSET))
+		assert(Vector2(shortcut["unlock_pos"]).distance_to(Vector2(shortcut["near_pos"])) > 115.0)
+		state.player_pos = Vector2(shortcut["near_pos"])
+		assert(state._nearby_locked_shortcut().is_empty())
+	state.player_pos = Vector2(ruin_shortcut["unlock_pos"])
+	assert(state.unlock_shortcut() and bool(ruin_shortcut["unlocked"]))
+	state.walls.clear()
+	var other_layer_enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 80.0, 7)
+	other_layer_enemy["layer"] = "ruin_depths"
+	state.enemies = [other_layer_enemy]
+	assert(state.request_attack(Vector2(other_layer_enemy["pos"])))
+	assert(int(other_layer_enemy["hp"]) == 7)
 
 func test_waystone_requires_deliberate_activation() -> void:
 	var state: RunState = RunStateScript.new(false)
@@ -530,6 +597,7 @@ func test_provisional_progress_accounting() -> void:
 	assert(state.effects.any(func(effect: Dictionary) -> bool: return String(effect["kind"]) == "anchor"))
 	state.carried_xp += 3
 	state.discovered_cells[Vector2i(92, 92)] = true
+	state.shortcuts[0]["unlocked"] = true
 	state.shortcut_unlocked = true
 	state.player_pos += Vector2.UP * 180.0
 	state._begin_death()

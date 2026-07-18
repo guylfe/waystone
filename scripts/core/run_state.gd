@@ -8,7 +8,7 @@ const ModeRulesScript = preload("res://scripts/core/mode_rules.gd")
 signal changed
 signal message_changed(text: String)
 
-const WORLD_SIZE := Vector2(5000.0, 4400.0)
+const WORLD_SIZE := Vector2(7600.0, 6000.0)
 const SIM_DT := 1.0 / 120.0
 const FRAME_DT := 1.0 / 60.0
 const PLAYER_RADIUS := 30.0
@@ -78,6 +78,12 @@ var progression_mode := "area_exit"
 var map_presentation := "full"
 var areas: Array[Dictionary] = []
 var connections: Array[Dictionary] = []
+var waystones: Array[Dictionary] = []
+var shortcuts: Array[Dictionary] = []
+var transitions: Array[Dictionary] = []
+var world_layers: Dictionary = {}
+var current_layer := "expedition_surface"
+var active_waystone_id := ""
 var encounter_templates: Dictionary = {}
 var base_walls: Array[Rect2] = []
 var bonfire_pos := Vector2.ZERO
@@ -172,10 +178,16 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	var layout: Dictionary = FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
 	areas.assign(Array(layout["areas"]).duplicate(true))
 	connections.assign(Array(layout["connections"]).duplicate(true))
+	waystones.assign(Array(layout.get("waystones", [])).duplicate(true))
+	shortcuts.assign(Array(layout.get("shortcuts", [])).duplicate(true))
+	transitions.assign(Array(layout.get("transitions", [])).duplicate(true))
+	world_layers = Dictionary(layout.get("layers", {})).duplicate(true)
 	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
 	base_walls.assign(Array(layout["base_walls"]))
 	walls.assign(Array(layout["walls"]))
 	bonfire_pos = Vector2(layout["bonfire_pos"])
+	active_waystone_id = String(waystones[0]["id"]) if not waystones.is_empty() else ""
+	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "expedition_surface"
 	_player_start = Vector2(layout["player_start"])
 	player_pos = _player_start
 	shortcut_gate = Rect2(layout["shortcut_gate"])
@@ -223,7 +235,10 @@ func unanchored_discovery_count() -> int:
 	return count
 
 func unanchored_shortcut() -> bool:
-	return shortcut_unlocked and not bool(anchor_state.get("shortcut_unlocked", false))
+	var anchored: Dictionary = anchor_state.get("shortcut_states", {})
+	for shortcut in shortcuts:
+		if bool(shortcut.get("unlocked", false)) and not bool(anchored.get(String(shortcut["id"]), false)): return true
+	return shortcut_unlocked and shortcuts.is_empty() and not bool(anchor_state.get("shortcut_unlocked", false))
 
 func has_unanchored_progress() -> bool:
 	return provisional_xp() > 0 or unanchored_discovery_count() > 0 or unanchored_shortcut()
@@ -267,6 +282,7 @@ func _respawn_enemies() -> void:
 			var kind := String(template["kind"])
 			if kind == "warden" and _boss_defeated: continue
 			var enemy := _make_enemy(kind, Vector2(template["pos"]), _enemy_base_hp(kind), area_id)
+			enemy["layer"] = String(template.get("layer", "expedition_surface"))
 			enemy["heard_sound_sequence"] = _sound_sequence
 			enemies.append(enemy)
 
@@ -451,20 +467,26 @@ func request_wait(duration: float = 0.50) -> bool:
 
 func interaction_label() -> String:
 	if not run_active or death_pending: return "WAIT"
-	if bool(mode_config["waystone_available"]) and not shortcut_unlocked and player_pos.distance_to(shortcut_unlock_pos) <= 115.0: return "UNLOCK"
+	if not _nearby_locked_shortcut().is_empty(): return "UNLOCK"
+	if not _nearby_transition().is_empty(): return "TRAVERSE"
 	return "WAIT"
 
 func request_context_action() -> bool:
 	if not is_player_ready(): return false
 	match interaction_label():
 		"UNLOCK": return unlock_shortcut()
+		"TRAVERSE": return use_transition()
 		_: return request_wait()
 
 func can_learn_at_waystone() -> bool:
 	return bool(mode_config["waystone_available"]) and secured_xp >= next_upgrade_cost()
 
 func activate_waystone() -> bool:
-	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > WAYSTONE_RANGE or not is_player_ready(): return false
+	var stone := nearby_waystone()
+	if not bool(mode_config["waystone_available"]) or stone.is_empty() or not is_player_ready(): return false
+	active_waystone_id = String(stone["id"])
+	bonfire_pos = Vector2(stone["pos"])
+	current_layer = String(stone.get("layer", current_layer))
 	_restore_at_waystone()
 	_respawn_enemies()
 	_update_exploration(true)
@@ -484,7 +506,7 @@ func activate_waystone() -> bool:
 	return true
 
 func learn_at_waystone() -> bool:
-	if not bool(mode_config["waystone_available"]) or player_pos.distance_to(bonfire_pos) > WAYSTONE_RANGE or not is_player_ready(): return false
+	if not bool(mode_config["waystone_available"]) or nearby_waystone().is_empty() or not is_player_ready(): return false
 	if secured_xp < next_upgrade_cost():
 		_set_message("More experience is needed before another lesson can be integrated.")
 		changed.emit()
@@ -494,14 +516,50 @@ func learn_at_waystone() -> bool:
 	return true
 
 func unlock_shortcut() -> bool:
-	if not bool(mode_config["waystone_available"]) or shortcut_unlocked or player_pos.distance_to(shortcut_unlock_pos) > 115.0 or not is_player_ready(): return false
-	shortcut_unlocked = true
-	walls.assign(base_walls)
-	for connection in connections:
-		if bool(connection.get("shortcut", false)): connection["unlocked"] = true
-	_build_navigation()
+	var target := _nearby_locked_shortcut()
+	if not bool(mode_config["waystone_available"]) or target.is_empty() or not is_player_ready(): return false
+	target["unlocked"] = true
+	shortcut_unlocked = shortcuts.any(func(item: Dictionary) -> bool: return bool(item.get("unlocked", false)))
+	_apply_shortcut_world_state()
 	_update_exploration(true)
-	_set_message("The sealed way opens back to the Waystone.")
+	_set_message("The sealed way opens into a remembered path.")
+	changed.emit()
+	return true
+
+func nearby_waystone() -> Dictionary:
+	for stone in waystones:
+		if String(stone.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(stone["pos"])) <= WAYSTONE_RANGE: return stone
+	return {}
+
+func _nearby_locked_shortcut() -> Dictionary:
+	if not bool(mode_config.get("waystone_available", false)): return {}
+	for shortcut in shortcuts:
+		if not bool(shortcut.get("unlocked", false)) and String(shortcut.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(shortcut["unlock_pos"])) <= 115.0: return shortcut
+	return {}
+
+func _nearby_transition() -> Dictionary:
+	for transition in transitions:
+		if not bool(transition.get("unlocked", true)): continue
+		if String(transition["from_layer"]) == current_layer and player_pos.distance_to(Vector2(transition["from_pos"])) <= 120.0:
+			return {"transition": transition, "reverse": false}
+		if String(transition["to_layer"]) == current_layer and player_pos.distance_to(Vector2(transition["to_pos"])) <= 120.0:
+			return {"transition": transition, "reverse": true}
+	return {}
+
+func use_transition() -> bool:
+	if not is_player_ready(): return false
+	var nearby := _nearby_transition()
+	if nearby.is_empty(): return false
+	var transition: Dictionary = nearby["transition"]
+	var reverse := bool(nearby["reverse"])
+	current_layer = String(transition["from_layer"] if reverse else transition["to_layer"])
+	player_pos = Vector2(transition["from_pos"] if reverse else transition["to_pos"])
+	player_facing = Vector2.UP
+	projectiles.clear()
+	hazards.clear()
+	_visibility_anchor = Vector2.INF
+	_update_exploration(true)
+	_set_message("You return to the forest above." if current_layer == "forest_surface" else "You descend beneath the ruined forest.")
 	changed.emit()
 	return true
 
@@ -519,7 +577,7 @@ func return_after_death() -> bool:
 	death_pending = false
 	_restore_at_waystone()
 	_restore_anchor_history()
-	player_pos = _player_start
+	player_pos = bonfire_pos + Vector2.DOWN * 170.0
 	player_facing = (bonfire_pos - player_pos).normalized()
 	_respawn_enemies()
 	_update_exploration(true)
@@ -530,15 +588,26 @@ func return_after_death() -> bool:
 func _capture_anchor_history() -> void:
 	var discovered_areas: Array[bool] = []
 	for area in areas: discovered_areas.append(bool(area.get("discovered", false)))
+	var shortcut_states: Dictionary = {}
+	for shortcut in shortcuts: shortcut_states[String(shortcut["id"])] = bool(shortcut.get("unlocked", false))
 	anchor_state = {
 		"shortcut_unlocked": shortcut_unlocked,
+		"shortcut_states": shortcut_states,
 		"discovered_cells": discovered_cells.duplicate(),
 		"discovered_areas": discovered_areas,
+		"active_waystone_id": active_waystone_id,
+		"bonfire_pos": bonfire_pos,
+		"current_layer": current_layer,
 	}
 
 func _restore_anchor_history() -> void:
 	if anchor_state.is_empty(): return
 	shortcut_unlocked = bool(anchor_state.get("shortcut_unlocked", false))
+	var shortcut_states: Dictionary = anchor_state.get("shortcut_states", {})
+	for shortcut in shortcuts: shortcut["unlocked"] = bool(shortcut_states.get(String(shortcut["id"]), false))
+	active_waystone_id = String(anchor_state.get("active_waystone_id", active_waystone_id))
+	bonfire_pos = Vector2(anchor_state.get("bonfire_pos", bonfire_pos))
+	current_layer = String(anchor_state.get("current_layer", current_layer))
 	_apply_shortcut_world_state()
 	discovered_cells = Dictionary(anchor_state.get("discovered_cells", {})).duplicate()
 	var discovered_areas: Array = anchor_state.get("discovered_areas", [])
@@ -549,9 +618,16 @@ func _restore_anchor_history() -> void:
 
 func _apply_shortcut_world_state() -> void:
 	walls.assign(base_walls)
-	if bool(mode_config["waystone_available"]) and not shortcut_unlocked: walls.append(shortcut_gate)
+	if bool(mode_config["waystone_available"]):
+		for shortcut in shortcuts:
+			if not bool(shortcut.get("unlocked", false)): walls.append(Rect2(shortcut["gate"]))
 	for connection in connections:
-		if bool(connection.get("shortcut", false)): connection["unlocked"] = shortcut_unlocked
+		if bool(connection.get("shortcut", false)):
+			var unlocked := false
+			for shortcut in shortcuts:
+				if String(shortcut["id"]) == String(connection.get("shortcut_id", "")): unlocked = bool(shortcut.get("unlocked", false))
+			connection["unlocked"] = unlocked
+	shortcut_unlocked = shortcuts.any(func(item: Dictionary) -> bool: return bool(item.get("unlocked", false))) if not shortcuts.is_empty() else shortcut_unlocked
 	_build_navigation()
 
 func _restore_at_waystone() -> void:
@@ -637,18 +713,18 @@ func _action(kind: String, duration: float, direction: Vector2) -> Dictionary:
 
 func _simulate_until_ready() -> void:
 	last_timeline.clear()
-	last_timeline.append(snapshot())
+	last_timeline.append(snapshot(true))
 	var frame_accumulator := 0.0
 	var guard := 0
 	while String(player_action["kind"]) != "idle" and player_hp > 0 and guard < 1000:
 		_tick(SIM_DT)
 		frame_accumulator += SIM_DT
 		if frame_accumulator + 0.00001 >= FRAME_DT:
-			last_timeline.append(snapshot())
+			last_timeline.append(snapshot(true))
 			frame_accumulator = 0.0
 		guard += 1
 	if last_timeline.is_empty() or float(last_timeline[-1]["time"]) != simulation_time:
-		last_timeline.append(snapshot())
+		last_timeline.append(snapshot(true))
 	changed.emit()
 
 func _tick(dt: float) -> void:
@@ -668,7 +744,7 @@ func _tick(dt: float) -> void:
 	_remove_dead_enemies()
 
 func _try_recover_xp() -> void:
-	if bool(lost_xp.get("active", false)) and player_pos.distance_to(Vector2(lost_xp.get("pos", Vector2.ZERO))) <= 58.0:
+	if bool(lost_xp.get("active", false)) and String(lost_xp.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(lost_xp.get("pos", Vector2.ZERO))) <= 58.0:
 		var amount := int(lost_xp.get("amount", 0))
 		carried_xp += amount
 		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
@@ -715,6 +791,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 	var hit_ids: Array = player_action["hit_ids"]
 	var contacts: Array[Dictionary] = []
 	for enemy in enemies:
+		if not _enemy_on_current_layer(enemy): continue
 		var enemy_id := int(enemy["id"])
 		if hit_ids.has(enemy_id): continue
 		if AttackGeometryScript.hits_circle(sample, Vector2(enemy["pos"]), float(enemy["radius"])):
@@ -814,7 +891,7 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 func _update_enemies(dt: float) -> void:
 	for index in range(enemies.size()):
 		var enemy := enemies[index]
-		if int(enemy["hp"]) <= 0:
+		if int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy):
 			continue
 		_update_enemy_awareness(enemy, dt)
 		enemy["posture_recovery_delay"] = maxf(0.0, float(enemy.get("posture_recovery_delay", 0.0)) - dt)
@@ -946,7 +1023,7 @@ func _enemy_move_speed(enemy: Dictionary) -> float:
 
 func _captain_near(subject: Dictionary) -> bool:
 	for enemy in enemies:
-		if String(enemy["kind"]) == "captain" and int(enemy["hp"]) > 0 and Vector2(enemy["pos"]).distance_to(Vector2(subject["pos"])) <= 720.0: return true
+		if String(enemy.get("layer", current_layer)) == String(subject.get("layer", current_layer)) and String(enemy["kind"]) == "captain" and int(enemy["hp"]) > 0 and Vector2(enemy["pos"]).distance_to(Vector2(subject["pos"])) <= 720.0: return true
 	return false
 
 func _charge_action(duration: float, startup: float, active_end: float, speed: float, damage: int, direction: Vector2) -> Dictionary:
@@ -982,15 +1059,19 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 		"radius": 9.0,
 		"damage": 2,
 		"source_id": int(enemy["id"]),
+		"layer": String(enemy.get("layer", current_layer)),
 	})
 
 func _spawn_hex(enemy: Dictionary, target: Vector2) -> void:
-	hazards.append({"kind": "hex", "pos": target, "radius": 100.0, "elapsed": 0.0, "trigger_at": 0.82, "duration": 1.12, "damage": 2, "source_id": int(enemy["id"]), "triggered": false})
+	hazards.append({"kind": "hex", "pos": target, "radius": 100.0, "elapsed": 0.0, "trigger_at": 0.82, "duration": 1.12, "damage": 2, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("A hex gathers beneath you.")
 
 func _update_hazards(dt: float) -> void:
 	var survivors: Array[Dictionary] = []
 	for hazard in hazards:
+		if String(hazard.get("layer", current_layer)) != current_layer:
+			survivors.append(hazard)
+			continue
 		hazard["elapsed"] = float(hazard["elapsed"]) + dt
 		if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
 			hazard["triggered"] = true
@@ -1003,6 +1084,9 @@ func _update_hazards(dt: float) -> void:
 func _update_projectiles(dt: float) -> void:
 	var survivors: Array[Dictionary] = []
 	for projectile in projectiles:
+		if String(projectile.get("layer", current_layer)) != current_layer:
+			survivors.append(projectile)
+			continue
 		var start: Vector2 = projectile["pos"]
 		var finish := start + Vector2(projectile["vel"]) * dt
 		projectile["pos"] = finish
@@ -1063,9 +1147,9 @@ func _begin_death() -> void:
 	var forgotten_cells := unanchored_discovery_count()
 	var shortcut_forgotten := unanchored_shortcut()
 	if bool(mode_config["shadow_enabled"]):
-		if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
+		if bool(lost_xp.get("active", false)): lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO, "layer": current_layer}
 		var provisional_xp := maxi(0, carried_xp - secured_xp)
-		if provisional_xp > 0: lost_xp = {"active": true, "amount": provisional_xp, "pos": player_pos}
+		if provisional_xp > 0: lost_xp = {"active": true, "amount": provisional_xp, "pos": player_pos, "layer": current_layer}
 		carried_xp = secured_xp
 	else:
 		lost_xp = {"active": false, "amount": 0, "pos": Vector2.ZERO}
@@ -1091,7 +1175,7 @@ func _begin_death() -> void:
 
 func _counter_source(source_id: int) -> void:
 	for enemy in enemies:
-		if int(enemy["id"]) == source_id and Vector2(enemy["pos"]).distance_to(player_pos) <= 155.0:
+		if _enemy_on_current_layer(enemy) and int(enemy["id"]) == source_id and Vector2(enemy["pos"]).distance_to(player_pos) <= 155.0:
 			enemy["hp"] = int(enemy["hp"]) - 2
 			_add_effect("hit", Vector2(enemy["pos"]), 2)
 			counter_hits += 1
@@ -1118,7 +1202,7 @@ func _is_blocking(source_id: int, incoming_from: Vector2 = Vector2.ZERO) -> bool
 	if incoming_from.length_squared() > 0.01:
 		return _within_arc(player_facing, incoming_from, deg_to_rad(65.0))
 	for enemy in enemies:
-		if int(enemy["id"]) == source_id:
+		if _enemy_on_current_layer(enemy) and int(enemy["id"]) == source_id:
 			var incoming := Vector2(enemy["pos"]) - player_pos
 			return _within_arc(player_facing, incoming, deg_to_rad(65.0))
 	return false
@@ -1139,7 +1223,7 @@ func _update_effects(dt: float) -> void:
 
 func _add_effect(kind: String, position: Vector2, amount: int = 0) -> void:
 	var duration := 1.10 if kind == "anchor" else 0.90 if kind == "recover" else 0.62 if kind in ["hit", "hurt", "endure"] else 0.42
-	effects.append({"kind": kind, "pos": position, "elapsed": 0.0, "duration": duration, "amount": amount})
+	effects.append({"kind": kind, "pos": position, "elapsed": 0.0, "duration": duration, "amount": amount, "layer": current_layer})
 
 func _remove_dead_enemies() -> void:
 	var living: Array[Dictionary] = []
@@ -1249,13 +1333,13 @@ func _position_blocked(position: Vector2, radius: float, actor_id: int) -> bool:
 			return true
 	if actor_id == 0:
 		for enemy in enemies:
-			if int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
+			if _enemy_on_current_layer(enemy) and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
 				return true
 	else:
 		if position.distance_to(player_pos) < radius + PLAYER_RADIUS:
 			return true
 		for enemy in enemies:
-			if int(enemy["id"]) != actor_id and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
+			if _enemy_on_current_layer(enemy) and int(enemy["id"]) != actor_id and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
 				return true
 	return false
 
@@ -1298,7 +1382,7 @@ func _update_exploration(force: bool = false) -> void:
 	var previous_area_id := current_area_id
 	current_area_id = 0
 	for area in areas:
-		if Rect2(area["rect"]).has_point(player_pos): current_area_id = int(area["id"])
+		if String(area.get("layer", current_layer)) == current_layer and Rect2(area["rect"]).has_point(player_pos): current_area_id = int(area["id"])
 		if _rect_has_discovered_cell(Rect2(area["rect"])): area["discovered"] = true
 	if String(mode_config["upgrade_policy"]) == "area_exit" and previous_area_id > 0 and current_area_id != previous_area_id:
 		if _area_is_clear(previous_area_id) and carried_xp >= next_upgrade_cost() and not upgrade_pending and not trial_complete:
@@ -1308,6 +1392,9 @@ func _area_is_clear(area_id: int) -> bool:
 	for enemy in enemies:
 		if int(enemy.get("area_id", -1)) == area_id and int(enemy.get("hp", 0)) > 0: return false
 	return true
+
+func _enemy_on_current_layer(enemy: Dictionary) -> bool:
+	return String(enemy.get("layer", current_layer)) == current_layer
 
 func _visibility_cell(position: Vector2) -> Vector2i:
 	return Vector2i(int(floor(position.x / VISIBILITY_CELL)), int(floor(position.y / VISIBILITY_CELL)))
@@ -1320,10 +1407,19 @@ func is_discovered(position: Vector2, cells: Dictionary = discovered_cells) -> b
 
 func _point_on_floor(point: Vector2) -> bool:
 	for area in areas:
-		if Rect2(area["rect"]).has_point(point): return true
+		if String(area.get("layer", current_layer)) == current_layer and Rect2(area["rect"]).has_point(point): return true
 	for connection in connections:
-		if Rect2(connection["corridor"]).has_point(point): return true
+		if String(connection.get("layer", current_layer)) == current_layer and Rect2(connection["corridor"]).has_point(point): return true
 	return false
+
+func current_area_name() -> String:
+	for area in areas:
+		if int(area["id"]) == current_area_id: return String(area.get("name", "Area %d" % (current_area_id + 1)))
+	return String(Dictionary(world_layers.get(current_layer, {})).get("name", "Unknown Path"))
+
+func current_ground_color() -> Color:
+	var definition: Dictionary = world_layers.get(current_layer, {})
+	return Color(String(definition.get("ground_color", "314247")))
 
 func _rect_has_discovered_cell(rect: Rect2) -> bool:
 	for cell in discovered_cells:
@@ -1343,7 +1439,7 @@ func _segment_distance_to_point(a: Vector2, b: Vector2, point: Vector2) -> float
 	var t := clampf((point - a).dot(segment) / segment.length_squared(), 0.0, 1.0)
 	return point.distance_to(a + segment * t)
 
-func snapshot() -> Dictionary:
+func snapshot(lightweight: bool = false) -> Dictionary:
 	return {
 		"time": simulation_time,
 		"player_pos": player_pos,
@@ -1354,7 +1450,7 @@ func snapshot() -> Dictionary:
 		"defense_id": defense_id,
 		"player_action": player_action.duplicate(true),
 		"enemies": enemies.duplicate(true),
-		"walls": walls.duplicate(),
+		"walls": [] if lightweight else walls.duplicate(),
 		"projectiles": projectiles.duplicate(true),
 		"hazards": hazards.duplicate(true),
 		"effects": effects.duplicate(true),
@@ -1378,14 +1474,20 @@ func snapshot() -> Dictionary:
 		"mode_config": mode_config.duplicate(true),
 		"progression_mode": progression_mode,
 		"map_presentation": map_presentation,
-		"areas": areas.duplicate(true),
-		"connections": connections.duplicate(true),
+		"areas": [] if lightweight else areas.duplicate(true),
+		"connections": [] if lightweight else connections.duplicate(true),
+		"waystones": [] if lightweight else waystones.duplicate(true),
+		"shortcuts": [] if lightweight else shortcuts.duplicate(true),
+		"transitions": [] if lightweight else transitions.duplicate(true),
+		"world_layers": {} if lightweight else world_layers.duplicate(true),
+		"current_layer": current_layer,
+		"active_waystone_id": active_waystone_id,
 		"shortcut_unlocked": shortcut_unlocked,
 		"bonfire_pos": bonfire_pos,
 		"shortcut_unlock_pos": shortcut_unlock_pos,
 		"shortcut_start_pos": shortcut_start_pos,
 		"visible_cells": visible_cells.duplicate(),
-		"discovered_cells": discovered_cells.duplicate(),
+		"discovered_cells": {} if lightweight else discovered_cells.duplicate(),
 		"current_area_id": current_area_id,
 		"carried_xp": carried_xp,
 		"secured_xp": secured_xp,
@@ -1397,14 +1499,14 @@ func snapshot() -> Dictionary:
 		"upgrade_context": upgrade_context,
 		"death_pending": death_pending,
 		"run_failed": run_failed,
-		"anchor_state": anchor_state.duplicate(true),
+		"anchor_state": {} if lightweight else anchor_state.duplicate(true),
 	}
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
 	var payload := snapshot()
-	payload["save_version"] = 8
+	payload["save_version"] = 9
 	payload["player_move_speed"] = player_move_speed
 	payload["player_attack_duration"] = player_attack_duration
 	payload["player_attack_startup"] = player_attack_startup
@@ -1431,7 +1533,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if save_version < 1 or save_version > 8: return false
+	if save_version < 1 or save_version > 9: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
@@ -1448,6 +1550,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	progression_mode = String(mode_config["upgrade_policy"])
 	run_seed = int(payload.get("run_seed", run_seed))
 	start_run(loadout_id, mode_id, run_seed)
+	current_layer = String(payload.get("current_layer", current_layer))
+	active_waystone_id = String(payload.get("active_waystone_id", active_waystone_id))
+	for stone in waystones:
+		if String(stone["id"]) == active_waystone_id: bonfire_pos = Vector2(stone["pos"])
 	run_active = bool(payload.get("run_active", true))
 	player_pos = Vector2(payload.get("player_pos", player_pos))
 	var position_was_migrated := false
@@ -1491,6 +1597,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	death_report = Dictionary(payload.get("death_report", {})).duplicate(true)
 	last_anchor_report = Dictionary(payload.get("last_anchor_report", {})).duplicate(true)
 	shortcut_unlocked = bool(payload.get("shortcut_unlocked", false))
+	var saved_shortcuts: Array = payload.get("shortcuts", [])
+	for shortcut in shortcuts:
+		for saved in saved_shortcuts:
+			if String(saved.get("id", "")) == String(shortcut["id"]): shortcut["unlocked"] = bool(saved.get("unlocked", false))
+	if save_version < 9 and shortcut_unlocked and not shortcuts.is_empty(): shortcuts[0]["unlocked"] = true
 	_apply_shortcut_world_state()
 	visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()
 	discovered_cells = Dictionary(payload.get("discovered_cells", {})).duplicate()
