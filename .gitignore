@@ -1,6 +1,7 @@
 .godot/
 .runtime/
 tools/
+.tools/
 builds/
 export_templates/
 

@@ -2,7 +2,7 @@
 
 ## Promise
 
-An Android-first tactical fantasy roguelike that is immediately understandable, rewards mastery, and creates surprising builds from a small reusable ruleset. The initial experience is “a compact run, but more”; the longer-term campaign uses the same controls and combat inside an interconnected procedural world.
+An Android-first, PC-compatible tactical fantasy roguelike that is immediately understandable, rewards mastery, and creates surprising builds from a small reusable ruleset. The initial experience is “a compact run, but more”; the longer-term campaign uses the same controls and combat inside an interconnected procedural world. Simulation and content remain shared across platforms, while touch and desktop input prompts adapt at presentation time.
 
 ## Design pillars
 
@@ -23,17 +23,22 @@ An Android-first tactical fantasy roguelike that is immediately understandable, 
 
 - Expedition remains a forward-directed, permadeath run without Waystones or campaign return loops.
 - Campaign begins in a large Friendly Forest containing several Waystones and naturally reconnecting routes.
-- A local shortcut opens back toward the second Waystone after further progress.
-- A late Sunken Ruin descends into a separate 2D underground layer, emerges near the first Waystone, and opens a second bidirectional shortcut from its far side.
+- A local shortcut opens back toward the second Waystone after further progress. In the Friendly Forest it is a compact path blocked by dense woods, concealed from the near side, and deliberately cleared from the far side; its blocked state must force the longer route.
+- A late Sunken Ruin descends into a separate 2D underground layer, emerges near the first Waystone, and opens a second bidirectional shortcut from its far side. The sealed gate is visible from the opening side before the player can reach its far-side interaction.
 - Discrete layer identity scopes combat, collision, awareness, projectiles, hazards, shadows, map discovery, and traversal; stairs and ladders explicitly connect layers without continuous vertical physics.
+- The full map supports an arbitrary number of discovered layers through paged layer controls. The translucent gameplay overlay always shows the current layer and never captures layer-switching input.
 - Area presentation is data-driven, beginning with light-green forest ground and a darker ruin-depths palette.
 - Swipe and tap input, keyboard fallback, and responsive portrait/landscape layout remain shared by every mode.
 
-## Immediate geometry track
+## Current geometry track
 
-- `0.0.18`: replace rectangular room boundaries with a continuous-region representation and one semi-curated Friendly Forest using irregular clearings, broad trails, natural boundaries, and landmark-shaped junctions.
-- `0.0.19`: make that representation generative through curated spatial grammars and topology templates, while preserving generous mandatory passages, Waystone relationships, and shortcut guarantees.
-- Block rooms and straight bridge-like corridors are scaffolding for topology tests, not the intended campaign geography or a content-production format.
+- Expedition is a seven-slot route recipe. Every slot carries a global difficulty position while its locale profile controls organic geography, landmarks, enemy roles, and presentation.
+- A single-biome expedition uses all seven progression profiles of that biome; a mixed expedition may use different locale profiles at each slot while preserving the same global escalation.
+- Each part is a substantial region with several internal encounter spaces and side routes, not one room or clearing.
+- Campaign uses a separate interconnected topology with layer-scoped collision, navigation, awareness, map memory, Waystones, and far-side shortcuts.
+- Both modes share one active-region lifecycle. Expedition streams the current route segment and immediate neighbors; Campaign streams the current region plus nearby or directly connected same-layer regions. Global definitions and persistent enemy records stay lightweight, while simulation, collision, navigation, rendering, and timelines consume the active subset.
+- Presentation never owns game time. Committed actions advance incrementally through the authoritative fixed-step simulation, with rendering interpolating the latest states rather than replaying a precomputed future. Combat contact and timing remain 120 Hz; scalable subsystems such as ordinary enemy locomotion, strategic decision scheduling, navigation fields, and camera queries may update less often without changing attack geometry.
+- Block rooms and generic bridge corridors are no longer the world representation. Broad capsules, overlapping clearings, natural boundaries, and explicit traversal anchors form the current procedural foundation.
 
 ## Achievement philosophy
 
