@@ -105,6 +105,8 @@ var _visibility_anchor := Vector2.INF
 var _visibility_anchor_cell := Vector2i(-999999, -999999)
 var _visibility_opaque_cells: Dictionary = {}
 var discovery_revision := 0
+var discovery_epoch := 0
+var discovery_log: Array[Vector2i] = []
 var world_render_revision := 0
 var current_area_id := 0
 var carried_xp := 0
@@ -141,6 +143,9 @@ var _flow_next_cell: Dictionary = {}
 var performance_metrics := {
 	"last_action_ms": 0.0,
 	"last_save_ms": 0.0,
+	"last_save_payload_ms": 0.0,
+	"last_save_write_ms": 0.0,
+	"last_save_bytes": 0,
 	"timeline_frames": 0,
 	"active_enemies": 0,
 	"resident_enemies": 0,
@@ -247,6 +252,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	discovered_cells.clear()
 	discovered_cells_by_layer.clear()
 	discovery_revision += 1
+	discovery_epoch += 1
+	discovery_log.clear()
 	world_render_revision += 1
 	for layer_id in world_layers: discovered_cells_by_layer[String(layer_id)] = {}
 	discovered_cells_by_layer[current_layer] = discovered_cells
@@ -916,6 +923,8 @@ func _load_current_layer_discovery() -> void:
 	discovered_cells = Dictionary(discovered_cells_by_layer.get(current_layer, {})).duplicate()
 	discovered_cells_by_layer[current_layer] = discovered_cells
 	discovery_revision += 1
+	discovery_epoch += 1
+	discovery_log.clear()
 	_visibility_anchor_cell = Vector2i(-999999, -999999)
 
 func _restore_at_waystone() -> void:
@@ -1782,6 +1791,7 @@ func _update_exploration(force: bool = false) -> void:
 				visible_cells[cell] = true
 				if not discovered_cells.has(cell):
 					discovered_cells[cell] = true
+					discovery_log.append(cell)
 					added_discovery = true
 	if added_discovery: discovery_revision += 1
 	var previous_area_id := current_area_id
@@ -2026,28 +2036,87 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var profile_start := Time.get_ticks_usec()
+	var payload_start := profile_start
+	var payload := _build_save_payload()
+	performance_metrics["last_save_payload_ms"] = float(Time.get_ticks_usec() - payload_start) / 1000.0
+	var write_start := Time.get_ticks_usec()
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null: return false
-	var payload := snapshot()
-	payload["save_version"] = 12
-	payload["player_move_speed"] = player_move_speed
-	payload["player_attack_duration"] = player_attack_duration
-	payload["player_attack_startup"] = player_attack_startup
-	payload["player_attack_active_end"] = player_attack_active_end
-	payload["player_damage_min"] = player_damage_min
-	payload["player_damage_max"] = player_damage_max
-	payload["player_attack_reach"] = player_attack_reach
-	payload["defense_cooldown_multiplier"] = _defense_cooldown_multiplier
-	payload["skill_cooldown_multiplier"] = _skill_cooldown_multiplier
-	payload["player_facing"] = player_facing
-	payload["perfect_dodges"] = perfect_dodges
-	payload["counter_hits"] = counter_hits
-	payload["successful_blocks"] = successful_blocks
-	payload["successful_endures"] = successful_endures
-	payload["rng_state"] = rng.state
 	file.store_var(payload, true)
+	file.flush()
+	performance_metrics["last_save_bytes"] = file.get_position()
+	performance_metrics["last_save_write_ms"] = float(Time.get_ticks_usec() - write_start) / 1000.0
 	performance_metrics["last_save_ms"] = float(Time.get_ticks_usec() - profile_start) / 1000.0
 	return true
+
+func _build_save_payload() -> Dictionary:
+	# Generated geography is reconstructed from mode + seed during load. Keeping
+	# it out of every autosave avoids repeatedly copying and serializing immutable
+	# floor, wall, feature, connection, layer, and Waystone definitions.
+	return {
+		"save_version": 12,
+		"time": simulation_time,
+		"player_pos": player_pos,
+		"player_facing": player_facing,
+		"player_hp": player_hp,
+		"player_max_hp": player_max_hp,
+		"player_move_speed": player_move_speed,
+		"player_attack_duration": player_attack_duration,
+		"player_attack_startup": player_attack_startup,
+		"player_attack_active_end": player_attack_active_end,
+		"player_damage_min": player_damage_min,
+		"player_damage_max": player_damage_max,
+		"player_attack_reach": player_attack_reach,
+		"defense_cooldown_multiplier": _defense_cooldown_multiplier,
+		"skill_cooldown_multiplier": _skill_cooldown_multiplier,
+		"loadout_id": loadout_id,
+		"enemies": enemies.duplicate(true),
+		"projectiles": projectiles.duplicate(true),
+		"hazards": hazards.duplicate(true),
+		"effects": effects.duplicate(true),
+		"dodge_cooldown": dodge_cooldown,
+		"block_cooldown": block_cooldown,
+		"endure_cooldown": endure_cooldown,
+		"skill_cooldown": skill_cooldown,
+		"strength_remaining": strength_remaining,
+		"potions": potions,
+		"trial_complete": trial_complete,
+		"boss_defeated": _boss_defeated,
+		"run_seed": run_seed,
+		"upgrade_pending": upgrade_pending,
+		"upgrade_choices": upgrade_choices.duplicate(),
+		"upgrades": upgrades.duplicate(),
+		"upgrade_count": upgrade_count,
+		"upgrade_ranks": upgrade_ranks.duplicate(true),
+		"upgrade_context": upgrade_context,
+		"rooms_cleared": rooms_cleared,
+		"enemies_defeated": enemies_defeated,
+		"damage_dealt": damage_dealt,
+		"message": message,
+		"run_active": run_active,
+		"mode_id": mode_id,
+		"progression_mode": progression_mode,
+		"map_presentation": map_presentation,
+		"current_layer": current_layer,
+		"active_waystone_id": active_waystone_id,
+		"shortcut_unlocked": shortcut_unlocked,
+		"shortcuts": shortcuts.duplicate(true),
+		"discovered_cells_by_layer": discovered_cells_by_layer.duplicate(true),
+		"current_area_id": current_area_id,
+		"carried_xp": carried_xp,
+		"secured_xp": secured_xp,
+		"lost_xp": lost_xp.duplicate(true),
+		"death_report": death_report.duplicate(true),
+		"last_anchor_report": last_anchor_report.duplicate(true),
+		"death_pending": death_pending,
+		"run_failed": run_failed,
+		"anchor_state": anchor_state.duplicate(true),
+		"perfect_dodges": perfect_dodges,
+		"counter_hits": counter_hits,
+		"successful_blocks": successful_blocks,
+		"successful_endures": successful_endures,
+		"rng_state": rng.state,
+	}
 
 func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not FileAccess.file_exists(path): return false

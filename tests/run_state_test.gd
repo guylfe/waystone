@@ -59,9 +59,12 @@ func _init() -> void:
 	test_provisional_progress_accounting()
 	test_visibility_memory_and_awareness()
 	test_discovery_uses_cached_grid_visibility()
+	test_floor_cache_appends_discovery_incrementally()
+	test_autosave_waits_for_quiet_input()
 	test_xp_death_recovery()
 	test_hex_hazard()
 	test_save_round_trip()
+	test_save_payload_omits_regenerated_world_geometry()
 	test_version_one_save_migration()
 	test_version_three_attack_migration()
 	test_restart_restores_expedition()
@@ -522,6 +525,52 @@ func test_discovery_uses_cached_grid_visibility() -> void:
 	state.player_pos += Vector2(state.VISIBILITY_CELL, 0.0)
 	state._update_exploration()
 	assert(float(state.performance_metrics["visibility_ms"]) >= 0.0)
+
+func test_floor_cache_appends_discovery_incrementally() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.state.discovered_cells = {Vector2i(8, 8): true}
+	board.state.discovery_epoch += 1
+	board.state.discovery_revision += 1
+	board.state.discovery_log.clear()
+	board._refresh_floor_geometry_cache()
+	var chunk := Vector2i(1, 1)
+	var existing_chunk: Array = board._floor_cells_by_chunk[chunk]
+	assert(board._floor_iso_geometry.size() == 1)
+	var added := Vector2i(9, 8)
+	board.state.discovered_cells[added] = true
+	board.state.discovery_log.append(added)
+	board.state.discovery_revision += 1
+	board._refresh_floor_geometry_cache()
+	assert(board._floor_iso_geometry.size() == 2)
+	assert(is_same(existing_chunk, board._floor_cells_by_chunk[chunk]))
+	board.free()
+
+func test_autosave_waits_for_quiet_input() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.desktop_controls = false
+	board.autosave_pending = true
+	board.autosave_elapsed = board.AUTOSAVE_DELAY
+	board.pointer_down = true
+	board._process(board.AUTOSAVE_QUIET_DELAY + 0.02)
+	assert(not board.autosave_deferred)
+	board.pointer_down = false
+	board._process(board.AUTOSAVE_QUIET_DELAY + 0.02)
+	assert(board.autosave_deferred)
+	board.autosave_pending = false
+	board.free()
+
+func test_save_payload_omits_regenerated_world_geometry() -> void:
+	var state: RunState = RunStateScript.new()
+	var payload := state._build_save_payload()
+	assert(not payload.has("floor_shapes"))
+	assert(not payload.has("terrain_features"))
+	assert(not payload.has("connections"))
+	assert(not payload.has("world_layers"))
+	assert(Array(payload["enemies"]).size() == state.enemies.size())
+	assert(Dictionary(payload["discovered_cells_by_layer"]).has(state.current_layer))
+	assert(var_to_bytes(payload).size() < var_to_bytes(state.snapshot()).size())
 
 func test_desktop_landscape_layout() -> void:
 	var board = GameBoardScript.new()

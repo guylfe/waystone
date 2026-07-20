@@ -6,6 +6,7 @@ func _init() -> void:
 	_measure("expedition", 717)
 	_measure("campaign_lab", 99117)
 	_measure_crowds()
+	_measure_save_payload()
 	quit()
 
 func _measure(mode: String, seed: int) -> void:
@@ -76,3 +77,13 @@ func _measure_streamed_crowd(crowd_size: int) -> void:
 		frame_count += 1
 	assert(frame_count > 0)
 	print("STREAM %d average_frame=%.2fms maximum_frame=%.2fms frames=%d" % [crowd_size, total_frame_ms / float(frame_count), maximum_frame_ms, frame_count])
+
+func _measure_save_payload() -> void:
+	var state = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 99117)
+	var full_bytes := var_to_bytes(state.snapshot()).size()
+	var compact_bytes := var_to_bytes(state._build_save_payload()).size()
+	var path := "user://waystone-performance.save"
+	assert(state.save_run(path))
+	print("SAVE full=%d compact=%d reduction=%.1f%% payload=%.2fms write=%.2fms total=%.2fms" % [full_bytes, compact_bytes, (1.0 - float(compact_bytes) / float(full_bytes)) * 100.0, float(state.performance_metrics["last_save_payload_ms"]), float(state.performance_metrics["last_save_write_ms"]), float(state.performance_metrics["last_save_ms"])])
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

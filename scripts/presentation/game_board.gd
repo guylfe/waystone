@@ -18,6 +18,7 @@ const ISO_CAMERA_DROP := 0.075
 const ISO_WALL_HEIGHT := 54.0
 const MOUSE_HOLD_DELAY := 0.14
 const AUTOSAVE_DELAY := 2.0
+const AUTOSAVE_QUIET_DELAY := 0.24
 const MAP_LAYERS_PER_PAGE := 5
 const MAX_SIM_TICKS_PER_FRAME := 4
 const RENDER_QUERY_REUSE_DISTANCE := 220.0
@@ -71,6 +72,8 @@ var map_layer_previous_rect := Rect2()
 var map_layer_next_rect := Rect2()
 var autosave_pending := false
 var autosave_elapsed := 0.0
+var autosave_quiet_elapsed := 0.0
+var autosave_deferred := false
 var setup_loadout := "duelist"
 var setup_mode := "expedition"
 var waystone_menu_open := false
@@ -88,6 +91,8 @@ var _static_query_anchor := Vector2.INF
 var _cached_render_walls: Array[Rect2] = []
 var _cached_render_features: Array[Dictionary] = []
 var _floor_cache_revision := -1
+var _floor_cache_epoch := -1
+var _floor_cache_seed := -1
 var _floor_cache_layer := ""
 var _floor_cache_view := ""
 var _floor_cache_scale := -1.0
@@ -209,9 +214,13 @@ func _process(delta: float) -> void:
 		frame_metric_worst_ms = 0.0
 	var needs_redraw := false
 	var finished_streamed_movement := false
+	if _autosave_frame_is_quiet(): autosave_quiet_elapsed += delta
+	else: autosave_quiet_elapsed = 0.0
 	if autosave_pending:
 		autosave_elapsed += delta
-		if autosave_elapsed >= AUTOSAVE_DELAY and not playing and not pointer_down: _flush_autosave()
+		if autosave_elapsed >= AUTOSAVE_DELAY and autosave_quiet_elapsed >= AUTOSAVE_QUIET_DELAY and not autosave_deferred:
+			autosave_deferred = true
+			call_deferred("_flush_autosave_if_quiet")
 	if streaming_action:
 		var requested_accumulator := stream_accumulator + minf(delta, 0.10)
 		var maximum_accumulator := state.SIM_DT * float(MAX_SIM_TICKS_PER_FRAME)
@@ -337,6 +346,7 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 	return result
 
 func _gui_input(event: InputEvent) -> void:
+	autosave_quiet_elapsed = 0.0
 	if event is InputEventScreenTouch:
 		if event.pressed: _pointer_pressed(event.position, false)
 		else: _pointer_released(event.position)
@@ -845,11 +855,29 @@ func _mark_autosave(critical: bool = false) -> void:
 	autosave_elapsed = 0.0
 	if critical: _flush_autosave()
 
+func _autosave_frame_is_quiet() -> bool:
+	if playing or streaming_action or pointer_down or held_movement: return false
+	if desktop_controls and not _desktop_held_direction().is_zero_approx(): return false
+	return state == null or String(state.player_action.get("kind", "idle")) == "idle"
+
+func _flush_autosave_if_quiet() -> void:
+	if not autosave_pending:
+		autosave_deferred = false
+		return
+	if not _autosave_frame_is_quiet() or autosave_quiet_elapsed < AUTOSAVE_QUIET_DELAY:
+		autosave_deferred = false
+		return
+	_flush_autosave()
+
 func _flush_autosave() -> void:
-	if not autosave_pending: return
+	if not autosave_pending:
+		autosave_deferred = false
+		return
 	state.save_run()
 	autosave_pending = false
 	autosave_elapsed = 0.0
+	autosave_quiet_elapsed = 0.0
+	autosave_deferred = false
 
 func _draw() -> void:
 	var draw_start := Time.get_ticks_usec()
@@ -1065,31 +1093,47 @@ func _draw_discovered_floor() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 func _refresh_floor_geometry_cache() -> void:
-	var cache_valid := _floor_cache_revision == state.discovery_revision \
-		and _floor_cache_layer == state.current_layer \
-		and _floor_cache_view == view_mode \
-		and is_equal_approx(_floor_cache_scale, world_scale)
-	if cache_valid: return
+	var identity_changed := _floor_cache_epoch != state.discovery_epoch \
+		or _floor_cache_seed != state.run_seed \
+		or _floor_cache_layer != state.current_layer \
+		or _floor_cache_view != view_mode \
+		or not is_equal_approx(_floor_cache_scale, world_scale)
+	if identity_changed:
+		_floor_cache_epoch = state.discovery_epoch
+		_floor_cache_seed = state.run_seed
+		_floor_cache_layer = state.current_layer
+		_floor_cache_view = view_mode
+		_floor_cache_scale = world_scale
+		_clear_floor_geometry_cache()
+		for cell_value in _render_discovered_cells(): _cache_floor_cell(Vector2i(cell_value))
+		state.discovery_log.clear()
+		_floor_cache_revision = state.discovery_revision
+		return
+	if _floor_cache_revision == state.discovery_revision: return
+	for cell_value in state.discovery_log:
+		var cell := Vector2i(cell_value)
+		if state.discovered_cells.has(cell): _cache_floor_cell(cell)
+	state.discovery_log.clear()
 	_floor_cache_revision = state.discovery_revision
-	_floor_cache_layer = state.current_layer
-	_floor_cache_view = view_mode
-	_floor_cache_scale = world_scale
+
+func _clear_floor_geometry_cache() -> void:
 	_floor_cells_by_chunk.clear()
 	_floor_iso_geometry.clear()
 	_floor_top_down_geometry.clear()
-	for cell_value in _render_discovered_cells():
-		var cell := Vector2i(cell_value)
-		var chunk := Vector2i(int(floor(float(cell.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(cell.y) / FLOOR_RENDER_CHUNK_CELLS)))
-		if not _floor_cells_by_chunk.has(chunk): _floor_cells_by_chunk[chunk] = []
-		_floor_cells_by_chunk[chunk].append(cell)
-		var top_left := Vector2(cell) * state.VISIBILITY_CELL
-		_floor_top_down_geometry[cell] = Rect2(top_left * world_scale, Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE)
-		_floor_iso_geometry[cell] = PackedVector2Array([
-			_project_world_without_camera(top_left),
-			_project_world_without_camera(top_left + Vector2(state.VISIBILITY_CELL, 0.0)),
-			_project_world_without_camera(top_left + Vector2.ONE * state.VISIBILITY_CELL),
-			_project_world_without_camera(top_left + Vector2(0.0, state.VISIBILITY_CELL)),
-		])
+
+func _cache_floor_cell(cell: Vector2i) -> void:
+	if _floor_iso_geometry.has(cell): return
+	var chunk := Vector2i(int(floor(float(cell.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(cell.y) / FLOOR_RENDER_CHUNK_CELLS)))
+	if not _floor_cells_by_chunk.has(chunk): _floor_cells_by_chunk[chunk] = []
+	_floor_cells_by_chunk[chunk].append(cell)
+	var top_left := Vector2(cell) * state.VISIBILITY_CELL
+	_floor_top_down_geometry[cell] = Rect2(top_left * world_scale, Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE)
+	_floor_iso_geometry[cell] = PackedVector2Array([
+		_project_world_without_camera(top_left),
+		_project_world_without_camera(top_left + Vector2(state.VISIBILITY_CELL, 0.0)),
+		_project_world_without_camera(top_left + Vector2.ONE * state.VISIBILITY_CELL),
+		_project_world_without_camera(top_left + Vector2(0.0, state.VISIBILITY_CELL)),
+	])
 
 func _project_world_without_camera(world: Vector2) -> Vector2:
 	if view_mode == "isometric": return Vector2((world.x - world.y) * 0.5, (world.x + world.y) * 0.25) * world_scale
