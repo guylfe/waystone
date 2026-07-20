@@ -23,9 +23,9 @@ const MAP_LAYERS_PER_PAGE := 5
 const MAX_SIM_TICKS_PER_FRAME := 4
 const RENDER_QUERY_REUSE_DISTANCE := 220.0
 const FLOOR_RENDER_CHUNK_CELLS := 8
-const TEMPORAL_TINT_ALPHA := 0.085
-const TEMPORAL_TINT_FADE_IN := 4.8
-const TEMPORAL_TINT_FADE_OUT := 7.5
+const TEMPORAL_TINT_ALPHA := 0.16
+const TEMPORAL_TINT_FADE_IN := 2.6
+const TEMPORAL_TINT_FADE_OUT := 4.0
 
 var state: RunState
 var visual: Dictionary = {}
@@ -971,7 +971,7 @@ func _draw_world() -> void:
 
 func _draw_temporal_tint() -> void:
 	if temporal_tint_strength <= 0.001: return
-	draw_rect(board_rect, Color(0.08, 0.34, 0.52, TEMPORAL_TINT_ALPHA * temporal_tint_strength))
+	draw_rect(board_rect, Color(0.06, 0.38, 0.66, TEMPORAL_TINT_ALPHA * temporal_tint_strength))
 
 func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void:
 	var entries: Array[Dictionary] = []
