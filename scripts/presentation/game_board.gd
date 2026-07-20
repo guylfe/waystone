@@ -23,6 +23,9 @@ const MAP_LAYERS_PER_PAGE := 5
 const MAX_SIM_TICKS_PER_FRAME := 4
 const RENDER_QUERY_REUSE_DISTANCE := 220.0
 const FLOOR_RENDER_CHUNK_CELLS := 8
+const TEMPORAL_TINT_ALPHA := 0.085
+const TEMPORAL_TINT_FADE_IN := 4.8
+const TEMPORAL_TINT_FADE_OUT := 7.5
 
 var state: RunState
 var visual: Dictionary = {}
@@ -100,6 +103,8 @@ var _floor_cells_by_chunk: Dictionary = {}
 var _floor_iso_geometry: Dictionary = {}
 var _floor_top_down_geometry: Dictionary = {}
 var _floor_surface_colors: Dictionary = {}
+var _ground_surface_landmarks: Array[Dictionary] = []
+var temporal_tint_strength := 0.0
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -280,8 +285,16 @@ func _process(delta: float) -> void:
 				inspected_enemy_id = int(inspected["id"])
 				hold_consumed = true
 				needs_redraw = true
+	if _update_temporal_tint(delta): needs_redraw = true
 	if needs_redraw:
 		queue_redraw()
+
+func _update_temporal_tint(delta: float) -> bool:
+	var target := 1.0 if state != null and state.run_active and not playing else 0.0
+	var previous := temporal_tint_strength
+	var rate := TEMPORAL_TINT_FADE_IN if target > temporal_tint_strength else TEMPORAL_TINT_FADE_OUT
+	temporal_tint_strength = move_toward(temporal_tint_strength, target, rate * maxf(0.0, delta))
+	return not is_equal_approx(previous, temporal_tint_strength)
 
 func _interpolate_playback_snapshot(weight: float) -> Dictionary:
 	var current: Dictionary = timeline[playback_index]
@@ -937,6 +950,7 @@ func _draw_world() -> void:
 	for effect in Array(visual.get("effects", [])):
 		if String(effect.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(effect["pos"]), 80.0) and state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
 	_draw_shadow_guidance()
+	_draw_temporal_tint()
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
@@ -954,6 +968,10 @@ func _draw_world() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(area_x, board_rect.position.y + font + 10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
 	_draw_player_health_bar(font)
 	_draw_player_progress_bar(font)
+
+func _draw_temporal_tint() -> void:
+	if temporal_tint_strength <= 0.001: return
+	draw_rect(board_rect, Color(0.08, 0.34, 0.52, TEMPORAL_TINT_ALPHA * temporal_tint_strength))
 
 func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void:
 	var entries: Array[Dictionary] = []
@@ -1104,6 +1122,7 @@ func _refresh_floor_geometry_cache() -> void:
 		_floor_cache_layer = state.current_layer
 		_floor_cache_view = view_mode
 		_floor_cache_scale = world_scale
+		_refresh_ground_surface_landmarks()
 		_clear_floor_geometry_cache()
 		for cell_value in _render_discovered_cells(): _cache_floor_cell(Vector2i(cell_value))
 		state.discovery_log.clear()
@@ -1128,7 +1147,8 @@ func _cache_floor_cell(cell: Vector2i) -> void:
 	if not _floor_cells_by_chunk.has(chunk): _floor_cells_by_chunk[chunk] = []
 	_floor_cells_by_chunk[chunk].append(cell)
 	var top_left := Vector2(cell) * state.VISIBILITY_CELL
-	_floor_surface_colors[cell] = state.floor_surface_color_at(top_left + Vector2.ONE * state.VISIBILITY_CELL * 0.5)
+	var center := top_left + Vector2.ONE * state.VISIBILITY_CELL * 0.5
+	_floor_surface_colors[cell] = _ground_surface_color_at(center, state.floor_surface_color_at(center))
 	_floor_top_down_geometry[cell] = Rect2(top_left * world_scale, Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE)
 	_floor_iso_geometry[cell] = PackedVector2Array([
 		_project_world_without_camera(top_left),
@@ -1136,6 +1156,41 @@ func _cache_floor_cell(cell: Vector2i) -> void:
 		_project_world_without_camera(top_left + Vector2.ONE * state.VISIBILITY_CELL),
 		_project_world_without_camera(top_left + Vector2(0.0, state.VISIBILITY_CELL)),
 	])
+
+func _refresh_ground_surface_landmarks() -> void:
+	_ground_surface_landmarks.clear()
+	for feature_value in state.terrain_features:
+		var feature := Dictionary(feature_value)
+		if String(feature.get("layer", state.current_layer)) != state.current_layer: continue
+		if String(feature.get("kind", "")) in ["brook", "old_road"] and feature.has("from") and feature.has("to"):
+			_ground_surface_landmarks.append(feature)
+
+func _ground_surface_color_at(point: Vector2, base_color: Color) -> Color:
+	var result := base_color
+	for feature in _ground_surface_landmarks:
+		var start := Vector2(feature["from"])
+		var finish := Vector2(feature["to"])
+		var closest := Geometry2D.get_closest_point_to_segment(point, start, finish)
+		var distance := point.distance_to(closest)
+		var width := float(feature.get("width", 24.0))
+		var kind := String(feature["kind"])
+		if kind == "brook":
+			if distance > width * 0.5 + 38.0: continue
+			var at_ford := false
+			for ford_value in Array(feature.get("fords", [])):
+				if point.distance_to(Vector2(ford_value)) <= maxf(118.0, width * 0.82):
+					at_ford = true
+					break
+			if at_ford:
+				result = Color("8fa27b") if distance <= width * 0.5 else Color("718565")
+			elif distance <= width * 0.5:
+				result = Color("347fa5")
+			else:
+				result = Color("607b61")
+		elif kind == "old_road":
+			if distance > width * 0.5 + 44.0: continue
+			result = Color("67543b") if distance <= width * 0.5 else Color("806b49")
+	return result
 
 func _project_world_without_camera(world: Vector2) -> Vector2:
 	if view_mode == "isometric": return Vector2((world.x - world.y) * 0.5, (world.x + world.y) * 0.25) * world_scale
@@ -1237,14 +1292,8 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 	var radius := float(feature.get("radius", 44.0)) * world_scale
 	var kind := String(feature.get("kind", "tree"))
 	if kind in ["brook", "old_road"]:
-		var start := _world_to_screen(Vector2(feature.get("from", world_pos - Vector2.RIGHT * float(feature.get("radius", 300.0)))))
-		var finish := _world_to_screen(Vector2(feature.get("to", world_pos + Vector2.RIGHT * float(feature.get("radius", 300.0)))))
-		var color := Color(0.20, 0.49, 0.66, 0.92) if kind == "brook" else Color(0.39, 0.31, 0.20, 0.72)
-		var edge := Color(0.58, 0.69, 0.52, 0.72) if kind == "brook" else Color(0.56, 0.45, 0.28, 0.46)
-		var feature_width := float(feature.get("width", 24.0)) * world_scale
-		draw_line(start, finish, edge, maxf(12.0, feature_width + 18.0 * world_scale))
-		draw_line(start, finish, color, maxf(7.0, feature_width))
-		if kind == "brook": draw_line(start, finish, Color(0.55, 0.78, 0.84, 0.58), maxf(2.0, feature_width * 0.12))
+		# Long landmarks are baked into discovered floor cells so they remain
+		# clipped to playable terrain and underneath every solid in either view.
 		return
 	if kind == "meadow":
 		draw_circle(foot, radius * 0.46, Color(0.54, 0.72, 0.34, 0.16))

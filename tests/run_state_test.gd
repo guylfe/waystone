@@ -39,6 +39,8 @@ func _init() -> void:
 	test_playback_interpolates_between_simulation_steps()
 	test_actions_stream_without_precomputation()
 	test_streaming_caps_realtime_catchup()
+	test_temporal_tint_eases_between_states()
+	test_long_landmarks_are_ground_materials()
 	test_presentation_frames_reuse_storage()
 	test_desktop_landscape_layout()
 	test_close_camera_tracks_player()
@@ -510,6 +512,46 @@ func test_streaming_caps_realtime_catchup() -> void:
 	board._process(1.0)
 	assert(board.state.simulation_time - before <= board.state.SIM_DT * float(board.MAX_SIM_TICKS_PER_FRAME) + 0.0001)
 	assert(float(board.state.performance_metrics["dropped_realtime_ms"]) > 0.0)
+	board.free()
+
+func test_temporal_tint_eases_between_states() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.playing = false
+	assert(board._update_temporal_tint(0.08))
+	assert(board.temporal_tint_strength > 0.0 and board.temporal_tint_strength < 1.0)
+	for index in range(10): board._update_temporal_tint(0.08)
+	assert(is_equal_approx(board.temporal_tint_strength, 1.0))
+	board.playing = true
+	assert(board._update_temporal_tint(0.04))
+	assert(board.temporal_tint_strength < 1.0 and board.temporal_tint_strength > 0.0)
+	for index in range(10): board._update_temporal_tint(0.08)
+	assert(is_zero_approx(board.temporal_tint_strength))
+	board.free()
+
+func test_long_landmarks_are_ground_materials() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.start_run("duelist", "expedition", 739391)
+	board._refresh_ground_surface_landmarks()
+	var brook: Dictionary = {}
+	var road: Dictionary = {}
+	for feature in board._ground_surface_landmarks:
+		if String(feature["kind"]) == "brook": brook = feature
+		if String(feature["kind"]) == "old_road": road = feature
+	assert(not brook.is_empty() and not road.is_empty())
+	board._ground_surface_landmarks.clear()
+	board._ground_surface_landmarks.append(brook)
+	var brook_point := Vector2(brook["from"]).lerp(Vector2(brook["to"]), 0.02)
+	var brook_base := Color("79ad68")
+	assert(board._ground_surface_color_at(brook_point, brook_base) != brook_base)
+	var ford_point := Vector2(Array(brook["fords"])[0])
+	assert(board._ground_surface_color_at(ford_point, brook_base) != board._ground_surface_color_at(brook_point, brook_base))
+	board._ground_surface_landmarks.clear()
+	board._ground_surface_landmarks.append(road)
+	var road_point := Vector2(road["from"]).lerp(Vector2(road["to"]), 0.5)
+	var road_base := Color("70a162")
+	assert(board._ground_surface_color_at(road_point, road_base) != road_base)
 	board.free()
 
 func test_presentation_frames_reuse_storage() -> void:

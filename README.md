@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.30`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.31`. Android version codes increase independently so newer APKs can always upgrade older installations.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -31,6 +31,8 @@ v0.0.28 replaces the repeated clearing-and-side-loop motif with a semantic Frien
 v0.0.29 temporarily gives Expedition unlimited restorative potions so full seven-part traversal can be tested without attrition ending the run early. Potions still consume action time and cannot be used at full health. Campaign Lab retains its normal finite potion supply.
 
 v0.0.30 gives the first three Friendly Forest regions readable traversal identities instead of undifferentiated green fields. Sunlit Verge opens into a bright meadow bounded by dense growth, Brookwood follows broad banks and crosses its brook at authored fords, and Old Forest Road centers an unmistakable worn route with overgrown side detours. Main routes, side paths, clearings, water, roads, and forest boundaries now use distinct surface or landmark treatments in both views and on the discovered map. The early roster is also deliberate: Sunlit Verge contains only slow boars with a committed pounce; Brookwood mixes those boars with faster hounds that pounce and then evade while recovering; Old Forest Road introduces agile knife bandits alongside hounds. Bandits can dodge defensively or convert a forward dodge directly into a quick knife strike.
+
+v0.0.31 moves Brookwood's brook and the Old Forest Road out of the solid-object pass and into clipped ground materials. Water, banks, shallow fords, road beds, and shoulders now remain on discovered playable terrain beneath actors, trees, walls, weapons, and effects in both projections. Stopped time also eases into a subtle blue world tint and flowing time eases back to the natural palette; HUD and map readability remain unaffected.
 
 The seeded Friendly Forest Expedition is now a forward-directed sequence of seven CQ2-scale progression parts with no Waystone or return shortcut. Each part is a large organic region containing several clearings, broad winding paths, a side loop, multiple encounter groups, its own escalation profile, and progressively denser forest identity. The current all-Forest route is represented as a seven-slot locale recipe so later expeditions can substitute Bridge, Town, Castle, Dungeon, and other locale profiles at any global progression position without changing the difficulty contract. The seventh part places its Warden and map marker from one authoritative boss definition.
 
