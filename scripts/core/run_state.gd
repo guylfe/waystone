@@ -314,7 +314,7 @@ func has_unanchored_progress() -> bool:
 	return provisional_xp() > 0 or unanchored_discovery_count() > 0 or unanchored_shortcut()
 
 func _enemy_base_hp(kind: String) -> int:
-	return {"knife": 4, "blade": 7, "hound": 6, "archer": 5, "shield": 10, "polearm": 12, "hexer": 7, "brute": 16, "captain": 12, "warden": 26}.get(kind, 7)
+	return {"boar": 7, "bandit": 5, "knife": 4, "blade": 7, "hound": 6, "archer": 5, "shield": 10, "polearm": 12, "hexer": 7, "brute": 16, "captain": 12, "warden": 26}.get(kind, 7)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var posture_max := _enemy_posture_max(kind)
@@ -327,7 +327,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 52.0 if kind == "warden" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 25.0 if kind == "hound" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": 52.0 if kind == "warden" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 31.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -337,6 +337,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"suspicious_remaining": 0.0,
 		"last_known_player": position,
 		"heard_sound_sequence": 0,
+		"pounce_cooldown": 0.0,
+		"dodge_cooldown": 0.0,
 	}
 	_next_enemy_id += 1
 	return enemy
@@ -358,7 +360,7 @@ func _respawn_enemies() -> void:
 	_invalidate_active_enemy_cache()
 
 func _enemy_posture_max(kind: String) -> float:
-	return {"knife": 2.0, "hound": 3.0, "archer": 3.0, "hexer": 3.0, "blade": 5.0, "captain": 6.0, "shield": 8.0, "polearm": 8.0, "brute": 14.0, "warden": 18.0}.get(kind, 5.0)
+	return {"bandit": 2.5, "knife": 2.0, "hound": 3.0, "boar": 5.0, "archer": 3.0, "hexer": 3.0, "blade": 5.0, "captain": 6.0, "shield": 8.0, "polearm": 8.0, "brute": 14.0, "warden": 18.0}.get(kind, 5.0)
 
 func select_loadout(choice: String) -> bool:
 	if not ["duelist", "guardian", "reaver"].has(choice):
@@ -813,14 +815,26 @@ func _build_wall_spatial_index() -> void:
 func _build_terrain_feature_spatial_index() -> void:
 	_terrain_feature_buckets.clear()
 	for feature in loaded_terrain_features:
-		var cell := _spatial_cell_for_point(Vector2(feature["pos"]))
-		if not _terrain_feature_buckets.has(cell): _terrain_feature_buckets[cell] = []
-		_terrain_feature_buckets[cell].append(feature)
+		var radius := float(feature.get("radius", 45.0))
+		var bounds := Rect2(Vector2(feature["pos"]) - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)
+		if feature.has("from") and feature.has("to"):
+			var start := Vector2(feature["from"])
+			var finish := Vector2(feature["to"])
+			var half_width := float(feature.get("width", 24.0)) * 0.5 + 70.0
+			bounds = Rect2(start.min(finish) - Vector2.ONE * half_width, finish.max(start) - start.min(finish) + Vector2.ONE * half_width * 2.0)
+		for cell in _spatial_cells_for_rect(bounds):
+			if not _terrain_feature_buckets.has(cell): _terrain_feature_buckets[cell] = []
+			_terrain_feature_buckets[cell].append(feature)
 
 func nearby_terrain_features(position: Vector2, radius: float) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
+	var seen: Dictionary = {}
 	for cell in _spatial_cells_for_rect(Rect2(position - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)):
-		for feature in Array(_terrain_feature_buckets.get(cell, [])): result.append(feature)
+		for feature in Array(_terrain_feature_buckets.get(cell, [])):
+			var key := "%s:%s:%s" % [feature.get("part_id", -1), feature.get("kind", ""), feature.get("pos", Vector2.ZERO)]
+			if seen.has(key): continue
+			seen[key] = true
+			result.append(feature)
 	return result
 
 func nearby_render_walls(position: Vector2, radius: float) -> Array[Rect2]:
@@ -1124,7 +1138,10 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 		enemy["last_known_player"] = player_pos
 		hit_ids.append(int(enemy["id"]))
 		var hit_point := Vector2(contact["point"])
-		if _enemy_blocks_attack(enemy):
+		if _enemy_evades_attack(enemy):
+			_add_effect("dodge", Vector2(enemy["pos"]))
+			_set_message("The bandit slips through the attack.")
+		elif _enemy_blocks_attack(enemy):
 			_apply_posture_damage(enemy, 2.0 if is_sweep else 0.5)
 			_add_effect("block", hit_point)
 			_set_message("The shield catches your weapon.")
@@ -1145,6 +1162,13 @@ func _enemy_blocks_attack(enemy: Dictionary) -> bool:
 	var incoming := player_pos - Vector2(enemy["pos"])
 	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(72.0))
 
+func _enemy_evades_attack(enemy: Dictionary) -> bool:
+	if String(enemy.get("kind", "")) != "bandit": return false
+	var action: Dictionary = enemy.get("action", {})
+	var action_kind := String(action.get("kind", "idle"))
+	var elapsed := float(action.get("elapsed", 0.0))
+	return (action_kind == "evade" and elapsed >= 0.04 and elapsed <= 0.30) or (action_kind == "dodge_strike" and elapsed <= float(action.get("dodge_end", 0.30)))
+
 func _apply_posture_damage(enemy: Dictionary, amount: float) -> void:
 	if amount <= 0.0 or int(enemy["hp"]) <= 0: return
 	enemy["posture"] = maxf(0.0, float(enemy.get("posture", 1.0)) - amount)
@@ -1163,7 +1187,7 @@ func _break_posture(enemy: Dictionary) -> void:
 		_add_effect("strain", Vector2(enemy["pos"]))
 		_set_message("The heavy enemy holds its grounded attack.")
 		return
-	var stagger_duration := 0.52 if kind in ["knife", "hound"] else 0.66 if kind in ["archer", "hexer"] else 0.78
+	var stagger_duration := 0.52 if kind in ["knife", "hound", "bandit"] else 0.66 if kind in ["archer", "hexer", "boar"] else 0.78
 	enemy["action"] = _action("stagger", stagger_duration, Vector2.ZERO)
 	enemy["posture"] = 0.0
 	enemy["posture_recovery_delay"] = stagger_duration
@@ -1216,6 +1240,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		# simulation proportional to the active locale rather than the whole run.
 		if Vector2(enemy["pos"]).distance_to(player_pos) > 1450.0 and String(enemy.get("awareness", "idle")) == "idle": continue
 		_update_enemy_awareness(enemy, dt)
+		enemy["pounce_cooldown"] = maxf(0.0, float(enemy.get("pounce_cooldown", 0.0)) - dt)
+		enemy["dodge_cooldown"] = maxf(0.0, float(enemy.get("dodge_cooldown", 0.0)) - dt)
 		enemy["posture_recovery_delay"] = maxf(0.0, float(enemy.get("posture_recovery_delay", 0.0)) - dt)
 		if float(enemy["posture_recovery_delay"]) <= 0.0 and String(Dictionary(enemy["action"])["kind"]) == "idle":
 			enemy["posture"] = minf(float(enemy["posture_max"]), float(enemy["posture"]) + dt * 1.8)
@@ -1241,10 +1267,14 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		action["elapsed"] = float(action["elapsed"]) + dt
 		var kind := String(action["kind"])
 		var elapsed := float(action["elapsed"])
-		if kind == "move":
+		if kind in ["move", "evade"]:
 			if update_locomotion:
-				var speed := _enemy_move_speed(enemy)
+				var speed := _enemy_move_speed(enemy) * float(action.get("speed_multiplier", 1.0))
 				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * speed * dt * 2.0, float(enemy["radius"]), int(enemy["id"]))
+		elif kind == "dodge_strike":
+			if update_locomotion and elapsed <= float(action.get("dodge_end", 0.30)):
+				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * float(action.get("speed", 390.0)) * dt, float(enemy["radius"]), int(enemy["id"]))
+			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]): _resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "melee" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]):
 			_resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
@@ -1283,7 +1313,29 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	var direction := offset.normalized() if distance > 0.01 else Vector2.DOWN
 	enemy["facing"] = direction
 	var enemy_kind := String(enemy["kind"])
-	if enemy_kind == "blade":
+	if enemy_kind == "boar":
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and distance <= 350.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _charge_action(1.34, 0.40, 0.80, 380.0, 2, direction)
+			enemy["action"]["label"] = "pounce"
+			enemy["pounce_cooldown"] = 2.40
+		elif distance < 115.0:
+			enemy["action"] = _action("move", 0.38, -direction)
+		else: enemy["action"] = _action("move", 0.48, _navigation_direction(enemy, player_pos))
+	elif enemy_kind == "bandit":
+		if float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance >= 112.0 and distance <= 245.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(1.10, 0.40, 0.62, 96.0, 1, direction, "quick_cut", "dodge_strike")
+			enemy["action"]["dodge_end"] = 0.30
+			enemy["action"]["speed"] = 390.0
+			enemy["dodge_cooldown"] = 2.00
+		elif distance <= 94.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(0.86, 0.26, 0.45, 94.0, 1, direction, "quick_cut")
+		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance < 155.0:
+			var evade_direction := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.45).normalized()
+			enemy["action"] = _action("evade", 0.38, evade_direction)
+			enemy["action"]["speed_multiplier"] = 1.55
+			enemy["dodge_cooldown"] = 1.45
+		else: enemy["action"] = _action("move", 0.32, _navigation_direction(enemy, player_pos))
+	elif enemy_kind == "blade":
 		if distance <= 125.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 128.0, 2, direction, "diagonal_cut")
 		else:
@@ -1302,10 +1354,15 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if distance <= 120.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.65, 0.62, 0.92, 122.0, 2, direction)
 		else: enemy["action"] = _action("move", 0.58, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "hound":
-		if distance <= 330.0 and distance >= 82.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _charge_action(1.28, 0.42, 0.78, 405.0, 2, direction)
-		elif distance < 82.0: enemy["action"] = _melee_action(0.95, 0.28, 0.48, 88.0, 1, direction, "bite")
-		else: enemy["action"] = _action("move", 0.38, _navigation_direction(enemy, player_pos))
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance <= 350.0 and distance >= 88.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _charge_action(1.34, 0.40, 0.80, 380.0, 2, direction)
+			enemy["action"]["label"] = "pounce"
+			enemy["pounce_cooldown"] = 1.78
+		elif float(enemy.get("pounce_cooldown", 0.0)) > 0.0:
+			var retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.58).normalized()
+			enemy["action"] = _action("evade", 0.32, retreat)
+			enemy["action"]["speed_multiplier"] = 1.48
+		else: enemy["action"] = _action("move", 0.34, _navigation_direction(enemy, player_pos))
 	elif enemy_kind == "brute":
 		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction, "forward_smash")
 		else: enemy["action"] = _action("move", 0.78, _navigation_direction(enemy, player_pos))
@@ -1344,7 +1401,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 135.0, "shield": 120.0, "hound": 245.0, "brute": 82.0, "hexer": 125.0, "captain": 180.0, "warden": 105.0}.get(kind, 135.0))
+	var speed: float = float({"boar": 185.0, "bandit": 225.0, "knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 135.0, "shield": 120.0, "hound": 255.0, "brute": 82.0, "hexer": 125.0, "captain": 180.0, "warden": 105.0}.get(kind, 135.0))
 	if kind != "captain" and _captain_near(enemy): speed *= 1.14
 	return speed
 
@@ -1587,7 +1644,7 @@ func _remove_dead_enemies() -> void:
 			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
 
 func _xp_for_enemy(kind: String) -> int:
-	return int({"knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "brute": 5, "captain": 5, "warden": 12}.get(kind, 2))
+	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "brute": 5, "captain": 5, "warden": 12}.get(kind, 2))
 
 func _cleared_area_count() -> int:
 	var occupied: Dictionary = {}
@@ -1923,6 +1980,32 @@ func current_ground_color() -> Color:
 			if profile.has("ground_color"): return Color(String(profile["ground_color"]))
 	var definition: Dictionary = world_layers.get(current_layer, {})
 	return Color(String(definition.get("ground_color", "314247")))
+
+func floor_surface_color_at(point: Vector2, layer: String = "") -> Color:
+	var target_layer := current_layer if layer == "" else layer
+	var selected_shape: Dictionary = {}
+	var selected_priority := -1
+	var buckets: Dictionary = _shape_buckets_by_layer.get(target_layer, {})
+	for shape_value in Array(buckets.get(_spatial_cell_for_point(point), [])):
+		var shape: Dictionary = shape_value
+		if not _shape_contains_point(shape, point): continue
+		var semantic := String(shape.get("semantic", "clearing"))
+		var priority := 30 if semantic == "main_path" else 20 if semantic == "side_path" else 10
+		if priority > selected_priority:
+			selected_priority = priority
+			selected_shape = shape
+	var profile: Dictionary = {}
+	if not selected_shape.is_empty():
+		var part_id := int(selected_shape.get("part_id", -1))
+		for area in areas:
+			if int(area["id"]) == part_id and String(area.get("layer", target_layer)) == target_layer:
+				profile = Dictionary(area.get("profile", {}))
+				break
+	if profile.is_empty(): return Color(String(Dictionary(world_layers.get(target_layer, {})).get("ground_color", "314247")))
+	var semantic := String(selected_shape.get("semantic", "clearing"))
+	if semantic == "main_path" and profile.has("main_surface_color"): return Color(String(profile["main_surface_color"]))
+	if semantic == "side_path" and profile.has("side_surface_color"): return Color(String(profile["side_surface_color"]))
+	return Color(String(profile.get("clearing_color", profile.get("ground_color", "314247"))))
 
 func _rect_has_discovered_cell(rect: Rect2) -> bool:
 	for cell in discovered_cells:

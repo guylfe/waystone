@@ -99,6 +99,7 @@ var _floor_cache_scale := -1.0
 var _floor_cells_by_chunk: Dictionary = {}
 var _floor_iso_geometry: Dictionary = {}
 var _floor_top_down_geometry: Dictionary = {}
+var _floor_surface_colors: Dictionary = {}
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -913,7 +914,7 @@ func _draw_world() -> void:
 			else: _draw_shortcut_gate(shortcut_gate)
 		for feature in _render_features():
 			var feature_pos := Vector2(feature["pos"])
-			if String(feature.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(feature_pos, float(feature.get("radius", 45.0)) * 2.5) and state.is_discovered(feature_pos, discovered): _draw_terrain_feature(feature)
+			if String(feature.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(feature_pos, float(feature.get("radius", 45.0)) * 2.5) and _terrain_feature_revealed(feature_pos, discovered): _draw_terrain_feature(feature)
 	_draw_landmarks(visible, discovered)
 	for projectile in Array(visual.get("projectiles", [])):
 		if String(projectile.get("layer", state.current_layer)) != state.current_layer: continue
@@ -972,7 +973,7 @@ func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void
 		if String(feature.get("layer", state.current_layer)) != state.current_layer: continue
 		var feature_pos := Vector2(feature["pos"])
 		if not _world_point_on_camera(feature_pos, float(feature.get("radius", 45.0)) * 2.5): continue
-		if not state.is_discovered(feature_pos, discovered): continue
+		if not _terrain_feature_revealed(feature_pos, discovered): continue
 		entries.append({"kind": "feature", "feature": feature, "depth": _world_to_screen(feature_pos).y})
 	entries.append({"kind": "player", "depth": _world_to_screen(Vector2(visual.get("player_pos", state.player_pos))).y})
 	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -1079,15 +1080,14 @@ func _draw_discovered_floor() -> void:
 	var first_chunk := Vector2i(int(floor(float(bounds.position.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(bounds.position.y) / FLOOR_RENDER_CHUNK_CELLS)))
 	var last_cell := bounds.end - Vector2i.ONE
 	var last_chunk := Vector2i(int(floor(float(last_cell.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(last_cell.y) / FLOOR_RENDER_CHUNK_CELLS)))
-	var ground_color := state.current_ground_color()
-	var hidden_color := ground_color.darkened(0.72)
 	draw_set_transform(_projection_origin())
 	for chunk_x in range(first_chunk.x, last_chunk.x + 1):
 		for chunk_y in range(first_chunk.y, last_chunk.y + 1):
 			for cell_value in Array(_floor_cells_by_chunk.get(Vector2i(chunk_x, chunk_y), [])):
 				var cell := Vector2i(cell_value)
 				if not bounds.has_point(cell): continue
-				var color := ground_color if visible.has(cell) else hidden_color
+				var surface_color: Color = _floor_surface_colors.get(cell, state.current_ground_color())
+				var color := surface_color if visible.has(cell) else surface_color.darkened(0.72)
 				if view_mode == "top_down": draw_rect(Rect2(_floor_top_down_geometry[cell]), color)
 				else: draw_colored_polygon(PackedVector2Array(_floor_iso_geometry[cell]), color)
 	draw_set_transform(Vector2.ZERO)
@@ -1120,6 +1120,7 @@ func _clear_floor_geometry_cache() -> void:
 	_floor_cells_by_chunk.clear()
 	_floor_iso_geometry.clear()
 	_floor_top_down_geometry.clear()
+	_floor_surface_colors.clear()
 
 func _cache_floor_cell(cell: Vector2i) -> void:
 	if _floor_iso_geometry.has(cell): return
@@ -1127,6 +1128,7 @@ func _cache_floor_cell(cell: Vector2i) -> void:
 	if not _floor_cells_by_chunk.has(chunk): _floor_cells_by_chunk[chunk] = []
 	_floor_cells_by_chunk[chunk].append(cell)
 	var top_left := Vector2(cell) * state.VISIBILITY_CELL
+	_floor_surface_colors[cell] = state.floor_surface_color_at(top_left + Vector2.ONE * state.VISIBILITY_CELL * 0.5)
 	_floor_top_down_geometry[cell] = Rect2(top_left * world_scale, Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE)
 	_floor_iso_geometry[cell] = PackedVector2Array([
 		_project_world_without_camera(top_left),
@@ -1237,10 +1239,12 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 	if kind in ["brook", "old_road"]:
 		var start := _world_to_screen(Vector2(feature.get("from", world_pos - Vector2.RIGHT * float(feature.get("radius", 300.0)))))
 		var finish := _world_to_screen(Vector2(feature.get("to", world_pos + Vector2.RIGHT * float(feature.get("radius", 300.0)))))
-		var color := Color(0.22, 0.50, 0.64, 0.78) if kind == "brook" else Color(0.39, 0.31, 0.20, 0.62)
+		var color := Color(0.20, 0.49, 0.66, 0.92) if kind == "brook" else Color(0.39, 0.31, 0.20, 0.72)
 		var edge := Color(0.58, 0.69, 0.52, 0.72) if kind == "brook" else Color(0.56, 0.45, 0.28, 0.46)
-		draw_line(start, finish, edge, maxf(10.0, 22.0 * world_scale))
-		draw_line(start, finish, color, maxf(5.0, 12.0 * world_scale))
+		var feature_width := float(feature.get("width", 24.0)) * world_scale
+		draw_line(start, finish, edge, maxf(12.0, feature_width + 18.0 * world_scale))
+		draw_line(start, finish, color, maxf(7.0, feature_width))
+		if kind == "brook": draw_line(start, finish, Color(0.55, 0.78, 0.84, 0.58), maxf(2.0, feature_width * 0.12))
 		return
 	if kind == "meadow":
 		draw_circle(foot, radius * 0.46, Color(0.54, 0.72, 0.34, 0.16))
@@ -1271,7 +1275,7 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 		return
 	var underground := String(feature.get("layer", state.current_layer)) == "ruin_depths"
 	var trunk_color := Color("394638") if not underground else Color("3e4138")
-	var canopy_color := Color("294f31") if kind == "heart_tree" else Color("315e39") if not underground else Color("52614a")
+	var canopy_color := Color("294f31") if kind == "heart_tree" else Color("264b2d") if kind == "thicket" else Color("315e39") if not underground else Color("52614a")
 	if view_mode == "top_down":
 		draw_circle(foot, radius * 0.88, Color(0.02, 0.04, 0.025, 0.62))
 		draw_circle(foot, radius * 0.72, canopy_color)
@@ -1282,6 +1286,13 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 	draw_circle(trunk_top, radius * 0.82, Color(0.015, 0.03, 0.02, 0.72))
 	draw_circle(trunk_top + Vector2(0.0, -radius * 0.08), radius * 0.68, canopy_color)
 	draw_arc(trunk_top, radius * 0.70, 0.0, TAU, 18, canopy_color.lightened(0.16), maxf(1.5, radius * 0.07))
+
+func _terrain_feature_revealed(position: Vector2, discovered: Dictionary) -> bool:
+	var center := Vector2i(int(floor(position.x / state.VISIBILITY_CELL)), int(floor(position.y / state.VISIBILITY_CELL)))
+	for x in range(center.x - 2, center.x + 3):
+		for y in range(center.y - 2, center.y + 3):
+			if discovered.has(Vector2i(x, y)): return true
+	return false
 
 func _draw_player() -> void:
 	var world_pos := Vector2(visual.get("player_pos", state.player_pos))
@@ -1318,7 +1329,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": Color("d9a75b"), "brute": Color("9f554d"), "hexer": Color("9e72d8"), "captain": Color("e0c24e"), "warden": Color("d84b65")}
+	var colors := {"boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": Color("d9a75b"), "brute": Color("9f554d"), "hexer": Color("9e72d8"), "captain": Color("e0c24e"), "warden": Color("d84b65")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
 	if kind == "captain": draw_arc(pos, radius * 1.5, 0.0, TAU, 20, Color(color, 0.45), maxf(2.0, radius * 0.12))
@@ -1326,9 +1337,10 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if kind == "shield": _draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
 	var action: Dictionary = enemy["action"]
-	if String(action["kind"]) == "melee": _draw_weapon(world_pos, action, false)
+	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false)
 	elif String(action["kind"]) == "shoot": _draw_bow(pos, facing, radius, action)
 	elif String(action["kind"]) == "charge": draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
+	elif String(action["kind"]) == "evade": draw_line(pos, pos - _screen_direction(Vector2(action.get("direction", Vector2.ZERO))) * radius * 1.8, Color(color, 0.42), maxf(3.0, radius * 0.22))
 	elif String(action["kind"]) == "slam":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, float(action.get("reach", 205.0)), Color.TRANSPARENT, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 		else: draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
@@ -1355,9 +1367,12 @@ func _draw_actor(pos: Vector2, foot: Vector2, facing: Vector2, radius: float, co
 
 func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: float, color: Color) -> void:
 	var side := facing.rotated(PI * 0.5)
-	if kind == "knife":
+	if kind == "boar":
+		draw_line(pos - side * radius * 0.70 + facing * radius * 0.55, pos - side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
+		draw_line(pos + side * radius * 0.70 + facing * radius * 0.55, pos + side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
+	elif kind in ["knife", "bandit"]:
 		draw_line(pos + side * radius * 0.45, pos + side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
-		draw_line(pos - side * radius * 0.45, pos - side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
+		if kind == "knife": draw_line(pos - side * radius * 0.45, pos - side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
 	elif kind == "hound":
 		draw_line(pos - facing * radius * 0.9, pos + facing * radius * 0.75, color.lightened(0.35), maxf(3.0, radius * 0.35))
 	elif kind == "polearm":
@@ -1645,7 +1660,12 @@ func _phase(action: Dictionary) -> String:
 	if kind == "shoot": return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "charge":
 		if elapsed < float(action.get("startup", 0.4)): return "CROUCHING"
-		if elapsed < float(action.get("active_end", 0.8)): return "CHARGING"
+		if elapsed < float(action.get("active_end", 0.8)): return "POUNCING" if String(action.get("label", "")) == "pounce" else "CHARGING"
+		return "RECOVERING"
+	if kind == "evade": return "DODGING"
+	if kind == "dodge_strike":
+		if elapsed <= float(action.get("dodge_end", 0.30)): return "DODGING IN"
+		if elapsed < float(action.get("active_end", 0.62)): return "STRIKING"
 		return "RECOVERING"
 	if kind == "hex": return "CHANNELING" if elapsed < float(action.get("startup", 0.68)) else "RECOVERING"
 	if kind == "slam": return "RAISING" if elapsed < float(action.get("startup", 1.0)) else "RECOVERING"
@@ -1819,12 +1839,14 @@ func _draw_map() -> void:
 	var map_cell_size := state.VISIBILITY_CELL * scale + 0.7
 	for cell in map_cells:
 		var world_cell := Vector2(cell) * state.VISIBILITY_CELL
-		draw_rect(Rect2(origin + world_cell * scale, Vector2.ONE * map_cell_size), Color(0.23, 0.34, 0.30, 0.50 if overlay else 0.96))
+		var surface_color := state.floor_surface_color_at(world_cell + Vector2.ONE * state.VISIBILITY_CELL * 0.5, viewed_layer)
+		surface_color.a = 0.55 if overlay else 0.96
+		draw_rect(Rect2(origin + world_cell * scale, Vector2.ONE * map_cell_size), surface_color)
 	for feature_value in state.terrain_features:
 		var feature: Dictionary = feature_value
 		var feature_kind := String(feature.get("kind", "tree"))
 		var feature_pos := Vector2(feature["pos"])
-		if feature_kind in ["tree", "undergrowth", "flowers"] or String(feature.get("layer", viewed_layer)) != viewed_layer or not state.is_discovered(feature_pos, map_cells): continue
+		if feature_kind in ["tree", "thicket", "undergrowth", "flowers"] or String(feature.get("layer", viewed_layer)) != viewed_layer or not _terrain_feature_revealed(feature_pos, map_cells): continue
 		var map_color := Color(0.24, 0.57, 0.72, 0.62 if overlay else 0.90) if feature_kind == "brook" else Color(0.57, 0.46, 0.28, 0.50 if overlay else 0.80) if feature_kind == "old_road" else Color(0.72, 0.69, 0.52, 0.58 if overlay else 0.88)
 		if feature_kind in ["brook", "old_road"] and feature.has("from") and feature.has("to"):
 			draw_line(origin + Vector2(feature["from"]) * scale, origin + Vector2(feature["to"]) * scale, map_color, 2.0 if overlay else 3.0)
@@ -1956,13 +1978,13 @@ func _draw_inspection() -> void:
 			break
 	if enemy.is_empty(): return
 	var kind := String(enemy["kind"])
-	var names := {"knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "hexer": "Hexer", "captain": "Captain", "warden": "Warden"}
-	var speeds := {"knife": "Fast", "hound": "Fast", "captain": "Fast", "blade": "Medium", "archer": "Medium", "hexer": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "warden": "Slow"}
-	var reaches := {"knife": "Short", "hound": "Medium", "blade": "Medium", "shield": "Medium", "captain": "Medium", "brute": "Medium", "archer": "Long", "hexer": "Long", "polearm": "Long", "warden": "Long"}
-	var traits := {"knife": "Low stability", "hound": "Charge; low stability", "archer": "Ranged pressure", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "hexer": "Delayed danger zones", "captain": "Strengthens nearby movement", "warden": "Grounded boss", "blade": "Balanced melee"}
+	var names := {"boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "hexer": "Hexer", "captain": "Captain", "warden": "Warden"}
+	var speeds := {"boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "captain": "Fast", "blade": "Medium", "archer": "Medium", "hexer": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "warden": "Slow"}
+	var reaches := {"boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "blade": "Medium", "shield": "Medium", "captain": "Medium", "brute": "Medium", "archer": "Long", "hexer": "Long", "polearm": "Long", "warden": "Long"}
+	var traits := {"boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Ranged pressure", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "hexer": "Delayed danger zones", "captain": "Strengthens nearby movement", "warden": "Grounded boss", "blade": "Balanced melee"}
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
-	var signature_techniques := {"knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "hound": "bite", "brute": "forward_smash", "captain": "thrust", "warden": "heavy_cleave"}
+	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "captain": "thrust", "warden": "heavy_cleave"}
 	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", signature_techniques.get(kind, "")))
 	var technique_text := AttackGeometryScript.label(technique_id) if technique_id != "" else "Ranged"
 	var posture_ratio := float(enemy.get("posture", 1.0)) / maxf(0.01, float(enemy.get("posture_max", 1.0)))

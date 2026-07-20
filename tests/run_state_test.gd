@@ -247,8 +247,8 @@ func test_signature_attack_roster() -> void:
 	assert(state.select_loadout("guardian") and state.player_attack_technique == "heavy_chop")
 	assert(state.select_loadout("reaver") and state.player_attack_technique == "broad_sweep")
 	state.walls.clear()
-	var expected := {"knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "hound": "bite", "brute": "forward_smash", "captain": "thrust"}
-	var distances := {"knife": 80.0, "blade": 110.0, "polearm": 190.0, "hound": 70.0, "brute": 140.0, "captain": 120.0}
+	var expected := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "captain": "thrust"}
+	var distances := {"bandit": 70.0, "knife": 80.0, "blade": 110.0, "polearm": 190.0, "brute": 140.0, "captain": 120.0}
 	for kind in expected:
 		var enemy := state._make_enemy(String(kind), state.player_pos + Vector2.UP * float(distances[kind]), state._enemy_base_hp(String(kind)))
 		state._choose_enemy_action(enemy)
@@ -627,9 +627,26 @@ func test_shield_front_arc() -> void:
 func test_new_enemy_roles() -> void:
 	var state: RunState = RunStateScript.new()
 	state.walls.clear()
+	var boar := state._make_enemy("boar", state.player_pos + Vector2(0, -220), 7)
+	state._choose_enemy_action(boar)
+	assert(String(Dictionary(boar["action"])["kind"]) == "charge")
+	assert(String(Dictionary(boar["action"])["label"]) == "pounce")
+	boar["pounce_cooldown"] = 1.0
+	boar["pos"] = state.player_pos + Vector2(0, -70)
+	state._choose_enemy_action(boar)
+	assert(String(Dictionary(boar["action"])["kind"]) == "move")
 	var hound := state._make_enemy("hound", state.player_pos + Vector2(0, -220), 6)
 	state._choose_enemy_action(hound)
 	assert(String(Dictionary(hound["action"])["kind"]) == "charge")
+	assert(String(Dictionary(hound["action"])["label"]) == "pounce")
+	hound["pounce_cooldown"] = 0.8
+	state._choose_enemy_action(hound)
+	assert(String(Dictionary(hound["action"])["kind"]) == "evade")
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2(0, -180), 5)
+	state._choose_enemy_action(bandit)
+	assert(String(Dictionary(bandit["action"])["kind"]) == "dodge_strike")
+	bandit["action"]["elapsed"] = 0.18
+	assert(state._enemy_evades_attack(bandit))
 	var hexer := state._make_enemy("hexer", state.player_pos + Vector2(0, -400), 7)
 	state._choose_enemy_action(hexer)
 	assert(String(Dictionary(hexer["action"])["kind"]) == "hex")
@@ -658,6 +675,9 @@ func test_progressive_expedition_rooms() -> void:
 		for templates in Dictionary(layout["encounters"]).values():
 			for enemy in Array(templates): kinds.append(String(enemy["kind"]))
 		assert(kinds.has("warden") and kinds.has("brute") and kinds.has("hexer"))
+		for enemy in Array(Dictionary(layout["encounters"])[0]): assert(String(enemy["kind"]) == "boar")
+		for enemy in Array(Dictionary(layout["encounters"])[1]): assert(String(enemy["kind"]) in ["boar", "hound"])
+		for enemy in Array(Dictionary(layout["encounters"])[2]): assert(String(enemy["kind"]) in ["bandit", "hound"])
 
 func test_required_passages_have_generous_clearance() -> void:
 	# This is intentionally much wider than the player's collision radius. A
@@ -1096,5 +1116,5 @@ func test_restart_restores_expedition() -> void:
 	assert(is_zero_approx(state.endure_cooldown))
 	assert(state.projectiles.is_empty())
 	assert(not state.enemies.is_empty())
-	assert(String(state.enemies[0]["kind"]) == "blade")
+	assert(String(state.enemies[0]["kind"]) == "boar")
 	assert(state.upgrades.is_empty())

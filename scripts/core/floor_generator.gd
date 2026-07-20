@@ -13,9 +13,9 @@ const FOREST_PART_NAMES := [
 ]
 
 const FOREST_PART_PROFILES := [
-	{"palette": "forest_1", "ground_color": "82b86d", "density": 0.68, "landmark": "meadow", "grammar": "open_glades", "path_width": 390.0, "branching": 0.55},
-	{"palette": "forest_2", "ground_color": "79ad68", "density": 0.76, "landmark": "brook", "grammar": "brook_crossings", "path_width": 360.0, "branching": 0.68},
-	{"palette": "forest_3", "ground_color": "70a162", "density": 0.82, "landmark": "old_road", "grammar": "road_and_detours", "path_width": 370.0, "branching": 0.62},
+	{"palette": "forest_1", "ground_color": "82b86d", "clearing_color": "8fc579", "main_surface_color": "abc985", "side_surface_color": "71975d", "density": 0.68, "landmark": "meadow", "grammar": "open_glades", "path_width": 310.0, "branching": 0.55},
+	{"palette": "forest_2", "ground_color": "79ad68", "clearing_color": "83b873", "main_surface_color": "9ab77b", "side_surface_color": "617f55", "density": 0.76, "landmark": "brook", "grammar": "brook_crossings", "path_width": 285.0, "branching": 0.68},
+	{"palette": "forest_3", "ground_color": "70a162", "clearing_color": "769f65", "main_surface_color": "927b52", "side_surface_color": "5c774f", "density": 0.82, "landmark": "old_road", "grammar": "road_and_detours", "path_width": 300.0, "branching": 0.62},
 	{"palette": "forest_4", "ground_color": "68965d", "density": 0.90, "landmark": "stone_circle", "grammar": "radial_grove", "path_width": 340.0, "branching": 0.82},
 	{"palette": "forest_5", "ground_color": "608a57", "density": 0.98, "landmark": "roots", "grammar": "braided_roots", "path_width": 320.0, "branching": 0.92},
 	{"palette": "forest_6", "ground_color": "587f52", "density": 1.04, "landmark": "ancient_ruin", "grammar": "ruin_courtyards", "path_width": 315.0, "branching": 0.74},
@@ -105,6 +105,7 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 		var safe_points: Array = [entry, exit]
 		for zone_value in Array(grammar["zones"]): safe_points.append(Vector2(Dictionary(zone_value)["pos"]))
 		_add_forest_features(terrain_features, layer_walls[layer], safe_points, layer, rng, index, float(profile["density"]), safe_segments)
+		if index < 3: _add_boundary_thickets(terrain_features, floor_shapes, layer, index, rng)
 
 		var bounds := _bounds_for_part(floor_shapes, index)
 		var area := {
@@ -165,32 +166,35 @@ static func _build_forest_grammar(index: int, center: Vector2, entry: Vector2, e
 	var landmarks: Array[Dictionary] = []
 	var boss_pos := center + forward * 260.0
 	match index:
-		0: # Broad, forgiving meadow glades.
+		0: # Three separated meadow glades joined by readable worn paths.
 			var a := entry.lerp(center, 0.55) + side * sign * 130.0
 			var b := center + forward * 360.0 - side * sign * 110.0
 			main += [a, center, b, exit]
-			var meadow_a := center + side * sign * 620.0 - forward * 160.0
-			var meadow_b := center + side * sign * 690.0 + forward * 440.0
+			var meadow_a := center + side * sign * 980.0 - forward * 220.0
+			var meadow_b := center + side * sign * 940.0 + forward * 520.0
 			side_routes = [[a, meadow_a, meadow_b, b]]
-			zones = [_zone(center, 560.0, "landmark"), _zone(meadow_a, 470.0, "optional_glade"), _zone(meadow_b, 410.0, "rejoining_glade")]
+			zones = [_zone(center, 480.0, "landmark"), _zone(meadow_a, 390.0, "optional_glade"), _zone(meadow_b, 370.0, "rejoining_glade")]
 			landmarks = [{"kind": "meadow", "pos": center}]
-		1: # A brook crosses the route; one branch follows its bank.
+		1: # A brook cuts across the forest with a direct and a lateral ford.
 			var crossing := center - forward * 80.0
-			var bank_a := crossing + side * sign * 700.0
-			var bank_b := crossing - side * sign * 620.0 + forward * 330.0
-			main += [entry.lerp(crossing, 0.48), crossing, crossing.lerp(exit, 0.50), exit]
-			side_routes = [[main[1], bank_a, center + forward * 500.0 + side * sign * 520.0, main[3]], [crossing, bank_b, main[3]]]
-			zones = [_zone(crossing, 440.0, "brook_crossing"), _zone(bank_a, 380.0, "bank_glade"), _zone(bank_b, 350.0, "optional_bank")]
-			landmarks = [{"kind": "brook", "pos": crossing, "from": crossing - side * 920.0, "to": crossing + side * 920.0}]
+			var near_bank := crossing - forward * 300.0
+			var far_bank := crossing + forward * 300.0
+			var second_ford := crossing + side * sign * 720.0
+			var second_near := second_ford - forward * 280.0
+			var second_far := second_ford + forward * 280.0
+			main += [entry.lerp(near_bank, 0.50), near_bank, crossing, far_bank, far_bank.lerp(exit, 0.55), exit]
+			side_routes = [[near_bank, second_near, second_ford, second_far, far_bank], [far_bank, crossing - side * sign * 690.0 + forward * 300.0, main[5]]]
+			zones = [_zone(crossing, 235.0, "brook_crossing"), _zone(second_ford, 220.0, "second_ford"), _zone(second_far, 330.0, "bank_glade"), _zone(side_routes[1][1], 320.0, "optional_bank")]
+			landmarks = [{"kind": "brook", "pos": crossing, "from": crossing - side * 1080.0, "to": crossing + side * 1080.0, "width": 145.0, "fords": [crossing, second_ford]}]
 		2: # A readable old road with an overgrown detour.
 			var road_a := entry.lerp(exit, 0.33)
 			var road_b := entry.lerp(exit, 0.68)
 			main += [road_a, center, road_b, exit]
-			var detour_a := road_a + side * sign * 610.0
-			var detour_b := road_b + side * sign * 690.0
+			var detour_a := road_a + side * sign * 870.0
+			var detour_b := road_b + side * sign * 900.0
 			side_routes = [[road_a, detour_a, detour_b, road_b]]
-			zones = [_zone(center, 470.0, "road_landmark"), _zone(detour_a, 370.0, "overgrown_detour"), _zone(detour_b, 400.0, "roadside_glade")]
-			landmarks = [{"kind": "old_road", "pos": center, "from": entry, "to": exit}]
+			zones = [_zone(center, 390.0, "road_landmark"), _zone(detour_a, 340.0, "overgrown_detour"), _zone(detour_b, 350.0, "roadside_glade")]
+			landmarks = [{"kind": "old_road", "pos": center, "from": entry, "to": exit, "width": 210.0}]
 		3: # A radial grove with several readable spokes.
 			var hub := center + side * sign * 90.0
 			main += [entry.lerp(hub, 0.52), hub, hub.lerp(exit, 0.52), exit]
@@ -347,8 +351,8 @@ static func _generate_campaign_loop(seed_value: int) -> Dictionary:
 
 static func _expedition_encounters(part: int, sockets: Array, rng: RandomNumberGenerator, layer: String, area_id: int) -> Array[Dictionary]:
 	var pools := [
-		["knife", "blade", "hound"], ["knife", "blade", "hound", "archer"],
-		["blade", "hound", "archer", "polearm"], ["blade", "archer", "polearm", "hexer"],
+		["boar"], ["boar", "hound"],
+		["bandit", "hound"], ["blade", "archer", "polearm", "hexer"],
 		["hound", "polearm", "hexer", "brute"], ["polearm", "hexer", "brute", "captain"],
 		["hexer", "brute", "captain", "polearm"],
 	]
@@ -405,6 +409,44 @@ static func _add_profile_landmarks(features: Array[Dictionary], profile: Diction
 	for index in range(3):
 		var base := Vector2(Array(grammar.get("landmarks", [{"pos": Vector2.ZERO}]))[0].get("pos", Vector2.ZERO))
 		features.append({"kind": kind, "pos": base + Vector2.RIGHT.rotated(rng.randf_range(0.0, TAU)) * rng.randf_range(180.0, 330.0), "radius": rng.randf_range(28.0, 48.0), "layer": layer, "part_id": part_id})
+
+static func _add_boundary_thickets(features: Array[Dictionary], shapes: Array[Dictionary], layer: String, part_id: int, rng: RandomNumberGenerator) -> void:
+	var candidates: Array[Vector2] = []
+	for shape in shapes:
+		if int(shape.get("part_id", -1)) != part_id or String(shape.get("layer", layer)) != layer: continue
+		var radius := float(shape["radius"])
+		if String(shape["kind"]) == "capsule":
+			var start := Vector2(shape["from"])
+			var finish := Vector2(shape["to"])
+			var direction := start.direction_to(finish)
+			var side := direction.rotated(PI * 0.5)
+			var steps := maxi(2, int(ceil(start.distance_to(finish) / 175.0)))
+			for step in range(steps + 1):
+				var point := start.lerp(finish, float(step) / float(steps))
+				candidates.append(point + side * (radius + rng.randf_range(28.0, 62.0)))
+				candidates.append(point - side * (radius + rng.randf_range(28.0, 62.0)))
+		else:
+			var center := Vector2(shape["center"])
+			var count := maxi(10, int(ceil(TAU * radius / 190.0)))
+			var phase := rng.randf_range(0.0, TAU)
+			for step in range(count): candidates.append(center + Vector2.RIGHT.rotated(phase + TAU * float(step) / float(count)) * (radius + rng.randf_range(26.0, 58.0)))
+	for candidate in candidates:
+		if candidate.x < 80.0 or candidate.y < 80.0 or _point_inside_part_shapes(candidate, shapes, part_id, layer): continue
+		var crowded := false
+		for existing in features:
+			if int(existing.get("part_id", -1)) == part_id and bool(existing.get("boundary", false)) and Vector2(existing["pos"]).distance_to(candidate) < 105.0:
+				crowded = true
+				break
+		if crowded: continue
+		features.append({"kind": "thicket", "pos": candidate, "radius": rng.randf_range(44.0, 62.0), "layer": layer, "part_id": part_id, "boundary": true})
+
+static func _point_inside_part_shapes(point: Vector2, shapes: Array[Dictionary], part_id: int, layer: String) -> bool:
+	for shape in shapes:
+		if int(shape.get("part_id", -1)) != part_id or String(shape.get("layer", layer)) != layer: continue
+		var radius := float(shape["radius"])
+		if String(shape["kind"]) == "circle" and point.distance_to(Vector2(shape["center"])) <= radius + 10.0: return true
+		if String(shape["kind"]) == "capsule" and _distance_to_segment(point, Vector2(shape["from"]), Vector2(shape["to"])) <= radius + 10.0: return true
+	return false
 
 static func _add_campaign_path(connections: Array[Dictionary], shapes: Array[Dictionary], from_id: int, to_id: int, path: Array, layer: String) -> void:
 	_add_polyline(shapes, path, 330.0, layer, from_id, "main_path")

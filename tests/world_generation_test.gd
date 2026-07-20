@@ -6,6 +6,7 @@ const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 func _init() -> void:
 	test_large_seven_part_forest_expedition()
 	test_semantic_world_grammar_batch()
+	test_early_forest_readability_contract()
 	test_boss_marker_uses_actual_spawn()
 	test_organic_route_reachability()
 	test_mandatory_paths_keep_generous_clearance()
@@ -15,6 +16,26 @@ func _init() -> void:
 	test_layer_discovery_is_independent()
 	print("Friendly Forest grammar, large-world expedition, and layered campaign tests passed.")
 	quit(0)
+
+func test_early_forest_readability_contract() -> void:
+	var layout: Dictionary = FloorGeneratorScript.generate(424242, false)
+	var areas: Array = layout["areas"]
+	for index in range(3):
+		var profile: Dictionary = areas[index]["profile"]
+		assert(Color(profile["main_surface_color"]) != Color(profile["clearing_color"]))
+		assert(Color(profile["side_surface_color"]) != Color(profile["main_surface_color"]))
+		var boundary_count := 0
+		for feature in Array(layout["terrain_features"]):
+			if int(feature.get("part_id", -1)) == index and bool(feature.get("boundary", false)):
+				boundary_count += 1
+		assert(boundary_count >= 8)
+	var brook: Dictionary = Dictionary(Array(areas[1]["landmarks"])[0])
+	assert(String(brook["kind"]) == "brook")
+	assert(float(brook["width"]) >= 140.0)
+	assert(Array(brook["fords"]).size() >= 2)
+	var road: Dictionary = Dictionary(Array(areas[2]["landmarks"])[0])
+	assert(String(road["kind"]) == "old_road")
+	assert(float(road["width"]) >= 200.0)
 
 func test_large_seven_part_forest_expedition() -> void:
 	for seed in [11, 1784339476686, 739391]:
@@ -44,6 +65,9 @@ func test_large_seven_part_forest_expedition() -> void:
 		assert(total_enemies >= 70)
 		assert(palette_ids.size() == 7)
 		assert(Array(layout["floor_shapes"]).size() >= 49)
+		for enemy in Array(Dictionary(layout["encounters"])[0]): assert(String(enemy["kind"]) == "boar")
+		for enemy in Array(Dictionary(layout["encounters"])[1]): assert(String(enemy["kind"]) in ["boar", "hound"])
+		for enemy in Array(Dictionary(layout["encounters"])[2]): assert(String(enemy["kind"]) in ["bandit", "hound"])
 
 func test_semantic_world_grammar_batch() -> void:
 	for seed in range(1, 101):
