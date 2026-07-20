@@ -2,6 +2,7 @@ extends SceneTree
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const GameBoardScript = preload("res://scripts/presentation/game_board.gd")
+const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
@@ -36,6 +37,8 @@ func _init() -> void:
 	test_desktop_held_keys_combine_diagonally()
 	test_playback_interpolates_between_simulation_steps()
 	test_actions_stream_without_precomputation()
+	test_streaming_caps_realtime_catchup()
+	test_presentation_frames_reuse_storage()
 	test_desktop_landscape_layout()
 	test_close_camera_tracks_player()
 	test_camera_culls_offscreen_world()
@@ -55,6 +58,7 @@ func _init() -> void:
 	test_shortcut_and_waystone_persistence()
 	test_provisional_progress_accounting()
 	test_visibility_memory_and_awareness()
+	test_discovery_uses_cached_grid_visibility()
 	test_xp_death_recovery()
 	test_hex_hazard()
 	test_save_round_trip()
@@ -472,6 +476,52 @@ func test_actions_stream_without_precomputation() -> void:
 	assert(not board.streaming_action and not board.playing)
 	assert(String(board.state.player_action["kind"]) == "idle")
 	board.free()
+
+func test_streaming_caps_realtime_catchup() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.desktop_controls = false
+	board.visual = board.state.snapshot(true)
+	var before: float = board.state.simulation_time
+	assert(board.state.request_attack(board.state.player_pos + Vector2.RIGHT * 120.0, false))
+	board._begin_streamed_action(true)
+	board._process(1.0)
+	assert(board.state.simulation_time - before <= board.state.SIM_DT * float(board.MAX_SIM_TICKS_PER_FRAME) + 0.0001)
+	assert(float(board.state.performance_metrics["dropped_realtime_ms"]) > 0.0)
+	board.free()
+
+func test_presentation_frames_reuse_storage() -> void:
+	var state: RunState = RunStateScript.new()
+	var current = PresentationFrameScript.new()
+	var following = PresentationFrameScript.new()
+	var blended = PresentationFrameScript.new()
+	var first_capture: Dictionary = current.capture(state)
+	var first_enemy_array: Array = first_capture["enemies"]
+	assert(state.request_move(Vector2.RIGHT, 12.0, false))
+	state.advance_streamed_action_tick()
+	following.capture(state)
+	var first_blend: Dictionary = blended.blend(current, following, 0.5)
+	var blended_enemy_array: Array = first_blend["enemies"]
+	var second_blend: Dictionary = blended.blend(current, following, 0.75)
+	assert(is_same(first_blend, second_blend))
+	assert(is_same(blended_enemy_array, second_blend["enemies"]))
+	current.capture(state)
+	assert(is_same(first_capture, current.data))
+	assert(is_same(first_enemy_array, current.data["enemies"]))
+	assert(Vector2(second_blend["player_pos"]).distance_to(state.player_pos) < 12.0)
+
+func test_discovery_uses_cached_grid_visibility() -> void:
+	var state: RunState = RunStateScript.new()
+	state._visibility_opaque_cells = {Vector2i(1, 0): true}
+	assert(not state._visibility_cells_have_line(Vector2i.ZERO, Vector2i(2, 0)))
+	assert(state._visibility_cells_have_line(Vector2i.ZERO, Vector2i(1, 0)))
+	state._visibility_anchor_cell = state._visibility_cell(state.player_pos)
+	state.performance_metrics["visibility_ms"] = -1.0
+	state._update_exploration()
+	assert(float(state.performance_metrics["visibility_ms"]) < 0.0)
+	state.player_pos += Vector2(state.VISIBILITY_CELL, 0.0)
+	state._update_exploration()
+	assert(float(state.performance_metrics["visibility_ms"]) >= 0.0)
 
 func test_desktop_landscape_layout() -> void:
 	var board = GameBoardScript.new()

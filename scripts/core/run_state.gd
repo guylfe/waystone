@@ -102,6 +102,10 @@ var visible_cells: Dictionary = {}
 var discovered_cells: Dictionary = {}
 var discovered_cells_by_layer: Dictionary = {}
 var _visibility_anchor := Vector2.INF
+var _visibility_anchor_cell := Vector2i(-999999, -999999)
+var _visibility_opaque_cells: Dictionary = {}
+var discovery_revision := 0
+var world_render_revision := 0
 var current_area_id := 0
 var carried_xp := 0
 var secured_xp := 0
@@ -145,6 +149,10 @@ var performance_metrics := {
 	"snapshot_ms": 0.0,
 	"draw_cpu_ms": 0.0,
 	"worst_frame_ms": 0.0,
+	"visibility_ms": 0.0,
+	"visibility_cells": 0,
+	"presentation_capture_ms": 0.0,
+	"dropped_realtime_ms": 0.0,
 }
 var _profile_action_count := 0
 var _streamed_action_cpu_usec := 0
@@ -238,10 +246,13 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	shortcut_start_pos = Vector2(layout["shortcut_start_pos"])
 	discovered_cells.clear()
 	discovered_cells_by_layer.clear()
+	discovery_revision += 1
+	world_render_revision += 1
 	for layer_id in world_layers: discovered_cells_by_layer[String(layer_id)] = {}
 	discovered_cells_by_layer[current_layer] = discovered_cells
 	visible_cells.clear()
 	_visibility_anchor = Vector2.INF
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
 	_build_shape_spatial_index()
 	current_area_id = _area_id_at_position(player_pos, current_layer)
 	_respawn_enemies()
@@ -644,6 +655,7 @@ func use_transition() -> bool:
 	projectiles.clear()
 	hazards.clear()
 	_visibility_anchor = Vector2.INF
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
 	_apply_shortcut_world_state()
 	_update_exploration(true)
 	_set_message("You return to the forest above." if current_layer == "forest_surface" else "You descend beneath the ruined forest.")
@@ -707,6 +719,7 @@ func _restore_anchor_history() -> void:
 		areas[index]["discovered"] = bool(discovered_areas[index]) if index < discovered_areas.size() else index == 0
 	visible_cells.clear()
 	_visibility_anchor = Vector2.INF
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
 
 func _apply_shortcut_world_state() -> void:
 	_refresh_loaded_region_content()
@@ -723,6 +736,7 @@ func _apply_shortcut_world_state() -> void:
 	shortcut_unlocked = shortcuts.any(func(item: Dictionary) -> bool: return bool(item.get("unlocked", false))) if not shortcuts.is_empty() else shortcut_unlocked
 	_build_wall_spatial_index()
 	_build_navigation()
+	world_render_revision += 1
 
 func _refresh_loaded_region_content() -> void:
 	var desired: Dictionary = {}
@@ -772,10 +786,19 @@ func _build_shape_spatial_index() -> void:
 
 func _build_wall_spatial_index() -> void:
 	_wall_buckets.clear()
+	_visibility_opaque_cells.clear()
 	for wall in walls:
 		for cell in _spatial_cells_for_rect(Rect2(wall).grow(40.0)):
 			if not _wall_buckets.has(cell): _wall_buckets[cell] = []
 			_wall_buckets[cell].append(wall)
+		var wall_rect := Rect2(wall)
+		var inset := minf(5.0, minf(wall_rect.size.x, wall_rect.size.y) * 0.18)
+		var occluder := wall_rect.grow(-inset)
+		var first := _visibility_cell(occluder.position)
+		var last := _visibility_cell(occluder.end - Vector2.ONE * 0.001)
+		for x in range(first.x, last.x + 1):
+			for y in range(first.y, last.y + 1):
+				_visibility_opaque_cells[Vector2i(x, y)] = true
 
 func _build_terrain_feature_spatial_index() -> void:
 	_terrain_feature_buckets.clear()
@@ -892,6 +915,8 @@ func _store_current_layer_discovery() -> void:
 func _load_current_layer_discovery() -> void:
 	discovered_cells = Dictionary(discovered_cells_by_layer.get(current_layer, {})).duplicate()
 	discovered_cells_by_layer[current_layer] = discovered_cells
+	discovery_revision += 1
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
 
 func _restore_at_waystone() -> void:
 	player_hp = player_max_hp
@@ -1675,18 +1700,23 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 	if not _inside_world(position, radius): return true
 	for wall in local_walls:
 		if _circle_intersects_rect(position, radius, wall): return true
-	if position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true
+	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true
 	for enemy in local_enemies:
 		if _enemy_on_current_layer(enemy) and int(enemy["id"]) != actor_id and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]): return true
 	return not _actor_footprint_on_floor(position, radius)
 
 func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int) -> Vector2:
+	# Both axis candidates share the same nearby geometry. Querying the spatial
+	# buckets twice was a major dense-crowd movement cost with no behavior gain.
+	var query_padding := delta.length() + 8.0
+	var local_walls := _nearby_walls(origin, radius + query_padding)
+	var local_enemies := _nearby_enemies(origin, radius + delta.length() + 80.0)
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if not _position_blocked(candidate, radius, actor_id):
+	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, local_enemies):
 		result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if not _position_blocked(candidate, radius, actor_id):
+	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, local_enemies):
 		result.y = candidate.y
 	return result
 
@@ -1735,19 +1765,25 @@ func _has_line_of_sight(from: Vector2, to: Vector2) -> bool:
 
 func _update_exploration(force: bool = false) -> void:
 	if not run_active: return
-	if not force and _visibility_anchor.is_finite() and _visibility_anchor.distance_to(player_pos) < VISIBILITY_CELL * 0.45: return
-	_visibility_anchor = player_pos
-	visible_cells.clear()
 	var center_cell := _visibility_cell(player_pos)
+	if not force and center_cell == _visibility_anchor_cell: return
+	var profile_start := Time.get_ticks_usec()
+	_visibility_anchor_cell = center_cell
+	_visibility_anchor = (Vector2(center_cell) + Vector2(0.5, 0.5)) * VISIBILITY_CELL
+	visible_cells.clear()
 	var radius_cells := int(ceil(SIGHT_RANGE / VISIBILITY_CELL))
+	var added_discovery := false
 	for x in range(center_cell.x - radius_cells, center_cell.x + radius_cells + 1):
 		for y in range(center_cell.y - radius_cells, center_cell.y + radius_cells + 1):
 			var cell := Vector2i(x, y)
 			var point := (Vector2(cell) + Vector2(0.5, 0.5)) * VISIBILITY_CELL
-			if point.distance_to(player_pos) > SIGHT_RANGE or not _point_on_floor(point): continue
-			if _has_line_of_sight(player_pos, point):
+			if point.distance_to(_visibility_anchor) > SIGHT_RANGE or not _point_on_floor(point): continue
+			if _visibility_cells_have_line(center_cell, cell):
 				visible_cells[cell] = true
-				discovered_cells[cell] = true
+				if not discovered_cells.has(cell):
+					discovered_cells[cell] = true
+					added_discovery = true
+	if added_discovery: discovery_revision += 1
 	var previous_area_id := current_area_id
 	current_area_id = _area_id_at_position(player_pos, current_layer)
 	if current_area_id >= 0:
@@ -1760,6 +1796,27 @@ func _update_exploration(force: bool = false) -> void:
 	if String(mode_config["upgrade_policy"]) == "area_exit" and previous_area_id >= 0 and current_area_id != previous_area_id:
 		if _area_is_clear(previous_area_id) and carried_xp >= next_upgrade_cost() and not upgrade_pending and not trial_complete:
 			_roll_upgrade_choices("area_exit")
+	performance_metrics["visibility_ms"] = float(Time.get_ticks_usec() - profile_start) / 1000.0
+	performance_metrics["visibility_cells"] = visible_cells.size()
+
+func _visibility_cells_have_line(from_cell: Vector2i, to_cell: Vector2i) -> bool:
+	if from_cell == to_cell: return true
+	var current := from_cell
+	var dx := absi(to_cell.x - from_cell.x)
+	var dy := absi(to_cell.y - from_cell.y)
+	var step_x := 1 if from_cell.x < to_cell.x else -1
+	var step_y := 1 if from_cell.y < to_cell.y else -1
+	var error := dx - dy
+	while current != to_cell:
+		var doubled := error * 2
+		if doubled > -dy:
+			error -= dy
+			current.x += step_x
+		if doubled < dx:
+			error += dx
+			current.y += step_y
+		if current != to_cell and _visibility_opaque_cells.has(current): return false
+	return true
 
 func _area_is_clear(area_id: int) -> bool:
 	for enemy in enemies:
@@ -1812,7 +1869,8 @@ func _distance_to_segment(point: Vector2, start: Vector2, finish: Vector2) -> fl
 
 func _area_id_at_position(point: Vector2, layer: String) -> int:
 	var candidate_ids: Dictionary = {}
-	for shape in floor_shapes:
+	var buckets: Dictionary = _shape_buckets_by_layer.get(layer, {})
+	for shape in Array(buckets.get(_spatial_cell_for_point(point), [])):
 		if String(shape.get("layer", layer)) != layer: continue
 		var part_id := int(shape.get("part_id", -1))
 		if part_id < 0: continue
@@ -2099,6 +2157,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if bool(mode_config["waystone_available"]) and anchor_state.is_empty(): _capture_anchor_history()
 	_apply_shortcut_world_state()
 	_visibility_anchor = Vector2.INF
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
 	_update_exploration(true)
 	last_timeline.clear()
 	return true

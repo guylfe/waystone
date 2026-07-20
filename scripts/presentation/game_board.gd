@@ -2,6 +2,7 @@ extends Control
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
 const BG := Color("0d151b")
 const FLOOR := Color("17272d")
 const WALL := Color("344148")
@@ -18,6 +19,9 @@ const ISO_WALL_HEIGHT := 54.0
 const MOUSE_HOLD_DELAY := 0.14
 const AUTOSAVE_DELAY := 2.0
 const MAP_LAYERS_PER_PAGE := 5
+const MAX_SIM_TICKS_PER_FRAME := 4
+const RENDER_QUERY_REUSE_DISTANCE := 220.0
+const FLOOR_RENDER_CHUNK_CELLS := 8
 
 var state: RunState
 var visual: Dictionary = {}
@@ -27,8 +31,11 @@ var playback_accumulator := 0.0
 var playing := false
 var streaming_action := false
 var stream_accumulator := 0.0
-var stream_previous: Dictionary = {}
-var stream_current: Dictionary = {}
+var stream_frame_a = PresentationFrameScript.new()
+var stream_frame_b = PresentationFrameScript.new()
+var stream_previous_frame = stream_frame_a
+var stream_current_frame = stream_frame_a
+var stream_blended_frame = PresentationFrameScript.new()
 var touch_start := Vector2.ZERO
 var touch_current := Vector2.ZERO
 var pointer_down := false
@@ -73,6 +80,20 @@ var desktop_controls := not OS.has_feature("mobile")
 var frame_metric_elapsed := 0.0
 var frame_metric_worst_ms := 0.0
 var completed_streamed_actions := 0
+var _static_query_revision := -1
+var _static_query_layer := ""
+var _static_query_view := ""
+var _static_query_scale := -1.0
+var _static_query_anchor := Vector2.INF
+var _cached_render_walls: Array[Rect2] = []
+var _cached_render_features: Array[Dictionary] = []
+var _floor_cache_revision := -1
+var _floor_cache_layer := ""
+var _floor_cache_view := ""
+var _floor_cache_scale := -1.0
+var _floor_cells_by_chunk: Dictionary = {}
+var _floor_iso_geometry: Dictionary = {}
+var _floor_top_down_geometry: Dictionary = {}
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -192,22 +213,31 @@ func _process(delta: float) -> void:
 		autosave_elapsed += delta
 		if autosave_elapsed >= AUTOSAVE_DELAY and not playing and not pointer_down: _flush_autosave()
 	if streaming_action:
-		stream_accumulator += delta
-		while stream_accumulator >= state.SIM_DT and String(state.player_action["kind"]) != "idle" and state.player_hp > 0:
-			stream_previous = stream_current
+		var requested_accumulator := stream_accumulator + minf(delta, 0.10)
+		var maximum_accumulator := state.SIM_DT * float(MAX_SIM_TICKS_PER_FRAME)
+		if requested_accumulator > maximum_accumulator:
+			state.performance_metrics["dropped_realtime_ms"] = float(state.performance_metrics.get("dropped_realtime_ms", 0.0)) + (requested_accumulator - maximum_accumulator) * 1000.0
+		stream_accumulator = minf(requested_accumulator, maximum_accumulator)
+		var ticks_processed := 0
+		while stream_accumulator >= state.SIM_DT and ticks_processed < MAX_SIM_TICKS_PER_FRAME and String(state.player_action["kind"]) != "idle" and state.player_hp > 0:
+			stream_previous_frame = stream_current_frame
+			stream_current_frame = stream_frame_b if stream_current_frame == stream_frame_a else stream_frame_a
 			state.advance_streamed_action_tick()
-			stream_current = _presentation_snapshot()
+			var capture_start := Time.get_ticks_usec()
+			stream_current_frame.capture(state)
+			state.performance_metrics["presentation_capture_ms"] = float(Time.get_ticks_usec() - capture_start) / 1000.0
 			stream_accumulator -= state.SIM_DT
+			ticks_processed += 1
 		if String(state.player_action["kind"]) == "idle" or state.player_hp <= 0:
 			streaming_action = false
 			playing = false
-			visual = stream_current
+			visual = stream_current_frame.data
 			finished_streamed_movement = true
 			completed_streamed_actions += 1
 			if OS.is_debug_build() and completed_streamed_actions % 20 == 0:
-				print("WAYSTONE FRAME action=%.2fms draw=%.2fms worst=%.2fms active=%d resident=%d" % [float(state.performance_metrics["last_action_ms"]), float(state.performance_metrics["draw_cpu_ms"]), float(state.performance_metrics["worst_frame_ms"]), int(state.performance_metrics["active_enemies"]), int(state.performance_metrics["resident_enemies"])])
+				print("WAYSTONE FRAME action=%.2fms capture=%.2fms visibility=%.2fms draw=%.2fms worst=%.2fms dropped=%.1fms active=%d resident=%d" % [float(state.performance_metrics["last_action_ms"]), float(state.performance_metrics["presentation_capture_ms"]), float(state.performance_metrics["visibility_ms"]), float(state.performance_metrics["draw_cpu_ms"]), float(state.performance_metrics["worst_frame_ms"]), float(state.performance_metrics["dropped_realtime_ms"]), int(state.performance_metrics["active_enemies"]), int(state.performance_metrics["resident_enemies"])])
 		else:
-			visual = _interpolate_snapshots(stream_previous, stream_current, stream_accumulator / state.SIM_DT)
+			visual = stream_blended_frame.blend(stream_previous_frame, stream_current_frame, stream_accumulator / state.SIM_DT)
 		needs_redraw = true
 	elif playing:
 		playback_accumulator += delta
@@ -658,8 +688,11 @@ func _begin_streamed_action(did_begin: bool, preserve_stream_time: bool = false)
 		queue_redraw()
 		return
 	if not preserve_stream_time: stream_accumulator = 0.0
-	stream_current = _presentation_snapshot()
-	stream_previous = stream_current
+	var capture_start := Time.get_ticks_usec()
+	stream_current_frame.capture(state)
+	state.performance_metrics["presentation_capture_ms"] = float(Time.get_ticks_usec() - capture_start) / 1000.0
+	stream_previous_frame = stream_current_frame
+	visual = stream_current_frame.data
 	streaming_action = true
 	playing = true
 	timeline.clear()
@@ -939,10 +972,30 @@ func _render_query_radius() -> float:
 	return radius + 220.0
 
 func _render_walls() -> Array[Rect2]:
-	return state.nearby_render_walls(_camera_world_position(), _render_query_radius())
+	_refresh_static_render_query()
+	return _cached_render_walls
 
 func _render_features() -> Array[Dictionary]:
-	return state.nearby_terrain_features(_camera_world_position(), _render_query_radius())
+	_refresh_static_render_query()
+	return _cached_render_features
+
+func _refresh_static_render_query() -> void:
+	var camera := _camera_world_position()
+	var cache_valid := _static_query_revision == state.world_render_revision \
+		and _static_query_layer == state.current_layer \
+		and _static_query_view == view_mode \
+		and is_equal_approx(_static_query_scale, world_scale) \
+		and _static_query_anchor.is_finite() \
+		and _static_query_anchor.distance_to(camera) <= RENDER_QUERY_REUSE_DISTANCE
+	if cache_valid: return
+	_static_query_revision = state.world_render_revision
+	_static_query_layer = state.current_layer
+	_static_query_view = view_mode
+	_static_query_scale = world_scale
+	_static_query_anchor = camera
+	var radius := _render_query_radius() + RENDER_QUERY_REUSE_DISTANCE + 80.0
+	_cached_render_walls = state.nearby_render_walls(camera, radius)
+	_cached_render_features = state.nearby_terrain_features(camera, radius)
 
 func _wall_depth(wall: Rect2) -> float:
 	var corners := [wall.position, Vector2(wall.end.x, wall.position.y), wall.end, Vector2(wall.position.x, wall.end.y)]
@@ -992,21 +1045,55 @@ func _draw_grid() -> void:
 		if int(cell.y) % 2 == 0: draw_line(_world_to_screen(Vector2(top_left.x, top_left.y)), _world_to_screen(Vector2(top_left.x + state.VISIBILITY_CELL, top_left.y)), color)
 
 func _draw_discovered_floor() -> void:
-	var discovered := _render_discovered_cells()
+	_refresh_floor_geometry_cache()
 	var visible: Dictionary = _render_visible_cells()
 	var bounds := _camera_cell_bounds()
-	for x in range(bounds.position.x, bounds.end.x):
-		for y in range(bounds.position.y, bounds.end.y):
-			var cell := Vector2i(x, y)
-			if not discovered.has(cell): continue
-			var top_left := Vector2(cell) * state.VISIBILITY_CELL
-			var is_current := visible.has(cell)
-			var color := state.current_ground_color() if is_current else state.current_ground_color().darkened(0.72)
-			if view_mode == "top_down":
-				draw_rect(Rect2(_world_to_screen(top_left), Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE), color)
-			else:
-				var points := PackedVector2Array([_world_to_screen(top_left), _world_to_screen(top_left + Vector2(state.VISIBILITY_CELL, 0)), _world_to_screen(top_left + Vector2.ONE * state.VISIBILITY_CELL), _world_to_screen(top_left + Vector2(0, state.VISIBILITY_CELL))])
-				draw_colored_polygon(points, color)
+	var first_chunk := Vector2i(int(floor(float(bounds.position.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(bounds.position.y) / FLOOR_RENDER_CHUNK_CELLS)))
+	var last_cell := bounds.end - Vector2i.ONE
+	var last_chunk := Vector2i(int(floor(float(last_cell.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(last_cell.y) / FLOOR_RENDER_CHUNK_CELLS)))
+	var ground_color := state.current_ground_color()
+	var hidden_color := ground_color.darkened(0.72)
+	draw_set_transform(_projection_origin())
+	for chunk_x in range(first_chunk.x, last_chunk.x + 1):
+		for chunk_y in range(first_chunk.y, last_chunk.y + 1):
+			for cell_value in Array(_floor_cells_by_chunk.get(Vector2i(chunk_x, chunk_y), [])):
+				var cell := Vector2i(cell_value)
+				if not bounds.has_point(cell): continue
+				var color := ground_color if visible.has(cell) else hidden_color
+				if view_mode == "top_down": draw_rect(Rect2(_floor_top_down_geometry[cell]), color)
+				else: draw_colored_polygon(PackedVector2Array(_floor_iso_geometry[cell]), color)
+	draw_set_transform(Vector2.ZERO)
+
+func _refresh_floor_geometry_cache() -> void:
+	var cache_valid := _floor_cache_revision == state.discovery_revision \
+		and _floor_cache_layer == state.current_layer \
+		and _floor_cache_view == view_mode \
+		and is_equal_approx(_floor_cache_scale, world_scale)
+	if cache_valid: return
+	_floor_cache_revision = state.discovery_revision
+	_floor_cache_layer = state.current_layer
+	_floor_cache_view = view_mode
+	_floor_cache_scale = world_scale
+	_floor_cells_by_chunk.clear()
+	_floor_iso_geometry.clear()
+	_floor_top_down_geometry.clear()
+	for cell_value in _render_discovered_cells():
+		var cell := Vector2i(cell_value)
+		var chunk := Vector2i(int(floor(float(cell.x) / FLOOR_RENDER_CHUNK_CELLS)), int(floor(float(cell.y) / FLOOR_RENDER_CHUNK_CELLS)))
+		if not _floor_cells_by_chunk.has(chunk): _floor_cells_by_chunk[chunk] = []
+		_floor_cells_by_chunk[chunk].append(cell)
+		var top_left := Vector2(cell) * state.VISIBILITY_CELL
+		_floor_top_down_geometry[cell] = Rect2(top_left * world_scale, Vector2.ONE * state.VISIBILITY_CELL * world_scale + Vector2.ONE)
+		_floor_iso_geometry[cell] = PackedVector2Array([
+			_project_world_without_camera(top_left),
+			_project_world_without_camera(top_left + Vector2(state.VISIBILITY_CELL, 0.0)),
+			_project_world_without_camera(top_left + Vector2.ONE * state.VISIBILITY_CELL),
+			_project_world_without_camera(top_left + Vector2(0.0, state.VISIBILITY_CELL)),
+		])
+
+func _project_world_without_camera(world: Vector2) -> Vector2:
+	if view_mode == "isometric": return Vector2((world.x - world.y) * 0.5, (world.x + world.y) * 0.25) * world_scale
+	return world * world_scale
 
 func _draw_wall(wall: Rect2, alpha: float = 1.0) -> void:
 	if view_mode == "top_down":
