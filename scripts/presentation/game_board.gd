@@ -1233,9 +1233,45 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 	var world_pos := Vector2(feature["pos"])
 	var foot := _world_to_screen(world_pos)
 	var radius := float(feature.get("radius", 44.0)) * world_scale
+	var kind := String(feature.get("kind", "tree"))
+	if kind in ["brook", "old_road"]:
+		var start := _world_to_screen(Vector2(feature.get("from", world_pos - Vector2.RIGHT * float(feature.get("radius", 300.0)))))
+		var finish := _world_to_screen(Vector2(feature.get("to", world_pos + Vector2.RIGHT * float(feature.get("radius", 300.0)))))
+		var color := Color(0.22, 0.50, 0.64, 0.78) if kind == "brook" else Color(0.39, 0.31, 0.20, 0.62)
+		var edge := Color(0.58, 0.69, 0.52, 0.72) if kind == "brook" else Color(0.56, 0.45, 0.28, 0.46)
+		draw_line(start, finish, edge, maxf(10.0, 22.0 * world_scale))
+		draw_line(start, finish, color, maxf(5.0, 12.0 * world_scale))
+		return
+	if kind == "meadow":
+		draw_circle(foot, radius * 0.46, Color(0.54, 0.72, 0.34, 0.16))
+		for index in range(7):
+			var flower := foot + Vector2.RIGHT.rotated(float(index) * 2.399) * radius * (0.16 + 0.06 * index)
+			draw_circle(flower, maxf(1.5, 2.5 * world_scale), Color("e5d77a") if index % 2 == 0 else Color("d9b7d7"))
+		return
+	if kind == "flowers":
+		for index in range(4): draw_circle(foot + Vector2.RIGHT.rotated(float(index) * 1.7) * radius * 0.35, maxf(1.4, radius * 0.10), Color("e9d77c"))
+		return
+	if kind == "stone_circle":
+		for index in range(8):
+			var stone := foot + _screen_direction(Vector2.RIGHT.rotated(TAU * float(index) / 8.0)) * radius * 0.66
+			draw_circle(stone, maxf(3.0, radius * 0.10), Color("8f9586"))
+		return
+	if kind in ["roots", "undergrowth"]:
+		var root_color := Color("4f5a35") if kind == "roots" else Color("41613b")
+		for index in range(3):
+			var direction := _screen_direction(Vector2.RIGHT.rotated(float(index) * 2.05 + 0.35))
+			draw_line(foot - direction * radius * 0.10, foot + direction * radius * (0.42 + index * 0.08), root_color, maxf(2.0, radius * 0.07))
+		return
+	if kind in ["ancient_ruin", "ruin_fragment"]:
+		var ruin_color := Color("74766a")
+		var width := radius * (0.62 if kind == "ancient_ruin" else 0.38)
+		draw_rect(Rect2(foot - Vector2(width, radius * 0.16), Vector2(width * 2.0, radius * 0.32)), Color(0.05, 0.06, 0.05, 0.42))
+		draw_line(foot - Vector2(width, 0), foot + Vector2(width, 0), ruin_color, maxf(3.0, radius * 0.10))
+		draw_line(foot - Vector2(width * 0.55, 0), foot - Vector2(width * 0.55, radius * 0.42), ruin_color.darkened(0.12), maxf(3.0, radius * 0.09))
+		return
 	var underground := String(feature.get("layer", state.current_layer)) == "ruin_depths"
 	var trunk_color := Color("394638") if not underground else Color("3e4138")
-	var canopy_color := Color("315e39") if not underground else Color("52614a")
+	var canopy_color := Color("294f31") if kind == "heart_tree" else Color("315e39") if not underground else Color("52614a")
 	if view_mode == "top_down":
 		draw_circle(foot, radius * 0.88, Color(0.02, 0.04, 0.025, 0.62))
 		draw_circle(foot, radius * 0.72, canopy_color)
@@ -1784,6 +1820,16 @@ func _draw_map() -> void:
 	for cell in map_cells:
 		var world_cell := Vector2(cell) * state.VISIBILITY_CELL
 		draw_rect(Rect2(origin + world_cell * scale, Vector2.ONE * map_cell_size), Color(0.23, 0.34, 0.30, 0.50 if overlay else 0.96))
+	for feature_value in state.terrain_features:
+		var feature: Dictionary = feature_value
+		var feature_kind := String(feature.get("kind", "tree"))
+		var feature_pos := Vector2(feature["pos"])
+		if feature_kind in ["tree", "undergrowth", "flowers"] or String(feature.get("layer", viewed_layer)) != viewed_layer or not state.is_discovered(feature_pos, map_cells): continue
+		var map_color := Color(0.24, 0.57, 0.72, 0.62 if overlay else 0.90) if feature_kind == "brook" else Color(0.57, 0.46, 0.28, 0.50 if overlay else 0.80) if feature_kind == "old_road" else Color(0.72, 0.69, 0.52, 0.58 if overlay else 0.88)
+		if feature_kind in ["brook", "old_road"] and feature.has("from") and feature.has("to"):
+			draw_line(origin + Vector2(feature["from"]) * scale, origin + Vector2(feature["to"]) * scale, map_color, 2.0 if overlay else 3.0)
+		else:
+			draw_circle(origin + feature_pos * scale, 3.5 if overlay else 5.0, map_color)
 	var player := origin + state.player_pos * scale
 	if bool(state.mode_config["waystone_available"]):
 		for stone in state.waystones:

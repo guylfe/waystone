@@ -772,7 +772,7 @@ func _refresh_loaded_region_content() -> void:
 	for feature in terrain_features:
 		if String(feature.get("layer", current_layer)) != current_layer or not desired.has(int(feature.get("part_id", -1))): continue
 		loaded_terrain_features.append(feature)
-		if String(feature.get("kind", "")) == "tree":
+		if bool(feature.get("blocks", String(feature.get("kind", "")) == "tree")):
 			var radius := float(feature.get("radius", 40.0))
 			base_walls.append(Rect2(Vector2(feature["pos"]) - Vector2.ONE * radius * 0.42, Vector2.ONE * radius * 0.84))
 	_build_terrain_feature_spatial_index()
@@ -2054,7 +2054,7 @@ func _build_save_payload() -> Dictionary:
 	# it out of every autosave avoids repeatedly copying and serializing immutable
 	# floor, wall, feature, connection, layer, and Waystone definitions.
 	return {
-		"save_version": 12,
+		"save_version": 13,
 		"time": simulation_time,
 		"player_pos": player_pos,
 		"player_facing": player_facing,
@@ -2126,7 +2126,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
-	if save_version < 1 or save_version > 12: return false
+	if save_version < 1 or save_version > 13: return false
 	loadout_id = String(payload.get("loadout_id", "duelist"))
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
@@ -2166,10 +2166,14 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
 	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
 	player_action = _idle_action()
-	enemies.assign(Array(payload.get("enemies", enemies)).duplicate(true))
-	projectiles.assign(Array(payload.get("projectiles", [])).duplicate(true))
-	hazards.assign(Array(payload.get("hazards", [])).duplicate(true))
-	effects.assign(Array(payload.get("effects", [])).duplicate(true))
+	# v13 introduced a new semantic world grammar and changed Campaign area IDs.
+	# Older dynamic actors are regenerated so they cannot survive off-floor in the
+	# rewritten geography; learned progression and run statistics remain intact.
+	if save_version >= 13:
+		enemies.assign(Array(payload.get("enemies", enemies)).duplicate(true))
+		projectiles.assign(Array(payload.get("projectiles", [])).duplicate(true))
+		hazards.assign(Array(payload.get("hazards", [])).duplicate(true))
+		effects.assign(Array(payload.get("effects", [])).duplicate(true))
 	dodge_cooldown = float(payload.get("dodge_cooldown", 0.0))
 	block_cooldown = float(payload.get("block_cooldown", 0.0))
 	endure_cooldown = float(payload.get("endure_cooldown", 0.0))
@@ -2198,11 +2202,19 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 			for saved in saved_shortcuts:
 				if String(saved.get("id", "")) == String(shortcut["id"]): shortcut["unlocked"] = bool(saved.get("unlocked", false))
 	_apply_shortcut_world_state()
-	visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()
-	discovered_cells_by_layer = Dictionary(payload.get("discovered_cells_by_layer", {})).duplicate(true)
-	if discovered_cells_by_layer.is_empty(): discovered_cells_by_layer[current_layer] = Dictionary(payload.get("discovered_cells", {})).duplicate()
-	_load_current_layer_discovery()
-	current_area_id = int(payload.get("current_area_id", 0))
+	if save_version >= 13:
+		visible_cells = Dictionary(payload.get("visible_cells", {})).duplicate()
+		discovered_cells_by_layer = Dictionary(payload.get("discovered_cells_by_layer", {})).duplicate(true)
+		if discovered_cells_by_layer.is_empty(): discovered_cells_by_layer[current_layer] = Dictionary(payload.get("discovered_cells", {})).duplicate()
+		_load_current_layer_discovery()
+		current_area_id = int(payload.get("current_area_id", 0))
+	else:
+		visible_cells.clear()
+		discovered_cells.clear()
+		discovered_cells_by_layer.clear()
+		for layer_id in world_layers: discovered_cells_by_layer[String(layer_id)] = {}
+		discovered_cells_by_layer[current_layer] = discovered_cells
+		current_area_id = _area_id_at_position(player_pos, current_layer)
 	death_pending = bool(payload.get("death_pending", false))
 	run_failed = bool(payload.get("run_failed", false))
 	rooms_cleared = int(payload.get("rooms_cleared", 0))
@@ -2214,7 +2226,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	successful_endures = int(payload.get("successful_endures", 0))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
-	if position_was_migrated: message = "The expedition route shifted. You return to its beginning."
+	if position_was_migrated or save_version < 13: message = "The forest shifted. Its old geography fades from memory."
 	rng.state = int(payload.get("rng_state", rng.state))
 	_next_enemy_id = 1
 	for enemy in enemies:
@@ -2222,7 +2234,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		enemy.erase("nav_path")
 		enemy.erase("nav_target_cell")
 		_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)
-	anchor_state = Dictionary(payload.get("anchor_state", {})).duplicate(true)
+	anchor_state = Dictionary(payload.get("anchor_state", {})).duplicate(true) if save_version >= 13 else {}
 	if bool(mode_config["waystone_available"]) and anchor_state.is_empty(): _capture_anchor_history()
 	_apply_shortcut_world_state()
 	_visibility_anchor = Vector2.INF

@@ -67,6 +67,7 @@ func _init() -> void:
 	test_save_payload_omits_regenerated_world_geometry()
 	test_version_one_save_migration()
 	test_version_three_attack_migration()
+	test_version_twelve_world_grammar_migration()
 	test_restart_restores_expedition()
 	print("Expedition and committed-action simulation tests passed.")
 	quit(0)
@@ -802,8 +803,8 @@ func test_mode_policies_and_death() -> void:
 	assert(campaign.mode_id == "campaign_lab")
 	assert(String(campaign.mode_rules()["death_policy"]) == "waystone")
 	assert(bool(campaign.mode_rules()["waystone_available"]))
-	assert(campaign.connections.size() == 7)
-	assert(campaign.waystones.size() == 2 and campaign.shortcuts.size() == 2 and campaign.transitions.size() == 2)
+	assert(campaign.connections.size() == 9)
+	assert(campaign.waystones.size() == 3 and campaign.shortcuts.size() == 2 and campaign.transitions.size() == 2)
 	assert(campaign.connections.filter(func(connection: Dictionary) -> bool: return bool(connection["shortcut"])).size() == 2)
 	campaign.carried_xp = 9
 	campaign._begin_death()
@@ -831,7 +832,7 @@ func test_layered_friendly_forest_topology() -> void:
 	state.current_layer = "ruin_depths"
 	state.player_pos = Vector2(ladder["from_pos"])
 	assert(state.use_transition() and state.current_layer == "forest_surface")
-	var ruin_shortcut: Dictionary = state.shortcuts.filter(func(item: Dictionary) -> bool: return String(item["id"]) == "dawn_ruin_return_v2")[0]
+	var ruin_shortcut: Dictionary = state.shortcuts.filter(func(item: Dictionary) -> bool: return String(item["id"]) == "dawn_ruin_return_v3")[0]
 	for shortcut in state.shortcuts:
 		assert(Vector2(shortcut["unlock_pos"]).distance_to(Vector2(shortcut["near_pos"])) > 115.0)
 		state.player_pos = Vector2(shortcut["near_pos"])
@@ -1038,6 +1039,30 @@ func test_version_three_attack_migration() -> void:
 	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
 	assert(not restored.run_active)
+
+func test_version_twelve_world_grammar_migration() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("duelist", "campaign_lab", 99117)
+	state.carried_xp = 11
+	state.secured_xp = 5
+	var path := "user://waystone-test-v12-world-migration.save"
+	assert(state.save_run(path))
+	var reader := FileAccess.open(path, FileAccess.READ)
+	var payload: Dictionary = reader.get_var(true)
+	reader = null
+	payload["save_version"] = 12
+	payload["enemies"] = [state._make_enemy("knife", Vector2(-500, -500), 1, 1)]
+	payload["discovered_cells_by_layer"] = {"forest_surface": {Vector2i(99, 99): true}}
+	var writer := FileAccess.open(path, FileAccess.WRITE)
+	writer.store_var(payload, true)
+	writer = null
+	var restored: RunState = RunStateScript.new(false)
+	assert(restored.load_run(path))
+	assert(restored.carried_xp == 11 and restored.secured_xp == 5)
+	assert(restored.enemies.size() > 1)
+	assert(not restored.discovered_cells.has(Vector2i(99, 99)))
+	assert(restored.message.contains("forest shifted"))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_restart_restores_expedition() -> void:
 	var state: RunState = RunStateScript.new()

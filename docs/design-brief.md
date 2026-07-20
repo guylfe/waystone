@@ -23,7 +23,7 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 
 - Expedition remains a forward-directed, permadeath run without Waystones or campaign return loops.
 - Campaign begins in a large Friendly Forest containing several Waystones and naturally reconnecting routes.
-- A local shortcut opens back toward the second Waystone after further progress. In the Friendly Forest it is a compact path blocked by dense woods, concealed from the near side, and deliberately cleared from the far side; its blocked state must force the longer route.
+- A local shortcut opens back toward the second Waystone after the long Elder Trail. In the Friendly Forest it is a compact path blocked by dense woods, concealed from the near side, and deliberately cleared from the far side; its blocked state must force the longer route. A third Waystone anchors the later forest before the Sunken Ruin.
 - A late Sunken Ruin descends into a separate 2D underground layer, emerges near the first Waystone, and opens a second bidirectional shortcut from its far side. The sealed gate is visible from the opening side before the player can reach its far-side interaction.
 - Discrete layer identity scopes combat, collision, awareness, projectiles, hazards, shadows, map discovery, and traversal; stairs and ladders explicitly connect layers without continuous vertical physics.
 - The full map supports an arbitrary number of discovered layers through paged layer controls. The translucent gameplay overlay always shows the current layer and never captures layer-switching input.
@@ -39,6 +39,7 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 - Both modes share one active-region lifecycle. Expedition streams the current route segment and immediate neighbors; Campaign streams the current region plus nearby or directly connected same-layer regions. Global definitions and persistent enemy records stay lightweight, while simulation, collision, navigation, rendering, and timelines consume the active subset.
 - Presentation never owns game time. Committed actions advance incrementally through the authoritative fixed-step simulation, with rendering interpolating the latest states rather than replaying a precomputed future. Combat contact and timing remain 120 Hz; scalable subsystems such as ordinary enemy locomotion, strategic decision scheduling, navigation fields, and camera queries may update less often without changing attack geometry.
 - Block rooms and generic bridge corridors are no longer the world representation. Broad capsules, overlapping clearings, natural boundaries, and explicit traversal anchors form the current procedural foundation.
+- Friendly Forest progression profiles have distinct spatial grammars: open glades, brook crossings, old-road detours, a radial elder grove, braided root paths, forest-ruin courts, and a broad heartwood boss approach. Semantic zones drive encounter placement and expose stable sockets for later loot and events.
 
 ## Achievement philosophy
 

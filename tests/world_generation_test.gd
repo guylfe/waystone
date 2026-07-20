@@ -5,6 +5,7 @@ const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 func _init() -> void:
 	test_large_seven_part_forest_expedition()
+	test_semantic_world_grammar_batch()
 	test_boss_marker_uses_actual_spawn()
 	test_organic_route_reachability()
 	test_mandatory_paths_keep_generous_clearance()
@@ -12,7 +13,7 @@ func _init() -> void:
 	test_shortcuts_are_binding_topology()
 	test_legacy_shortcut_state_is_not_imported()
 	test_layer_discovery_is_independent()
-	print("Large-world expedition and layered campaign tests passed.")
+	print("Friendly Forest grammar, large-world expedition, and layered campaign tests passed.")
 	quit(0)
 
 func test_large_seven_part_forest_expedition() -> void:
@@ -43,6 +44,30 @@ func test_large_seven_part_forest_expedition() -> void:
 		assert(total_enemies >= 70)
 		assert(palette_ids.size() == 7)
 		assert(Array(layout["floor_shapes"]).size() >= 49)
+
+func test_semantic_world_grammar_batch() -> void:
+	for seed in range(1, 101):
+		var expedition: Dictionary = FloorGeneratorScript.generate(seed * 104729, false)
+		var validation: Dictionary = expedition["validation"]
+		assert(bool(validation["valid"]), "invalid expedition seed %d: %s" % [seed, validation["errors"]])
+		assert(int(validation["semantic_role_count"]) >= 10)
+		var grammars: Dictionary = {}
+		var landmarks: Dictionary = {}
+		for area_value in Array(expedition["areas"]):
+			var area: Dictionary = area_value
+			var profile: Dictionary = area["profile"]
+			grammars[String(profile["grammar"])] = true
+			landmarks[String(profile["landmark"])] = true
+			assert(Array(area["zones"]).size() >= 3)
+			assert(Array(area["landmarks"]).size() >= 1)
+		assert(grammars.size() == 7 and landmarks.size() == 7)
+		var campaign: Dictionary = FloorGeneratorScript.generate(seed * 65537, true)
+		var campaign_validation: Dictionary = campaign["validation"]
+		assert(bool(campaign_validation["valid"]), "invalid campaign seed %d: %s" % [seed, campaign_validation["errors"]])
+		assert(Array(campaign["waystones"]).size() == 3)
+		assert(Array(campaign["areas"]).size() == 10)
+		assert(Array(campaign["connections"]).size() == 9)
+		assert(Array(campaign["shortcuts"]).size() == 2)
 
 func test_boss_marker_uses_actual_spawn() -> void:
 	for campaign in [false, true]:
@@ -100,7 +125,7 @@ func _circle_intersects_rect(center: Vector2, radius: float, rect: Rect2) -> boo
 func test_layered_campaign_loop() -> void:
 	var layout: Dictionary = FloorGeneratorScript.generate(99117, true)
 	assert(Dictionary(layout["layers"]).size() == 2)
-	assert(Array(layout["waystones"]).size() == 2)
+	assert(Array(layout["waystones"]).size() == 3)
 	assert(Array(layout["shortcuts"]).size() == 2)
 	assert(Array(layout["transitions"]).size() == 2)
 	for transition in Array(layout["transitions"]):
