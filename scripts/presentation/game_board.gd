@@ -1994,8 +1994,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	var subtitle := ""
 	var title := name.to_upper()
 	if name == "potion":
-		available = state.potions > 0 and state.player_hp < state.player_max_hp
-		subtitle = "%d LEFT" % state.potions
+		available = (state.has_infinite_potions() or state.potions > 0) and state.player_hp < state.player_max_hp
+		subtitle = "UNLIMITED" if state.has_infinite_potions() else "%d LEFT" % state.potions
 	elif name == "defense":
 		title = state.defense_id.to_upper()
 		available = _defense_cooldown() <= 0.0001

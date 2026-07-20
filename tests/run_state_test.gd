@@ -8,6 +8,7 @@ const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 func _init() -> void:
 	test_idle_freezes_time()
+	test_expedition_infinite_potions()
 	test_continuous_movement()
 	test_attacks_are_long_commitments()
 	test_enemy_freezes_mid_action()
@@ -77,6 +78,23 @@ func test_idle_freezes_time() -> void:
 	var before := state.simulation_time
 	state.snapshot()
 	assert(is_equal_approx(state.simulation_time, before))
+
+func test_expedition_infinite_potions() -> void:
+	var expedition: RunState = RunStateScript.new(false)
+	expedition.start_run("duelist", "expedition", 717)
+	expedition.potions = 0
+	expedition.player_hp = 1
+	assert(expedition.has_infinite_potions())
+	assert(expedition.request_potion())
+	assert(expedition.player_hp == 6 and expedition.potions == 0)
+	expedition.player_hp = 1
+	assert(expedition.request_potion() and expedition.potions == 0)
+	var campaign: RunState = RunStateScript.new(false)
+	campaign.start_run("duelist", "campaign_lab", 717)
+	campaign.potions = 0
+	campaign.player_hp = 1
+	assert(not campaign.has_infinite_potions())
+	assert(not campaign.request_potion())
 
 func test_continuous_movement() -> void:
 	var state: RunState = RunStateScript.new()

@@ -12,6 +12,7 @@ const DEFINITIONS := {
 		"waystone_available": false,
 		"shadow_enabled": false,
 		"geography_policy": "stable",
+		"infinite_potions_for_testing": true,
 	},
 	CAMPAIGN_LAB: {
 		"label": "Campaign Lab",
@@ -20,6 +21,7 @@ const DEFINITIONS := {
 		"waystone_available": true,
 		"shadow_enabled": true,
 		"geography_policy": "stable",
+		"infinite_potions_for_testing": false,
 	},
 }
 

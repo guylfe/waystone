@@ -542,15 +542,18 @@ func request_defense(direction: Vector2, simulate_immediately: bool = true) -> b
 		_: return request_dodge(direction, simulate_immediately)
 
 func request_potion(simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or potions <= 0 or player_hp >= player_max_hp:
+	if not is_player_ready() or (potions <= 0 and not has_infinite_potions()) or player_hp >= player_max_hp:
 		return false
-	potions -= 1
+	if not has_infinite_potions(): potions -= 1
 	player_action = _action("potion", 0.72, Vector2.ZERO)
 	_emit_sound(player_pos, 90.0)
-	_set_message("You uncork the last restorative.")
+	_set_message("You uncork a testing restorative." if has_infinite_potions() else "You uncork the last restorative.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
+
+func has_infinite_potions() -> bool:
+	return bool(mode_config.get("infinite_potions_for_testing", false))
 
 func request_wait(duration: float = 0.50, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete:
