@@ -9,7 +9,8 @@ func _init() -> void:
 	test_rally_lifecycle_and_poise()
 	test_advance_momentum_chain()
 	test_evasion_mastery_reward()
-	test_v19_save_boundary()
+	test_current_save_boundary()
+	test_v19_potion_capacity_migration()
 	test_action_layout_separates_context()
 	print("Warrior character, progression, action, save, and sheet tests passed.")
 	quit()
@@ -39,6 +40,8 @@ func test_initial_sheet_and_gates() -> void:
 	assert(String(Dictionary(tracks[5])["id"]) == "adopted")
 	assert(state.character_level() == 1)
 	assert(state.next_upgrade_cost() == 6)
+	assert(state.healing_capacity() == 5 and state.potions == 5)
+	assert(not state.has_infinite_potions())
 	var options := state.available_level_up_options()
 	assert(options == ["swordsmanship", "evasion", "warrior", "vanguard"])
 
@@ -95,8 +98,8 @@ func test_evasion_mastery_reward() -> void:
 	assert(float(state.player_action["startup"]) < 0.30)
 	assert(state.counterstep_remaining == 0.0)
 
-func test_v19_save_boundary() -> void:
-	var path := "user://warrior-v19-test.save"
+func test_current_save_boundary() -> void:
+	var path := "user://warrior-current-save-test.save"
 	var state := fresh_state()
 	assert(state.choose_upgrade("evasion"))
 	assert(state.request_dodge(Vector2.RIGHT, false))
@@ -106,6 +109,23 @@ func test_v19_save_boundary() -> void:
 	assert(loaded.loadout_id == "warrior")
 	assert(int(loaded.track_ranks["evasion"]) == 1)
 	assert(String(loaded.player_action["kind"]) == "idle")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func test_v19_potion_capacity_migration() -> void:
+	var path := "user://warrior-v19-potion-test.save"
+	var state := fresh_state()
+	state.potions = 3
+	assert(state.save_run(path))
+	var reader := FileAccess.open(path, FileAccess.READ)
+	var payload: Dictionary = reader.get_var(true)
+	reader.close()
+	payload["save_version"] = 19
+	var writer := FileAccess.open(path, FileAccess.WRITE)
+	writer.store_var(payload, true)
+	writer.close()
+	var loaded: RunState = RunStateScript.new(false)
+	assert(loaded.load_run(path))
+	assert(loaded.healing_capacity() == 5 and loaded.potions == 5)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_action_layout_separates_context() -> void:

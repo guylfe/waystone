@@ -1,6 +1,10 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.63`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.64`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.64: finite restorative supply
+
+Expedition and Campaign characters now begin with a finite capacity of five rejuvenation potions. Expedition no longer uses the temporary unlimited testing rule.
 
 ### v0.0.63: first durable character sheet
 

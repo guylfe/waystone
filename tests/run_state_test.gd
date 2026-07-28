@@ -106,11 +106,11 @@ func test_idle_freezes_time() -> void:
 func test_rejuvenation_belt_rules() -> void:
 	var expedition: RunState = RunStateScript.new(false)
 	expedition.start_run("wayfarer", "expedition", 717)
-	expedition.potions = 0
+	assert(expedition.potions == 5)
 	expedition.player_hp = 1
-	assert(expedition.has_infinite_potions())
+	assert(not expedition.has_infinite_potions())
 	assert(expedition.request_potion())
-	assert(expedition.player_hp == 6 and expedition.potions == 0)
+	assert(expedition.player_hp == 6 and expedition.potions == 4)
 	assert(expedition.consumable_slots.size() == 3)
 	var campaign: RunState = RunStateScript.new(false)
 	campaign.start_run("wayfarer", "campaign_lab", 717)

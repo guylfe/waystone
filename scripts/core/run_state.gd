@@ -32,9 +32,9 @@ const ENEMY_MOVE_EPSILON := 0.05
 const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
-const SAVE_VERSION := 19
+const SAVE_VERSION := 20
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
-const HEALING_CAPACITY := 3
+const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
 const CONSUMABLES := {
 	"throwing_knife": {"label": "Throwing Knife", "short": "KNIFE", "targeted": true, "max_stack": 2, "color": "d7dddd"},
@@ -3443,7 +3443,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version != SAVE_VERSION: return false
+	if save_version not in [19, SAVE_VERSION]: return false
 	loadout_id = "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
 	if save_version < 5:
@@ -3525,7 +3525,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	rally_fury_chain = int(payload.get("rally_fury_chain", 0))
 	counterstep_remaining = float(payload.get("counterstep_remaining", 0.0))
 	strength_remaining = float(payload.get("strength_remaining", 0.0))
-	potions = mini(healing_capacity(), int(payload.get("potions", HEALING_CAPACITY)))
+	var saved_potions := int(payload.get("potions", HEALING_CAPACITY))
+	# v20 raises the shared starting capacity from three to five. Preserve spent
+	# charges while granting the two newly available slots to a v19 run.
+	if save_version == 19: saved_potions += 2
+	potions = mini(healing_capacity(), saved_potions)
 	if save_version >= 16:
 		consumable_slots.assign(Array(payload.get("consumable_slots", _empty_consumable_slots())).duplicate(true))
 		world_pickups.assign(Array(payload.get("world_pickups", world_pickups)).duplicate(true))
