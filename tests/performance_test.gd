@@ -12,7 +12,7 @@ func _init() -> void:
 func _measure(mode: String, seed: int) -> void:
 	var state = RunStateScript.new(false)
 	var generation_start := Time.get_ticks_usec()
-	state.start_run("duelist", mode, seed)
+	state.start_run("wayfarer", mode, seed)
 	var generation_ms := float(Time.get_ticks_usec() - generation_start) / 1000.0
 	state._build_enemy_spatial_index()
 	var action_total := 0.0
@@ -30,7 +30,7 @@ func _measure(mode: String, seed: int) -> void:
 func _measure_crowds() -> void:
 	for crowd_size in [10, 30, 50]:
 		var state = RunStateScript.new(false)
-		state.start_run("duelist", "expedition", 717)
+		state.start_run("wayfarer", "expedition", 717)
 		state.enemies.clear()
 		for index in range(crowd_size):
 			var angle := TAU * float(index) / float(crowd_size)
@@ -52,7 +52,7 @@ func _measure_crowds() -> void:
 
 func _measure_streamed_crowd(crowd_size: int) -> void:
 	var state = RunStateScript.new(false)
-	state.start_run("duelist", "expedition", 717)
+	state.start_run("wayfarer", "expedition", 717)
 	state.enemies.clear()
 	for index in range(crowd_size):
 		var angle := TAU * float(index) / float(crowd_size)
@@ -80,7 +80,7 @@ func _measure_streamed_crowd(crowd_size: int) -> void:
 
 func _measure_save_payload() -> void:
 	var state = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 99117)
+	state.start_run("wayfarer", "campaign_lab", 99117)
 	var full_bytes := var_to_bytes(state.snapshot()).size()
 	var compact_bytes := var_to_bytes(state._build_save_payload()).size()
 	var path := "user://waystone-performance.save"

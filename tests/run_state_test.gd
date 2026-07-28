@@ -4,31 +4,48 @@ const RunStateScript = preload("res://scripts/core/run_state.gd")
 const GameBoardScript = preload("res://scripts/presentation/game_board.gd")
 const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 func _init() -> void:
 	test_idle_freezes_time()
-	test_expedition_infinite_potions()
+	test_rejuvenation_belt_rules()
+	test_full_belt_swap_drops_displaced_stack()
 	test_continuous_movement()
 	test_attacks_are_long_commitments()
+	test_sword_combo_uses_distinct_geometry_and_resets()
+	test_combo_hold_commits_each_strike()
+	test_combo_retouch_resumes_the_held_chain()
+	test_attack_swipe_queues_movement()
+	test_original_attack_swipe_keeps_combo_held()
 	test_enemy_freezes_mid_action()
 	test_polearm_reach_and_timing()
 	test_projectile_motion()
+	test_firebolt_tracking_is_limited()
 	test_dodge_world_time()
 	test_perfect_dodge()
 	test_directional_block()
 	test_block_stops_orphaned_projectile()
 	test_endure_trades_health_for_strength()
 	test_loadout_identities()
-	test_duelist_sweeping_cut()
+	test_shared_actor_and_weapon_foundation()
+	test_wayfarer_weapon_arts()
+	test_wayfarer_tracks_and_art_gate()
 	test_signature_attack_roster()
 	test_attack_geometry_boundaries()
-	test_first_contact_and_multi_target_rules()
+	test_player_melee_hits_every_crossed_enemy()
 	test_attack_geometry_stops_at_walls()
 	test_projected_weapon_endpoints_round_trip()
 	test_fast_enemy_posture_break()
 	test_grounded_heavy_resists_break()
+	test_clean_opening_hit_preserves_a_defensive_choice()
+	test_boar_momentum_armour_and_hound_interruptibility()
+	test_active_weapon_contact_can_still_trade()
+	test_hit_reaction_preserves_contact_and_interrupted_pose()
 	test_navigation_routes_around_wall()
+	test_enemy_facing_and_moving_follow_real_displacement()
+	test_blocked_enemy_stops_claiming_movement_and_replans()
+	test_crowded_enemy_steers_around_another_actor()
 	test_isometric_is_default()
 	test_isometric_projection_round_trip()
 	test_projected_combat_footprints_match_each_view()
@@ -36,10 +53,13 @@ func _init() -> void:
 	test_isometric_actor_pick_uses_visible_body()
 	test_desktop_movement_tracks_screen_directions()
 	test_desktop_held_keys_combine_diagonally()
+	test_desktop_hold_attack_key()
+	test_melee_enemy_tap_intent_classifier()
 	test_playback_interpolates_between_simulation_steps()
 	test_actions_stream_without_precomputation()
 	test_streaming_caps_realtime_catchup()
 	test_temporal_tint_eases_between_states()
+	test_area_entry_title_uses_pacing_metadata()
 	test_long_landmarks_are_ground_materials()
 	test_presentation_frames_reuse_storage()
 	test_desktop_landscape_layout()
@@ -48,10 +68,12 @@ func _init() -> void:
 	test_lightweight_timeline_snapshots()
 	test_shield_front_arc()
 	test_new_enemy_roles()
+	test_back_half_expedition_roles()
 	test_progressive_expedition_rooms()
 	test_required_passages_have_generous_clearance()
 	test_overlay_map_passes_input_through()
 	test_region_streaming_limits_active_world()
+	test_expedition_streaming_follows_route_graph()
 	test_full_map_supports_arbitrary_discovered_layers()
 	test_generated_rooms_have_no_shields()
 	test_mode_policies_and_death()
@@ -81,22 +103,46 @@ func test_idle_freezes_time() -> void:
 	state.snapshot()
 	assert(is_equal_approx(state.simulation_time, before))
 
-func test_expedition_infinite_potions() -> void:
+func test_rejuvenation_belt_rules() -> void:
 	var expedition: RunState = RunStateScript.new(false)
-	expedition.start_run("duelist", "expedition", 717)
+	expedition.start_run("wayfarer", "expedition", 717)
 	expedition.potions = 0
 	expedition.player_hp = 1
-	assert(expedition.has_infinite_potions())
+	assert(not expedition.has_infinite_potions())
 	assert(expedition.request_potion())
 	assert(expedition.player_hp == 6 and expedition.potions == 0)
-	expedition.player_hp = 1
-	assert(expedition.request_potion() and expedition.potions == 0)
+	assert(expedition.consumable_slots.size() == 3)
 	var campaign: RunState = RunStateScript.new(false)
-	campaign.start_run("duelist", "campaign_lab", 717)
+	campaign.start_run("wayfarer", "campaign_lab", 717)
 	campaign.potions = 0
 	campaign.player_hp = 1
 	assert(not campaign.has_infinite_potions())
 	assert(not campaign.request_potion())
+
+func test_full_belt_swap_drops_displaced_stack() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "expedition", 717)
+	var target: Dictionary = {}
+	for pickup_value in state.world_pickups:
+		var pickup: Dictionary = pickup_value
+		if String(pickup.get("item_id", "")) == "firebomb":
+			target = pickup
+			break
+	assert(not target.is_empty())
+	state.player_pos = Vector2(target["pos"])
+	state.consumable_slots = [{"id": "throwing_knife", "count": 2}, {"id": "smoke_vial", "count": 1}, {"id": "throwing_knife", "count": 1}]
+	assert(not state.request_collect_nearby_pickup())
+	assert(state.has_pending_pickup())
+	assert(state.replace_pending_pickup(0))
+	assert(String(state.consumable_slot(0).get("id", "")) == "firebomb")
+	var dropped: Dictionary = {}
+	for pickup_value in state.world_pickups:
+		var pickup: Dictionary = pickup_value
+		if String(pickup.get("id", "")).begins_with("discard_"):
+			dropped = pickup
+			break
+	assert(String(dropped.get("item_id", "")) == "throwing_knife")
+	assert(int(dropped.get("count", 0)) == 2 and Vector2(dropped.get("pos", Vector2.ZERO)).distance_to(state.player_pos) < 0.1)
 
 func test_continuous_movement() -> void:
 	var state: RunState = RunStateScript.new()
@@ -115,11 +161,97 @@ func test_continuous_movement() -> void:
 
 func test_attacks_are_long_commitments() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.select_loadout("guardian"))
 	state.enemies.clear()
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0))
-	assert(state.simulation_time >= 1.39)
-	assert(state.last_timeline.size() >= 70)
+	assert(state.simulation_time >= 0.96)
+	assert(state.last_timeline.size() >= 60)
+
+func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
+	var state: RunState = RunStateScript.new()
+	state.enemies.clear()
+	assert(state.request_combo(Vector2.UP, false))
+	assert(String(state.player_action["kind"]) == "combo")
+	var phases: Array = state.player_action["phases"]
+	assert(String(Dictionary(phases[0])["technique"]) == "opening_cut")
+	assert(String(Dictionary(phases[1])["technique"]) == "reverse_cut")
+	assert(String(Dictionary(phases[2])["technique"]) == "driving_cut")
+	assert(float(Dictionary(phases[2])["reach"]) > float(Dictionary(phases[1])["reach"]))
+	while float(state.player_action["elapsed"]) < 2.40: state.advance_streamed_action_tick()
+	assert(String(state.player_action["kind"]) == "combo")
+	while state.advance_streamed_action_tick(): pass
+	assert(state.is_player_ready() and state.simulation_time >= 3.32)
+
+func test_combo_hold_commits_each_strike() -> void:
+	var single: RunState = RunStateScript.new()
+	single.enemies.clear()
+	assert(single.request_combo(Vector2.UP, false))
+	single.set_attack_hold(false)
+	while single.advance_streamed_action_tick(): pass
+	assert(single.is_player_ready() and single.simulation_time >= 0.97 and single.simulation_time < 1.05)
+
+	var double: RunState = RunStateScript.new()
+	double.enemies.clear()
+	assert(double.request_combo(Vector2.UP, false))
+	while float(double.player_action["elapsed"]) < 1.22: double.advance_streamed_action_tick()
+	assert(int(double.player_action.get("committed_phase", -1)) == 1)
+	double.set_attack_hold(false)
+	while double.advance_streamed_action_tick(): pass
+	assert(double.is_player_ready() and double.simulation_time >= 2.03 and double.simulation_time < 2.12)
+
+	var full: RunState = RunStateScript.new()
+	full.enemies.clear()
+	assert(full.request_combo(Vector2.UP, false))
+	while full.advance_streamed_action_tick(): pass
+	assert(full.is_player_ready() and full.simulation_time >= 3.32)
+
+func test_combo_retouch_resumes_the_held_chain() -> void:
+	var retouched: RunState = RunStateScript.new()
+	retouched.enemies.clear()
+	assert(retouched.request_combo(Vector2.UP, false))
+	retouched.set_attack_hold(false)
+	while float(retouched.player_action["elapsed"]) < 0.44: retouched.advance_streamed_action_tick()
+	assert(retouched.resume_combo_hold())
+	while float(retouched.player_action["elapsed"]) < 1.22: retouched.advance_streamed_action_tick()
+	assert(int(retouched.player_action.get("committed_phase", -1)) == 1)
+	retouched.set_attack_hold(false)
+	while float(retouched.player_action["elapsed"]) < 1.92: retouched.advance_streamed_action_tick()
+	assert(retouched.resume_combo_hold())
+	while retouched.advance_streamed_action_tick(): pass
+	assert(retouched.is_player_ready() and retouched.simulation_time >= 3.32)
+
+func test_attack_swipe_queues_movement() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.board_rect = Rect2(Vector2.ZERO, Vector2(800.0, 600.0))
+	board.size = Vector2(800.0, 600.0)
+	assert(board.state.request_combo(Vector2.UP, false))
+	board.playing = true
+	board.pointer_down = true
+	board.attack_pointer_held = true
+	board.attack_touch_is_original = false
+	board.touch_start = Vector2(250.0, 250.0)
+	board._pointer_dragged(Vector2(330.0, 250.0))
+	assert(not board.attack_pointer_held)
+	assert(not bool(board.state.player_action.get("continue_held", true)))
+	assert(board.queued_movement_after_attack and board.held_movement)
+	board.free()
+
+func test_original_attack_swipe_keeps_combo_held() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.board_rect = Rect2(Vector2.ZERO, Vector2(800.0, 600.0))
+	board.size = Vector2(800.0, 600.0)
+	assert(board.state.request_combo(Vector2.UP, false))
+	board.playing = true
+	board.pointer_down = true
+	board.attack_pointer_held = true
+	board.attack_touch_is_original = true
+	board.touch_start = Vector2(250.0, 250.0)
+	board._pointer_dragged(Vector2(330.0, 250.0))
+	assert(board.attack_pointer_held and board.attack_touch_is_original)
+	assert(bool(board.state.player_action.get("continue_held", false)))
+	assert(not board.queued_movement_after_attack)
+	board.free()
 
 func test_enemy_freezes_mid_action() -> void:
 	var state: RunState = RunStateScript.new()
@@ -151,6 +283,19 @@ func test_projectile_motion() -> void:
 	var x := Vector2(state.projectiles[0]["pos"]).x
 	assert(x > 205.0 and x < 220.0)
 
+func test_firebolt_tracking_is_limited() -> void:
+	var state: RunState = RunStateScript.new()
+	state.player_pos = Vector2(420.0, 300.0)
+	state.projectiles = [{"pos": Vector2(100.0, 100.0), "vel": Vector2.RIGHT * 465.0, "launch_direction": Vector2.RIGHT, "turn_rate": 0.0, "max_track_angle": 0.0, "radius": 13.0, "damage": 3, "kind": "firebolt", "source_id": 99, "layer": state.current_layer}]
+	for index in range(20): state._update_projectiles(0.05)
+	assert(state.projectiles.size() == 1)
+	var steering: float = absf(Vector2.RIGHT.angle_to(Vector2(state.projectiles[0]["vel"]).normalized()))
+	assert(steering < 0.001)
+	state.player_pos = Vector2(180.0, 720.0)
+	var heading_before := Vector2(state.projectiles[0]["vel"]).normalized()
+	state._update_projectiles(0.10)
+	assert(heading_before.angle_to(Vector2(state.projectiles[0]["vel"]).normalized()) < 0.001)
+
 func test_dodge_world_time() -> void:
 	var state: RunState = RunStateScript.new()
 	state.enemies.clear()
@@ -179,7 +324,7 @@ func test_perfect_dodge() -> void:
 
 func test_directional_block() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.select_loadout("guardian"))
+	state.defense_id = "block"
 	state.enemies = [state._make_enemy("blade", state.player_pos + Vector2(0.0, -110.0), 7)]
 	var enemy := state.enemies[0]
 	enemy["facing"] = Vector2.DOWN
@@ -193,7 +338,7 @@ func test_directional_block() -> void:
 
 func test_block_stops_orphaned_projectile() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.select_loadout("guardian"))
+	state.defense_id = "block"
 	state.enemies.clear()
 	state.player_action = state._action("block", 1.10, Vector2.UP)
 	state.player_action["startup"] = 0.16
@@ -207,7 +352,7 @@ func test_block_stops_orphaned_projectile() -> void:
 
 func test_endure_trades_health_for_strength() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.select_loadout("reaver"))
+	state.defense_id = "endure"
 	state.enemies = [state._make_enemy("blade", state.player_pos + Vector2(0.0, -110.0), 7)]
 	var enemy := state.enemies[0]
 	enemy["facing"] = Vector2.DOWN
@@ -223,31 +368,87 @@ func test_endure_trades_health_for_strength() -> void:
 
 func test_loadout_identities() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.loadout_id == "duelist" and state.defense_id == "dodge")
-	var duelist_speed := state.player_move_speed
-	assert(state.select_loadout("guardian"))
-	assert(state.defense_id == "block")
-	assert(state.player_max_hp == 14)
-	assert(state.player_move_speed < duelist_speed)
-	assert(state.select_loadout("reaver"))
-	assert(state.defense_id == "endure")
-	assert(state.player_damage_min >= 3)
+	assert(state.loadout_id == "wayfarer" and state.defense_id == "dodge")
+	assert(state.select_loadout("wayfarer"))
+	assert(not state.select_loadout("duelist"))
+	assert(not state.select_loadout("guardian"))
+	assert(not state.select_loadout("reaver"))
 
-func test_duelist_sweeping_cut() -> void:
+func test_shared_actor_and_weapon_foundation() -> void:
+	var state: RunState = RunStateScript.new()
+	var player := state.player_actor()
+	for attribute in CombatCatalogScript.ATTRIBUTE_KEYS:
+		assert(Dictionary(player["attributes"]).has(attribute))
+	for property in ["armor", "resistances", "mass", "collision_radius", "vision_range", "temporal_authority"]:
+		assert(Dictionary(player["properties"]).has(property))
+	assert(String(player["weapon_frame"]) == "sword")
+	assert(String(player["equipped_weapon_art"]) == "")
+	assert(Array(player["weapon_art_ids"]).is_empty())
+	assert(Dictionary(player["equipment_slots"])["main_hand"] == "Waystone Sword")
+	assert(Dictionary(player["martial_foundation"]).has("power"))
+	for frame_id in ["sword", "axe", "zweihander", "spear", "twin_knives", "bow", "impact", "staff"]:
+		var frame: Dictionary = CombatCatalogScript.weapon_frame(frame_id)
+		assert(Array(frame["art_ids"]).size() == 2)
+		for art_id in Array(frame["art_ids"]): assert(not CombatCatalogScript.weapon_art(String(art_id)).is_empty())
+	var expected_frames := {"boar": "natural", "hound": "natural", "bandit": "twin_knives", "archer": "bow", "ice_caster": "staff", "fire_caster": "staff", "knight": "zweihander", "werewolf": "natural", "brute": "impact", "captain": "sword", "polearm": "spear", "blade": "sword", "knife": "twin_knives", "warden": "zweihander"}
+	for enemy_kind in expected_frames:
+		var enemy := state._make_enemy(String(enemy_kind), state.player_pos, state._enemy_base_hp(String(enemy_kind)))
+		assert(String(enemy["weapon_frame"]) == String(expected_frames[enemy_kind]))
+		for attribute in CombatCatalogScript.ATTRIBUTE_KEYS: assert(Dictionary(enemy["attributes"]).has(attribute))
+
+func test_wayfarer_weapon_arts() -> void:
 	var state: RunState = RunStateScript.new()
 	state.walls.clear()
 	state._build_navigation()
 	state.enemies = [state._make_enemy("knife", state.player_pos + Vector2(-42, -98), 8), state._make_enemy("knife", state.player_pos + Vector2(42, -98), 8)]
+	assert(not state.request_skill(Vector2.UP))
+	state.player_weapon_art_library.assign(["prototype_sweeping_cut"])
+	state.player_equipped_weapon_art = "prototype_sweeping_cut"
 	assert(state.request_skill(Vector2.UP))
 	assert(state.skill_cooldown > 2.7)
 	assert(int(state.enemies[0]["hp"]) < 8 and int(state.enemies[1]["hp"]) < 8)
 	assert(state.simulation_time >= 1.30)
+	state.skill_cooldown = 0.0
+	state.player_weapon_art_library.assign(["prototype_drawing_cut"])
+	state.player_equipped_weapon_art = "prototype_drawing_cut"
+	state.enemies.clear()
+	assert(state.request_skill(Vector2.UP, false))
+	assert(String(state.player_action["technique_id"]) == "driving_cut")
+	assert(String(state.player_action["ability_id"]) == "prototype_drawing_cut")
+	while state.advance_streamed_action_tick(): pass
+
+func test_wayfarer_tracks_and_art_gate() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "campaign_lab", 919)
+	var sheet := state.character_sheet_data()
+	assert(Array(sheet["tracks"]).size() == 5)
+	assert(Dictionary(sheet["equipment"])["charm"] == "Waystone Fragment")
+	state.carried_xp = 100
+	state.secured_xp = 100
+	state.player_pos = state.bonfire_pos
+	assert(state.level_up_context() == "waystone")
+	assert(state.available_level_up_options().has("weaponry_power"))
+	assert(state.available_level_up_options().has("learn_art:prototype_drawing_cut"))
+	assert(state.choose_upgrade("learn_art:prototype_drawing_cut"))
+	assert(state.player_equipped_weapon_art == "prototype_drawing_cut")
+	assert(state.player_weapon_art_library.size() == 1)
+	assert(state.track_total("weaponry") == 1)
+	assert(state.choose_upgrade("weaponry_power"))
+	assert(state.track_total("weaponry") == 2 and state.player_damage_max == 4)
+	state.upgrade_count = state.SECOND_ART_GATE
+	state.player_pos = state.bonfire_pos
+	state.carried_xp = 100
+	state.secured_xp = 100
+	assert(state.available_level_up_options().has("learn_art:prototype_sweeping_cut"))
+	assert(state.choose_upgrade("learn_art:prototype_sweeping_cut"))
+	assert(state.player_weapon_art_library.size() == 2)
+	assert(state.equip_weapon_art("prototype_sweeping_cut"))
+	assert(state.player_equipped_weapon_art == "prototype_sweeping_cut")
 
 func test_signature_attack_roster() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.player_attack_technique == "diagonal_cut")
-	assert(state.select_loadout("guardian") and state.player_attack_technique == "heavy_chop")
-	assert(state.select_loadout("reaver") and state.player_attack_technique == "broad_sweep")
+	assert(state.player_attack_technique == "diagonal_cut" and state.player_weapon_frame == "sword")
+	assert(String(state._player_basic_attack_definition(Vector2.UP)["technique"]) == "opening_cut")
 	state.walls.clear()
 	var expected := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "captain": "thrust"}
 	var distances := {"bandit": 70.0, "knife": 80.0, "blade": 110.0, "polearm": 190.0, "brute": 140.0, "captain": 120.0}
@@ -268,7 +469,7 @@ func test_attack_geometry_boundaries() -> void:
 	assert(AttackGeometryScript.hits_circle(cut_pose, blade_mid, 4.0))
 	assert(not AttackGeometryScript.hits_circle(cut_pose, origin + Vector2.LEFT * 75.0, 4.0))
 
-func test_first_contact_and_multi_target_rules() -> void:
+func test_player_melee_hits_every_crossed_enemy() -> void:
 	var state: RunState = RunStateScript.new()
 	state.walls.clear()
 	state.player_facing = Vector2.RIGHT
@@ -281,7 +482,7 @@ func test_first_contact_and_multi_target_rules() -> void:
 	state.player_action["damage_max"] = 2
 	state._resolve_player_attack_tick(0.72)
 	assert(int(near["hp"]) == 7)
-	assert(int(far["hp"]) == 9)
+	assert(int(far["hp"]) == 7)
 	assert(bool(state.player_action["hit_done"]))
 	assert(bool(AttackGeometryScript.technique("broad_sweep")["multi"]))
 
@@ -324,6 +525,92 @@ func test_grounded_heavy_resists_break() -> void:
 	state._apply_posture_damage(brute, 20.0)
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
 
+func test_clean_opening_hit_preserves_a_defensive_choice() -> void:
+	for enemy_kind in ["bandit", "boar"]:
+		var state: RunState = RunStateScript.new()
+		state.walls.clear()
+		state.enemies.clear()
+		var distance := 108.0 if enemy_kind == "bandit" else 110.0
+		var enemy := state._make_enemy(enemy_kind, state.player_pos + Vector2.RIGHT * distance, state._enemy_base_hp(enemy_kind) + 10)
+		enemy["awareness"] = "alerted"
+		enemy["facing"] = Vector2.LEFT
+		# At this spacing the bandit is moving in, not already attacking or
+		# entering its evasive strike. The boar is still in its interruptible
+		# crouch when the sword reaches it.
+		if enemy_kind == "bandit": enemy["dodge_cooldown"] = 1.0
+		state.enemies = [enemy]
+		var hp_before := state.player_hp
+		assert(state.request_attack(Vector2(enemy["pos"]), false))
+		while state.advance_streamed_action_tick(): pass
+		assert(state.player_hp == hp_before)
+		assert(int(state.enemies[0]["hp"]) < int(state.enemies[0]["max_hp"]))
+		# A guard chosen at the frozen decision point must become active before
+		# this ordinary enemy's fresh counter can land.
+		assert(state.request_block(Vector2.RIGHT))
+		assert(state.player_hp == hp_before)
+
+func test_boar_momentum_armour_and_hound_interruptibility() -> void:
+	var state: RunState = RunStateScript.new()
+	var boar := state._make_enemy("boar", state.player_pos + Vector2.RIGHT * 180.0, 20)
+	var early_pounce := state._charge_action(1.54, 0.52, 0.96, 360.0, 2, Vector2.LEFT)
+	early_pounce["label"] = "pounce"
+	early_pounce["momentum_armour_start"] = 0.70
+	early_pounce["elapsed"] = 0.60
+	boar["action"] = early_pounce
+	assert(state._apply_enemy_hit_reaction(boar, 1.8, "alerted", early_pounce))
+	assert(String(Dictionary(boar["action"])["kind"]) == "hit_reaction")
+
+	var full_pounce := state._charge_action(1.54, 0.52, 0.96, 360.0, 2, Vector2.LEFT)
+	full_pounce["label"] = "pounce"
+	full_pounce["momentum_armour_start"] = 0.70
+	full_pounce["elapsed"] = 0.76
+	boar["action"] = full_pounce
+	assert(not state._apply_enemy_hit_reaction(boar, 1.8, "alerted", full_pounce))
+	assert(String(Dictionary(boar["action"])["kind"]) == "charge")
+	assert(state._apply_enemy_hit_reaction(boar, 5.0, "alerted", full_pounce))
+	assert(String(Dictionary(boar["action"])["kind"]) == "hit_reaction")
+
+	var hound := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 180.0, 12)
+	var hound_pounce := state._charge_action(1.18, 0.30, 0.68, 440.0, 2, Vector2.LEFT)
+	hound_pounce["label"] = "pounce"
+	hound_pounce["elapsed"] = 0.50
+	hound["action"] = hound_pounce
+	assert(state._apply_enemy_hit_reaction(hound, 1.8, "alerted", hound_pounce))
+	assert(String(Dictionary(hound["action"])["kind"]) == "hit_reaction")
+
+func test_active_weapon_contact_can_still_trade() -> void:
+	var state: RunState = RunStateScript.new()
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.RIGHT * 88.0, 12)
+	var active_cut := state._melee_action(0.86, 0.26, 0.45, 94.0, 1, Vector2.LEFT, "quick_cut")
+	active_cut["elapsed"] = 0.34
+	bandit["action"] = active_cut
+	assert(not state._apply_enemy_hit_reaction(bandit, 1.8, "alerted", active_cut))
+	assert(String(Dictionary(bandit["action"])["kind"]) == "melee")
+
+func test_hit_reaction_preserves_contact_and_interrupted_pose() -> void:
+	var state: RunState = RunStateScript.new()
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.RIGHT * 120.0, 12)
+	var winding_cut := state._melee_action(0.86, 0.26, 0.45, 94.0, 1, Vector2.LEFT, "quick_cut")
+	winding_cut["elapsed"] = 0.18
+	bandit["action"] = winding_cut
+	var contact := Vector2(bandit["pos"]) + Vector2.LEFT * 12.0
+	assert(state._apply_enemy_hit_reaction(bandit, 1.8, "alerted", winding_cut, contact))
+	var reaction: Dictionary = bandit["action"]
+	assert(String(reaction["kind"]) == "hit_reaction")
+	assert(Vector2(reaction["reaction_contact"]).distance_to(contact) < 0.01)
+	assert(Vector2(reaction["reaction_direction"]).x > 0.9)
+	assert(String(Dictionary(reaction["interrupted_action"])["technique_id"]) == "quick_cut")
+
+	var knife := state._make_enemy("knife", state.player_pos + Vector2.UP * 100.0, 8)
+	var knife_cut := state._melee_action(0.88, 0.28, 0.46, 92.0, 1, Vector2.DOWN, "quick_cut")
+	knife["action"] = knife_cut
+	var break_contact := Vector2(knife["pos"]) + Vector2.UP * 10.0
+	assert(state._apply_posture_damage(knife, 2.0, break_contact))
+	var stagger: Dictionary = knife["action"]
+	assert(String(stagger["kind"]) == "stagger")
+	assert(Vector2(stagger["reaction_contact"]).distance_to(break_contact) < 0.01)
+	assert(String(Dictionary(stagger["interrupted_action"])["technique_id"]) == "quick_cut")
+
 func test_navigation_routes_around_wall() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.world_size = Vector2(1200, 1200)
@@ -343,6 +630,87 @@ func test_navigation_routes_around_wall() -> void:
 	for cell in path:
 		if absf(state.navigation.get_point_position(cell).y - 600.0) > 250.0: bends_around_wall = true
 	assert(bends_around_wall)
+
+func test_enemy_facing_and_moving_follow_real_displacement() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.world_size = Vector2(1200, 1200)
+	state.current_layer = "test"
+	state.floor_shapes = [{"kind": "circle", "center": Vector2(600, 600), "radius": 560.0, "layer": "test", "part_id": 0}]
+	state.player_pos = Vector2(980, 600)
+	state.walls.clear()
+	state.enemies.clear()
+	state._build_navigation()
+	var blade := state._make_enemy("blade", Vector2(360, 600), 7)
+	blade["layer"] = "test"
+	blade["facing"] = Vector2.LEFT
+	state.enemies = [blade]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var action := state._enemy_move_action(blade, state.player_pos, 0.48)
+	blade["action"] = action
+	var before := Vector2(blade["pos"])
+	state._advance_enemy_locomotion(blade, action, 8.0, 1.0 / 60.0)
+	var motion := Vector2(blade["pos"]) - before
+	assert(motion.length() > 0.1)
+	assert(bool(action["moving"]))
+	assert(bool(blade["is_moving"]))
+	assert(Vector2(blade["facing"]).dot(motion.normalized()) > 0.99)
+
+func test_blocked_enemy_stops_claiming_movement_and_replans() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.world_size = Vector2(1200, 1200)
+	state.current_layer = "test"
+	state.floor_shapes = [{"kind": "circle", "center": Vector2(600, 600), "radius": 560.0, "layer": "test", "part_id": 0}]
+	state.player_pos = Vector2(980, 600)
+	state.walls = [
+		Rect2(520, 520, 60, 160),
+		Rect2(620, 520, 60, 160),
+		Rect2(520, 520, 160, 60),
+		Rect2(520, 620, 160, 60),
+	]
+	state.enemies.clear()
+	state._build_navigation()
+	var blade := state._make_enemy("blade", Vector2(600, 600), 7)
+	blade["layer"] = "test"
+	state.enemies = [blade]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var action := state._enemy_move_action(blade, state.player_pos, 0.9)
+	blade["action"] = action
+	for index in range(32):
+		action["elapsed"] = float(action["elapsed"]) + 1.0 / 60.0
+		state._advance_enemy_locomotion(blade, action, 8.0, 1.0 / 60.0)
+	assert(Vector2(blade["pos"]).is_equal_approx(Vector2(600, 600)))
+	assert(not bool(action["moving"]))
+	assert(float(action["duration"]) <= float(action["elapsed"]))
+	assert(not blade.has("nav_path"))
+
+func test_crowded_enemy_steers_around_another_actor() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.world_size = Vector2(1200, 1200)
+	state.current_layer = "test"
+	state.floor_shapes = [{"kind": "circle", "center": Vector2(600, 600), "radius": 560.0, "layer": "test", "part_id": 0}]
+	state.player_pos = Vector2(1040, 600)
+	state.walls.clear()
+	state.enemies.clear()
+	state._build_navigation()
+	var mover := state._make_enemy("blade", Vector2(420, 600), 7)
+	var blocker := state._make_enemy("blade", Vector2(490, 600), 7)
+	mover["layer"] = "test"
+	blocker["layer"] = "test"
+	state.enemies = [mover, blocker]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var action := state._enemy_move_action(mover, state.player_pos, 0.8)
+	mover["action"] = action
+	var before := Vector2(mover["pos"])
+	for index in range(12):
+		action["elapsed"] = float(action["elapsed"]) + 1.0 / 60.0
+		state._advance_enemy_locomotion(mover, action, 7.0, 1.0 / 60.0)
+	var motion := Vector2(mover["pos"]) - before
+	assert(motion.length() > 1.0)
+	assert(absf(motion.y) > 0.5)
+	assert(Vector2(mover["facing"]).dot(Vector2(mover["last_motion"]).normalized()) > 0.99)
 
 func test_isometric_projection_round_trip() -> void:
 	var board = GameBoardScript.new()
@@ -454,6 +822,48 @@ func test_desktop_held_keys_combine_diagonally() -> void:
 	assert(board._desktop_held_direction().is_zero_approx())
 	board.free()
 
+func test_desktop_hold_attack_key() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.visual = board.state.snapshot(true)
+	board.desktop_controls = true
+	board.board_area = Rect2(0, 0, 1280, 800)
+	board._update_projection()
+	var down := InputEventKey.new()
+	down.keycode = KEY_F
+	down.pressed = true
+	board._unhandled_key_input(down)
+	assert(board.attack_key_held and String(board.state.player_action["kind"]) == "combo")
+	var up := InputEventKey.new()
+	up.keycode = KEY_F
+	up.pressed = false
+	board._unhandled_key_input(up)
+	assert(not board.attack_key_held and not bool(board.state.player_action.get("continue_held", true)))
+	board.free()
+
+func test_melee_enemy_tap_intent_classifier() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.enemies.clear()
+	var origin: Vector2 = board.state.player_pos
+	var direct_boar: Dictionary = board.state._make_enemy("boar", origin + Vector2.RIGHT * 230.0, 7, 0)
+	board.state.enemies.assign([direct_boar])
+	assert(board._enemy_touch_should_attack(direct_boar))
+	var distant_boar: Dictionary = board.state._make_enemy("boar", origin + Vector2.RIGHT * 285.0, 7, 0)
+	board.state.enemies.assign([distant_boar])
+	assert(not board._enemy_touch_should_attack(distant_boar))
+	var nearby_blade: Dictionary = board.state._make_enemy("blade", origin + Vector2.RIGHT.rotated(deg_to_rad(24.0)) * 145.0, 7, 0)
+	board.state.enemies.assign([distant_boar, nearby_blade])
+	board.state.visible_cells[board.state._visibility_cell(Vector2(nearby_blade["pos"]))] = true
+	assert(board._enemy_touch_should_attack(distant_boar))
+	var off_angle_blade: Dictionary = board.state._make_enemy("blade", origin + Vector2.RIGHT.rotated(deg_to_rad(58.0)) * 145.0, 7, 0)
+	board.state.enemies.assign([distant_boar, off_angle_blade])
+	board.state.visible_cells.clear()
+	board.state.visible_cells[board.state._visibility_cell(Vector2(off_angle_blade["pos"]))] = true
+	assert(not board._enemy_touch_should_attack(distant_boar))
+	board.state.player_weapon_frame = "bow"
+	assert(board._enemy_touch_should_attack(distant_boar))
+	board.free()
 func test_playback_interpolates_between_simulation_steps() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new()
@@ -529,10 +939,26 @@ func test_temporal_tint_eases_between_states() -> void:
 	assert(is_zero_approx(board.temporal_tint_strength))
 	board.free()
 
+func test_area_entry_title_uses_pacing_metadata() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.start_run("wayfarer", "expedition", 717)
+	board._presented_area_id = -999999
+	assert(board._update_area_title(0.0))
+	assert(board.area_title_name == board.state.current_area_name())
+	assert(not board.area_title_subtitle.is_empty())
+	assert(is_equal_approx(board.area_title_remaining, board.AREA_TITLE_DURATION))
+	board.state.current_area_id = 1
+	assert(board._update_area_title(0.1))
+	assert(board._presented_area_id == 1)
+	assert(board.area_title_name == String(board.state.areas[1]["name"]))
+	assert(board.area_title_subtitle == String(board.state.areas[1]["arrival_text"]))
+	board.free()
+
 func test_long_landmarks_are_ground_materials() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("duelist", "expedition", 739391)
+	board.state.start_run("wayfarer", "expedition", 739391)
 	board._refresh_ground_surface_landmarks()
 	var brook: Dictionary = {}
 	var road: Dictionary = {}
@@ -556,11 +982,14 @@ func test_long_landmarks_are_ground_materials() -> void:
 
 func test_presentation_frames_reuse_storage() -> void:
 	var state: RunState = RunStateScript.new()
+	state.start_run("wayfarer", "expedition", 717)
 	var current = PresentationFrameScript.new()
 	var following = PresentationFrameScript.new()
 	var blended = PresentationFrameScript.new()
 	var first_capture: Dictionary = current.capture(state)
 	var first_enemy_array: Array = first_capture["enemies"]
+	var first_pickup_array: Array = first_capture["world_pickups"]
+	assert(first_pickup_array.size() == state.world_pickups.size() and not first_pickup_array.is_empty())
 	assert(state.request_move(Vector2.RIGHT, 12.0, false))
 	state.advance_streamed_action_tick()
 	following.capture(state)
@@ -572,6 +1001,8 @@ func test_presentation_frames_reuse_storage() -> void:
 	current.capture(state)
 	assert(is_same(first_capture, current.data))
 	assert(is_same(first_enemy_array, current.data["enemies"]))
+	assert(is_same(first_pickup_array, current.data["world_pickups"]))
+	assert(Array(second_blend["world_pickups"]).size() == state.world_pickups.size())
 	assert(Vector2(second_blend["player_pos"]).distance_to(state.player_pos) < 12.0)
 
 func test_discovery_uses_cached_grid_visibility() -> void:
@@ -643,6 +1074,7 @@ func test_desktop_landscape_layout() -> void:
 	board._layout()
 	assert(board.board_rect.size.x > 900.0 and board.board_rect.size.y == 800.0)
 	for rect in board.buttons.values(): assert(Rect2(Vector2.ZERO, board.size).encloses(Rect2(rect)))
+	assert(not board.buttons.has("attack") and board.buttons.size() == 4)
 	board.free()
 
 func test_close_camera_tracks_player() -> void:
@@ -701,6 +1133,50 @@ func test_new_enemy_roles() -> void:
 	var blade := state._make_enemy("blade", Vector2(300, 300), 7)
 	assert(state._enemy_move_speed(blade) > 190.0)
 
+func test_back_half_expedition_roles() -> void:
+	var state: RunState = RunStateScript.new()
+	state.walls.clear()
+	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2.UP * 400.0, 8)
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["kind"]) == "ice_hex")
+	assert(Vector2(Dictionary(ice["action"])["target"]).distance_to(state.player_pos) <= 21.0)
+	ice["pos"] = state.player_pos + Vector2.UP * 250.0
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["kind"]) == "ice_cone")
+	var fire := state._make_enemy("fire_caster", state.player_pos + Vector2.UP * 400.0, 8)
+	state._choose_enemy_action(fire)
+	assert(String(Dictionary(fire["action"])["kind"]) == "shoot" and String(Dictionary(fire["action"])["label"]) == "firebolt")
+	state.projectiles.clear()
+	state._spawn_projectile(fire)
+	assert(String(state.projectiles[0]["kind"]) == "firebolt" and is_equal_approx(Vector2(state.projectiles[0]["vel"]).length(), 465.0))
+	fire["pos"] = state.player_pos + Vector2.UP * 150.0
+	state._choose_enemy_action(fire)
+	assert(String(Dictionary(fire["action"])["kind"]) == "fire_circle")
+	var archer := state._make_enemy("archer", state.player_pos + Vector2.UP * 400.0, 5)
+	state._choose_enemy_action(archer)
+	state.projectiles.clear()
+	state._spawn_projectile(archer)
+	var arrow_speed := Vector2(state.projectiles[0]["vel"]).length()
+	assert(arrow_speed >= 680.0 and arrow_speed <= 720.0)
+	var knight := state._make_enemy("knight", state.player_pos + Vector2.UP * 220.0, 28)
+	state._choose_enemy_action(knight)
+	assert(String(Dictionary(knight["action"])["technique_id"]) == "thrust")
+	knight["pos"] = state.player_pos + Vector2.UP * 150.0
+	state._choose_enemy_action(knight)
+	assert(String(Dictionary(knight["action"])["technique_id"]) == "heavy_cleave")
+	assert(float(knight["posture_max"]) >= 20.0 and state._enemy_move_speed(knight) <= 60.0)
+	var wolf := state._make_enemy("werewolf", state.player_pos + Vector2.UP * 125.0, 42)
+	state._choose_enemy_action(wolf)
+	assert(String(Dictionary(wolf["action"])["kind"]) == "claw_combo")
+	var leap_chain: Dictionary = state._werewolf_pounce_combo(Vector2.DOWN)
+	assert(String(leap_chain["kind"]) == "pounce_combo" and int(leap_chain["pounce_damage"]) > 0)
+	state.hazards.clear()
+	state._spawn_hex(ice, state.player_pos, "ice_hex")
+	assert(String(state.hazards[0]["kind"]) == "ice_hex" and float(state.hazards[0]["trigger_at"]) >= 0.8)
+	state.hazards.clear()
+	state._spawn_ice_cone(ice, Vector2.DOWN)
+	assert(String(state.hazards[0]["kind"]) == "ice_cone" and float(state.hazards[0]["radius"]) >= 280.0)
+
 func test_progressive_expedition_rooms() -> void:
 	for seed in [11, 22, 33, 44, 55, 739391]:
 		var layout: Dictionary = FloorGeneratorScript.generate(seed, false)
@@ -713,13 +1189,22 @@ func test_progressive_expedition_rooms() -> void:
 		for index in range(7): assert(int(Dictionary(areas[index])["progression_part"]) == index + 1)
 		for connection in connections:
 			assert(not bool(connection["shortcut"]))
-		var kinds: Array[String] = []
-		for templates in Dictionary(layout["encounters"]).values():
-			for enemy in Array(templates): kinds.append(String(enemy["kind"]))
-		assert(kinds.has("warden") and kinds.has("brute") and kinds.has("hexer"))
-		for enemy in Array(Dictionary(layout["encounters"])[0]): assert(String(enemy["kind"]) == "boar")
-		for enemy in Array(Dictionary(layout["encounters"])[1]): assert(String(enemy["kind"]) in ["boar", "hound"])
-		for enemy in Array(Dictionary(layout["encounters"])[2]): assert(String(enemy["kind"]) in ["bandit", "hound"])
+		var encounters: Dictionary = layout["encounters"]
+		var expected_rosters := [
+			{"boar": 8},
+			{"boar": 5, "hound": 4},
+			{"bandit": 5, "hound": 5},
+			{"ice_caster": 6, "fire_caster": 5},
+			{"bandit": 7, "archer": 5},
+			{"knight": 3, "archer": 10},
+			{"knight": 2, "archer": 5, "ice_caster": 2, "fire_caster": 2, "werewolf": 1, "hound": 2},
+		]
+		for part in range(7):
+			var actual: Dictionary = {}
+			for enemy in Array(encounters[part]):
+				var kind := String(enemy["kind"])
+				actual[kind] = int(actual.get(kind, 0)) + 1
+			assert(actual == expected_rosters[part], "unexpected Region %d roster: %s" % [part + 1, actual])
 
 func test_required_passages_have_generous_clearance() -> void:
 	# This is intentionally much wider than the player's collision radius. A
@@ -763,7 +1248,7 @@ func test_overlay_map_passes_input_through() -> void:
 
 func test_region_streaming_limits_active_world() -> void:
 	var expedition: RunState = RunStateScript.new(false)
-	expedition.start_run("duelist", "expedition", 717)
+	expedition.start_run("wayfarer", "expedition", 717)
 	expedition._build_enemy_spatial_index()
 	assert(expedition.loaded_region_ids.size() <= 3)
 	assert(expedition._loaded_floor_shapes.size() < expedition.floor_shapes.size())
@@ -775,9 +1260,28 @@ func test_region_streaming_limits_active_world() -> void:
 	assert(expedition.loaded_region_ids.has(3) and expedition.loaded_region_ids.has(4) and expedition.loaded_region_ids.has(5))
 	assert(not expedition.loaded_region_ids.has(int(first_loaded[0])))
 	var campaign: RunState = RunStateScript.new(false)
-	campaign.start_run("duelist", "campaign_lab", 99117)
+	campaign.start_run("wayfarer", "campaign_lab", 99117)
 	assert(not campaign.loaded_region_ids.is_empty())
 	assert(campaign._loaded_floor_shapes.size() < campaign.floor_shapes.size())
+
+func test_expedition_streaming_follows_route_graph() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "expedition", 717)
+	state.current_area_id = 2
+	state.player_pos = Vector2(state.areas[2]["center"])
+	state.run_graph = {
+		"nodes": state.run_graph["nodes"],
+		"edges": [
+			{"from": 0, "to": 2},
+			{"from": 2, "to": 5},
+		],
+	}
+	state._apply_shortcut_world_state()
+	assert(state.loaded_region_ids.has(0))
+	assert(state.loaded_region_ids.has(2))
+	assert(state.loaded_region_ids.has(5))
+	assert(not state.loaded_region_ids.has(1))
+	assert(not state.loaded_region_ids.has(3))
 
 func test_full_map_supports_arbitrary_discovered_layers() -> void:
 	var board = GameBoardScript.new()
@@ -805,7 +1309,7 @@ func test_full_map_supports_arbitrary_discovered_layers() -> void:
 func test_camera_culls_offscreen_world() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("duelist", "campaign_lab", 1784339476686)
+	board.state.start_run("wayfarer", "campaign_lab", 1784339476686)
 	board.visual = board.state.snapshot()
 	board.board_area = Rect2(0, 0, 720, 960)
 	board.view_mode = "top_down"
@@ -821,7 +1325,7 @@ func test_camera_culls_offscreen_world() -> void:
 
 func test_lightweight_timeline_snapshots() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 717)
+	state.start_run("wayfarer", "campaign_lab", 717)
 	var full := state.snapshot()
 	var light := state.snapshot(true)
 	assert(not Dictionary(full["discovered_cells"]).is_empty())
@@ -836,36 +1340,28 @@ func test_generated_rooms_have_no_shields() -> void:
 
 func test_room_reward_progression() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "expedition", 101)
+	state.start_run("wayfarer", "expedition", 101)
 	state.carried_xp = state.next_upgrade_cost()
-	for enemy in state.enemies:
-		if int(enemy["area_id"]) == 1: enemy["hp"] = 0
-	state._remove_dead_enemies()
-	state.carried_xp = state.next_upgrade_cost()
-	state.current_area_id = 1
-	state.player_pos = Vector2(state.areas[2]["center"])
-	state._update_exploration(true)
-	assert(state.upgrade_pending and state.upgrade_context == "area_exit")
-	assert(state.upgrade_choices.size() == 3)
-	var choice := state.upgrade_choices[0]
+	assert(state.level_up_context() == "expedition")
+	var choice := state.available_level_up_options()[0]
 	assert(state.choose_upgrade(choice))
-	assert(not state.upgrade_pending and state.upgrades.has(choice) and state.carried_xp == 0)
+	assert(state.upgrades.has(choice) and state.carried_xp == 0)
 	assert(state.upgrade_count == 1 and state.next_upgrade_cost() == 10)
-	state.start_run("guardian", "campaign_lab", 102)
+	state.start_run("wayfarer", "campaign_lab", 102)
 	state.carried_xp = 16
 	state.player_pos = state.bonfire_pos
 	state.player_hp = 1
 	assert(state.activate_waystone() and not state.upgrade_pending and state.player_hp == state.player_max_hp)
 	assert(state.secured_xp == 16 and state.can_learn_at_waystone())
-	assert(state.learn_at_waystone() and state.upgrade_pending and state.upgrade_context == "waystone")
-	assert(state.choose_upgrade(state.upgrade_choices[0]))
-	assert(state.upgrade_pending and state.carried_xp == 10)
-	assert(state.choose_upgrade(state.upgrade_choices[0]))
+	assert(state.learn_at_waystone())
+	assert(state.choose_upgrade(state.available_level_up_options()[0]))
+	assert(state.carried_xp == 10 and state.secured_xp == 10)
+	assert(state.choose_upgrade(state.available_level_up_options()[0]))
 	assert(state.upgrade_count == 2 and state.carried_xp == 0)
 
 func test_mode_policies_and_death() -> void:
 	var expedition: RunState = RunStateScript.new(false)
-	expedition.start_run("duelist", "expedition", 201)
+	expedition.start_run("wayfarer", "expedition", 201)
 	assert(expedition.mode_id == "expedition")
 	assert(String(expedition.mode_rules()["death_policy"]) == "end_run")
 	assert(not bool(expedition.mode_rules()["waystone_available"]))
@@ -879,7 +1375,7 @@ func test_mode_policies_and_death() -> void:
 	assert(not expedition.run_active and expedition.run_failed)
 
 	var campaign: RunState = RunStateScript.new(false)
-	campaign.start_run("duelist", "campaign_lab", 202)
+	campaign.start_run("wayfarer", "campaign_lab", 202)
 	assert(campaign.mode_id == "campaign_lab")
 	assert(String(campaign.mode_rules()["death_policy"]) == "waystone")
 	assert(bool(campaign.mode_rules()["waystone_available"]))
@@ -893,7 +1389,7 @@ func test_mode_policies_and_death() -> void:
 
 func test_layered_friendly_forest_topology() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 212)
+	state.start_run("wayfarer", "campaign_lab", 212)
 	assert(state.current_layer == "forest_surface")
 	assert(state.current_ground_color().is_equal_approx(Color("82b86d")))
 	assert(state.areas.filter(func(area: Dictionary) -> bool: return String(area.get("layer", "")) == "ruin_depths").size() == 3)
@@ -928,7 +1424,7 @@ func test_layered_friendly_forest_topology() -> void:
 
 func test_waystone_requires_deliberate_activation() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 203)
+	state.start_run("wayfarer", "campaign_lab", 203)
 	state.carried_xp = 6
 	state.player_hp = 2
 	state.player_pos = state.bonfire_pos + Vector2.RIGHT * (state.WAYSTONE_RANGE + 1.0)
@@ -944,7 +1440,7 @@ func test_waystone_requires_deliberate_activation() -> void:
 
 func test_shortcut_and_waystone_persistence() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("reaver", "campaign_lab", 303)
+	state.start_run("wayfarer", "campaign_lab", 303)
 	var original_count := state.enemies.size()
 	state.player_pos = state.shortcut_start_pos
 	assert(not state.unlock_shortcut())
@@ -964,7 +1460,7 @@ func test_shortcut_and_waystone_persistence() -> void:
 	state._remove_dead_enemies()
 	state.player_pos = state.bonfire_pos
 	assert(state.activate_waystone())
-	assert(state.player_hp == state.player_max_hp and state.potions == 1)
+	assert(state.player_hp == state.player_max_hp and state.potions == state.healing_capacity())
 	assert(state.enemies.size() == original_count and state.shortcut_unlocked)
 	assert(state.carried_xp >= 5 and state.secured_xp == state.carried_xp)
 	state.carried_xp += 3
@@ -977,7 +1473,7 @@ func test_shortcut_and_waystone_persistence() -> void:
 
 func test_provisional_progress_accounting() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 304)
+	state.start_run("wayfarer", "campaign_lab", 304)
 	state.carried_xp = 5
 	var first_trace := Vector2i(91, 91)
 	state.discovered_cells[first_trace] = true
@@ -1013,7 +1509,7 @@ func test_provisional_progress_accounting() -> void:
 
 func test_visibility_memory_and_awareness() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "auto", 404)
+	state.start_run("wayfarer", "auto", 404)
 	var discovered_before := state.discovered_cells.size()
 	var old_pos := state.player_pos
 	state.player_pos += Vector2(0, -120)
@@ -1032,7 +1528,7 @@ func test_visibility_memory_and_awareness() -> void:
 
 func test_xp_death_recovery() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 505)
+	state.start_run("wayfarer", "campaign_lab", 505)
 	state.carried_xp = 9
 	var death_pos := state.player_pos + Vector2.UP * 80.0
 	state.player_pos = death_pos
@@ -1064,7 +1560,10 @@ func test_hex_hazard() -> void:
 
 func test_save_round_trip() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("guardian", "campaign_lab", 606)
+	state.start_run("wayfarer", "campaign_lab", 606)
+	state.track_property_ranks["weaponry_power"] = 2
+	state.player_weapon_art_library.assign(["prototype_drawing_cut"])
+	state.player_equipped_weapon_art = "prototype_drawing_cut"
 	state.player_hp -= 2
 	state.carried_xp = 13
 	state.player_pos = state.shortcut_unlock_pos
@@ -1078,6 +1577,10 @@ func test_save_round_trip() -> void:
 	assert(restored.player_hp == state.player_hp)
 	assert(restored.mode_id == "campaign_lab" and restored.progression_mode == "waystone" and restored.carried_xp == 13)
 	assert(restored.secured_xp == 13 and restored.shortcut_unlocked and restored.run_seed == 606)
+	assert(String(restored.player_actor()["weapon_frame"]) == "sword")
+	assert(int(restored.track_property_ranks["weaponry_power"]) == 2)
+	assert(restored.player_equipped_weapon_art == "prototype_drawing_cut")
+	assert(Dictionary(restored.enemies[0]).has("attributes") and Dictionary(restored.enemies[0]).has("weapon_frame"))
 
 func test_version_one_save_migration() -> void:
 	var state: RunState = RunStateScript.new()
@@ -1122,7 +1625,7 @@ func test_version_three_attack_migration() -> void:
 
 func test_version_twelve_world_grammar_migration() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 99117)
+	state.start_run("wayfarer", "campaign_lab", 99117)
 	state.carried_xp = 11
 	state.secured_xp = 5
 	var path := "user://waystone-test-v12-world-migration.save"

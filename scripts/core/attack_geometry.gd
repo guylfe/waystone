@@ -2,12 +2,15 @@ class_name AttackGeometry
 extends RefCounted
 
 const TECHNIQUES := {
+	"opening_cut": {"motion": "arc", "start_angle": -0.62, "end_angle": 0.42, "radius": 9.0, "multi": false, "label": "Opening cut"},
 	"quick_cut": {"motion": "arc", "start_angle": -0.57, "end_angle": 0.57, "radius": 9.0, "multi": false, "label": "Short cut"},
+	"reverse_cut": {"motion": "arc", "start_angle": 0.57, "end_angle": -0.57, "radius": 11.0, "multi": false, "label": "Returning cut"},
 	"diagonal_cut": {"motion": "arc", "start_angle": -0.96, "end_angle": 0.70, "radius": 11.0, "multi": false, "label": "Diagonal cut"},
 	"broad_sweep": {"motion": "arc", "start_angle": -1.396, "end_angle": 1.396, "radius": 14.0, "multi": true, "label": "Broad sweep"},
 	"heavy_cleave": {"motion": "arc", "start_angle": -1.658, "end_angle": 1.658, "radius": 18.0, "multi": true, "label": "Heavy cleave"},
 	"heavy_chop": {"motion": "arc", "start_angle": -0.48, "end_angle": 0.18, "radius": 18.0, "multi": false, "label": "Heavy chop"},
 	"thrust": {"motion": "thrust", "radius": 10.0, "multi": false, "label": "Thrust"},
+	"driving_cut": {"motion": "thrust", "radius": 8.0, "multi": false, "label": "Driving cut"},
 	"bite": {"motion": "bite", "radius": 24.0, "multi": false, "label": "Bite"},
 	"forward_smash": {"motion": "smash", "radius": 58.0, "multi": true, "label": "Heavy smash"},
 }

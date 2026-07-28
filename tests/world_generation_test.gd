@@ -5,6 +5,7 @@ const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 
 func _init() -> void:
 	test_large_seven_part_forest_expedition()
+	test_expedition_macro_structure_contract()
 	test_semantic_world_grammar_batch()
 	test_early_forest_readability_contract()
 	test_boss_marker_uses_actual_spawn()
@@ -69,6 +70,47 @@ func test_large_seven_part_forest_expedition() -> void:
 		for enemy in Array(Dictionary(layout["encounters"])[1]): assert(String(enemy["kind"]) in ["boar", "hound"])
 		for enemy in Array(Dictionary(layout["encounters"])[2]): assert(String(enemy["kind"]) in ["bandit", "hound"])
 
+func test_expedition_macro_structure_contract() -> void:
+	for seed in [11, 717, 424242, 1784339476686]:
+		var layout: Dictionary = FloorGeneratorScript.generate(seed, false)
+		var recipe: Array = layout["route_recipe"]
+		var run_graph: Dictionary = layout["run_graph"]
+		var catalog: Dictionary = layout["locale_catalog"]
+		var validation: Dictionary = layout["validation"]
+		assert(recipe.size() == 7)
+		assert(int(run_graph["start"]) == 0 and int(run_graph["goal"]) == 6)
+		assert(Array(run_graph["nodes"]).size() == 7)
+		assert(Array(run_graph["edges"]).size() == 6)
+		assert(Array(Dictionary(catalog["friendly_forest"])["socket_contract"]) == ["encounter", "reward", "respite", "continuation"])
+		assert(int(validation["local_branch_count"]) >= 7)
+		assert(int(validation["local_reconnection_count"]) >= 7)
+		assert(int(validation["optional_pocket_count"]) >= 7)
+		assert(int(validation["reward_socket_count"]) >= 7)
+		var pacing_phases: Dictionary = {}
+		var reward_socket_ids: Dictionary = {}
+		for area_value in Array(layout["areas"]):
+			var area: Dictionary = area_value
+			var local_graph: Dictionary = area["route_graph"]
+			assert(int(local_graph["branch_count"]) >= 1)
+			assert(int(local_graph["reconnection_count"]) >= 1)
+			assert(int(local_graph["optional_pocket_count"]) >= 1)
+			assert(not Array(area["encounter_sockets"]).is_empty())
+			assert(not Array(area["reward_sockets"]).is_empty())
+			assert(not Array(area["respite_sockets"]).is_empty())
+			assert(not String(area["arrival_text"]).is_empty())
+			pacing_phases[String(Dictionary(area["pacing"])["phase"])] = true
+			for socket_value in Array(area["reward_sockets"]):
+				reward_socket_ids[String(Dictionary(socket_value)["id"])] = true
+			for encounter_value in Array(Dictionary(layout["encounters"])[int(area["id"])]):
+				var encounter: Dictionary = encounter_value
+				if String(encounter.get("role", "")) == "boss": continue
+				assert(encounter.has("formation"))
+				assert(encounter.has("pacing_pressure"))
+		assert(pacing_phases.size() == 7)
+		for pickup_value in Array(layout["pickups"]):
+			var pickup: Dictionary = pickup_value
+			assert(reward_socket_ids.has(String(pickup.get("socket_id", ""))))
+
 func test_semantic_world_grammar_batch() -> void:
 	for seed in range(1, 101):
 		var expedition: Dictionary = FloorGeneratorScript.generate(seed * 104729, false)
@@ -101,15 +143,16 @@ func test_boss_marker_uses_actual_spawn() -> void:
 			if String(area.get("kind", "")) == "boss": boss_area = area
 		assert(not boss_area.is_empty() and boss_area.has("boss_pos"))
 		var matching_bosses := 0
+		var expected_kind := "warden" if campaign else "werewolf"
 		for template in Array(Dictionary(layout["encounters"])[int(boss_area["id"])]):
-			if String(template["kind"]) == "warden":
+			if String(template["kind"]) == expected_kind:
 				matching_bosses += 1
 				assert(Vector2(template["pos"]).distance_to(Vector2(boss_area["boss_pos"])) < 0.01)
 		assert(matching_bosses == 1)
 
 func test_organic_route_reachability() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "expedition", 717)
+	state.start_run("wayfarer", "expedition", 717)
 	assert(state.world_size.x > 15000.0)
 	for area_index in range(state.areas.size() - 1):
 		state.current_area_id = area_index
@@ -155,7 +198,7 @@ func test_layered_campaign_loop() -> void:
 	for transition in Array(layout["transitions"]):
 		assert(Vector2(transition["from_pos"]).distance_to(Vector2(transition["to_pos"])) < 0.01)
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 99117)
+	state.start_run("wayfarer", "campaign_lab", 99117)
 	var stairs: Dictionary = state.transitions[0]
 	state.player_pos = Vector2(stairs["from_pos"])
 	assert(state.use_transition())
@@ -174,7 +217,7 @@ func test_shortcuts_are_binding_topology() -> void:
 	for seed in [99117, 1784339476686, 424242]:
 		for shortcut_index in range(2):
 			var state: RunState = RunStateScript.new(false)
-			state.start_run("duelist", "campaign_lab", seed)
+			state.start_run("wayfarer", "campaign_lab", seed)
 			var shortcut: Dictionary = state.shortcuts[shortcut_index]
 			state.current_layer = String(shortcut.get("layer", state.current_layer))
 			state.current_area_id = state._area_id_at_position(Vector2(shortcut["far_pos"]), state.current_layer)
@@ -213,7 +256,7 @@ func _navigation_path_length(state: RunState, start: Vector2, finish: Vector2) -
 func test_legacy_shortcut_state_is_not_imported() -> void:
 	var path := "user://legacy-shortcut-migration-test.save"
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 99117)
+	state.start_run("wayfarer", "campaign_lab", 99117)
 	state.shortcuts[0]["unlocked"] = true
 	state.shortcut_unlocked = true
 	assert(state.save_run(path))
@@ -232,7 +275,7 @@ func test_legacy_shortcut_state_is_not_imported() -> void:
 
 func test_layer_discovery_is_independent() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("duelist", "campaign_lab", 8080)
+	state.start_run("wayfarer", "campaign_lab", 8080)
 	var shared_position := Vector2(state.transitions[0]["from_pos"])
 	state.player_pos = shared_position
 	state._update_exploration(true)

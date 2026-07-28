@@ -7,8 +7,8 @@ func _initialize() -> void:
 	DisplayServer.window_set_size(Vector2i(1100, 760))
 	await process_frame
 	await process_frame
-	scene.state.start_run("duelist", "expedition", 739391)
-	for area_id in range(3):
+	scene.state.start_run("wayfarer", "expedition", 739391)
+	for area_id in range(7):
 		scene.state.current_area_id = area_id
 		scene.state.player_pos = Vector2(scene.state.areas[area_id]["center"])
 		scene.state._apply_shortcut_world_state()

@@ -12,6 +12,8 @@ var _hazard_pool: Array[Dictionary] = []
 var _hazards: Array[Dictionary] = []
 var _effect_pool: Array[Dictionary] = []
 var _effects: Array[Dictionary] = []
+var _pickup_pool: Array[Dictionary] = []
+var _pickups: Array[Dictionary] = []
 var _following_by_id: Dictionary = {}
 
 func capture(state: RunState) -> Dictionary:
@@ -49,9 +51,14 @@ func capture(state: RunState) -> Dictionary:
 	_capture_flat_array(state.projectiles, _projectile_pool, _projectiles)
 	_capture_flat_array(state.hazards, _hazard_pool, _hazards)
 	_capture_flat_array(state.effects, _effect_pool, _effects)
+	# Pickups are static most of the time, but they must still be part of every
+	# streamed frame. Otherwise they appear while time is frozen (full snapshot)
+	# and vanish as soon as movement switches to the optimized frame path.
+	_capture_flat_array(state.world_pickups, _pickup_pool, _pickups)
 	data["projectiles"] = _projectiles
 	data["hazards"] = _hazards
 	data["effects"] = _effects
+	data["world_pickups"] = _pickups
 	return data
 
 func blend(current: PresentationFrame, following: PresentationFrame, weight: float) -> Dictionary:
@@ -94,9 +101,11 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	_blend_flat_array(Array(current_data.get("projectiles", [])), Array(following_data.get("projectiles", [])), amount, _projectile_pool, _projectiles, ["pos"], [])
 	_blend_flat_array(Array(current_data.get("hazards", [])), Array(following_data.get("hazards", [])), amount, _hazard_pool, _hazards, ["pos"], ["elapsed"])
 	_blend_flat_array(Array(current_data.get("effects", [])), Array(following_data.get("effects", [])), amount, _effect_pool, _effects, ["pos"], ["elapsed"])
+	_blend_flat_array(Array(current_data.get("world_pickups", [])), Array(following_data.get("world_pickups", [])), amount, _pickup_pool, _pickups, ["pos"], [])
 	data["projectiles"] = _projectiles
 	data["hazards"] = _hazards
 	data["effects"] = _effects
+	data["world_pickups"] = _pickups
 	return data
 
 func _copy_enemy(source: Dictionary, target: Dictionary, default_layer: String) -> void:

@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.32`. Android version codes increase independently so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.62`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.62: visible hitstun and broken commitments
+
+Interrupting a foe now preserves the weapon pose and impact direction that caused it. A regular interrupt shows a contact burst, knocked-aside weapon, directional recoil, motion trail, and a readable `REELING` state; posture breaks use a stronger displacement and a separate stance-shatter burst. Hounds visibly skid out of interrupted pounces, while boar momentum armour still produces only a strain response and carries the charge through. These are presentation-only offsets, so collision, targeting, and the frozen-time decision model remain unchanged.
+
+### v0.0.61: responsive contact and differentiated pounces
+
+Every player melee form now damages every enemy physically crossed by its world-space weapon geometry, while each target can still be hit only once per individual combo strike. Ordinary clean hits produce authored, archetype-specific reactions instead of allowing an uncommitted foe to begin an unavoidable counter during the player's recovery. This creates a defensive decision when time freezes without protecting whiffs, continued combos, attacks from a second enemy, already-active trades, or grounded heavy attacks. Hounds now pounce more quickly but can be interrupted throughout the leap; boars telegraph longer and accelerate more slowly, gaining momentum armour only during the committed portion of the charge. Strong posture attacks can still stop that armoured charge.
 
 An original Android-first committed-action roguelike prototype inspired by the low-friction, high-mastery design philosophy of classic mobile roguelikes.
 
@@ -8,16 +16,65 @@ An original Android-first committed-action roguelike prototype inspired by the l
 
 - Tap or quick-swipe: take a short, roughly 0.1-second movement pulse.
 - Swipe and hold: continue moving in that direction; release to freeze time.
-- Tap an enemy (or swipe onto it): commit to the equipped weapon's attack technique.
+- Tap an enemy within plausible opening-strike distance: commit to one compact basic strike. A clearly distant melee target instead becomes a movement touch; ranged weapons keep their long-distance attack input.
 - Tap an empty reachable position: move precisely toward it.
-- Choose Duelist, Guardian, or Reaver from the loadout tabs; changing identity restarts the expedition.
-- Tap the context-sensitive Defense button: Dodge and Block then take a direction, while Endure activates immediately.
-- As the prototype Duelist, tap Sweep and choose a direction to commit to a wide posture-breaking cut.
+- The Wayfarer is the only prototype character. Press an enemy to begin a compact cut; keep holding through its recovery to commit the next strike, or release to finish the current one and freeze time. An uninterrupted original touch always remains a combo hold, even if it drifts into a swipe. If a finger rises accidentally, touch the field again at any point before the current strike ends and keep holding: it will continue normally if the finger is still down at the recovery boundary. Only a directional drag from that later re-touch queues movement after the strike and prevents a further combo link. The chain progresses through compact, reverse, and driving hitboxes without a separate attack-mode button.
+- Tap Dodge and choose a direction to use the equipped defensive action.
+- Weapon Skill is the first row of the Weaponry track. Its first purchasable point immediately offers Sweeping Cut or Drawing Cut; the chosen skill is a Weaponry commitment, while the unchosen skill returns through a later Waystone gate. Once both are learned they can be swapped only at a Waystone.
+- Tap Sheet (or press `C`) to inspect universal attributes, equipment by body slot, combat identity, and five compact progression tracks arranged in a three-column grid. Tap equipment or a track property for its detail panel.
 - Hold an enemy while time is frozen for qualitative action, speed, reach, stability, and role information.
+
+### v0.0.60: obstruction-aware enemy locomotion
+
+Enemy movement state now comes from real world-space displacement rather than an intended movement action. Actors face the direction they physically travel, steer around nearby bodies with deterministic separation, refresh stale navigation at a bounded rate, and abandon an obstructed commitment when repeated recovery attempts cannot make progress. A blocked enemy therefore no longer flashes `MOVING` while standing still or spends an entire action pressing into the same wall or actor.
+
+### v0.0.49: exploratory woodland pass
+
+Expedition routes now use comparably wide, naturally colored woodland corridors instead of a visibly privileged main lane. Continuations remain something to discover: on reaching a far edge, two understated forest boundary stones make the pass legible without exposing it on the map or from across the locale. The Wayfarer begins with 20 health, and sword cuts recover more quickly while retaining their committed three-strike structure.
+
+### v0.0.50: supplies are physical choices
+
+Visible supplies now use a high-contrast cache marker and a short-range `SUPPLY` label in the world, while remaining absent from unexplored map space and off-route placement rules. Replacing a full belt slot drops the entire displaced stack at the player's feet rather than deleting it.
+
+### v0.0.51: persistent supply discoveries
+
+After a supply has entered explored territory, it remains visibly marked whenever it is on camera. Movement out of the current awareness radius no longer makes an uncollected item blink or disappear.
+
+### v0.0.52: supplies above foliage
+
+Supplies now render above trees, walls, and other isometric world solids. Their marker is an interaction affordance rather than scenery, so camera movement and depth ordering cannot hide an already discovered item.
+
+### v0.0.53: streamed supply persistence
+
+Movement now carries the complete pickup list through the optimized presentation frame path. A discovered supply stays visible while time advances, instead of appearing only during frozen-time snapshots.
+
+### v0.0.59: stronger health ranks
+
+Each Health rank in Vigilant now grants `+3` maximum health and immediately restores those same 3 points, rather than granting only one.
+
+### v0.0.58: exact upgrade effects
+
+Upgrade confirmations now state the precise mechanical contribution of the next rank: for example maximum weapon damage `+1 (3 → 4)`, maximum health `+1`, movement speed `+3.5%`, dodge travel speed `+24 units/sec`, potion healing `+1 HP`, or posture-break time `+0.08 seconds`. Dynamic effects include the current-to-next value where that is meaningful. Features whose prototype mechanics are not active yet are identified honestly instead of implying a nonexistent benefit.
+
+### v0.0.57: deliberate upgrade choices
+
+Eligible upgrade rows now open a confirmation panel rather than spending XP immediately. Each panel explains the property, previews its next rank, shows the cost and remaining XP, and offers Confirm or Cancel. Weapon Skill has a dedicated chooser: the Weaponry row remains readable, then opens a two-option dialog describing Sweeping Cut and Drawing Cut before Learn is enabled. Locked and ordinary non-purchasable properties continue to use the informational detail panel.
+
+### v0.0.56: grouped level-up sheet
+
+Leveling once again preserves the character sheet's full progression structure. Weaponry, Evasion, Vigilant, Fieldcraft, and Openings remain visible as distinct track panels in two rows of three, with track rank and gated future properties retained for context. Eligible upgrades are moderately enlarged gold rows inside their own tracks; inactive rows compress to make room without disappearing. The initial Sweeping Cut and Drawing Cut choice remains inside Weaponry. Level-up mode temporarily hides belt repacking, dims competing world controls, and uses the same hierarchy across phone and wide layouts.
+
+### v0.0.55: touch intent and level-up focus
+
+Melee enemy touches now distinguish an intended opening strike from a movement touch that happened to land on a distant target. The check is deliberately an input-intent heuristic: it uses only the opening attack's nominal reach, target size, a generous anticipation allowance, and a nearby visible foe in the same touch direction. It does not predict enemy actions or guarantee a hit, so judging range and timing a pre-emptive attack remain part of play. Player ranged weapons preserve direct long-distance targeting. The level-up version of the character sheet is now a focused three-column grid of large, whole-card upgrades; it temporarily hides belt repacking and the dense full-track table so each choice is legible and comfortably tappable on a phone.
+
+### v0.0.54: Expedition macro-structure
+
+The seven-part Friendly Forest now runs through an explicit route graph and reusable locale contract. Every locale publishes local branches, reconnections, optional reward pockets, encounter sockets, respite space, and a discovered continuation threshold; enemy groups and physical supplies bind to those geographic roles instead of arbitrary encounter-array positions. The run moves through seven named pacing phases from orientation to climax, with a brief non-modal arrival card and distinct physical boundary treatments, while the route and its exit remain undisclosed until explored. Runtime region streaming follows graph adjacency, so future expeditions can introduce forks and mixed biomes without replacing the current traversal or persistence systems.
 - Tap ISO or TOP while time is frozen to switch presentation without changing simulation state.
 - Tap Potion to heal, Wait to surrender 0.5 seconds, or Reset to restart.
 - Tap after death or press `R`: restart the expedition.
-- On desktop, hold a mouse click over the playfield for continuous context-sensitive movement or attacks; move the pointer to steer.
+- On desktop, hold a mouse click over an enemy to continue an attack chain, or hold `F` to attack from the current movement direction (or current facing when still). Release after any strike to stop the chain after that recovery.
 - Hold `WASD` or the arrow keys for continuous movement. Opposing axes combine, so two simultaneous direction keys move diagonally.
 
 The first expedition uses continuous positions, world-space weapon hitboxes, physical projectiles, persistent hazards, and a 120 Hz fixed-step simulation. Time is frozen whenever the player is ready. Locomotion is granular and interruptible, while strikes and skills commit through startup, active, and recovery phases.
@@ -36,7 +93,15 @@ v0.0.31 moves Brookwood's brook and the Old Forest Road out of the solid-object 
 
 v0.0.32 strengthens the temporal presentation: stopped time has a clearer saturated-blue cast, while longer easing into and out of the frozen palette makes each change of temporal state visibly readable even around short movement pulses.
 
-The seeded Friendly Forest Expedition is now a forward-directed sequence of seven CQ2-scale progression parts with no Waystone or return shortcut. Each part is a large organic region containing several clearings, broad winding paths, a side loop, multiple encounter groups, its own escalation profile, and progressively denser forest identity. The current all-Forest route is represented as a seven-slot locale recipe so later expeditions can substitute Bridge, Town, Castle, Dungeon, and other locale profiles at any global progression position without changing the difficulty contract. The seventh part places its Warden and map marker from one authoritative boss definition.
+v0.0.33 completes the back half of the Friendly Forest Expedition. Elder Grove introduces separate Ice and Fire Casters: ice forms a delayed ground circle or pushes an expanding close-range cone, while fire erupts around the caster or launches a gently tracking firebolt. Rootbound Woods uses coordinated Bandit and Archer groups, with faster but still evadable arrows. Forest Ruins fields slow, high-health Two-Handed Knights with exceptional posture, a wide greatsword cleave, and a long thrust, backed by archers. Heartwood Approach places two knights among archers and both caster schools before a Werewolf boss arena. The Werewolf pounces, chains pounces into rapid left-right claws, uses a standing claw combination, and evades during pounce recovery; two hounds accompany it. Ice circles and cones fill from world-space shapes in both top-down and isometric views.
+
+v0.0.34 establishes the shared combat foundation without committing to a final player character sheet. Every actor now has the same universal attribute vocabulary (health, speed, stealth, awareness, resolve, intelligence, and faith), hidden combat properties, a weapon frame, and an ability identity. The eight player-facing weapon frames—Sword, Hand Axe, Zweihander, Spear, Twin Knives, Bow, Impact Weapon, and Staff—each define a basic action and two divergent future Weapon Arts. Natural and unarmed frames use the same structure for creatures and future edge cases. Existing enemies retain their current behavior while being mapped to these frames, and save version 14 preserves the new profile data while safely hydrating earlier saves.
+
+v0.0.39 replaces the temporary three-class roster with the Wayfarer and makes the character foundation playable. The responsive character sheet presents universal attributes, eight body/equipment slots, the equipped Sword and Dodge, known Arts, and five small ranked tracks: Weaponry, Evasion, Vigilant, Fieldcraft, and Openings. Track properties have CQ-style repeated ranks and commitment gates, use XP through the existing mode-specific upgrade flow, and modify the shared combat, perception, potion, posture, and cooldown systems. Save version 15 preserves tracks, equipment, and learned/equipped Arts while migrating earlier saves safely.
+
+v0.0.40 replaces the overloaded `×1`/`×3` attack control with hold-to-commit chains. Pressing an enemy starts the opener immediately; the held input is sampled only at each recovery transition, so holding commits the next strike and releasing at any point finishes the current strike before frozen time returns. One, two, and three-strike sequences arise from the same simple input rather than timing a special selection. The action-bar Attack button is removed. Desktop has a dedicated hold-`F` forward attack using held movement direction or current facing, while mouse input follows the same press-and-hold rule.
+
+The seeded Friendly Forest Expedition is now a forward-directed sequence of seven CQ2-scale progression parts with no Waystone or return shortcut. Each part is a large organic region containing several clearings, broad winding paths, a side loop, multiple encounter groups, its own escalation profile, and progressively denser forest identity. The current all-Forest route is represented as a seven-slot locale recipe so later expeditions can substitute Bridge, Town, Castle, Dungeon, and other locale profiles at any global progression position without changing the difficulty contract. The seventh part places its Werewolf, two companion hounds, and map marker from one authoritative boss definition.
 
 The active world seed is shown on the map and can be copied, while the pre-run screen accepts an optional seed for repeatable expeditions. Organic floor capsules and irregular clearings are authoritative for movement and pathfinding; forest dressing preserves wide safety envelopes around every mandatory route. The runtime now streams active regions: Expedition keeps the current progression part and its immediate neighbors resident, while Campaign keeps the current region plus nearby and directly connected same-layer regions. Static terrain, walls, navigation, simulation, enemy queries, rendering, and action snapshots operate on that active set; the full lightweight world definition remains available for saves and the discovered map. Autosaves are debounced during ordinary play and flushed immediately for Waystones, transitions, shortcuts, upgrades, run starts, restarts, and application suspension. The translucent map remains non-modal: movement, combat, and HUD controls remain usable behind it, with only its Close button capturing input.
 
@@ -48,11 +113,11 @@ Campaign shortcuts are binding topology rather than markers placed over open flo
 
 Campaign Lab now makes provisional life explicit: integrated and at-risk XP occupy separate portions of the XP bar, the Shadow is marked and gently guides nearby recovery, and death accounts for retained XP, recoverable XP, forgotten map memory, and unanchored shortcuts. The Waystone activates only when deliberately tapped in range; that single action restores resources, revives enemies, and integrates XP, map memory, and shortcuts before optionally offering Learn or Continue.
 
-Enemies award XP. Expedition offers a three-choice upgrade after leaving a cleared area with enough XP. Campaign Lab leaves only experience earned since the last Waystone activation at a recoverable Shadow; dying again replaces the old Shadow. Integrated XP can be saved safely and spent on upgrades during a later Waystone activation.
+Enemies award XP. In Expedition, once enough XP is held and time is idle, Sheet becomes a highlighted Level Up entry: any currently eligible track property or Weapon Art can be bought directly there. Campaign Lab leaves only experience earned since the last Waystone activation at a recoverable Shadow; dying again replaces the old Shadow. Integrated XP can be safely spent through the same character-sheet level-up mode, but only while standing at a Waystone.
 
-The prototype Duelist combines Dodge with a diagonal cut and directional Sweeping Cut; Guardian uses a compact heavy chop, while Reaver uses a broad sweep. Enemy weapons now have distinct reusable techniques: quick cuts, thrusts, bites, forward smashes, and heavy cleaves. The same world-space pose drives collision and both visual projections. Fast enemies have deliberately low posture and can be interrupted, while grounded Brute and Warden attacks resist interruption after becoming active. Physical contact is deterministic, action information is qualitative, and cooldowns use visual progress rather than decimal timing.
+The Wayfarer currently combines Dodge with the Sword's compact basic strike and committed three-form sequence. Enemy weapons retain distinct reusable techniques: quick cuts, thrusts, bites, forward smashes, and heavy cleaves. The same world-space pose drives collision and both visual projections. Fast enemies have deliberately low posture and can be interrupted, while grounded Brute and Warden attacks resist interruption after becoming active. Physical contact is deterministic, action information is qualitative, and cooldowns use visual progress rather than decimal timing.
 
-Obstacle-aware route planning guides continuous enemy movement around organic floor boundaries, trees, ruins, and shortcut gates. The same close camera follows the player in isometric and top-down projections, including inverse-projected taps, swipes, attacks, hazards, and directional skills. Impacts use foreground bursts, floating damage, and player damage framing, while a persistent health bar remains at the top of the playfield. Guardian retains directional Block, while Reaver retains Endure. A small Reset control remains available during actions and after death.
+Obstacle-aware route planning guides continuous enemy movement around organic floor boundaries, trees, ruins, and shortcut gates. The same close camera follows the player in isometric and top-down projections, including inverse-projected taps, swipes, attacks, hazards, and directional skills. Impacts use foreground bursts, floating damage, and player damage framing, while a persistent health bar remains at the top of the playfield. A small Reset control remains available during actions and after death.
 
 Isometric is now the default presentation. Actor collision bodies render as projected ground footprints beneath compact circular models, and weapon capsules, impact shapes, hazards, and walls are derived from the same world-space geometry used by simulation. Isometric walls and actors share a depth-sorted render queue, foreground walls fade when they would conceal the player, the isometric camera has independent zoom and framing, and taps select the visible actor model when bodies overlap. Top-down remains available from the view toggle and uses the same projection-independent drawing primitives. Frozen-time frames no longer redraw continuously when nothing changes, while active playback interpolates between authoritative 120 Hz simulation snapshots and uses display synchronization for smooth frame pacing across common PC refresh rates. Press `H` on a development keyboard to show exact actor collision outlines.
 

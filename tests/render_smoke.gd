@@ -11,7 +11,7 @@ func _initialize() -> void:
 	scene.state.abandon_run()
 	scene.visual = scene.state.snapshot()
 	if not _capture("res://builds/setup-smoke.png"): return
-	scene.state.start_run("duelist", "expedition", 739391)
+	scene.state.start_run("wayfarer", "expedition", 739391)
 	scene.visual = scene.state.snapshot()
 	var streamed_origin: Vector2 = scene.state.player_pos
 	scene._begin_streamed_move(Vector2.RIGHT)
@@ -36,6 +36,52 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	if not _capture("res://builds/phone-smoke.png"): return
+	scene.character_sheet_open = true
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/character-sheet-phone-smoke.png"): return
+	scene.state.carried_xp = scene.state.next_upgrade_cost()
+	scene.visual = scene.state.snapshot()
+	scene.queue_redraw()
+	await process_frame
+	assert(scene.sheet_upgrade_rects.has("weaponry_power"))
+	assert(Rect2(scene.sheet_upgrade_rects["weaponry_power"]).size.y >= 40.0)
+	assert(Rect2(scene.sheet_upgrade_rects["weaponry_power"]).size.y <= 70.0)
+	assert(scene.sheet_property_rects.has("weaponry_handling"))
+	assert(scene.sheet_property_rects.has("evasion_clean_escape"))
+	assert(scene.sheet_property_rects.has("openings_composure"))
+	for option_value in scene.state.available_level_up_options():
+		var option := String(option_value)
+		if option.begins_with("learn_art:"):
+			assert(not scene.sheet_upgrade_rects.has(option))
+	assert(scene.sheet_upgrade_rects.has("weaponry_art"))
+	if not _capture("res://builds/level-up-sheet-phone-smoke.png"): return
+	scene._open_sheet_upgrade_confirmation("weaponry_power")
+	assert(String(scene.sheet_detail.get("kind", "")) == "upgrade")
+	scene.queue_redraw()
+	await process_frame
+	assert(scene.sheet_detail_confirm_rect.size.x > 0.0 and scene.sheet_detail_close_rect.size.x > 0.0)
+	if not _capture("res://builds/upgrade-confirm-phone-smoke.png"): return
+	scene.sheet_detail.clear()
+	scene._open_sheet_upgrade_confirmation("weaponry_art")
+	assert(String(scene.sheet_detail.get("kind", "")) == "weapon_skill")
+	scene.queue_redraw()
+	await process_frame
+	assert(scene.sheet_skill_choice_rects.size() == 2)
+	if not _capture("res://builds/weapon-skill-choice-phone-smoke.png"): return
+	var first_skill_option := String(scene.sheet_skill_choice_rects.keys()[0])
+	scene._handle_sheet_detail_press(Rect2(scene.sheet_skill_choice_rects[first_skill_option]).get_center())
+	assert(String(scene.sheet_detail.get("selected", "")) == first_skill_option)
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/weapon-skill-selected-phone-smoke.png"): return
+	scene.sheet_detail.clear()
+	scene.sheet_detail = {"kind": "property", "track": "Weaponry", "track_description": "Learning shared by every weapon frame.", "property": {"label": "Power", "description": "Raises maximum weapon damage.", "rank": 1, "max_rank": 3, "gate": 0, "unlocked": true}, "track_rank": 1}
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/character-sheet-detail-phone-smoke.png"): return
+	scene.sheet_detail.clear()
+	scene.character_sheet_open = false
 	scene.state.player_facing = Vector2.UP
 	scene.state.player_action = scene.state._melee_action(1.20, 0.38, 0.68, 136.0, 3, Vector2.UP, "diagonal_cut", "attack")
 	scene.state.player_action["elapsed"] = 0.56
@@ -76,7 +122,7 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	if not _capture("res://builds/upgrade-smoke.png"): return
-	scene.state.start_run("duelist", "campaign_lab", 739391)
+	scene.state.start_run("wayfarer", "campaign_lab", 739391)
 	var return_gate: Dictionary = scene.state.shortcuts[1]
 	var depth_cell: Vector2i = scene.state._visibility_cell(Vector2(scene.state.transitions[0]["to_pos"]))
 	scene.state.discovered_cells_by_layer["ruin_depths"] = {depth_cell: true}
@@ -139,6 +185,16 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	if not _capture("res://builds/desktop-smoke.png"): return
+	scene.character_sheet_open = true
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/character-sheet-desktop-smoke.png"): return
+	scene.state.start_run("wayfarer", "expedition", 739391)
+	scene.state.carried_xp = scene.state.next_upgrade_cost()
+	scene.visual = scene.state.snapshot()
+	scene.queue_redraw()
+	await process_frame
+	if not _capture("res://builds/level-up-sheet-desktop-smoke.png"): return
 	quit(0)
 
 func _capture(path: String) -> bool:
