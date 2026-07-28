@@ -11,6 +11,7 @@ const PLAYER_COLOR := Color("39ddff")
 const BLADE_COLOR := Color("e46c63")
 const ARCHER_COLOR := Color("c68be4")
 const POLEARM_COLOR := Color("d08a48")
+const HOUND_COLOR := Color("6f91b8")
 const DODGE_COLOR := Color("58d2cf")
 const CAMERA_WORLD_WIDTH := 1050.0
 const CAMERA_WORLD_HEIGHT := 1000.0
@@ -184,7 +185,7 @@ func _sync_setup_controls() -> void:
 
 func _layout() -> void:
 	var portrait := size.y >= size.x
-	board_area = Rect2(0, 0, size.x, size.y * 0.76) if portrait else Rect2(0, 0, size.x * 0.74, size.y)
+	board_area = Rect2(0, 0, size.x, size.y * 0.735) if portrait else Rect2(0, 0, size.x * 0.74, size.y)
 	_update_projection()
 	buttons.clear()
 	consumable_rects.clear()
@@ -195,18 +196,17 @@ func _layout() -> void:
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
 	if portrait:
-		var hud_top := size.y * 0.77
+		var hud_top := size.y * 0.745
 		var gap := size.x * 0.025
 		var tab_height := clampf(size.y * 0.038, 38.0, 58.0)
 		loadout_rects["warrior"] = Rect2(gap, hud_top, size.x - gap * 2.0, tab_height)
-		var belt_top := hud_top + tab_height + gap * 0.55
+		var wait_height := clampf(size.y * 0.045, 44.0, 66.0)
+		interaction_rect = Rect2(gap, hud_top + tab_height + gap * 0.45, size.x - gap * 2.0, wait_height)
+		var belt_top := interaction_rect.end.y + gap * 0.45
 		var belt_height := clampf(size.y * 0.075, 50.0, 82.0)
 		var belt_width := (size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
-		var wait_height := clampf(size.y * 0.027, 34.0, 48.0)
-		var wait_width := clampf(size.x * 0.21, 92.0, 150.0)
-		interaction_rect = Rect2(size.x - gap - wait_width, belt_top + belt_height + gap * 0.45, wait_width, wait_height)
-		var top := interaction_rect.end.y + gap * 0.45
+		var top := belt_top + belt_height + gap * 0.55
 		var width := (size.x - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
 			buttons[names[i]] = Rect2(gap + i * (width + gap), top, width, size.y - top - gap)
@@ -215,17 +215,16 @@ func _layout() -> void:
 	else:
 		var left := size.x * 0.755
 		var gap := size.y * 0.025
-		var footer_height := clampf(size.y * 0.11, 58.0, 92.0)
-		var wait_height := clampf(size.y * 0.065, 36.0, 52.0)
-		interaction_rect = Rect2(left, size.y - footer_height + (footer_height - wait_height) * 0.5, size.x - left - gap, wait_height)
-		var action_bottom := interaction_rect.position.y - gap
 		var tab_height := (size.y * 0.22 - gap * 2.0)
 		loadout_rects["warrior"] = Rect2(left, gap, size.x - left - gap, tab_height)
-		var belt_top := size.y * 0.25
+		var wait_height := clampf(size.y * 0.075, 44.0, 66.0)
+		interaction_rect = Rect2(left, Rect2(loadout_rects["warrior"]).end.y + gap, size.x - left - gap, wait_height)
+		var belt_top := interaction_rect.end.y + gap
 		var belt_height := clampf(size.y * 0.075, 44.0, 64.0)
 		var belt_width := (size.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(left + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var action_top := belt_top + belt_height + gap
+		var action_bottom := size.y - gap
 		var height := (action_bottom - action_top - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
 			buttons[names[i]] = Rect2(left, action_top + gap + i * (height + gap), size.x - left - gap, height)
@@ -1832,7 +1831,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": Color("d9a75b"), "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "captain": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
+	var colors := {"boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "captain": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(visual_world_pos, world_radius, color.lightened(0.28), false)
@@ -2400,10 +2399,9 @@ func _draw_hud() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + 10, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.25, font, Color("f0ddd7"))
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.7, font, Color("d9ded8"))
 	else:
-		var left := board_rect.end.x + 10.0
-		var belt_top := Rect2(consumable_rects.get("healing", Rect2(Vector2(left, size.y * 0.25), Vector2.ZERO))).position.y
-		draw_string(ThemeDB.fallback_font, Vector2(left, belt_top - font * 1.55), hp_text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, font, Color("f0ddd7"))
-		draw_string(ThemeDB.fallback_font, Vector2(left, belt_top - font * 0.25), text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, maxi(10, font - 2), Color("d9ded8"))
+		var left := board_rect.position.x + 10.0
+		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 1.75), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, font, Color("f0ddd7"))
+		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 0.40), text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, maxi(10, font - 2), Color("d9ded8"))
 	if held_movement and pointer_down:
 		draw_line(touch_start, touch_current, Color(DODGE_COLOR, 0.55), 4.0)
 		draw_circle(touch_current, 8.0, DODGE_COLOR)

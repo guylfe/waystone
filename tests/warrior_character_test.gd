@@ -139,6 +139,7 @@ func test_action_layout_separates_context() -> void:
 	assert(board.buttons.keys() == ["defense", "skill", "rally", "advance", "adopted"])
 	assert(not board.buttons.has("wait"))
 	assert(board.interaction_rect.size.x > 0.0 and board.interaction_rect.size.y > 0.0)
+	assert(board.interaction_rect.end.y < Rect2(board.consumable_rects["healing"]).position.y)
 	for rect in board.buttons.values():
 		assert(Rect2(Vector2.ZERO, board.size).encloses(Rect2(rect)))
 	assert(Rect2(Vector2.ZERO, board.size).encloses(board.interaction_rect))

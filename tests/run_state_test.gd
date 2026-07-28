@@ -1066,7 +1066,8 @@ func test_desktop_landscape_layout() -> void:
 	assert(board.board_rect.size.x > 900.0 and board.board_rect.size.y == 800.0)
 	for rect in board.buttons.values(): assert(Rect2(Vector2.ZERO, board.size).encloses(Rect2(rect)))
 	assert(not board.buttons.has("attack") and not board.buttons.has("wait") and board.buttons.size() == 5)
-	assert(board.interaction_rect.size.x > 0.0)
+	assert(board.interaction_rect.size.y >= 44.0)
+	assert(board.interaction_rect.end.y < Rect2(board.consumable_rects["healing"]).position.y)
 	board.free()
 
 func test_close_camera_tracks_player() -> void:
@@ -1186,7 +1187,7 @@ func test_progressive_expedition_rooms() -> void:
 			{"boar": 8},
 			{"boar": 5, "hound": 4},
 			{"bandit": 5, "hound": 5},
-			{"ice_caster": 6, "fire_caster": 5},
+			{"ice_caster": 4, "fire_caster": 3},
 			{"bandit": 7, "archer": 5},
 			{"knight": 3, "archer": 10},
 			{"knight": 2, "archer": 5, "ice_caster": 2, "fire_caster": 2, "werewolf": 1, "hound": 2},

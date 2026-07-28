@@ -1,6 +1,10 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.64`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.65`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.65: clearer context control and smoother mage progression
+
+The context-sensitive Wait button now sits above the consumable belt in both orientations and has a taller, easier touch target. Hounds use a cool blue-gray presentation color so they cannot be confused with gold-clad bandits. Friendly Forest Part 4 now fields seven spellcasters instead of eleven, preserving its ice-and-fire caster identity without the previous population-driven difficulty spike.
 
 ### v0.0.64: finite restorative supply
 

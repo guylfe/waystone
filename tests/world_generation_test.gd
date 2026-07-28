@@ -60,7 +60,10 @@ func test_large_seven_part_forest_expedition() -> void:
 			assert(String(area["locale_id"]) == "friendly_forest")
 			palette_ids[String(Dictionary(area["profile"])["palette"])] = true
 			var count := Array(Dictionary(layout["encounters"])[index]).size()
-			assert(count >= previous_enemy_count)
+			# Part 4 is an all-caster encounter, so its ranged and area-control
+			# pressure deliberately replaces raw population growth.
+			if index == 3: assert(count == 7)
+			else: assert(count >= previous_enemy_count)
 			previous_enemy_count = count
 			total_enemies += count
 		assert(total_enemies >= 70)

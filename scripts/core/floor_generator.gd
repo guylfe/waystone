@@ -696,7 +696,7 @@ static func _expedition_encounters(part: int, sockets: Array, rng: RandomNumberG
 		1: ["boar", "boar", "boar", "boar", "boar", "boar", "boar", "boar"],
 		2: ["boar", "hound", "boar", "hound", "boar", "hound", "boar", "hound", "boar"],
 		3: ["bandit", "hound", "bandit", "hound", "bandit", "hound", "bandit", "hound", "bandit", "hound"],
-		4: ["ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster"],
+		4: ["ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster", "fire_caster", "ice_caster"],
 		5: ["bandit", "archer", "bandit", "archer", "bandit", "archer", "bandit", "archer", "bandit", "archer", "bandit", "bandit"],
 		6: ["knight", "archer", "archer", "archer", "knight", "archer", "archer", "archer", "knight", "archer", "archer", "archer", "archer"],
 		7: ["knight", "knight", "archer", "archer", "archer", "archer", "archer", "ice_caster", "ice_caster", "fire_caster", "fire_caster"],
