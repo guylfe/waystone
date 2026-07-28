@@ -84,62 +84,85 @@ const WEAPON_ARTS := {
 }
 
 const LOADOUT_PROFILES := {
-	"wayfarer": {"weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 4, "speed": 7, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.85}},
+	"warrior": {"weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 20, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}},
 }
 
-const WAYFARER_TRACK_ORDER := ["weaponry", "evasion", "vigilance", "fieldcraft", "openings"]
+const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"]
 
-const WAYFARER_TRACKS := {
-	"weaponry": {
-		"label": "Weaponry",
-		"description": "Shared martial learning, beginning with a chosen Weapon Skill.",
-		"properties": [
-			{"id": "weaponry_art", "label": "Weapon Skill", "description": "Choose one Sword Art as your first weapon lesson. The other can be learned and swapped at a later Waystone.", "max_rank": 1, "gate": 0, "choice": true},
-			{"id": "weaponry_power", "label": "Power", "description": "Raises maximum weapon damage.", "max_rank": 3, "gate": 0},
-			{"id": "weaponry_impact", "label": "Impact", "description": "Raises posture damage.", "max_rank": 3, "gate": 0},
-			{"id": "weaponry_handling", "label": "Handling", "description": "Shortens weapon recovery.", "max_rank": 3, "gate": 1},
-			{"id": "weaponry_technique", "label": "Technique", "description": "Improves Weapon Art readiness.", "max_rank": 3, "gate": 3},
+# Each stage is the next node in a compact track. A gate is a minimum character
+# level, so an unchosen node remains available after its gate instead of
+# disappearing forever. Choice stages spend one level and permanently record
+# exactly one choice for that run.
+const CHARACTER_TRACKS := {
+	"swordsmanship": {
+		"label": "Swordsmanship",
+		"description": "Sword fundamentals and one permanent expression of the weapon.",
+		"stages": [
+			{"id": "sword_art", "label": "Weapon Art", "gate": 2, "description": "Choose one Sword Art for this run.", "choices": [
+				{"id": "prototype_sweeping_cut", "label": "Sweeping Cut", "description": "A broad multi-target cut with exceptional posture force."},
+				{"id": "prototype_drawing_cut", "label": "Drawing Cut", "description": "A narrow, forceful cut that reaches through a precise opening."},
+			]},
+			{"id": "edge_control", "label": "Edge Control", "gate": 5, "description": "All sword attacks gain +1 maximum damage and +0.5 posture damage."},
+			{"id": "art_refinement", "label": "Art Refinement", "gate": 8, "description": "Improve the reach, startup, and posture identity of your chosen Sword Art."},
+			{"id": "flowing_steel", "label": "Flowing Steel", "gate": 10, "description": "Sword recovery is 12% shorter and combo transitions are 10% faster."},
 		],
 	},
 	"evasion": {
 		"label": "Evasion",
-		"description": "Improves the equipped defensive action.",
-		"properties": [
-			{"id": "evasion_distance", "label": "Distance", "description": "Travel farther when dodging.", "max_rank": 3, "gate": 0},
-			{"id": "evasion_recovery", "label": "Recovery", "description": "Recover sooner after dodging.", "max_rank": 3, "gate": 0},
-			{"id": "evasion_cooldown", "label": "Readiness", "description": "Shortens defensive cooldowns.", "max_rank": 3, "gate": 2},
-			{"id": "evasion_clean_escape", "label": "Clean Escape", "description": "A well-timed dodge briefly hides you.", "max_rank": 1, "gate": 5},
+		"description": "Turn the basic dodge into a chosen evasive discipline.",
+		"stages": [
+			{"id": "practised_landing", "label": "Practised Landing", "gate": 2, "description": "Basic Dodge recovery falls from 0.66 to 0.60 seconds."},
+			{"id": "evasion_style", "label": "Evasive Form", "gate": 4, "description": "Permanently specialize your Dodge for this run.", "choices": [
+				{"id": "sidestep", "label": "Sidestep", "description": "The same travel in less time, with a 3.2-second cooldown."},
+				{"id": "long_roll", "label": "Long Roll", "description": "A longer committed roll covering 217 units."},
+			]},
+			{"id": "evasion_refinement", "label": "Form Refinement", "gate": 7, "description": "Deepen the speed and readiness of your chosen form."},
+			{"id": "evasion_mastery", "label": "Perfect Form", "gate": 10, "description": "A physically clean dodge produces a form-specific reward."},
 		],
 	},
-	"vigilance": {
-		"label": "Vigilant",
-		"description": "The Wayfarer's trainable temperament.",
-		"properties": [
-			{"id": "vigilance_health", "label": "Health", "description": "Raises maximum health.", "max_rank": 3, "gate": 0},
-			{"id": "vigilance_speed", "label": "Speed", "description": "Raises movement speed.", "max_rank": 3, "gate": 0},
-			{"id": "vigilance_awareness", "label": "Awareness", "description": "Extends perception range.", "max_rank": 3, "gate": 2},
-			{"id": "vigilance_stealth", "label": "Stealth", "description": "Reduces enemy detection.", "max_rank": 3, "gate": 4},
+	"steadfast": {
+		"label": "Steadfast",
+		"description": "Temperament: train complementary traits rather than every universal statistic.",
+		"stages": [
+			{"id": "steadfast_1", "label": "Temperament I", "gate": 3, "description": "Choose how hard experience changes you.", "choices": [
+				{"id": "toughness", "label": "Toughness", "description": "+3 maximum health and +1 Resolve."},
+				{"id": "readiness", "label": "Readiness", "description": "+1 Speed, +1 Awareness, +3.5% movement, and +35 sight range."},
+			]},
+			{"id": "steadfast_2", "label": "Temperament II", "gate": 6, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_3", "label": "Temperament III", "gate": 9, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_4", "label": "Temperament IV", "gate": 12, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
 		],
 	},
-	"fieldcraft": {
-		"label": "Fieldcraft",
-		"description": "Makes restorative supplies more dependable.",
-		"properties": [
-			{"id": "fieldcraft_capacity", "label": "Capacity", "description": "Carries one more restorative in Campaign.", "max_rank": 2, "gate": 0},
-			{"id": "fieldcraft_restoration", "label": "Restoration", "description": "Potions restore more health.", "max_rank": 3, "gate": 0},
-			{"id": "fieldcraft_recovery", "label": "Use Recovery", "description": "Recover sooner after drinking.", "max_rank": 3, "gate": 2},
-			{"id": "fieldcraft_remedy", "label": "Remedy", "description": "Restoratives clear a minor ailment.", "max_rank": 1, "gate": 5},
+	"warrior": {
+		"label": "Warrior",
+		"description": "Rally through danger while every health point still matters.",
+		"stages": [
+			{"id": "battle_fervor", "label": "Battle Fervor", "gate": 2, "description": "Rally lasts 5 seconds; its post-effect cooldown falls to 10.5 seconds."},
+			{"id": "rally_style", "label": "Rally Discipline", "gate": 5, "description": "Permanently choose the emphasis of Rally.", "choices": [
+				{"id": "rally_fury", "label": "Fury", "description": "Rally grants +1 minimum/+1 maximum damage, +2 posture, and 4 action poise."},
+				{"id": "rally_iron", "label": "Iron Resolve", "description": "Rally keeps its modest damage bonus but raises action poise from 4 to 7."},
+			]},
+			{"id": "deep_reserves", "label": "Deep Reserves", "gate": 8, "description": "Rally's post-effect cooldown falls to 9 seconds."},
+			{"id": "rally_mastery", "label": "Rally Mastery", "gate": 11, "description": "Fury escalates consecutive hits; Iron Resolve carries one broken action through."},
 		],
 	},
-	"openings": {
-		"label": "Openings",
-		"description": "Rewards reading an enemy's commitment.",
-		"properties": [
-			{"id": "openings_posture", "label": "Break Punish", "description": "Deal more posture damage to committed foes.", "max_rank": 3, "gate": 0},
-			{"id": "openings_recovery", "label": "Recovery Punish", "description": "Deal more damage during enemy recovery.", "max_rank": 3, "gate": 0},
-			{"id": "openings_break_duration", "label": "Break Duration", "description": "Posture breaks last longer.", "max_rank": 3, "gate": 2},
-			{"id": "openings_composure", "label": "Composure", "description": "A punish slightly restores readiness.", "max_rank": 1, "gate": 5},
+	"vanguard": {
+		"label": "Vanguard",
+		"description": "Advance with an authored impact instead of attacking during a movement animation.",
+		"stages": [
+			{"id": "driving_impact", "label": "Driving Impact", "gate": 2, "description": "Advance posture rises from 3 to 4 and push rises from 36 to 48."},
+			{"id": "advance_style", "label": "Advance Discipline", "gate": 3, "description": "Permanently choose how Advance claims space.", "choices": [
+				{"id": "breakthrough", "label": "Breakthrough", "description": "Gain action poise and drive through light bodies."},
+				{"id": "pursuit", "label": "Pursuit", "description": "Travel farther with a shorter cooldown, but no action poise."},
+			]},
+			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 6, "description": "Hold the original Advance input through impact to flow directly into a full sword combo."},
+			{"id": "advance_mastery", "label": "Advance Mastery", "gate": 9, "description": "Deepen Breakthrough or Pursuit according to the permanent choice already made."},
 		],
+	},
+	"adopted": {
+		"label": "Undiscovered",
+		"description": "A late-run adopted discipline. It is deliberately unavailable in this prototype.",
+		"stages": [],
 	},
 }
 
@@ -168,20 +191,33 @@ static func weapon_frame(id: String) -> Dictionary:
 static func weapon_art(id: String) -> Dictionary:
 	return Dictionary(WEAPON_ARTS.get(id, {})).duplicate(true)
 
-static func wayfarer_track(id: String) -> Dictionary:
-	return Dictionary(WAYFARER_TRACKS.get(id, {})).duplicate(true)
+static func character_track(id: String) -> Dictionary:
+	return Dictionary(CHARACTER_TRACKS.get(id, {})).duplicate(true)
 
-static func wayfarer_property(id: String) -> Dictionary:
-	for track_id in WAYFARER_TRACK_ORDER:
-		for property in Array(Dictionary(WAYFARER_TRACKS[track_id])["properties"]):
-			if String(property["id"]) == id:
-				var result := Dictionary(property).duplicate(true)
-				result["track_id"] = track_id
-				return result
+static func character_stage(track_id: String, rank: int) -> Dictionary:
+	var stages: Array = Dictionary(CHARACTER_TRACKS.get(track_id, {})).get("stages", [])
+	if rank < 0 or rank >= stages.size(): return {}
+	var result := Dictionary(stages[rank]).duplicate(true)
+	result["track_id"] = track_id
+	result["rank"] = rank + 1
+	if result.has("choices_ref"):
+		for source_value in stages:
+			var source := Dictionary(source_value)
+			if String(source.get("id", "")) == String(result["choices_ref"]):
+				result["choices"] = Array(source.get("choices", [])).duplicate(true)
+				break
+	return result
+
+static func character_stage_by_id(id: String) -> Dictionary:
+	for track_id in CHARACTER_TRACK_ORDER:
+		var track := Dictionary(CHARACTER_TRACKS[track_id])
+		for rank in range(Array(track.get("stages", [])).size()):
+			var stage := character_stage(String(track_id), rank)
+			if String(stage.get("id", "")) == id: return stage
 	return {}
 
 static func loadout_profile(id: String) -> Dictionary:
-	return _profile_with_defaults(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["wayfarer"])))
+	return _profile_with_defaults(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"])))
 
 static func archetype(id: String) -> Dictionary:
 	return _profile_with_defaults(Dictionary(ARCHETYPES.get(id, ARCHETYPES["blade"])))

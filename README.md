@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.62`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.63`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.63: first durable character sheet
+
+The old Wayfarer prototype progression has been replaced by the first authored character: a Warrior with the Vanguard subclass and Steadfast temperament. Its compact sheet contains six stable positions in two rows—Swordsmanship, Evasion, Steadfast, Warrior, Vanguard, and the locked late-run Adopted Discipline. Each track exposes only its next stage, uses predictable minimum-level gates, and records branch decisions permanently for the run. The first level offers four choices; later availability remains bounded while skipped tracks stay available.
+
+Swordsmanship now begins with a permanent Sweeping Cut or Drawing Cut choice and develops damage, posture, art identity, and combo flow. Evasion improves the deliberately modest basic Dodge into Sidestep or Long Roll and later rewards physically clean evasions. Steadfast repeatedly chooses between explicit `+3 health / +1 Resolve` and `+1 Speed / +1 Awareness / +3.5% movement / +35 sight`. Warrior adds Rally, whose modest damage and posture boost plus action poise never prevents health loss; its cooldown starts only when the effect ends. Vanguard adds an authored forward impact, then branches into Breakthrough or Pursuit and can later flow into the full sword combo by maintaining the original input.
+
+The action HUD now has five stable ability positions: Dodge, Sword Art, Rally, Advance, and the locked Adopted Discipline. Wait, Take, Rest, Unlock, and Traverse share a separate compact context button instead of occupying an ability slot. Old prototype saves are intentionally rejected because their progression cannot map honestly onto this sheet; geography and mode rules otherwise remain unchanged.
 
 ### v0.0.62: visible hitstun and broken commitments
 
@@ -18,10 +26,10 @@ An original Android-first committed-action roguelike prototype inspired by the l
 - Swipe and hold: continue moving in that direction; release to freeze time.
 - Tap an enemy within plausible opening-strike distance: commit to one compact basic strike. A clearly distant melee target instead becomes a movement touch; ranged weapons keep their long-distance attack input.
 - Tap an empty reachable position: move precisely toward it.
-- The Wayfarer is the only prototype character. Press an enemy to begin a compact cut; keep holding through its recovery to commit the next strike, or release to finish the current one and freeze time. An uninterrupted original touch always remains a combo hold, even if it drifts into a swipe. If a finger rises accidentally, touch the field again at any point before the current strike ends and keep holding: it will continue normally if the finger is still down at the recovery boundary. Only a directional drag from that later re-touch queues movement after the strike and prevents a further combo link. The chain progresses through compact, reverse, and driving hitboxes without a separate attack-mode button.
+- The Warrior · Vanguard is the only prototype character. Press an enemy to begin a compact cut; keep holding through its recovery to commit the next strike, or release to finish the current one and freeze time. An uninterrupted original touch always remains a combo hold, even if it drifts into a swipe. If a finger rises accidentally, touch the field again at any point before the current strike ends and keep holding: it will continue normally if the finger is still down at the recovery boundary. Only a directional drag from that later re-touch queues movement after the strike and prevents a further combo link. The chain progresses through compact, reverse, and driving hitboxes without a separate attack-mode button.
 - Tap Dodge and choose a direction to use the equipped defensive action.
-- Weapon Skill is the first row of the Weaponry track. Its first purchasable point immediately offers Sweeping Cut or Drawing Cut; the chosen skill is a Weaponry commitment, while the unchosen skill returns through a later Waystone gate. Once both are learned they can be swapped only at a Waystone.
-- Tap Sheet (or press `C`) to inspect universal attributes, equipment by body slot, combat identity, and five compact progression tracks arranged in a three-column grid. Tap equipment or a track property for its detail panel.
+- Swordsmanship's first rank offers Sweeping Cut or Drawing Cut. The chosen Sword Art is permanent for the run and the unchosen art is not later unlocked.
+- Tap Sheet (or press `C`) to inspect universal attributes, equipment by body slot, combat identity, and six compact progression tracks arranged as three columns by two rows. During leveling, tap an eligible gold track to inspect and confirm its next stage.
 - Hold an enemy while time is frozen for qualitative action, speed, reach, stability, and role information.
 
 ### v0.0.60: obstruction-aware enemy locomotion

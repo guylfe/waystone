@@ -29,6 +29,9 @@ func capture(state: RunState) -> Dictionary:
 	data["block_cooldown"] = state.block_cooldown
 	data["endure_cooldown"] = state.endure_cooldown
 	data["skill_cooldown"] = state.skill_cooldown
+	data["rally_cooldown"] = state.rally_cooldown
+	data["advance_cooldown"] = state.advance_cooldown
+	data["rally_remaining"] = state.rally_remaining
 	data["message"] = state.message
 	_copy_flat_dictionary(state.player_action, _player_action)
 	_copy_flat_dictionary(state.lost_xp, _lost_xp)
@@ -70,7 +73,7 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	data["player_facing"] = _blend_direction(Vector2(current_data["player_facing"]), Vector2(following_data["player_facing"]), amount)
 	for key in ["player_hp", "player_max_hp", "carried_xp", "secured_xp", "message"]:
 		data[key] = following_data.get(key, current_data.get(key))
-	for key in ["strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown"]:
+	for key in ["strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "rally_remaining"]:
 		data[key] = lerpf(float(current_data.get(key, 0.0)), float(following_data.get(key, 0.0)), amount)
 	_blend_action(Dictionary(current_data["player_action"]), Dictionary(following_data["player_action"]), amount, _player_action)
 	_copy_flat_dictionary(Dictionary(following_data.get("lost_xp", {})), _lost_xp)

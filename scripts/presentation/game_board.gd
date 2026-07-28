@@ -59,6 +59,7 @@ var pointer_is_mouse := false
 var attack_pointer_held := false
 var attack_touch_is_original := false
 var attack_key_held := false
+var advance_pointer_held := false
 var desktop_movement_keys: Dictionary = {}
 var board_rect := Rect2()
 var world_scale := 1.0
@@ -69,6 +70,7 @@ var debug_hitboxes := false
 var selected_action := ""
 var buttons: Dictionary = {}
 var consumable_rects: Dictionary = {}
+var interaction_rect := Rect2()
 var loadout_rects: Dictionary = {}
 var upgrade_rects: Dictionary = {}
 var reset_rect := Rect2()
@@ -102,7 +104,7 @@ var autosave_pending := false
 var autosave_elapsed := 0.0
 var autosave_quiet_elapsed := 0.0
 var autosave_deferred := false
-var setup_loadout := "wayfarer"
+var setup_loadout := "warrior"
 var setup_mode := "expedition"
 var waystone_menu_open := false
 var seed_input: LineEdit
@@ -189,19 +191,22 @@ func _layout() -> void:
 	loadout_rects.clear()
 	upgrade_rects.clear()
 	progression_rects.clear()
-	var names := ["defense", "skill", "wait"]
+	var names := ["defense", "skill", "rally", "advance", "adopted"]
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
-	var loadouts := ["wayfarer"]
+	var loadouts := ["warrior"]
 	if portrait:
 		var hud_top := size.y * 0.77
 		var gap := size.x * 0.025
 		var tab_height := clampf(size.y * 0.038, 38.0, 58.0)
-		loadout_rects["wayfarer"] = Rect2(gap, hud_top, size.x - gap * 2.0, tab_height)
+		loadout_rects["warrior"] = Rect2(gap, hud_top, size.x - gap * 2.0, tab_height)
 		var belt_top := hud_top + tab_height + gap * 0.55
 		var belt_height := clampf(size.y * 0.075, 50.0, 82.0)
 		var belt_width := (size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
-		var top := belt_top + belt_height + gap
+		var wait_height := clampf(size.y * 0.027, 34.0, 48.0)
+		var wait_width := clampf(size.x * 0.21, 92.0, 150.0)
+		interaction_rect = Rect2(size.x - gap - wait_width, belt_top + belt_height + gap * 0.45, wait_width, wait_height)
+		var top := interaction_rect.end.y + gap * 0.45
 		var width := (size.x - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
 			buttons[names[i]] = Rect2(gap + i * (width + gap), top, width, size.y - top - gap)
@@ -211,9 +216,11 @@ func _layout() -> void:
 		var left := size.x * 0.755
 		var gap := size.y * 0.025
 		var footer_height := clampf(size.y * 0.11, 58.0, 92.0)
-		var action_bottom := size.y - footer_height
+		var wait_height := clampf(size.y * 0.065, 36.0, 52.0)
+		interaction_rect = Rect2(left, size.y - footer_height + (footer_height - wait_height) * 0.5, size.x - left - gap, wait_height)
+		var action_bottom := interaction_rect.position.y - gap
 		var tab_height := (size.y * 0.22 - gap * 2.0)
-		loadout_rects["wayfarer"] = Rect2(left, gap, size.x - left - gap, tab_height)
+		loadout_rects["warrior"] = Rect2(left, gap, size.x - left - gap, tab_height)
 		var belt_top := size.y * 0.25
 		var belt_height := clampf(size.y * 0.075, 44.0, 64.0)
 		var belt_width := (size.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
@@ -269,6 +276,10 @@ func _process(delta: float) -> void:
 			autosave_deferred = true
 			call_deferred("_flush_autosave_if_quiet")
 	if streaming_action:
+		if String(state.player_action.get("kind", "")) == "advance" and desktop_controls and not advance_pointer_held:
+			var held_advance_direction := _desktop_held_direction()
+			var advance_direction := Vector2(state.player_action.get("direction", state.player_facing))
+			state.set_advance_hold(not held_advance_direction.is_zero_approx() and held_advance_direction.dot(advance_direction) > 0.80)
 		var requested_accumulator := stream_accumulator + minf(delta, 0.10)
 		var maximum_accumulator := state.SIM_DT * float(MAX_SIM_TICKS_PER_FRAME)
 		if requested_accumulator > maximum_accumulator:
@@ -444,7 +455,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if not state.run_active:
-		for choice in ["wayfarer"]:
+		for choice in ["warrior"]:
 			if _setup_class_rect(choice).has_point(position):
 				setup_loadout = choice
 				queue_redraw()
@@ -585,6 +596,13 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	inspected_enemy_id = -1
 	touch_start = position
 	touch_current = position
+	if selected_action == "advance" and board_rect.has_point(position):
+		var advance_direction := _screen_to_world(position) - state.player_pos
+		if advance_direction.length_squared() < 0.01: advance_direction = state.player_facing
+		selected_action = ""
+		advance_pointer_held = true
+		_begin_streamed_action(state.request_advance(advance_direction, true, false))
+		return
 	if selected_action == "" and board_rect.has_point(position):
 		var enemy := _enemy_near(position, 54.0)
 		if not enemy.is_empty() and _enemy_touch_should_attack(enemy) and state.request_combo(Vector2(enemy["pos"]) - state.player_pos, false):
@@ -595,14 +613,14 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 
 func _handle_sheet_detail_press(position: Vector2) -> void:
 	var kind := String(sheet_detail.get("kind", ""))
-	if kind == "weapon_skill":
+	if kind == "track_choice":
 		for option_id in sheet_skill_choice_rects:
 			if Rect2(sheet_skill_choice_rects[option_id]).has_point(position):
 				sheet_detail["selected"] = String(option_id)
 				queue_redraw()
 				return
 	if sheet_detail_confirm_rect.has_point(position):
-		var choice := String(sheet_detail.get("selected", "")) if kind == "weapon_skill" else String(sheet_detail.get("upgrade_id", ""))
+		var choice := String(sheet_detail.get("selected", "")) if kind == "track_choice" else String(sheet_detail.get("upgrade_id", ""))
 		if not choice.is_empty() and state.choose_upgrade(choice):
 			visual = _presentation_snapshot()
 			_mark_autosave(true)
@@ -615,32 +633,18 @@ func _handle_sheet_detail_press(position: Vector2) -> void:
 
 func _open_sheet_upgrade_confirmation(upgrade_id: String) -> void:
 	var cost := state.next_upgrade_cost()
-	if upgrade_id == "weaponry_art":
-		var options: Array[String] = []
-		for option_value in state.available_level_up_options():
-			var option := String(option_value)
-			if option.begins_with("learn_art:"): options.append(option)
-		if options.is_empty(): return
-		sheet_detail = {
-			"kind": "weapon_skill",
-			"track": "Weaponry",
-			"property": CombatCatalogScript.wayfarer_property("weaponry_art"),
-			"options": options,
-			"selected": "",
-			"cost": cost,
-		}
-		return
-	var property := CombatCatalogScript.wayfarer_property(upgrade_id)
-	if property.is_empty(): return
-	var track := CombatCatalogScript.wayfarer_track(String(property.get("track_id", "")))
-	property["rank"] = int(state.track_property_ranks.get(upgrade_id, 0))
-	property["unlocked"] = state.track_total(String(property.get("track_id", ""))) >= int(property.get("gate", 0))
+	if not state.available_level_up_options().has(upgrade_id): return
+	var track := CombatCatalogScript.character_track(upgrade_id)
+	var stage := state.next_track_stage(upgrade_id)
+	if track.is_empty() or stage.is_empty(): return
+	var choices: Array = stage.get("choices", [])
 	sheet_detail = {
-		"kind": "upgrade",
+		"kind": "track_choice" if not choices.is_empty() else "upgrade",
 		"track": String(track.get("label", "Track")),
 		"track_description": String(track.get("description", "")),
-		"property": property,
-		"track_rank": state.track_total(String(property.get("track_id", ""))),
+		"stage": stage,
+		"options": choices,
+		"selected": "",
 		"upgrade_id": upgrade_id,
 		"cost": cost,
 	}
@@ -665,6 +669,11 @@ func _pointer_dragged(position: Vector2) -> void:
 		held_movement = true
 		queued_attack_exit_direction = held_direction
 		queued_movement_after_attack = true
+		queue_redraw()
+		return
+	if advance_pointer_held:
+		advance_pointer_held = false
+		state.set_advance_hold(false)
 		queue_redraw()
 		return
 	var drag := position - touch_start
@@ -742,7 +751,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if playing or event.echo: return
 	if not state.run_active:
 		match event.keycode:
-			KEY_1: setup_loadout = "wayfarer"
+			KEY_1: setup_loadout = "warrior"
 			KEY_TAB: setup_mode = "campaign_lab" if setup_mode == "expedition" else "expedition"
 			KEY_ENTER: _start_run()
 			_: return
@@ -802,10 +811,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_1, KEY_P: _handle_consumable("healing")
 		KEY_2, KEY_SHIFT, KEY_B: _handle_button("defense")
 		KEY_3, KEY_Q: _handle_button("skill")
-		KEY_4, KEY_E, KEY_SPACE: _advance_or_wait()
-		KEY_5: _handle_consumable("slot_0")
-		KEY_6: _handle_consumable("slot_1")
-		KEY_7: _handle_consumable("slot_2")
+		KEY_4: _handle_button("rally")
+		KEY_5, KEY_E: _handle_button("advance")
+		KEY_6: _handle_button("adopted")
+		KEY_SPACE: _advance_or_wait()
+		KEY_7: _handle_consumable("slot_0")
+		KEY_8: _handle_consumable("slot_1")
+		KEY_9: _handle_consumable("slot_2")
 		KEY_R: _restart()
 
 func _desktop_direction_for_key(keycode: Key) -> Vector2:
@@ -881,7 +893,9 @@ func _notification(what: int) -> void:
 		desktop_movement_keys.clear()
 		attack_key_held = false
 		attack_pointer_held = false
+		advance_pointer_held = false
 		if state != null: state.set_attack_hold(false)
+		if state != null: state.set_advance_hold(false)
 		pointer_down = false
 		held_movement = false
 		if streaming_action and state != null:
@@ -912,6 +926,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 		if Rect2(buttons[name]).has_point(end_position):
 			_handle_button(String(name))
 			return
+	if interaction_rect.has_point(end_position):
+		_advance_or_wait()
+		return
 	if not board_rect.has_point(end_position): return
 	if _try_pickup_press(end_position): return
 	if _try_waystone_press(end_position): return
@@ -919,12 +936,13 @@ func _handle_gesture(end_position: Vector2) -> void:
 	var drag := end_position - touch_start
 	var threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
 	if drag.length() >= threshold:
-		if selected_action in ["defense", "skill"] or selected_action.begins_with("consumable_"):
+		if selected_action in ["defense", "skill", "advance"] or selected_action.begins_with("consumable_"):
 			var action := selected_action
 			selected_action = ""
 			var world_direction := _screen_delta_to_world_direction(drag)
 			if action == "defense": _begin_streamed_action(state.request_defense(world_direction, false))
 			elif action == "skill": _begin_streamed_action(state.request_skill(world_direction, false))
+			elif action == "advance": _begin_streamed_action(state.request_advance(world_direction, false, false))
 			else: _begin_streamed_action(state.request_consumable(int(action.trim_prefix("consumable_")), world_direction, false))
 		else:
 			var enemy := _enemy_near(end_position, 62.0)
@@ -948,6 +966,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 	elif selected_action == "skill":
 		selected_action = ""
 		_begin_streamed_action(state.request_skill(_screen_to_world(end_position) - state.player_pos, false))
+	elif selected_action == "advance":
+		selected_action = ""
+		_begin_streamed_action(state.request_advance(_screen_to_world(end_position) - state.player_pos, false, false))
 	elif selected_action.begins_with("consumable_"):
 		var slot := int(selected_action.trim_prefix("consumable_"))
 		selected_action = ""
@@ -964,11 +985,16 @@ func _handle_button(name: String) -> void:
 				if state.defense_id == "endure": _begin_streamed_action(state.request_endure(state.player_facing, false))
 				else: selected_action = "" if selected_action == "defense" else "defense"
 		"skill":
-			if state.loadout_id == "wayfarer" and state.player_equipped_weapon_art != "" and state.skill_cooldown <= 0.0001:
+			if state.player_equipped_weapon_art != "" and state.skill_cooldown <= 0.0001:
 				selected_action = "" if selected_action == "skill" else "skill"
-		"wait":
-			if state.has_pending_pickup(): state.leave_pending_pickup()
-			else: _advance_or_wait()
+		"rally":
+			selected_action = ""
+			_begin_streamed_action(state.request_rally(false))
+		"advance":
+			if state.advance_cooldown <= 0.0001:
+				selected_action = "" if selected_action == "advance" else "advance"
+		"adopted":
+			selected_action = ""
 	queue_redraw()
 
 func _handle_consumable(slot_id: String) -> void:
@@ -995,6 +1021,9 @@ func _commit_direction(direction: Vector2) -> void:
 	elif selected_action == "skill":
 		selected_action = ""
 		_begin_streamed_action(state.request_skill(direction, false))
+	elif selected_action == "advance":
+		selected_action = ""
+		_begin_streamed_action(state.request_advance(direction, not _desktop_held_direction().is_zero_approx(), false))
 	elif selected_action.begins_with("consumable_"):
 		var slot := int(selected_action.trim_prefix("consumable_"))
 		selected_action = ""
@@ -1158,7 +1187,7 @@ func _try_transition_press(position: Vector2) -> bool:
 	return false
 
 func _waystone_option_rect(option: String) -> Rect2:
-	return Rect2(buttons["defense"]).merge(Rect2(buttons["skill"])) if option == "learn" else Rect2(buttons["wait"])
+	return Rect2(buttons["defense"]).merge(Rect2(buttons["skill"])) if option == "learn" else interaction_rect
 
 func _handle_waystone_menu_press(position: Vector2) -> void:
 	if _waystone_option_rect("learn").has_point(position):
@@ -1754,6 +1783,11 @@ func _draw_player() -> void:
 		else:
 			draw_circle(pos, collision_radius * 1.65, Color(0.91, 0.32, 0.20, 0.16))
 			draw_arc(pos, collision_radius * 1.65, 0.0, TAU, 24, Color("e85c3f"), maxf(2.0, collision_radius * 0.12))
+	if float(visual.get("rally_remaining", state.rally_remaining)) > 0.0:
+		if view_mode == "isometric": _draw_projected_world_circle(world_pos, state.PLAYER_RADIUS * 1.48, Color(0.92, 0.38, 0.20, 0.12), Color("e47754"), maxf(1.5, collision_radius * 0.08))
+		else:
+			draw_circle(pos, collision_radius * 1.48, Color(0.92, 0.38, 0.20, 0.12))
+			draw_arc(pos, collision_radius * 1.48, 0.0, TAU, 24, Color("e47754"), maxf(1.5, collision_radius * 0.08))
 	if String(action.get("kind", "idle")) == "dodge":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos - world_facing * state.PLAYER_RADIUS * 0.7, state.PLAYER_RADIUS * 1.25, Color(DODGE_COLOR, 0.16))
 		else: draw_circle(pos - facing * collision_radius * 0.7, collision_radius * 1.25, Color(DODGE_COLOR, 0.16))
@@ -1762,6 +1796,10 @@ func _draw_player() -> void:
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
 	elif String(action.get("kind", "idle")) == "potion": draw_circle(pos + Vector2(radius * 0.7, -radius * 0.8), radius * 0.25, Color("e35f62"))
+	elif String(action.get("kind", "idle")) == "advance":
+		var drive := _screen_direction(Vector2(action.get("direction", world_facing))).normalized()
+		draw_line(pos - drive * radius * 0.35, pos + drive * radius * 1.75, Color("aee7ff"), maxf(3.0, radius * 0.18))
+		draw_circle(pos + drive * radius * 1.75, maxf(3.0, radius * 0.18), Color("e8c35d"))
 	if String(action.get("kind", "idle")) == "combo": _draw_combo_commitment(pos, radius, action)
 	var phase := _phase(action)
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
@@ -2287,6 +2325,14 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["startup"]): return "DRAWING BACK"
 		if elapsed < float(action["active_end"]): return "SWEEPING"
 		return "RECOVERING"
+	if kind == "combo":
+		return "COMBO %d" % (int(action.get("phase_index", 0)) + 1)
+	if kind == "rally":
+		return "RALLYING" if elapsed < float(action.get("effect_start", 0.18)) else "STANDING FIRM"
+	if kind == "advance":
+		if elapsed < float(action.get("move_start", 0.08)): return "BRACING"
+		if elapsed < float(action.get("impact_end", 0.52)): return "ADVANCING"
+		return "RECOVERING"
 	if kind == "block":
 		if elapsed < float(action["startup"]): return "RAISING GUARD"
 		if elapsed < float(action["active_end"]): return "GUARDING"
@@ -2339,6 +2385,7 @@ func _draw_hud() -> void:
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
+		_draw_button("wait", interaction_rect)
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
 	if state.mode_id == "campaign_lab":
@@ -2354,8 +2401,9 @@ func _draw_hud() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.7, font, Color("d9ded8"))
 	else:
 		var left := board_rect.end.x + 10.0
-		draw_string(ThemeDB.fallback_font, Vector2(left, size.y - font * 2.5), hp_text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, font, Color("f0ddd7"))
-		draw_string(ThemeDB.fallback_font, Vector2(left, size.y - font * 1.1), text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, font, Color("d9ded8"))
+		var belt_top := Rect2(consumable_rects.get("healing", Rect2(Vector2(left, size.y * 0.25), Vector2.ZERO))).position.y
+		draw_string(ThemeDB.fallback_font, Vector2(left, belt_top - font * 1.55), hp_text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, font, Color("f0ddd7"))
+		draw_string(ThemeDB.fallback_font, Vector2(left, belt_top - font * 0.25), text, HORIZONTAL_ALIGNMENT_LEFT, size.x - left - 8.0, maxi(10, font - 2), Color("d9ded8"))
 	if held_movement and pointer_down:
 		draw_line(touch_start, touch_current, Color(DODGE_COLOR, 0.55), 4.0)
 		draw_circle(touch_current, 8.0, DODGE_COLOR)
@@ -2420,8 +2468,8 @@ func _draw_character_sheet() -> void:
 	var body_font := maxi(12, int(header_font * 0.56))
 	var level_context := String(data.get("level_up_context", ""))
 	var leveling := not level_context.is_empty()
-	var title := "WAYFARER · LEVEL UP" if leveling else "WAYFARER"
-	var subtitle := "%s  •  %d XP  •  SELECT A GOLD ROW" % ["EXPEDITION" if level_context == "expedition" else "WAYSTONE", int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.upgrade_count, state.carried_xp]
+	var title := "WARRIOR · VANGUARD · LEVEL UP" if leveling else "WARRIOR · VANGUARD"
+	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % ["EXPEDITION" if level_context == "expedition" else "WAYSTONE", int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
 	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font), title, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin - 104.0, header_font, Color("f2e7c8") if leveling else Color("eef4ef"))
 	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font * 1.62), subtitle, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin, body_font, Color("d7aa58"))
 	_draw_map_action(sheet_close_rect, "CLOSE [ESC]" if desktop_controls else "CLOSE")
@@ -2459,11 +2507,11 @@ func _draw_sheet_equipment_cluster(rect: Rect2, equipment: Dictionary, font: int
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, font * 1.30), "EQUIPMENT", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, font, Color("d7aa58"))
 	var inset := maxf(6.0, rect.size.x * 0.035)
 	var slot_width := clampf(rect.size.x * 0.265, 42.0, 76.0)
-	var slot_height := clampf((rect.size.y - font * 1.75) * 0.215, 25.0, 39.0)
+	var slot_height := clampf((rect.size.y - font * 1.75 - 9.0) / 4.0, 17.0, 39.0)
 	var left_x := rect.position.x + inset
 	var right_x := rect.end.x - inset - slot_width
 	var top := rect.position.y + font * 1.65
-	var step := (rect.size.y - font * 1.80 - slot_height) / 3.0
+	var step := slot_height + maxf(2.0, (rect.size.y - font * 1.80 - slot_height * 4.0) / 3.0)
 	var slots := [
 		{"id": "head", "label": "HEAD", "side": 0, "row": 0}, {"id": "main_hand", "label": "WEAPON", "side": 1, "row": 0},
 		{"id": "torso", "label": "BODY", "side": 0, "row": 1}, {"id": "off_hand", "label": "OFFHAND", "side": 1, "row": 1},
@@ -2483,9 +2531,14 @@ func _draw_sheet_equipment_cluster(rect: Rect2, equipment: Dictionary, font: int
 		var equipped := item != "Empty"
 		draw_rect(slot_rect, Color("193038") if equipped else Color("11191d"))
 		draw_rect(slot_rect, Color("58d2cf") if equipped else Color("45545a"), false, 1.0)
-		draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, font * 0.92), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("a9bbc0"))
 		var item_label := _sheet_compact_item_label(item)
-		draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y - 3.0), item_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("e9efe9") if equipped else Color("657378"))
+		if slot_height < 28.0:
+			var compact_font := maxi(6, font - 4)
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y * 0.68), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x * 0.48, compact_font, Color("a9bbc0"))
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(0.0, slot_rect.size.y * 0.68), item_label, HORIZONTAL_ALIGNMENT_RIGHT, slot_rect.size.x - 3.0, compact_font, Color("e9efe9") if equipped else Color("657378"))
+		else:
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, font * 0.92), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("a9bbc0"))
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y - 3.0), item_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("e9efe9") if equipped else Color("657378"))
 		sheet_equipment_rects[slot_id] = slot_rect
 		sheet_equipment_rects[slot_id + "_detail"] = {"kind": "equipment", "slot": String(slot["label"]).capitalize(), "item": item}
 
@@ -2557,80 +2610,56 @@ func _draw_sheet_tracks(rect: Rect2, tracks: Array, font: int, level_up_options:
 	var card_height := (rect.size.y - gap * float(rows - 1)) / float(rows)
 	for index in range(tracks.size()):
 		var track: Dictionary = tracks[index]
+		var track_id := String(track["id"])
 		var column := index % columns
 		var row := index / columns
-		var cards_in_row := mini(columns, tracks.size() - row * columns)
-		var row_offset := (float(columns - cards_in_row) * (card_width + gap)) * 0.5
-		var card := Rect2(Vector2(rect.position.x + row_offset + column * (card_width + gap), rect.position.y + row * (card_height + gap)), Vector2(card_width, card_height))
+		var card := Rect2(Vector2(rect.position.x + column * (card_width + gap), rect.position.y + row * (card_height + gap)), Vector2(card_width, card_height))
+		var purchasable := level_up_options.has(track_id)
 		draw_rect(card, Color("10191e"))
-		draw_rect(card, Color("685c3e") if leveling else Color("45545a"), false, 1.4 if leveling else 1.25)
+		draw_rect(card, Color("d7aa58") if purchasable else Color("45545a"), false, 2.0 if purchasable else 1.25)
 		var header_height := maxf(25.0, font * 1.75)
 		var header_rect := Rect2(card.position, Vector2(card.size.x, header_height))
-		draw_rect(header_rect, Color("1b2b30") if leveling else Color("152329"))
-		draw_line(Vector2(header_rect.position.x, header_rect.end.y), header_rect.end, Color("d7aa58") if leveling else Color("45545a"), 1.0)
-		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(7.0, font * 1.30), String(track["label"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, header_rect.size.x * 0.68, font, Color("f0c66b") if leveling else Color("d7aa58"))
+		draw_rect(header_rect, Color("2a2a20") if purchasable else Color("152329"))
+		draw_line(Vector2(header_rect.position.x, header_rect.end.y), header_rect.end, Color("d7aa58") if purchasable else Color("45545a"), 1.0)
+		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(7.0, font * 1.30), String(track["label"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, header_rect.size.x * 0.70, font, Color("fff1c9") if purchasable else Color("d7aa58"))
 		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(0.0, font * 1.30), "RANK %d" % int(track["rank"]), HORIZONTAL_ALIGNMENT_RIGHT, header_rect.size.x - 7.0, maxi(9, font - 1), Color("9fb2b7"))
-		var property_font := maxi(11, font - 1)
-		var properties: Array = track["properties"]
-		var property_gap := 4.0 if leveling else maxf(5.0, card.size.y * 0.032)
-		var available_height := card.size.y - header_height - 6.0 - property_gap * float(properties.size() - 1)
-		var property_heights: Array[float] = []
-		var art_options: Array[String] = []
-		for option_value in level_up_options:
-			var option := String(option_value)
-			if option.begins_with("learn_art:"): art_options.append(option)
-		if leveling:
-			var actionable_count := 0
-			for property_value in properties:
-				var property: Dictionary = property_value
-				var property_id := String(property["id"])
-				if level_up_options.has(property_id) or (property_id == "weaponry_art" and not art_options.is_empty()):
-					actionable_count += 1
-			var inactive_count := properties.size() - actionable_count
-			var action_height := clampf(card.size.y * (0.21 if properties.size() >= 5 else 0.23), 46.0, 62.0)
-			if actionable_count > 0 and action_height * actionable_count > available_height - float(inactive_count) * 20.0:
-				action_height = maxf(40.0, (available_height - float(inactive_count) * 20.0) / float(actionable_count))
-			var inactive_height := (available_height - action_height * float(actionable_count)) / maxf(1.0, float(inactive_count))
-			for property_value in properties:
-				var property: Dictionary = property_value
-				var property_id := String(property["id"])
-				var actionable := level_up_options.has(property_id) or (property_id == "weaponry_art" and not art_options.is_empty())
-				property_heights.append(action_height if actionable else inactive_height)
-		else:
-			var property_height := available_height / maxf(1.0, float(properties.size()))
-			for property_value in properties: property_heights.append(property_height)
-		var y := header_rect.end.y + 3.0
-		for property_index in range(properties.size()):
-			var property_value = properties[property_index]
-			var property: Dictionary = property_value
-			var property_height := property_heights[property_index]
-			var property_rect := Rect2(Vector2(card.position.x + 5.0, y), Vector2(card.size.x - 10.0, property_height))
-			var locked := not bool(property["unlocked"])
-			var property_id := String(property["id"])
-			var is_art_choice := property_id == "weaponry_art"
-			var purchasable := level_up_options.has(property_id)
-			var actionable := purchasable or (is_art_choice and not art_options.is_empty())
-			var pips := _sheet_rank_pips(int(property["rank"]), int(property["max_rank"]))
-			draw_rect(property_rect, Color("3b3020") if actionable else Color("17252a") if not locked else Color("11181c"))
-			if actionable: draw_rect(property_rect, Color("d7aa58"), false, 1.5)
-			var text_y := property_rect.position.y + (property_rect.size.y + property_font * 0.72) * 0.5
-			draw_string(ThemeDB.fallback_font, Vector2(property_rect.position.x + 5.0, text_y), _sheet_compact_property_label(String(property["label"])), HORIZONTAL_ALIGNMENT_LEFT, property_rect.size.x * 0.60, property_font, Color("59666b") if locked and not actionable else Color("fff1c9") if actionable else Color("d8e1dc"))
-			if is_art_choice and not art_options.is_empty():
-				var right_label := "CHOOSE"
-				draw_string(ThemeDB.fallback_font, Vector2(property_rect.position.x, text_y), right_label, HORIZONTAL_ALIGNMENT_RIGHT, property_rect.size.x - 5.0, property_font, Color("58d2cf"))
-			else:
-				var right_label := "%d XP" % level_up_cost if purchasable else "GATE %d" % int(property.get("gate", 0)) if locked else pips
-				draw_string(ThemeDB.fallback_font, Vector2(property_rect.position.x, text_y), right_label, HORIZONTAL_ALIGNMENT_RIGHT, property_rect.size.x - 5.0, property_font, Color("58d2cf") if purchasable else Color("59666b") if locked else Color("58d2cf"))
-			if purchasable or (is_art_choice and not art_options.is_empty()):
-				sheet_upgrade_rects[property_id] = property_rect
-			sheet_property_rects[property_id] = property_rect
-			sheet_property_rects[property_id + "_detail"] = {"kind": "property", "track": String(track["label"]), "track_description": String(track["description"]), "property": property.duplicate(true), "track_rank": int(track["rank"])}
-			y += property_height + property_gap
+		var stages: Array = track.get("stages", [])
+		if stages.is_empty():
+			var empty_rect := Rect2(card.position + Vector2(6.0, header_height + 5.0), Vector2(card.size.x - 12.0, card.size.y - header_height - 11.0))
+			draw_rect(empty_rect, Color("11181c"))
+			draw_string(ThemeDB.fallback_font, empty_rect.position + Vector2(5.0, empty_rect.size.y * 0.47), "DISCIPLINE NOT YET FOUND", HORIZONTAL_ALIGNMENT_CENTER, empty_rect.size.x - 10.0, maxi(9, font - 1), Color("59666b"))
+			continue
+		var row_gap := 3.0
+		var stage_height := (card.size.y - header_height - 7.0 - row_gap * float(stages.size() - 1)) / float(stages.size())
+		for stage_index in range(stages.size()):
+			var stage: Dictionary = stages[stage_index]
+			var stage_rect := Rect2(Vector2(card.position.x + 5.0, header_rect.end.y + 3.0 + stage_index * (stage_height + row_gap)), Vector2(card.size.x - 10.0, stage_height))
+			var completed := bool(stage.get("completed", false))
+			var current := bool(stage.get("current", false))
+			var actionable := purchasable and current
+			draw_rect(stage_rect, Color("3b3020") if actionable else Color("173029") if completed else Color("17252a") if current else Color("11181c"))
+			if actionable: draw_rect(stage_rect, Color("f0c66b"), false, 1.5)
+			var choice_id := String(stage.get("choice", ""))
+			var label := String(stage.get("label", "Stage"))
+			if completed and not choice_id.is_empty():
+				for option_value in Array(stage.get("choices", [])):
+					var option := Dictionary(option_value)
+					if String(option.get("id", "")) == choice_id:
+						label = String(option.get("label", label))
+						break
+			var text_y := stage_rect.position.y + (stage_rect.size.y + maxi(9, font - 1) * 0.70) * 0.5
+			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x + 6.0, text_y), label.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, stage_rect.size.x * 0.66, maxi(9, font - 1), Color("fff1c9") if actionable else Color("d8e1dc") if completed or current else Color("59666b"))
+			var status := "DONE" if completed else "%d XP" % level_up_cost if actionable else "LEVEL %d" % int(stage.get("gate", 0))
+			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x, text_y), status, HORIZONTAL_ALIGNMENT_RIGHT, stage_rect.size.x - 6.0, maxi(8, font - 2), Color("58d2cf") if completed else Color("f0c66b") if actionable else Color("59666b"))
+			if actionable: sheet_upgrade_rects[track_id] = stage_rect
+			var detail_id := "%s_%d" % [track_id, stage_index]
+			sheet_property_rects[detail_id] = stage_rect
+			sheet_property_rects[detail_id + "_detail"] = {"kind": "stage", "track": String(track["label"]), "stage": stage.duplicate(true)}
 
 func _draw_sheet_detail(panel: Rect2, margin: float, font: int) -> void:
 	draw_rect(panel.grow(-2.0), Color(0.01, 0.02, 0.025, 0.76))
 	var kind := String(sheet_detail.get("kind", ""))
-	var box_height := clampf(panel.size.y * (0.46 if kind == "weapon_skill" else 0.38 if kind == "upgrade" else 0.34), 190.0, 340.0)
+	var box_height := clampf(panel.size.y * (0.48 if kind == "track_choice" else 0.38 if kind == "upgrade" else 0.34), 190.0, 360.0)
 	var box_size := Vector2(minf(panel.size.x - margin * 2.0, 620.0), box_height)
 	var box := Rect2(panel.get_center() - box_size * 0.5, box_size)
 	draw_rect(box, Color("102128"))
@@ -2638,19 +2667,16 @@ func _draw_sheet_detail(panel: Rect2, margin: float, font: int) -> void:
 	if kind == "upgrade":
 		_draw_sheet_upgrade_confirmation(box, font)
 		return
-	if kind == "weapon_skill":
+	if kind == "track_choice":
 		_draw_sheet_weapon_skill_choice(box, font)
 		return
 	sheet_detail_close_rect = Rect2(box.end - Vector2(84.0, box.size.y - 9.0), Vector2(75.0, 30.0))
-	if kind == "property":
-		var property: Dictionary = sheet_detail["property"]
-		var locked := not bool(property.get("unlocked", false))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(property["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 110.0, font + 2, Color("d7aa58"))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 3.45), String(property["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font, Color("e5ece6"))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 5.25), "RANK  %s" % _sheet_rank_pips(int(property["rank"]), int(property["max_rank"])), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font + 1, Color("58d2cf"))
-		var gate := int(property.get("gate", 0))
-		var status := "Requires %d commitment in %s." % [gate, String(sheet_detail["track"])] if locked else "Available through Waystone learning."
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 6.85), status, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font, Color("718087") if locked else Color("d7ddd5"))
+	if kind == "stage":
+		var stage: Dictionary = sheet_detail["stage"]
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 110.0, font + 2, Color("d7aa58"))
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 3.45), String(stage["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font, Color("e5ece6"))
+		var status := "COMPLETED" if bool(stage.get("completed", false)) else "AVAILABLE FROM LEVEL %d" % int(stage.get("gate", 0))
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 6.2), status, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font + 1, Color("58d2cf") if bool(stage.get("completed", false)) else Color("718087"))
 	else:
 		var item := String(sheet_detail.get("item", "Empty"))
 		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 1.65), String(sheet_detail.get("slot", "Equipment")).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 110.0, font + 2, Color("d7aa58"))
@@ -2660,50 +2686,46 @@ func _draw_sheet_detail(panel: Rect2, margin: float, font: int) -> void:
 	_draw_map_action(sheet_detail_close_rect, "BACK [ESC]" if desktop_controls else "BACK")
 
 func _draw_sheet_upgrade_confirmation(box: Rect2, font: int) -> void:
-	var property: Dictionary = sheet_detail["property"]
-	var rank := int(property.get("rank", 0))
-	var maximum := int(property.get("max_rank", 1))
+	var stage: Dictionary = sheet_detail["stage"]
 	var cost := int(sheet_detail.get("cost", 0))
 	var xp := state.secured_xp if state.mode_id == "campaign_lab" else state.carried_xp
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(property["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.15), String(property["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("b9c6c6"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 4.70), "THIS RANK:  %s" % _sheet_upgrade_effect_text(String(sheet_detail["upgrade_id"]), rank), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 1, Color("fff1c9"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 6.25), "RANK  %s  →  %s" % [_sheet_rank_pips(rank, maximum), _sheet_rank_pips(mini(maximum, rank + 1), maximum)], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 1, Color("58d2cf"))
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.35), String(stage["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 1, Color("fff1c9"))
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 6.25), "THIS CHOICE IS PERMANENT FOR THE RUN.", HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("9fb2b7"))
 	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 7.75), "COST  %d XP     REMAINING  %d XP" % [cost, maxi(0, xp - cost)], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("d7ddd5"))
 	var button_size := Vector2(minf(156.0, (box.size.x - 48.0) * 0.42), 38.0)
 	sheet_detail_close_rect = Rect2(box.end - Vector2(button_size.x * 2.0 + 28.0, button_size.y + 14.0), button_size)
 	sheet_detail_confirm_rect = Rect2(box.end - Vector2(button_size.x + 14.0, button_size.y + 14.0), button_size)
 	_draw_sheet_modal_button(sheet_detail_close_rect, "CANCEL", false, true)
-	_draw_sheet_modal_button(sheet_detail_confirm_rect, "CONFIRM +%d" % cost, true, true)
+	_draw_sheet_modal_button(sheet_detail_confirm_rect, "SPEND %d XP" % cost, true, true)
 
 func _draw_sheet_weapon_skill_choice(box: Rect2, font: int) -> void:
-	var property: Dictionary = sheet_detail["property"]
+	var stage: Dictionary = sheet_detail["stage"]
 	var cost := int(sheet_detail.get("cost", 0))
 	var selected := String(sheet_detail.get("selected", ""))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "WEAPONRY · %s" % String(property["label"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.10), "Choose one Sword Art. The other becomes available through a later Waystone lesson.", HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("e5ece6"))
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.10), "Choose one. This branch is permanent for the run.", HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("e5ece6"))
 	var options: Array = sheet_detail.get("options", [])
 	var gap := 10.0
 	var option_width := (box.size.x - 32.0 - gap) / maxf(1.0, float(options.size()))
 	var option_height := clampf(box.size.y * 0.38, 78.0, 110.0)
 	var options_y := box.position.y + font * 4.05
 	for index in range(options.size()):
-		var option := String(options[index])
-		var art_id := option.trim_prefix("learn_art:")
-		var art := CombatCatalogScript.weapon_art(art_id)
+		var option_data := Dictionary(options[index])
+		var option_id := String(option_data["id"])
+		var encoded_option := "%s|%s" % [String(sheet_detail["upgrade_id"]), option_id]
 		var choice_rect := Rect2(Vector2(box.position.x + 16.0 + float(index) * (option_width + gap), options_y), Vector2(option_width, option_height))
-		var is_selected := selected == option
+		var is_selected := selected == encoded_option
 		draw_rect(choice_rect, Color("4a3520") if is_selected else Color("17252a"))
 		draw_rect(choice_rect, Color("f0c66b") if is_selected else Color("58d2cf"), false, 2.0 if is_selected else 1.25)
-		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 1.45), String(art.get("label", "Sword Art")).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, font + 1, Color("fff1c9") if is_selected else Color("e5ece6"))
-		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 2.70), _weapon_skill_role(art_id), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, font, Color("58d2cf"))
-		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, choice_rect.size.y - 9.0), _weapon_skill_description(art_id), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, maxi(9, font - 1), Color("d7ddd5"))
-		sheet_skill_choice_rects[option] = choice_rect
+		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 1.45), String(option_data.get("label", "Choice")).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, font + 1, Color("fff1c9") if is_selected else Color("e5ece6"))
+		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 3.25), String(option_data.get("description", "")), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, maxi(9, font - 1), Color("d7ddd5"))
+		sheet_skill_choice_rects[encoded_option] = choice_rect
 	var button_size := Vector2(minf(156.0, (box.size.x - 48.0) * 0.42), 38.0)
 	sheet_detail_close_rect = Rect2(box.end - Vector2(button_size.x * 2.0 + 28.0, button_size.y + 14.0), button_size)
 	sheet_detail_confirm_rect = Rect2(box.end - Vector2(button_size.x + 14.0, button_size.y + 14.0), button_size)
 	_draw_sheet_modal_button(sheet_detail_close_rect, "CANCEL", false, true)
-	_draw_sheet_modal_button(sheet_detail_confirm_rect, "LEARN +%d" % cost, true, not selected.is_empty())
+	_draw_sheet_modal_button(sheet_detail_confirm_rect, "SPEND %d XP" % cost, true, not selected.is_empty())
 
 func _draw_sheet_modal_button(rect: Rect2, label: String, primary: bool, enabled: bool) -> void:
 	var fill := Color("6b4e29") if primary and enabled else Color("17252a") if enabled else Color("11191d")
@@ -2711,35 +2733,6 @@ func _draw_sheet_modal_button(rect: Rect2, label: String, primary: bool, enabled
 	draw_rect(rect, fill)
 	draw_rect(rect, border, false, 1.8)
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.64), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("fff1c9") if enabled else Color("657378"))
-
-func _weapon_skill_role(art_id: String) -> String:
-	return "WIDE · MULTI-TARGET" if art_id == "prototype_sweeping_cut" else "NARROW · FORCEFUL"
-
-func _weapon_skill_description(art_id: String) -> String:
-	return "Wide cut; damages every body crossed." if art_id == "prototype_sweeping_cut" else "Focused cut; strong posture at first contact."
-
-func _sheet_upgrade_effect_text(upgrade_id: String, rank: int) -> String:
-	match upgrade_id:
-		"weaponry_power": return "maximum weapon damage +1 (%d → %d)." % [state.player_damage_max, state.player_damage_max + 1]
-		"weaponry_impact": return "posture damage +0.5 (%0.1f → %0.1f)." % [state.player_attack_posture, state.player_attack_posture + 0.5]
-		"weaponry_handling": return "weapon recovery −0.07 seconds."
-		"weaponry_technique": return "Weapon Skill cooldown −6%% (%d%% → %d%%)." % [roundi(pow(0.94, rank) * 100.0), roundi(pow(0.94, rank + 1) * 100.0)]
-		"evasion_distance": return "dodge travel speed +24 units/sec."
-		"evasion_recovery": return "dodge recovery −0.05 seconds (%.2f → %.2f)." % [0.66 - 0.05 * float(rank), 0.66 - 0.05 * float(rank + 1)]
-		"evasion_cooldown": return "defensive cooldowns −6%% (%d%% → %d%%)." % [roundi(pow(0.94, rank) * 100.0), roundi(pow(0.94, rank + 1) * 100.0)]
-		"vigilance_health": return "maximum health +3 (%d → %d)." % [state.player_max_hp, state.player_max_hp + 3]
-		"vigilance_speed": return "movement speed +3.5%% (%.0f → %.0f)." % [state.player_move_speed, state.player_move_speed * 1.035]
-		"vigilance_awareness": return "sight radius +35 units."
-		"vigilance_stealth": return "stealth +1; enemy vision range −14 units."
-		"fieldcraft_capacity": return "rejuvenation capacity +1."
-		"fieldcraft_restoration": return "each rejuvenation heals +1 HP (%d → %d)." % [5 + rank, 6 + rank]
-		"fieldcraft_recovery": return "rejuvenation recovery −0.06 seconds (%.2f → %.2f)." % [0.72 - 0.06 * float(rank), 0.72 - 0.06 * float(rank + 1)]
-		"openings_posture": return "posture damage vs. committed foes +0.4."
-		"openings_recovery": return "damage vs. recovering foes +1."
-		"openings_break_duration": return "posture-break duration +0.08 seconds."
-		"openings_composure": return "on a committed-foe hit, Dodge and Skill cooldowns −0.25 seconds."
-		"evasion_clean_escape", "fieldcraft_remedy": return "This prototype effect is not active yet."
-	return String(CombatCatalogScript.wayfarer_property(upgrade_id).get("description", ""))
 
 func _sheet_rank_pips(rank: int, maximum: int) -> String:
 	var result := ""
@@ -2810,8 +2803,8 @@ func _draw_setup() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.16), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, size.x, title_font, Color("f2e7c8"))
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
 	if desktop_controls:
-		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1–3 class  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
-	for choice in ["wayfarer"]:
+		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1 class  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
+	for choice in ["warrior"]:
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
 		draw_rect(rect, Color("17272d"))
@@ -2833,12 +2826,8 @@ func _draw_setup() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(start_rect.position.x, start_rect.end.y + 24.0), setup_seed_error, HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(12, int(body_font * 0.8)), Color("e46c63"))
 
 func _setup_class_rect(choice: String) -> Rect2:
-	var choices := ["wayfarer"]
-	var index := choices.find(choice)
 	var total_width := minf(size.x * 0.84, 760.0)
-	var gap := clampf(total_width * 0.025, 10.0, 20.0)
-	var width := (total_width - gap * 2.0) / 3.0
-	return Rect2(Vector2((size.x - total_width) * 0.5 + index * (width + gap), size.y * 0.33), Vector2(width, 82.0))
+	return Rect2(Vector2((size.x - total_width) * 0.5, size.y * 0.33), Vector2(total_width, 82.0))
 
 func _upgrade_leave_rect() -> Rect2:
 	return Rect2(Vector2(board_rect.get_center().x - 80.0, board_rect.end.y - 72.0), Vector2(160.0, 48.0))
@@ -3047,7 +3036,7 @@ func _draw_inspection() -> void:
 
 func _draw_loadout_tab(choice: String, rect: Rect2) -> void:
 	var selected := state.loadout_id == choice
-	var colors := {"wayfarer": Color("58d2cf")}
+	var colors := {"warrior": Color("58d2cf")}
 	var color: Color = colors[choice]
 	draw_rect(rect, Color("17272d") if selected else Color("10191e"))
 	draw_rect(rect, color if selected else Color("45545a"), false, 3.0 if selected else 1.0)
@@ -3070,24 +3059,36 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		title = String(art.get("label", "ART LOCKED")).to_upper()
 		available = not art.is_empty() and state.skill_cooldown <= 0.0001
 		subtitle = ("WIDE / MULTI" if state.player_equipped_weapon_art == "prototype_sweeping_cut" else "NARROW / FORCEFUL") if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
+	elif name == "rally":
+		title = "RALLY"
+		available = state.rally_cooldown <= 0.0001
+		subtitle = "BOLSTER" if available else "COOLING"
+	elif name == "advance":
+		title = "ADVANCE"
+		available = state.advance_cooldown <= 0.0001
+		subtitle = "DRIVE FORWARD" if available else "COOLING"
+	elif name == "adopted":
+		title = "UNDISCOVERED"
+		available = false
+		subtitle = "LATE DISCIPLINE"
 	elif name == "wait":
 		title = state.interaction_label()
 		subtitle = "REST AT WAYSTONE" if title == "REST" else "OPEN SHORTCUT" if title == "UNLOCK" else "USE PASSAGE" if title == "TRAVERSE" else "+0.5s"
 		available = not state.trial_complete
-	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("d7aa58") if name == "wait" else Color("db6463")
+	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("e47754") if name == "rally" else Color("7ac6e8") if name == "advance" else Color("d7aa58") if name == "wait" else Color("718087")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
-	if not available and (name == "defense" or (name == "skill" and state.loadout_id == "wayfarer")):
-		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown
+	if not available and name in ["defense", "skill", "rally", "advance"]:
+		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else state.rally_cooldown if name == "rally" else state.advance_cooldown
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
-		var maximum := defense_maximum if name == "defense" else state.SWEEP_COOLDOWN
+		var maximum := defense_maximum if name == "defense" else state.SWEEP_COOLDOWN if name == "skill" else 12.0 if name == "rally" else 6.0
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.46), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f0ece0") if available else Color("68777c"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(title_font * 0.6)), color if available else Color("59666b"))
 	if desktop_controls:
-		var shortcuts := {"defense": "[2 / B]", "skill": "[3 / Q]", "wait": "[4 / SPACE]"}
+		var shortcuts := {"defense": "[2 / B]", "skill": "[3 / Q]", "rally": "[4]", "advance": "[5 / E]", "adopted": "[6]", "wait": "[SPACE]"}
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.91), String(shortcuts[name]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(title_font * 0.48)), Color("718087"))
 
 func _draw_consumable(slot_id: String, rect: Rect2) -> void:
@@ -3113,7 +3114,7 @@ func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.43), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f0ece0") if available else Color("68777c"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(title_font * 0.72)), color if available else Color("59666b"))
 	if desktop_controls:
-		var key_label := "[1 / P]" if slot_id == "healing" else "[%d]" % (5 + int(slot_id.trim_prefix("slot_")))
+		var key_label := "[1 / P]" if slot_id == "healing" else "[%d]" % (7 + int(slot_id.trim_prefix("slot_")))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.91), key_label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(7, int(title_font * 0.55)), Color("718087"))
 
 func _draw_waystone_menu() -> void:

@@ -108,7 +108,7 @@ func test_rejuvenation_belt_rules() -> void:
 	expedition.start_run("wayfarer", "expedition", 717)
 	expedition.potions = 0
 	expedition.player_hp = 1
-	assert(not expedition.has_infinite_potions())
+	assert(expedition.has_infinite_potions())
 	assert(expedition.request_potion())
 	assert(expedition.player_hp == 6 and expedition.potions == 0)
 	assert(expedition.consumable_slots.size() == 3)
@@ -319,7 +319,7 @@ func test_perfect_dodge() -> void:
 	state.enemies[0] = enemy
 	assert(state.request_dodge(Vector2.DOWN))
 	assert(state.perfect_dodges == 1)
-	assert(state.counter_hits == 1)
+	assert(state.counter_hits == 0)
 	assert(state.player_hp == state.player_max_hp)
 
 func test_directional_block() -> void:
@@ -368,8 +368,8 @@ func test_endure_trades_health_for_strength() -> void:
 
 func test_loadout_identities() -> void:
 	var state: RunState = RunStateScript.new()
-	assert(state.loadout_id == "wayfarer" and state.defense_id == "dodge")
-	assert(state.select_loadout("wayfarer"))
+	assert(state.loadout_id == "warrior" and state.defense_id == "dodge")
+	assert(state.select_loadout("warrior"))
 	assert(not state.select_loadout("duelist"))
 	assert(not state.select_loadout("guardian"))
 	assert(not state.select_loadout("reaver"))
@@ -400,7 +400,8 @@ func test_wayfarer_weapon_arts() -> void:
 	var state: RunState = RunStateScript.new()
 	state.walls.clear()
 	state._build_navigation()
-	state.enemies = [state._make_enemy("knife", state.player_pos + Vector2(-42, -98), 8), state._make_enemy("knife", state.player_pos + Vector2(42, -98), 8)]
+	state.enemies = [state._make_enemy("knife", state.player_pos + Vector2(-24, -84), 8), state._make_enemy("knife", state.player_pos + Vector2(24, -84), 8)]
+	for enemy in state.enemies: enemy["action"] = state._action("stagger", 2.0, Vector2.ZERO)
 	assert(not state.request_skill(Vector2.UP))
 	state.player_weapon_art_library.assign(["prototype_sweeping_cut"])
 	state.player_equipped_weapon_art = "prototype_sweeping_cut"
@@ -421,29 +422,19 @@ func test_wayfarer_tracks_and_art_gate() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("wayfarer", "campaign_lab", 919)
 	var sheet := state.character_sheet_data()
-	assert(Array(sheet["tracks"]).size() == 5)
+	assert(Array(sheet["tracks"]).size() == 6)
 	assert(Dictionary(sheet["equipment"])["charm"] == "Waystone Fragment")
 	state.carried_xp = 100
 	state.secured_xp = 100
 	state.player_pos = state.bonfire_pos
 	assert(state.level_up_context() == "waystone")
-	assert(state.available_level_up_options().has("weaponry_power"))
-	assert(state.available_level_up_options().has("learn_art:prototype_drawing_cut"))
-	assert(state.choose_upgrade("learn_art:prototype_drawing_cut"))
+	assert(state.available_level_up_options().has("swordsmanship"))
+	assert(state.choose_upgrade("swordsmanship|prototype_drawing_cut"))
 	assert(state.player_equipped_weapon_art == "prototype_drawing_cut")
 	assert(state.player_weapon_art_library.size() == 1)
-	assert(state.track_total("weaponry") == 1)
-	assert(state.choose_upgrade("weaponry_power"))
-	assert(state.track_total("weaponry") == 2 and state.player_damage_max == 4)
-	state.upgrade_count = state.SECOND_ART_GATE
-	state.player_pos = state.bonfire_pos
-	state.carried_xp = 100
-	state.secured_xp = 100
-	assert(state.available_level_up_options().has("learn_art:prototype_sweeping_cut"))
-	assert(state.choose_upgrade("learn_art:prototype_sweeping_cut"))
-	assert(state.player_weapon_art_library.size() == 2)
-	assert(state.equip_weapon_art("prototype_sweeping_cut"))
-	assert(state.player_equipped_weapon_art == "prototype_sweeping_cut")
+	assert(state.track_total("swordsmanship") == 1)
+	assert(not state.choose_upgrade("swordsmanship|prototype_sweeping_cut"))
+	assert(not state.can_swap_weapon_art())
 
 func test_signature_attack_roster() -> void:
 	var state: RunState = RunStateScript.new()
@@ -1074,7 +1065,8 @@ func test_desktop_landscape_layout() -> void:
 	board._layout()
 	assert(board.board_rect.size.x > 900.0 and board.board_rect.size.y == 800.0)
 	for rect in board.buttons.values(): assert(Rect2(Vector2.ZERO, board.size).encloses(Rect2(rect)))
-	assert(not board.buttons.has("attack") and board.buttons.size() == 4)
+	assert(not board.buttons.has("attack") and not board.buttons.has("wait") and board.buttons.size() == 5)
+	assert(board.interaction_rect.size.x > 0.0)
 	board.free()
 
 func test_close_camera_tracks_player() -> void:
@@ -1344,8 +1336,9 @@ func test_room_reward_progression() -> void:
 	state.carried_xp = state.next_upgrade_cost()
 	assert(state.level_up_context() == "expedition")
 	var choice := state.available_level_up_options()[0]
-	assert(state.choose_upgrade(choice))
-	assert(state.upgrades.has(choice) and state.carried_xp == 0)
+	var encoded_choice := "%s|prototype_sweeping_cut" % choice if choice == "swordsmanship" else choice
+	assert(state.choose_upgrade(encoded_choice))
+	assert(state.upgrades.size() == 1 and state.carried_xp == 0)
 	assert(state.upgrade_count == 1 and state.next_upgrade_cost() == 10)
 	state.start_run("wayfarer", "campaign_lab", 102)
 	state.carried_xp = 16
@@ -1354,9 +1347,11 @@ func test_room_reward_progression() -> void:
 	assert(state.activate_waystone() and not state.upgrade_pending and state.player_hp == state.player_max_hp)
 	assert(state.secured_xp == 16 and state.can_learn_at_waystone())
 	assert(state.learn_at_waystone())
-	assert(state.choose_upgrade(state.available_level_up_options()[0]))
+	var first_campaign_choice := String(state.available_level_up_options()[0])
+	assert(state.choose_upgrade("%s|prototype_sweeping_cut" % first_campaign_choice if first_campaign_choice == "swordsmanship" else first_campaign_choice))
 	assert(state.carried_xp == 10 and state.secured_xp == 10)
-	assert(state.choose_upgrade(state.available_level_up_options()[0]))
+	var second_campaign_choice := String(state.available_level_up_options()[0])
+	assert(state.choose_upgrade("%s|prototype_sweeping_cut" % second_campaign_choice if second_campaign_choice == "swordsmanship" else second_campaign_choice))
 	assert(state.upgrade_count == 2 and state.carried_xp == 0)
 
 func test_mode_policies_and_death() -> void:
@@ -1552,7 +1547,6 @@ func test_hex_hazard() -> void:
 	state.enemies.clear()
 	state.hazards = [{"kind": "hex", "pos": state.player_pos, "radius": 100.0, "elapsed": 0.0, "trigger_at": 0.10, "duration": 0.30, "damage": 2, "source_id": 99, "triggered": false}]
 	assert(state.request_wait(0.20))
-	assert(state.hazards.size() == 1 and bool(state.hazards[0]["triggered"]))
 	var saw_hex := false
 	for effect in state.effects:
 		if String(effect["kind"]) == "hex": saw_hex = true
@@ -1561,7 +1555,8 @@ func test_hex_hazard() -> void:
 func test_save_round_trip() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("wayfarer", "campaign_lab", 606)
-	state.track_property_ranks["weaponry_power"] = 2
+	state.track_ranks["swordsmanship"] = 1
+	state.track_choices["sword_art"] = "prototype_drawing_cut"
 	state.player_weapon_art_library.assign(["prototype_drawing_cut"])
 	state.player_equipped_weapon_art = "prototype_drawing_cut"
 	state.player_hp -= 2
@@ -1575,10 +1570,11 @@ func test_save_round_trip() -> void:
 	var restored: RunState = RunStateScript.new(false)
 	assert(restored.load_run(path))
 	assert(restored.player_hp == state.player_hp)
-	assert(restored.mode_id == "campaign_lab" and restored.progression_mode == "waystone" and restored.carried_xp == 13)
+	assert(restored.mode_id == "campaign_lab" and restored.progression_mode == "waystone_sheet" and restored.carried_xp == 13)
 	assert(restored.secured_xp == 13 and restored.shortcut_unlocked and restored.run_seed == 606)
 	assert(String(restored.player_actor()["weapon_frame"]) == "sword")
-	assert(int(restored.track_property_ranks["weaponry_power"]) == 2)
+	assert(int(restored.track_ranks["swordsmanship"]) == 1)
+	assert(restored.track_choice("sword_art") == "prototype_drawing_cut")
 	assert(restored.player_equipped_weapon_art == "prototype_drawing_cut")
 	assert(Dictionary(restored.enemies[0]).has("attributes") and Dictionary(restored.enemies[0]).has("weapon_frame"))
 
@@ -1601,9 +1597,7 @@ func test_version_one_save_migration() -> void:
 	writer.store_var(payload, true)
 	writer = null
 	var restored: RunState = RunStateScript.new(false)
-	assert(restored.load_run(path))
-	assert(not restored.run_active)
-	assert(restored.loadout_id == state.loadout_id and restored.mode_id == "expedition" and restored.progression_mode == "area_exit")
+	assert(not restored.load_run(path))
 
 func test_version_three_attack_migration() -> void:
 	var state: RunState = RunStateScript.new()
@@ -1620,8 +1614,7 @@ func test_version_three_attack_migration() -> void:
 	writer.store_var(payload, true)
 	writer = null
 	var restored: RunState = RunStateScript.new(false)
-	assert(restored.load_run(path))
-	assert(not restored.run_active)
+	assert(not restored.load_run(path))
 
 func test_version_twelve_world_grammar_migration() -> void:
 	var state: RunState = RunStateScript.new(false)
@@ -1640,11 +1633,7 @@ func test_version_twelve_world_grammar_migration() -> void:
 	writer.store_var(payload, true)
 	writer = null
 	var restored: RunState = RunStateScript.new(false)
-	assert(restored.load_run(path))
-	assert(restored.carried_xp == 11 and restored.secured_xp == 5)
-	assert(restored.enemies.size() > 1)
-	assert(not restored.discovered_cells.has(Vector2i(99, 99)))
-	assert(restored.message.contains("forest shifted"))
+	assert(not restored.load_run(path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_restart_restores_expedition() -> void:

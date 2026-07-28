@@ -268,9 +268,7 @@ func test_legacy_shortcut_state_is_not_imported() -> void:
 	write_file.store_var(payload, true)
 	write_file.close()
 	var migrated: RunState = RunStateScript.new(false)
-	assert(migrated.load_run(path))
-	assert(not migrated.shortcut_unlocked)
-	for shortcut in migrated.shortcuts: assert(not bool(shortcut["unlocked"]))
+	assert(not migrated.load_run(path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_layer_discovery_is_independent() -> void:
