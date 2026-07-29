@@ -46,9 +46,9 @@ func _initialize() -> void:
 	await process_frame
 	assert(scene.sheet_upgrade_rects.has("swordsmanship"))
 	assert(scene.sheet_upgrade_rects.has("evasion"))
-	assert(scene.sheet_upgrade_rects.has("warrior"))
-	assert(scene.sheet_upgrade_rects.has("vanguard"))
-	assert(not scene.sheet_upgrade_rects.has("steadfast"))
+	assert(scene.sheet_upgrade_rects.has("steadfast"))
+	assert(not scene.sheet_upgrade_rects.has("warrior"))
+	assert(not scene.sheet_upgrade_rects.has("vanguard"))
 	assert(not scene.sheet_upgrade_rects.has("adopted"))
 	if not _capture("res://builds/level-up-sheet-phone-smoke.png"): return
 	scene._open_sheet_upgrade_confirmation("evasion")

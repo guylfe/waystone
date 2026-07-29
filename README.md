@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.66`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.67`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.67: regression repair and compact-sheet legibility
+
+- Restores streamed forest terrain and boundary rendering while preserving the matching collision and navigation data.
+- Keeps the Old Forest Road secret local to its region so adding it cannot reroll later terrain or encounters for an existing seed.
+- Places the close-range secret discovery point on reachable ground, while Awareness can still reveal it earlier.
+- Corrects bandit concealment stability, Practised Footwork's cooldown, active posture recovery, Vanguard's first level gate, and migration notices.
+- Fits track labels, upgrade details, equipment copy, and choice descriptions to their character-sheet boxes instead of clipping them.
 
 ### v0.0.66: universal actor attributes and authored Warrior progression
 

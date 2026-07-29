@@ -150,7 +150,7 @@ const CHARACTER_TRACKS := {
 		"label": "Vanguard",
 		"description": "Claim space with Advance, then turn posture breaks into renewed pressure.",
 		"stages": [
-			{"id": "driving_impact", "label": "Driving Impact", "gate": 3, "description": "Advance rises from 2 to 3 damage, 4 to 6 posture damage, and 32 to 40 push."},
+			{"id": "driving_impact", "label": "Driving Impact", "gate": 4, "description": "Advance rises from 2 to 3 damage, 4 to 6 posture damage, and 32 to 40 push."},
 			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 5, "description": "Hold the original Advance input through impact to flow directly into your basic weapon sequence."},
 			{"id": "vanguard_bearing", "label": "Vanguard Bearing", "gate": 7, "description": "Gain exactly +2 Resolve; committed melee weapon actions gain light hyperarmor."},
 			{"id": "seize_the_line", "label": "Seize the Line", "gate": 9, "description": "Breaking any enemy's posture immediately refreshes Advance."},

@@ -133,7 +133,7 @@ static func _run_graph_reaches_goal(run_graph: Dictionary) -> bool:
 			frontier.append(next)
 	return false
 
-static func _generate_expedition(seed_value: int) -> Dictionary:
+static func _generate_expedition(seed_value: int, include_secrets: bool = true) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var layer := "expedition_surface"
@@ -205,7 +205,8 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 		var safe_segments := _routes_as_segments([main_path] + Array(grammar["side_routes"]))
 		var safe_points: Array = [entry, exit]
 		for zone_value in Array(grammar["zones"]): safe_points.append(Vector2(Dictionary(zone_value)["pos"]))
-		if index == 2:
+		var pending_secret: Dictionary = {}
+		if include_secrets and index == 2:
 			# Old Forest Road contains the first Awareness secret.  It is a real,
 			# narrow woodland spur hidden behind blocking brush rather than an item
 			# that simply appears on an already-open path.
@@ -214,31 +215,42 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 			var segment_end := Vector2(main_path[mini(middle_index + 1, main_path.size() - 1)])
 			var forward := segment_start.direction_to(segment_end)
 			var side := forward.rotated(PI * 0.5)
-			var first_pocket := segment_start.lerp(segment_end, 0.5) + side * 760.0
-			var second_pocket := segment_start.lerp(segment_end, 0.5) - side * 760.0
+			var path_midpoint := segment_start.lerp(segment_end, 0.5)
+			var first_pocket := path_midpoint + side * 760.0
+			var second_pocket := path_midpoint - side * 760.0
 			var pocket := first_pocket if first_pocket.x > 300.0 and first_pocket.y > 300.0 and first_pocket.x < EXPEDITION_WORLD_SIZE.x - 300.0 and first_pocket.y < EXPEDITION_WORLD_SIZE.y - 300.0 else second_pocket
-			var passage_direction := segment_start.lerp(segment_end, 0.5).direction_to(pocket)
-			var mouth := segment_start.lerp(segment_end, 0.5) + passage_direction * 230.0
+			var passage_direction := path_midpoint.direction_to(pocket)
+			var mouth := path_midpoint + passage_direction * 230.0
 			var gate_position := mouth + passage_direction * 92.0
-			_add_capsule(floor_shapes, mouth, pocket, 124.0, layer, index, "secret_path")
-			_add_circle(floor_shapes, pocket, 220.0, layer, index, "secret_pocket")
-			safe_segments.append([mouth, pocket])
-			safe_points.append(pocket)
-			terrain_features.append({
-				"kind": "thicket", "pos": gate_position, "radius": 252.0,
-				"layer": layer, "part_id": index, "blocks": true,
-				"secret_id": "old_road_rejuvenation", "secret_gate": true,
-			})
-			secret_passages.append({
+			var reveal_position := path_midpoint + passage_direction * 145.0
+			pending_secret = {
 				"id": "old_road_rejuvenation", "name": "Forager's Passage",
 				"layer": layer, "area_id": index, "gate_pos": gate_position,
-				"reveal_pos": mouth, "reward_pos": pocket,
+				"reveal_pos": reveal_position, "path_start": mouth, "reward_pos": pocket,
+				"path_radius": 124.0, "pocket_radius": 220.0, "gate_radius": 252.0,
 				"concealment": 7, "awareness_radius": 240.0,
 				"manual_radius": 58.0, "revealed": false,
 				"reward": {"id": "secret_rejuvenation_old_road", "item_id": "rejuvenation", "count": 1, "pos": pocket, "layer": layer, "area_id": index, "zone_role": "secret_pocket"},
-			})
+			}
 		_add_forest_features(terrain_features, layer_walls[layer], safe_points, layer, rng, index, float(profile["density"]), safe_segments)
 		if index < 3: _add_boundary_thickets(terrain_features, floor_shapes, layer, index, rng)
+		if not pending_secret.is_empty():
+			# Secret geometry is appended only after all shared-RNG generation.
+			# Its local clearing can therefore never move later terrain, encounters,
+			# or routes for the same seed.
+			var secret_start := Vector2(pending_secret["path_start"])
+			var secret_pocket := Vector2(pending_secret["reward_pos"])
+			var secret_path_radius := float(pending_secret["path_radius"])
+			var secret_pocket_radius := float(pending_secret["pocket_radius"])
+			_clear_features_for_secret(terrain_features, index, layer, secret_start, secret_pocket, secret_path_radius, secret_pocket_radius)
+			_add_capsule(floor_shapes, secret_start, secret_pocket, secret_path_radius, layer, index, "secret_path")
+			_add_circle(floor_shapes, secret_pocket, secret_pocket_radius, layer, index, "secret_pocket")
+			terrain_features.append({
+				"kind": "thicket", "pos": Vector2(pending_secret["gate_pos"]), "radius": float(pending_secret["gate_radius"]),
+				"layer": layer, "part_id": index, "blocks": true,
+				"secret_id": String(pending_secret["id"]), "secret_gate": true,
+			})
+			secret_passages.append(pending_secret)
 
 		var bounds := _bounds_for_part(floor_shapes, index)
 		var area := {
@@ -925,6 +937,22 @@ static func _add_forest_features(features: Array[Dictionary], walls: Array, safe
 static func _feature_wall(feature: Dictionary) -> Rect2:
 	var radius := float(feature.get("radius", 40.0))
 	return Rect2(Vector2(feature["pos"]) - Vector2.ONE * radius * 0.42, Vector2.ONE * radius * 0.84)
+
+static func _clear_features_for_secret(features: Array[Dictionary], part_id: int, layer: String, path_start: Vector2, pocket: Vector2, path_radius: float, pocket_radius: float) -> void:
+	for index in range(features.size() - 1, -1, -1):
+		var feature: Dictionary = features[index]
+		if int(feature.get("part_id", -1)) != part_id or String(feature.get("layer", layer)) != layer:
+			continue
+		if String(feature.get("kind", "")) not in ["tree", "thicket", "undergrowth", "flowers"]:
+			continue
+		var position := Vector2(feature.get("pos", Vector2.INF))
+		if not position.is_finite():
+			continue
+		var radius := float(feature.get("radius", 40.0))
+		var blocks_path := _distance_to_segment(position, path_start, pocket) <= path_radius + radius + 24.0
+		var blocks_pocket := position.distance_to(pocket) <= pocket_radius + radius + 24.0
+		if blocks_path or blocks_pocket:
+			features.remove_at(index)
 
 static func _prune_blockers_near_mandatory_paths(features: Array[Dictionary], walls: Array, connections: Array[Dictionary], layer: String) -> void:
 	var mandatory_segments: Array = []

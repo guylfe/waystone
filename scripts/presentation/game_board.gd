@@ -2478,8 +2478,11 @@ func _draw_character_sheet() -> void:
 	var leveling := not level_context.is_empty()
 	var title := "WARRIOR · VANGUARD · LEVEL UP" if leveling else "WARRIOR · VANGUARD"
 	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % ["EXPEDITION" if level_context == "expedition" else "WAYSTONE", int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font), title, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin - 104.0, header_font, Color("f2e7c8") if leveling else Color("eef4ef"))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font * 1.62), subtitle, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin, body_font, Color("d7aa58"))
+	var title_width := panel.size.x - 2.0 * margin - 104.0
+	var title_font := _sheet_fit_font_size(title, title_width, header_font, 12)
+	var subtitle_font := _sheet_fit_font_size(subtitle, panel.size.x - 2.0 * margin, body_font, 8)
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + title_font), title, HORIZONTAL_ALIGNMENT_LEFT, title_width, title_font, Color("f2e7c8") if leveling else Color("eef4ef"))
+	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font * 1.62), subtitle, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin, subtitle_font, Color("d7aa58"))
 	_draw_map_action(sheet_close_rect, "CLOSE [ESC]" if desktop_controls else "CLOSE")
 	var content_top := panel.position.y + margin + header_font * 2.02
 	var content_bottom := panel.end.y - margin
@@ -2512,7 +2515,8 @@ func _draw_sheet_summary(rect: Rect2, data: Dictionary, font: int) -> void:
 func _draw_sheet_equipment_cluster(rect: Rect2, equipment: Dictionary, font: int) -> void:
 	draw_rect(rect, Color("10191e"))
 	draw_rect(rect, Color("45545a"), false, 1.25)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, font * 1.30), "EQUIPMENT", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, font, Color("d7aa58"))
+	var heading_font := _sheet_fit_font_size("EQUIPMENT", rect.size.x - 14.0, font, 7)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, heading_font * 1.30), "EQUIPMENT", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, heading_font, Color("d7aa58"))
 	var inset := maxf(6.0, rect.size.x * 0.035)
 	var slot_width := clampf(rect.size.x * 0.265, 42.0, 76.0)
 	var slot_height := clampf((rect.size.y - font * 1.75 - 9.0) / 4.0, 17.0, 39.0)
@@ -2541,19 +2545,23 @@ func _draw_sheet_equipment_cluster(rect: Rect2, equipment: Dictionary, font: int
 		draw_rect(slot_rect, Color("58d2cf") if equipped else Color("45545a"), false, 1.0)
 		var item_label := _sheet_compact_item_label(item)
 		if slot_height < 28.0:
-			var compact_font := maxi(6, font - 4)
-			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y * 0.68), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x * 0.48, compact_font, Color("a9bbc0"))
-			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(0.0, slot_rect.size.y * 0.68), item_label, HORIZONTAL_ALIGNMENT_RIGHT, slot_rect.size.x - 3.0, compact_font, Color("e9efe9") if equipped else Color("657378"))
+			var slot_label_font := _sheet_fit_font_size(String(slot["label"]), slot_rect.size.x * 0.46, maxi(6, font - 4), 5)
+			var item_font := _sheet_fit_font_size(item_label, slot_rect.size.x * 0.48, maxi(6, font - 4), 5)
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y * 0.68), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x * 0.46, slot_label_font, Color("a9bbc0"))
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(0.0, slot_rect.size.y * 0.68), item_label, HORIZONTAL_ALIGNMENT_RIGHT, slot_rect.size.x - 3.0, item_font, Color("e9efe9") if equipped else Color("657378"))
 		else:
-			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, font * 0.92), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("a9bbc0"))
-			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y - 3.0), item_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, maxi(7, font - 3), Color("e9efe9") if equipped else Color("657378"))
+			var stacked_label_font := _sheet_fit_font_size(String(slot["label"]), slot_rect.size.x - 6.0, maxi(7, font - 3), 5)
+			var stacked_item_font := _sheet_fit_font_size(item_label, slot_rect.size.x - 6.0, maxi(7, font - 3), 5)
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, stacked_label_font * 0.92), String(slot["label"]), HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, stacked_label_font, Color("a9bbc0"))
+			draw_string(ThemeDB.fallback_font, slot_rect.position + Vector2(3.0, slot_rect.size.y - 3.0), item_label, HORIZONTAL_ALIGNMENT_LEFT, slot_rect.size.x - 6.0, stacked_item_font, Color("e9efe9") if equipped else Color("657378"))
 		sheet_equipment_rects[slot_id] = slot_rect
 		sheet_equipment_rects[slot_id + "_detail"] = {"kind": "equipment", "slot": String(slot["label"]).capitalize(), "item": item}
 
 func _draw_sheet_stats(rect: Rect2, attributes: Dictionary, font: int) -> void:
 	draw_rect(rect, Color("10191e"))
 	draw_rect(rect, Color("45545a"), false, 1.25)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, font * 1.30), "ATTRIBUTES", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, font, Color("d7aa58"))
+	var heading_font := _sheet_fit_font_size("ATTRIBUTES", rect.size.x - 14.0, font, 7)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, heading_font * 1.30), "ATTRIBUTES", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, heading_font, Color("d7aa58"))
 	var stats := [
 		{"label": "HEALTH", "value": "%d/%d" % [state.player_hp, int(attributes.get("health", 0))]},
 		{"label": "SPEED", "value": str(attributes.get("speed", 0))},
@@ -2570,8 +2578,10 @@ func _draw_sheet_stats(rect: Rect2, attributes: Dictionary, font: int) -> void:
 		var column := index % 2
 		var row := index / 2
 		var stat_rect := Rect2(rect.position + Vector2(8.0 + column * column_width, font * 1.52 + row * line_height), Vector2(column_width - 3.0, line_height))
-		draw_string(ThemeDB.fallback_font, stat_rect.position + Vector2(0.0, font), String(stat["label"]), HORIZONTAL_ALIGNMENT_LEFT, stat_rect.size.x * 0.68, maxi(8, font - 2), Color("b9c6c6"))
-		draw_string(ThemeDB.fallback_font, stat_rect.position + Vector2(0.0, font), String(stat["value"]), HORIZONTAL_ALIGNMENT_RIGHT, stat_rect.size.x, maxi(8, font - 1), Color("58d2cf"))
+		var stat_font := _sheet_fit_font_size(String(stat["label"]), stat_rect.size.x * 0.68, maxi(8, font - 2), 6)
+		var value_font := _sheet_fit_font_size(String(stat["value"]), stat_rect.size.x * 0.28, maxi(8, font - 1), 6)
+		draw_string(ThemeDB.fallback_font, stat_rect.position + Vector2(0.0, stat_font), String(stat["label"]), HORIZONTAL_ALIGNMENT_LEFT, stat_rect.size.x * 0.68, stat_font, Color("b9c6c6"))
+		draw_string(ThemeDB.fallback_font, stat_rect.position + Vector2(0.0, value_font), String(stat["value"]), HORIZONTAL_ALIGNMENT_RIGHT, stat_rect.size.x, value_font, Color("58d2cf"))
 
 func _draw_sheet_combat_summary(rect: Rect2, data: Dictionary, font: int) -> void:
 	draw_rect(rect, Color("15272e"))
@@ -2579,9 +2589,13 @@ func _draw_sheet_combat_summary(rect: Rect2, data: Dictionary, font: int) -> voi
 	var weapon_label := String(CombatCatalogScript.weapon_frame(String(data["weapon_frame"])).get("label", "Weapon"))
 	var art_id := String(data.get("equipped_art", ""))
 	var art_label := "LOCKED" if art_id == "" else String(CombatCatalogScript.weapon_art(art_id).get("label", art_id)).to_upper()
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, font * 1.22), "%s  ·  CUT › POKE › DRIVING CUT" % weapon_label.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.58, font, Color("eef4ef"))
+	var weapon_text := "%s  ·  CUT › POKE › DRIVING CUT" % weapon_label.to_upper()
+	var weapon_font := _sheet_fit_font_size(weapon_text, rect.size.x * 0.58 - 8.0, font, 6)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, weapon_font * 1.22), weapon_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.58 - 8.0, weapon_font, Color("eef4ef"))
 	var defense := String(data.get("defense", "dodge")).capitalize()
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, font * 1.22), "ART: %s  ·  %s" % [art_label, defense.to_upper()], HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x - 8.0, font, Color("d7aa58"))
+	var art_text := "ART: %s  ·  %s" % [art_label, defense.to_upper()]
+	var art_font := _sheet_fit_font_size(art_text, rect.size.x * 0.40 - 8.0, font, 6)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x * 0.60, art_font * 1.22), art_text, HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x * 0.40 - 8.0, art_font, Color("d7aa58"))
 	if art_id != "" and Array(data["known_arts"]).size() > 1 and state.can_swap_weapon_art():
 		sheet_art_rects[art_id] = rect
 
@@ -2629,8 +2643,12 @@ func _draw_sheet_tracks(rect: Rect2, tracks: Array, font: int, level_up_options:
 		var header_rect := Rect2(card.position, Vector2(card.size.x, header_height))
 		draw_rect(header_rect, Color("2a2a20") if purchasable else Color("152329"))
 		draw_line(Vector2(header_rect.position.x, header_rect.end.y), header_rect.end, Color("d7aa58") if purchasable else Color("45545a"), 1.0)
-		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(7.0, font * 1.30), String(track["label"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, header_rect.size.x * 0.70, font, Color("fff1c9") if purchasable else Color("d7aa58"))
-		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(0.0, font * 1.30), "RANK %d" % int(track["rank"]), HORIZONTAL_ALIGNMENT_RIGHT, header_rect.size.x - 7.0, maxi(9, font - 1), Color("9fb2b7"))
+		var track_label := String(track["label"]).to_upper()
+		var rank_label := "RANK %d" % int(track["rank"])
+		var track_font := _sheet_fit_font_size(track_label, header_rect.size.x * 0.66 - 7.0, font, 6)
+		var rank_font := _sheet_fit_font_size(rank_label, header_rect.size.x * 0.31, maxi(9, font - 1), 6)
+		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(7.0, track_font * 1.30), track_label, HORIZONTAL_ALIGNMENT_LEFT, header_rect.size.x * 0.66 - 7.0, track_font, Color("fff1c9") if purchasable else Color("d7aa58"))
+		draw_string(ThemeDB.fallback_font, header_rect.position + Vector2(header_rect.size.x * 0.68, rank_font * 1.30), rank_label, HORIZONTAL_ALIGNMENT_RIGHT, header_rect.size.x * 0.32 - 7.0, rank_font, Color("9fb2b7"))
 		var stages: Array = track.get("stages", [])
 		if stages.is_empty():
 			var empty_rect := Rect2(card.position + Vector2(6.0, header_height + 5.0), Vector2(card.size.x - 12.0, card.size.y - header_height - 11.0))
@@ -2655,10 +2673,13 @@ func _draw_sheet_tracks(rect: Rect2, tracks: Array, font: int, level_up_options:
 					if String(option.get("id", "")) == choice_id:
 						label = String(option.get("label", label))
 						break
-			var text_y := stage_rect.position.y + (stage_rect.size.y + maxi(9, font - 1) * 0.70) * 0.5
-			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x + 6.0, text_y), label.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, stage_rect.size.x * 0.66, maxi(9, font - 1), Color("fff1c9") if actionable else Color("d8e1dc") if completed or current else Color("59666b"))
 			var status := "DONE" if completed else "%d XP" % level_up_cost if actionable else "LEVEL %d" % int(stage.get("gate", 0))
-			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x, text_y), status, HORIZONTAL_ALIGNMENT_RIGHT, stage_rect.size.x - 6.0, maxi(8, font - 2), Color("58d2cf") if completed else Color("f0c66b") if actionable else Color("59666b"))
+			var status_font := _sheet_fit_font_size(status, stage_rect.size.x * 0.31 - 6.0, maxi(8, font - 2), 5)
+			var label_width := stage_rect.size.x * 0.66 - 8.0
+			var label_font := _sheet_fit_font_size(label.to_upper(), label_width, maxi(9, font - 1), 5)
+			var text_y := stage_rect.position.y + (stage_rect.size.y + label_font * 0.70) * 0.5
+			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x + 6.0, text_y), label.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, label_width, label_font, Color("fff1c9") if actionable else Color("d8e1dc") if completed or current else Color("59666b"))
+			draw_string(ThemeDB.fallback_font, Vector2(stage_rect.position.x + stage_rect.size.x * 0.68, stage_rect.position.y + (stage_rect.size.y + status_font * 0.70) * 0.5), status, HORIZONTAL_ALIGNMENT_RIGHT, stage_rect.size.x * 0.32 - 6.0, status_font, Color("58d2cf") if completed else Color("f0c66b") if actionable else Color("59666b"))
 			if actionable: sheet_upgrade_rects[track_id] = stage_rect
 			var detail_id := "%s_%d" % [track_id, stage_index]
 			sheet_property_rects[detail_id] = stage_rect
@@ -2681,26 +2702,39 @@ func _draw_sheet_detail(panel: Rect2, margin: float, font: int) -> void:
 	sheet_detail_close_rect = Rect2(box.end - Vector2(84.0, box.size.y - 9.0), Vector2(75.0, 30.0))
 	if kind == "stage":
 		var stage: Dictionary = sheet_detail["stage"]
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 110.0, font + 2, Color("d7aa58"))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 3.45), String(stage["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font, Color("e5ece6"))
+		var title := "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()]
+		var title_font := _sheet_fit_font_size(title, box.size.x - 118.0, font + 2, 7)
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, 14.0 + title_font), title, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 118.0, title_font, Color("d7aa58"))
+		var description_rect := Rect2(box.position + Vector2(14.0, 52.0), Vector2(box.size.x - 28.0, box.size.y - 105.0))
+		_draw_sheet_wrapped_text(description_rect, String(stage["description"]), font, 7, Color("e5ece6"))
 		var status := "COMPLETED" if bool(stage.get("completed", false)) else "AVAILABLE FROM LEVEL %d" % int(stage.get("gate", 0))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 6.2), status, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font + 1, Color("58d2cf") if bool(stage.get("completed", false)) else Color("718087"))
+		var status_font := _sheet_fit_font_size(status, box.size.x - 28.0, font + 1, 7)
+		draw_string(ThemeDB.fallback_font, Vector2(box.position.x + 14.0, box.end.y - 18.0), status, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, status_font, Color("58d2cf") if bool(stage.get("completed", false)) else Color("718087"))
 	else:
 		var item := String(sheet_detail.get("item", "Empty"))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 1.65), String(sheet_detail.get("slot", "Equipment")).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 110.0, font + 2, Color("d7aa58"))
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 3.45), item.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font + 3, Color("eef4ef") if item != "Empty" else Color("718087"))
+		var slot_title := String(sheet_detail.get("slot", "Equipment")).to_upper()
+		var slot_font := _sheet_fit_font_size(slot_title, box.size.x - 118.0, font + 2, 7)
+		var item_font := _sheet_fit_font_size(item.to_upper(), box.size.x - 28.0, font + 3, 7)
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, 14.0 + slot_font), slot_title, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 118.0, slot_font, Color("d7aa58"))
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, 48.0 + item_font), item.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, item_font, Color("eef4ef") if item != "Empty" else Color("718087"))
 		var item_text := "This slot is currently empty." if item == "Empty" else "Its properties will appear here as equipment enters the prototype."
-		draw_string(ThemeDB.fallback_font, box.position + Vector2(14.0, font * 5.35), item_text, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 28.0, font, Color("c4d0cc"))
+		_draw_sheet_wrapped_text(Rect2(box.position + Vector2(14.0, 88.0), Vector2(box.size.x - 28.0, box.size.y - 104.0)), item_text, font, 7, Color("c4d0cc"))
 	_draw_map_action(sheet_detail_close_rect, "BACK [ESC]" if desktop_controls else "BACK")
 
 func _draw_sheet_upgrade_confirmation(box: Rect2, font: int) -> void:
 	var stage: Dictionary = sheet_detail["stage"]
 	var cost := int(sheet_detail.get("cost", 0))
 	var xp := state.secured_xp if state.mode_id == "campaign_lab" else state.carried_xp
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.35), String(stage["description"]), HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 1, Color("fff1c9"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 6.25), "THIS CHOICE IS PERMANENT FOR THE RUN.", HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("9fb2b7"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 7.75), "COST  %d XP     REMAINING  %d XP" % [cost, maxi(0, xp - cost)], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("d7ddd5"))
+	var title := "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()]
+	var title_font := _sheet_fit_font_size(title, box.size.x - 32.0, font + 3, 7)
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, 14.0 + title_font), title, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, title_font, Color("d7aa58"))
+	_draw_sheet_wrapped_text(Rect2(box.position + Vector2(16.0, 52.0), Vector2(box.size.x - 32.0, box.size.y - 158.0)), String(stage["description"]), font + 1, 7, Color("fff1c9"))
+	var permanence := "THIS CHOICE IS PERMANENT FOR THE RUN."
+	var permanence_font := _sheet_fit_font_size(permanence, box.size.x - 32.0, font, 6)
+	draw_string(ThemeDB.fallback_font, Vector2(box.position.x + 16.0, box.end.y - 92.0), permanence, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, permanence_font, Color("9fb2b7"))
+	var cost_text := "COST  %d XP     REMAINING  %d XP" % [cost, maxi(0, xp - cost)]
+	var cost_font := _sheet_fit_font_size(cost_text, box.size.x - 32.0, font, 6)
+	draw_string(ThemeDB.fallback_font, Vector2(box.position.x + 16.0, box.end.y - 70.0), cost_text, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, cost_font, Color("d7ddd5"))
 	var button_size := Vector2(minf(156.0, (box.size.x - 48.0) * 0.42), 38.0)
 	sheet_detail_close_rect = Rect2(box.end - Vector2(button_size.x * 2.0 + 28.0, button_size.y + 14.0), button_size)
 	sheet_detail_confirm_rect = Rect2(box.end - Vector2(button_size.x + 14.0, button_size.y + 14.0), button_size)
@@ -2711,13 +2745,17 @@ func _draw_sheet_weapon_skill_choice(box: Rect2, font: int) -> void:
 	var stage: Dictionary = sheet_detail["stage"]
 	var cost := int(sheet_detail.get("cost", 0))
 	var selected := String(sheet_detail.get("selected", ""))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 1.65), "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()], HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font + 3, Color("d7aa58"))
-	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, font * 3.10), "Choose one. This branch is permanent for the run.", HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, font, Color("e5ece6"))
+	var title := "%s · %s" % [String(sheet_detail["track"]).to_upper(), String(stage["label"]).to_upper()]
+	var title_font := _sheet_fit_font_size(title, box.size.x - 32.0, font + 3, 7)
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, 14.0 + title_font), title, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, title_font, Color("d7aa58"))
+	var instruction := "Choose one. This branch is permanent for the run."
+	var instruction_font := _sheet_fit_font_size(instruction, box.size.x - 32.0, font, 7)
+	draw_string(ThemeDB.fallback_font, box.position + Vector2(16.0, 44.0 + instruction_font), instruction, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 32.0, instruction_font, Color("e5ece6"))
 	var options: Array = sheet_detail.get("options", [])
 	var gap := 10.0
 	var option_width := (box.size.x - 32.0 - gap) / maxf(1.0, float(options.size()))
 	var option_height := clampf(box.size.y * 0.38, 78.0, 110.0)
-	var options_y := box.position.y + font * 4.05
+	var options_y := box.position.y + 72.0
 	for index in range(options.size()):
 		var option_data := Dictionary(options[index])
 		var option_id := String(option_data["id"])
@@ -2726,8 +2764,10 @@ func _draw_sheet_weapon_skill_choice(box: Rect2, font: int) -> void:
 		var is_selected := selected == encoded_option
 		draw_rect(choice_rect, Color("4a3520") if is_selected else Color("17252a"))
 		draw_rect(choice_rect, Color("f0c66b") if is_selected else Color("58d2cf"), false, 2.0 if is_selected else 1.25)
-		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 1.45), String(option_data.get("label", "Choice")).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, font + 1, Color("fff1c9") if is_selected else Color("e5ece6"))
-		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, font * 3.25), String(option_data.get("description", "")), HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, maxi(9, font - 1), Color("d7ddd5"))
+		var option_label := String(option_data.get("label", "Choice")).to_upper()
+		var option_font := _sheet_fit_font_size(option_label, choice_rect.size.x - 16.0, font + 1, 6)
+		draw_string(ThemeDB.fallback_font, choice_rect.position + Vector2(8.0, 8.0 + option_font), option_label, HORIZONTAL_ALIGNMENT_LEFT, choice_rect.size.x - 16.0, option_font, Color("fff1c9") if is_selected else Color("e5ece6"))
+		_draw_sheet_wrapped_text(Rect2(choice_rect.position + Vector2(8.0, 32.0), Vector2(choice_rect.size.x - 16.0, choice_rect.size.y - 38.0)), String(option_data.get("description", "")), maxi(9, font - 1), 6, Color("d7ddd5"))
 		sheet_skill_choice_rects[encoded_option] = choice_rect
 	var button_size := Vector2(minf(156.0, (box.size.x - 48.0) * 0.42), 38.0)
 	sheet_detail_close_rect = Rect2(box.end - Vector2(button_size.x * 2.0 + 28.0, button_size.y + 14.0), button_size)
@@ -2740,7 +2780,65 @@ func _draw_sheet_modal_button(rect: Rect2, label: String, primary: bool, enabled
 	var border := Color("f0c66b") if primary and enabled else Color("58d2cf") if enabled else Color("45545a")
 	draw_rect(rect, fill)
 	draw_rect(rect, border, false, 1.8)
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.64), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("fff1c9") if enabled else Color("657378"))
+	var button_font := _sheet_fit_font_size(label, rect.size.x - 8.0, 12, 6)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.64), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, button_font, Color("fff1c9") if enabled else Color("657378"))
+
+func _sheet_text_width(text: String, font_size: int) -> float:
+	return ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x
+
+func _sheet_fit_font_size(text: String, width: float, preferred: int, minimum: int = 6) -> int:
+	var result := maxi(minimum, preferred)
+	while result > minimum and _sheet_text_width(text, result) > maxf(1.0, width):
+		result -= 1
+	return result
+
+func _sheet_wrap_lines(text: String, width: float, font_size: int) -> Array[String]:
+	var lines: Array[String] = []
+	for paragraph_value in text.split("\n", true):
+		var paragraph := String(paragraph_value)
+		var words := paragraph.split(" ", false)
+		if words.is_empty():
+			lines.append("")
+			continue
+		var current := ""
+		for word_value in words:
+			var word := String(word_value)
+			var candidate := word if current.is_empty() else "%s %s" % [current, word]
+			if current.is_empty() or _sheet_text_width(candidate, font_size) <= maxf(1.0, width):
+				current = candidate
+			else:
+				lines.append(current)
+				current = word
+		if not current.is_empty():
+			lines.append(current)
+	return lines
+
+func _sheet_text_layout(text: String, width: float, height: float, preferred: int, minimum: int = 6) -> Dictionary:
+	var lower_bound := maxi(4, minimum)
+	for font_size in range(maxi(lower_bound, preferred), lower_bound - 1, -1):
+		var lines := _sheet_wrap_lines(text, width, font_size)
+		var line_height := ceilf(ThemeDB.fallback_font.get_height(font_size) * 1.12)
+		var widest := 0.0
+		for line in lines:
+			widest = maxf(widest, _sheet_text_width(line, font_size))
+		if widest <= width + 0.01 and line_height * float(lines.size()) <= height + 0.01:
+			return {"font_size": font_size, "line_height": line_height, "lines": lines, "width": widest, "height": line_height * float(lines.size()), "fits": true}
+	var fallback_lines := _sheet_wrap_lines(text, width, lower_bound)
+	var fallback_height := ceilf(ThemeDB.fallback_font.get_height(lower_bound) * 1.12)
+	var fallback_width := 0.0
+	for line in fallback_lines:
+		fallback_width = maxf(fallback_width, _sheet_text_width(line, lower_bound))
+	return {"font_size": lower_bound, "line_height": fallback_height, "lines": fallback_lines, "width": fallback_width, "height": fallback_height * float(fallback_lines.size()), "fits": fallback_width <= width + 0.01 and fallback_height * float(fallback_lines.size()) <= height + 0.01}
+
+func _draw_sheet_wrapped_text(rect: Rect2, text: String, preferred: int, minimum: int, color: Color) -> Dictionary:
+	var layout := _sheet_text_layout(text, rect.size.x, rect.size.y, preferred, minimum)
+	var font_size := int(layout["font_size"])
+	var line_height := float(layout["line_height"])
+	var y := rect.position.y + ThemeDB.fallback_font.get_ascent(font_size)
+	for line_value in Array(layout["lines"]):
+		draw_string(ThemeDB.fallback_font, Vector2(rect.position.x, y), String(line_value), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x, font_size, color)
+		y += line_height
+	return layout
 
 func _sheet_rank_pips(rank: int, maximum: int) -> String:
 	var result := ""

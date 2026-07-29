@@ -540,7 +540,6 @@ func _refresh_player_posture_capacity(fill: bool = false) -> void:
 
 func enemy_visible_to_player(enemy: Dictionary) -> bool:
 	if String(enemy.get("kind", "")) != "bandit": return true
-	if String(enemy.get("awareness", "idle")) == "idle": return true
 	return bool(enemy.get("revealed_to_player", false))
 
 func _empty_character_track_ranks() -> Dictionary:
@@ -764,7 +763,7 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	var evade_start := 0.08
 	var evade_end := 0.38
 	var speed := DODGE_SPEED
-	var cooldown := DODGE_COOLDOWN
+	var cooldown := 3.6 if has_track_rank("evasion", 1) else DODGE_COOLDOWN
 	if style == "sidestep":
 		duration = 0.48
 		move_start = 0.06
@@ -1276,6 +1275,10 @@ func _refresh_loaded_region_content() -> void:
 		if bool(feature.get("blocks", String(feature.get("kind", "")) == "tree")):
 			var radius := float(feature.get("radius", 40.0))
 			base_walls.append(Rect2(Vector2(feature["pos"]) - Vector2.ONE * radius * 0.42, Vector2.ONE * radius * 0.84))
+	_build_terrain_feature_spatial_index()
+	if geometry_style != "organic": base_walls.assign(Array(base_walls_by_layer.get(current_layer, [])))
+	performance_metrics["loaded_regions"] = loaded_region_ids.size()
+	_invalidate_active_enemy_cache()
 
 func _secret_is_revealed(secret_id: String) -> bool:
 	for secret in secret_passages:
@@ -1301,10 +1304,6 @@ func _update_secret_passages() -> bool:
 		_apply_shortcut_world_state()
 		return true
 	return false
-	_build_terrain_feature_spatial_index()
-	if geometry_style != "organic": base_walls.assign(Array(base_walls_by_layer.get(current_layer, [])))
-	performance_metrics["loaded_regions"] = loaded_region_ids.size()
-	_invalidate_active_enemy_cache()
 
 func _build_shape_spatial_index() -> void:
 	_shape_buckets_by_layer.clear()
@@ -1764,7 +1763,7 @@ func _tick(dt: float) -> void:
 	advance_cooldown = maxf(0.0, advance_cooldown - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
 	player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
-	if player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) == "idle":
+	if player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
 		player_posture = minf(player_posture_max, player_posture + player_dt * float(player_properties.get("posture_recovery", 1.8)))
 	if rally_remaining > 0.0:
 		rally_remaining = maxf(0.0, rally_remaining - dt)
@@ -2267,7 +2266,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		enemy["pounce_cooldown"] = maxf(0.0, float(enemy.get("pounce_cooldown", 0.0)) - enemy_dt)
 		enemy["dodge_cooldown"] = maxf(0.0, float(enemy.get("dodge_cooldown", 0.0)) - enemy_dt)
 		enemy["posture_recovery_delay"] = maxf(0.0, float(enemy.get("posture_recovery_delay", 0.0)) - enemy_dt)
-		if float(enemy["posture_recovery_delay"]) <= 0.0 and String(Dictionary(enemy["action"])["kind"]) == "idle":
+		if float(enemy["posture_recovery_delay"]) <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
 			enemy["posture"] = minf(float(enemy["posture_max"]), float(enemy["posture"]) + enemy_dt * float(Dictionary(enemy.get("properties", {})).get("posture_recovery", 1.8)))
 		var action: Dictionary = enemy["action"]
 		if String(action["kind"]) == "idle":
@@ -3637,6 +3636,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
 	var save_version := int(payload.get("save_version", 0))
+	var migration_notices: Array[String] = []
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
@@ -3777,7 +3777,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		upgrade_count = 0
 		carried_xp += refund
 		if mode_id == ModeRulesScript.CAMPAIGN_LAB: secured_xp += refund
-		message = "Your old training was refunded as XP for the revised disciplines."
+		migration_notices.append("Your old training was refunded as XP for the revised disciplines.")
 	lost_xp = Dictionary(payload.get("lost_xp", {"active": false, "amount": 0, "pos": Vector2.ZERO})).duplicate(true)
 	death_report = Dictionary(payload.get("death_report", {})).duplicate(true)
 	last_anchor_report = Dictionary(payload.get("last_anchor_report", {})).duplicate(true)
@@ -3820,7 +3820,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	successful_endures = int(payload.get("successful_endures", 0))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
-	if position_was_migrated or save_version < 13: message = "The forest shifted. Its old geography fades from memory."
+	if position_was_migrated or save_version < 13:
+		migration_notices.push_front("The forest shifted. Its old geography fades from memory.")
+	if not migration_notices.is_empty():
+		message = " ".join(migration_notices)
 	rng.state = int(payload.get("rng_state", rng.state))
 	_next_enemy_id = 1
 	for index in range(enemies.size()):

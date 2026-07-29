@@ -8,6 +8,8 @@ func _init() -> void:
 	test_expedition_macro_structure_contract()
 	test_semantic_world_grammar_batch()
 	test_early_forest_readability_contract()
+	test_streamed_terrain_index_restores_visible_boundaries()
+	test_secret_generation_does_not_shift_shared_rng()
 	test_boss_marker_uses_actual_spawn()
 	test_organic_route_reachability()
 	test_mandatory_paths_keep_generous_clearance()
@@ -37,6 +39,44 @@ func test_early_forest_readability_contract() -> void:
 	var road: Dictionary = Dictionary(Array(areas[2]["landmarks"])[0])
 	assert(String(road["kind"]) == "old_road")
 	assert(float(road["width"]) >= 200.0)
+
+func test_streamed_terrain_index_restores_visible_boundaries() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 424242)
+	state.current_area_id = 0
+	state.player_pos = Vector2(state.areas[0]["center"])
+	state._apply_shortcut_world_state()
+	assert(not state.loaded_terrain_features.is_empty())
+	var boundary: Dictionary = {}
+	for feature_value in state.loaded_terrain_features:
+		var feature := Dictionary(feature_value)
+		if int(feature.get("part_id", -1)) == 0 and bool(feature.get("boundary", false)):
+			boundary = feature
+			break
+	assert(not boundary.is_empty())
+	var nearby := state.nearby_terrain_features(Vector2(boundary["pos"]), 8.0)
+	assert(nearby.any(func(value: Dictionary) -> bool: return bool(value.get("boundary", false)) and Vector2(value.get("pos", Vector2.ZERO)).is_equal_approx(Vector2(boundary["pos"]))))
+	assert(int(state.performance_metrics["loaded_regions"]) == state.loaded_region_ids.size())
+
+func test_secret_generation_does_not_shift_shared_rng() -> void:
+	for seed in [11, 424242, 1784339476686]:
+		var ordinary: Dictionary = FloorGeneratorScript._generate_expedition(seed, false)
+		var secret: Dictionary = FloorGeneratorScript._generate_expedition(seed, true)
+		assert(Array(ordinary["secret_passages"]).is_empty())
+		assert(Array(secret["secret_passages"]).size() == 1)
+		for area_index in range(Array(ordinary["areas"]).size()):
+			assert(Vector2(Array(ordinary["areas"])[area_index]["center"]).is_equal_approx(Vector2(Array(secret["areas"])[area_index]["center"])))
+			assert(Array(Dictionary(ordinary["encounters"])[area_index]) == Array(Dictionary(secret["encounters"])[area_index]))
+		for feature_value in Array(ordinary["terrain_features"]):
+			var feature := Dictionary(feature_value)
+			if int(feature.get("part_id", -1)) < 3:
+				continue
+			assert(Array(secret["terrain_features"]).has(feature))
+		for shape_value in Array(ordinary["floor_shapes"]):
+			var shape := Dictionary(shape_value)
+			if int(shape.get("part_id", -1)) < 3:
+				continue
+			assert(Array(secret["floor_shapes"]).has(shape))
 
 func test_large_seven_part_forest_expedition() -> void:
 	for seed in [11, 1784339476686, 739391]:

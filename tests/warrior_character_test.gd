@@ -11,6 +11,7 @@ func _init() -> void:
 	test_evasion_mastery_reward()
 	test_fixed_damage_speed_and_resolve()
 	test_bandit_awareness_and_secret_passage()
+	test_character_sheet_copy_fits_compact_boxes()
 	test_current_save_boundary()
 	test_v19_potion_capacity_migration()
 	test_action_layout_separates_context()
@@ -46,6 +47,13 @@ func test_initial_sheet_and_gates() -> void:
 	assert(not state.has_infinite_potions())
 	var options := state.available_level_up_options()
 	assert(options == ["swordsmanship", "evasion", "steadfast"])
+	assert(state.choose_upgrade("steadfast|toughness"))
+	assert(state.character_level() == 2)
+	assert(state.available_level_up_options().has("warrior"))
+	assert(not state.available_level_up_options().has("vanguard"))
+	assert(state.choose_upgrade("evasion"))
+	assert(state.character_level() == 3)
+	assert(state.available_level_up_options().has("vanguard"))
 
 func test_permanent_track_choices() -> void:
 	var state := fresh_state()
@@ -112,10 +120,23 @@ func test_fixed_damage_speed_and_resolve() -> void:
 	state.player_action = state._idle_action()
 	state._resolve_incoming_hit(900, 2, "test")
 	assert(is_equal_approx(state.player_posture, 11.0))
+	state.enemies.clear()
+	state.player_posture_recovery_delay = 0.0
+	state.player_action = state._idle_action()
+	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	var posture_before := state.player_posture
+	state.advance_streamed_action_tick()
+	assert(state.player_posture > posture_before)
+	state.track_ranks["evasion"] = 1
+	state.player_action = state._idle_action()
+	state.dodge_cooldown = 0.0
+	assert(state.request_dodge(Vector2.RIGHT, false))
+	assert(is_equal_approx(state.dodge_cooldown, 3.6))
 
 func test_bandit_awareness_and_secret_passage() -> void:
 	var state := fresh_state()
 	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.RIGHT * 360.0, 5)
+	assert(not state.enemy_visible_to_player(bandit))
 	bandit["awareness"] = "alerted"
 	state._update_bandit_concealment(bandit, 0.1)
 	assert(not state.enemy_visible_to_player(bandit))
@@ -124,11 +145,36 @@ func test_bandit_awareness_and_secret_passage() -> void:
 	assert(state.enemy_visible_to_player(bandit))
 	assert(not state.secret_passages.is_empty())
 	var secret: Dictionary = state.secret_passages[0]
-	state.player_attributes["awareness"] = int(secret["concealment"])
+	state.player_attributes["awareness"] = 5
+	state.current_area_id = int(secret["area_id"])
 	state.player_pos = Vector2(secret["reveal_pos"])
+	state._apply_shortcut_world_state()
+	assert(not state._position_blocked_static(state.player_pos, state.PLAYER_RADIUS))
 	assert(state._update_secret_passages())
 	assert(bool(state.secret_passages[0]["revealed"]))
 	assert(state.world_pickups.any(func(value: Dictionary) -> bool: return String(value.get("id", "")) == "secret_rejuvenation_old_road"))
+
+func test_character_sheet_copy_fits_compact_boxes() -> void:
+	var board = GameBoardScript.new()
+	var state := fresh_state()
+	board.state = state
+	for track_value in Array(state.character_sheet_data()["tracks"]):
+		var track := Dictionary(track_value)
+		var track_label := String(track["label"]).to_upper()
+		var track_font := board._sheet_fit_font_size(track_label, 100.0, 12, 6)
+		assert(board._sheet_text_width(track_label, track_font) <= 100.01)
+		for stage_value in Array(track.get("stages", [])):
+			var stage := Dictionary(stage_value)
+			var label := String(stage.get("label", "")).to_upper()
+			var label_font := board._sheet_fit_font_size(label, 118.0, 11, 5)
+			assert(board._sheet_text_width(label, label_font) <= 118.01)
+			var detail_layout := board._sheet_text_layout(String(stage.get("description", "")), 360.0, 90.0, 12, 7)
+			assert(bool(detail_layout["fits"]), "stage copy overflow: %s" % stage.get("id", ""))
+			for choice_value in Array(stage.get("choices", [])):
+				var choice := Dictionary(choice_value)
+				var choice_layout := board._sheet_text_layout(String(choice.get("description", "")), 180.0, 68.0, 10, 6)
+				assert(bool(choice_layout["fits"]), "choice copy overflow: %s" % choice.get("id", ""))
+	board.free()
 
 func test_current_save_boundary() -> void:
 	var path := "user://warrior-current-save-test.save"
@@ -158,6 +204,7 @@ func test_v19_potion_capacity_migration() -> void:
 	var loaded: RunState = RunStateScript.new(false)
 	assert(loaded.load_run(path))
 	assert(loaded.healing_capacity() == 5 and loaded.potions == 5)
+	assert(loaded.message.contains("refunded as XP"))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_action_layout_separates_context() -> void:
