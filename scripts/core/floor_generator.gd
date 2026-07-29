@@ -155,6 +155,7 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 	var part_entries: Array[Vector2] = []
 	var part_exits: Array[Vector2] = []
 	var part_main_paths: Array[Array] = []
+	var secret_passages: Array[Dictionary] = []
 	var boss_position := Vector2.ZERO
 
 	for index in range(route_recipe.size()):
@@ -204,6 +205,38 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 		var safe_segments := _routes_as_segments([main_path] + Array(grammar["side_routes"]))
 		var safe_points: Array = [entry, exit]
 		for zone_value in Array(grammar["zones"]): safe_points.append(Vector2(Dictionary(zone_value)["pos"]))
+		if index == 2:
+			# Old Forest Road contains the first Awareness secret.  It is a real,
+			# narrow woodland spur hidden behind blocking brush rather than an item
+			# that simply appears on an already-open path.
+			var middle_index := maxi(0, int((main_path.size() - 1) / 2))
+			var segment_start := Vector2(main_path[middle_index])
+			var segment_end := Vector2(main_path[mini(middle_index + 1, main_path.size() - 1)])
+			var forward := segment_start.direction_to(segment_end)
+			var side := forward.rotated(PI * 0.5)
+			var first_pocket := segment_start.lerp(segment_end, 0.5) + side * 760.0
+			var second_pocket := segment_start.lerp(segment_end, 0.5) - side * 760.0
+			var pocket := first_pocket if first_pocket.x > 300.0 and first_pocket.y > 300.0 and first_pocket.x < EXPEDITION_WORLD_SIZE.x - 300.0 and first_pocket.y < EXPEDITION_WORLD_SIZE.y - 300.0 else second_pocket
+			var passage_direction := segment_start.lerp(segment_end, 0.5).direction_to(pocket)
+			var mouth := segment_start.lerp(segment_end, 0.5) + passage_direction * 230.0
+			var gate_position := mouth + passage_direction * 92.0
+			_add_capsule(floor_shapes, mouth, pocket, 124.0, layer, index, "secret_path")
+			_add_circle(floor_shapes, pocket, 220.0, layer, index, "secret_pocket")
+			safe_segments.append([mouth, pocket])
+			safe_points.append(pocket)
+			terrain_features.append({
+				"kind": "thicket", "pos": gate_position, "radius": 252.0,
+				"layer": layer, "part_id": index, "blocks": true,
+				"secret_id": "old_road_rejuvenation", "secret_gate": true,
+			})
+			secret_passages.append({
+				"id": "old_road_rejuvenation", "name": "Forager's Passage",
+				"layer": layer, "area_id": index, "gate_pos": gate_position,
+				"reveal_pos": mouth, "reward_pos": pocket,
+				"concealment": 7, "awareness_radius": 240.0,
+				"manual_radius": 58.0, "revealed": false,
+				"reward": {"id": "secret_rejuvenation_old_road", "item_id": "rejuvenation", "count": 1, "pos": pocket, "layer": layer, "area_id": index, "zone_role": "secret_pocket"},
+			})
 		_add_forest_features(terrain_features, layer_walls[layer], safe_points, layer, rng, index, float(profile["density"]), safe_segments)
 		if index < 3: _add_boundary_thickets(terrain_features, floor_shapes, layer, index, rng)
 
@@ -261,6 +294,7 @@ static func _generate_expedition(seed_value: int) -> Dictionary:
 		"walls": Array(layer_walls[layer]), "base_walls": Array(layer_walls[layer]),
 		"encounters": encounters, "waystones": [], "shortcuts": [], "transitions": [],
 		"pickups": _initial_consumable_pickups(areas, true),
+		"secret_passages": secret_passages,
 		"route_recipe": route_recipe,
 		"run_graph": run_graph,
 		"locale_catalog": locale_catalog,

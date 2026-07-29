@@ -445,6 +445,9 @@ func test_signature_attack_roster() -> void:
 	var distances := {"bandit": 70.0, "knife": 80.0, "blade": 110.0, "polearm": 190.0, "brute": 140.0, "captain": 120.0}
 	for kind in expected:
 		var enemy := state._make_enemy(String(kind), state.player_pos + Vector2.UP * float(distances[kind]), state._enemy_base_hp(String(kind)))
+		if String(kind) == "bandit":
+			enemy["revealed_to_player"] = true
+			enemy["revealed_elapsed"] = 0.35
 		state._choose_enemy_action(enemy)
 		assert(String(Dictionary(enemy["action"]).get("technique_id", "")) == String(expected[kind]))
 
@@ -1110,6 +1113,8 @@ func test_new_enemy_roles() -> void:
 	state._choose_enemy_action(hound)
 	assert(String(Dictionary(hound["action"])["kind"]) == "evade")
 	var bandit := state._make_enemy("bandit", state.player_pos + Vector2(0, -180), 5)
+	bandit["revealed_to_player"] = true
+	bandit["revealed_elapsed"] = 0.35
 	state._choose_enemy_action(bandit)
 	assert(String(Dictionary(bandit["action"])["kind"]) == "dodge_strike")
 	bandit["action"]["elapsed"] = 0.18

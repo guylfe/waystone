@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.65`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.66`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.66: universal actor attributes and authored Warrior progression
+
+Speed now advances each actor's personal action and cooldown clock by 3% per point from the baseline of 5, while released projectiles, hazards, Rally duration, and other world-time effects remain independent. Player damage is fixed rather than rolled, and Resolve now contributes to a persistent posture meter: damage can break posture and interrupt a commitment, while hyperarmor remains an authored property of appropriate actions instead of passive damage reduction.
+
+The Warrior · Vanguard sheet has been rebuilt as five deliberately distinct tracks. Swordsmanship grants a permanent Sword Art, combo correction, fixed edge damage, authored Art reach, and faster flow. Evasion first improves Dodge, then chooses Sidestep or Long Roll and culminates in a clean-dodge reward. Steadfast may be trained four times through visible Toughness or Vigilance packages. Warrior develops physical conditioning, escalating consecutive-hit force, Rally, Battle Rhythm, and Warpath. Vanguard develops a damaging Advance, continuous momentum into the sword sequence, Resolve-backed melee poise, and an Advance refresh on posture break.
+
+Awareness now has physical world consequences. Alerted bandits remain concealed until the player identifies them at a distance determined by Awareness versus Stealth, and must remain revealed briefly before attacking. Old Forest Road also contains a deterministic concealed woodland passage: Awareness 7 reveals it from farther away, while any character can discover it up close, and the pocket contains an extra rejuvenation potion. Version 20 progression is refunded as XP on migration so old runs can enter the revised tracks without silently receiving mismatched nodes.
 
 ### v0.0.65: clearer context control and smoother mage progression
 

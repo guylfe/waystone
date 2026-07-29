@@ -23,6 +23,8 @@ const PROPERTY_DEFAULTS := {
 	"resistances": {"physical": 0, "fire": 0, "ice": 0, "arcane": 0},
 	"status_resistance": 0,
 	"mass": 1.0,
+	"posture_base": 5.0,
+	"posture_recovery": 1.8,
 	"collision_radius": 28.0,
 	"vision_range": 520.0,
 	"hearing_range": 260.0,
@@ -96,67 +98,62 @@ const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrio
 const CHARACTER_TRACKS := {
 	"swordsmanship": {
 		"label": "Swordsmanship",
-		"description": "Sword fundamentals and one permanent expression of the weapon.",
+		"description": "A permanent Sword Art, precise combo control, and authored reach.",
 		"stages": [
 			{"id": "sword_art", "label": "Weapon Art", "gate": 2, "description": "Choose one Sword Art for this run.", "choices": [
 				{"id": "prototype_sweeping_cut", "label": "Sweeping Cut", "description": "A broad multi-target cut with exceptional posture force."},
 				{"id": "prototype_drawing_cut", "label": "Drawing Cut", "description": "A narrow, forceful cut that reaches through a precise opening."},
 			]},
-			{"id": "edge_control", "label": "Edge Control", "gate": 5, "description": "All sword attacks gain +1 maximum damage and +0.5 posture damage."},
-			{"id": "art_refinement", "label": "Art Refinement", "gate": 8, "description": "Improve the reach, startup, and posture identity of your chosen Sword Art."},
-			{"id": "flowing_steel", "label": "Flowing Steel", "gate": 10, "description": "Sword recovery is 12% shorter and combo transitions are 10% faster."},
+			{"id": "follow_the_opening", "label": "Follow the Opening", "gate": 4, "description": "A continued swing corrects toward a nearby enemy it would otherwise miss."},
+			{"id": "edge_control", "label": "Edge Control", "gate": 6, "description": "Every sword hit deals exactly +1 damage and +0.5 posture damage."},
+			{"id": "long_reach", "label": "Long Reach", "gate": 8, "description": "Your chosen Sword Art gains exactly +20 reach."},
+			{"id": "flowing_steel", "label": "Flowing Steel", "gate": 10, "description": "Basic sword recovery and combo transitions become approximately 8% faster."},
 		],
 	},
 	"evasion": {
 		"label": "Evasion",
-		"description": "Turn the basic dodge into a chosen evasive discipline.",
+		"description": "Improve the basic Dodge, then commit to a distinct evasive form.",
 		"stages": [
-			{"id": "practised_landing", "label": "Practised Landing", "gate": 2, "description": "Basic Dodge recovery falls from 0.66 to 0.60 seconds."},
-			{"id": "evasion_style", "label": "Evasive Form", "gate": 4, "description": "Permanently specialize your Dodge for this run.", "choices": [
-				{"id": "sidestep", "label": "Sidestep", "description": "The same travel in less time, with a 3.2-second cooldown."},
-				{"id": "long_roll", "label": "Long Roll", "description": "A longer committed roll covering 217 units."},
+			{"id": "practised_footwork", "label": "Practised Footwork", "gate": 2, "description": "Basic Dodge recovery falls from 0.66 to 0.60 seconds and cooldown from 4.0 to 3.6."},
+			{"id": "evasion_style", "label": "Evasive Form", "gate": 5, "description": "Permanently specialize your Dodge for this run.", "choices": [
+				{"id": "sidestep", "label": "Sidestep", "description": "Cover the same 168-unit distance faster, with a 2.8-second cooldown."},
+				{"id": "long_roll", "label": "Long Roll", "description": "Commit to a longer 231-unit escape with a 3.6-second cooldown."},
 			]},
-			{"id": "evasion_refinement", "label": "Form Refinement", "gate": 7, "description": "Deepen the speed and readiness of your chosen form."},
-			{"id": "evasion_mastery", "label": "Perfect Form", "gate": 10, "description": "A physically clean dodge produces a form-specific reward."},
+			{"id": "evasion_mastery", "label": "Perfect Form", "gate": 9, "description": "A clean Sidestep primes Counterstep; a clean Long Roll restores 2 seconds of Dodge cooldown."},
 		],
 	},
 	"steadfast": {
 		"label": "Steadfast",
-		"description": "Temperament: train complementary traits rather than every universal statistic.",
+		"description": "Temperament: repeatedly choose between Toughness and Vigilance, up to four times.",
 		"stages": [
-			{"id": "steadfast_1", "label": "Temperament I", "gate": 3, "description": "Choose how hard experience changes you.", "choices": [
+			{"id": "steadfast_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Steadfast package.", "choices": [
 				{"id": "toughness", "label": "Toughness", "description": "+3 maximum health and +1 Resolve."},
-				{"id": "readiness", "label": "Readiness", "description": "+1 Speed, +1 Awareness, +3.5% movement, and +35 sight range."},
+				{"id": "vigilance", "label": "Vigilance", "description": "+1 Speed and +1 Awareness."},
 			]},
-			{"id": "steadfast_2", "label": "Temperament II", "gate": 6, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
-			{"id": "steadfast_3", "label": "Temperament III", "gate": 9, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
-			{"id": "steadfast_4", "label": "Temperament IV", "gate": 12, "description": "Choose Toughness or Readiness again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_2", "label": "Temperament II", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_3", "label": "Temperament III", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_4", "label": "Temperament IV", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
 		],
 	},
 	"warrior": {
 		"label": "Warrior",
-		"description": "Rally through danger while every health point still matters.",
+		"description": "Physical conditioning, sustained weapon pressure, and Rally.",
 		"stages": [
-			{"id": "battle_fervor", "label": "Battle Fervor", "gate": 2, "description": "Rally lasts 5 seconds; its post-effect cooldown falls to 10.5 seconds."},
-			{"id": "rally_style", "label": "Rally Discipline", "gate": 5, "description": "Permanently choose the emphasis of Rally.", "choices": [
-				{"id": "rally_fury", "label": "Fury", "description": "Rally grants +1 minimum/+1 maximum damage, +2 posture, and 4 action poise."},
-				{"id": "rally_iron", "label": "Iron Resolve", "description": "Rally keeps its modest damage bonus but raises action poise from 4 to 7."},
-			]},
-			{"id": "deep_reserves", "label": "Deep Reserves", "gate": 8, "description": "Rally's post-effect cooldown falls to 9 seconds."},
-			{"id": "rally_mastery", "label": "Rally Mastery", "gate": 11, "description": "Fury escalates consecutive hits; Iron Resolve carries one broken action through."},
+			{"id": "warriors_physique", "label": "Warrior's Physique", "gate": 3, "description": "Gain exactly +4 maximum health and +1 Speed."},
+			{"id": "building_force", "label": "Building Force", "gate": 5, "description": "Consecutive basic weapon hits gain +0, +1, then +2 damage before the sequence resets."},
+			{"id": "rallying_cry", "label": "Rallying Cry", "gate": 7, "description": "Rally lasts 5.5 seconds, grants +1 damage, +2 posture damage, and stronger action poise."},
+			{"id": "battle_rhythm", "label": "Battle Rhythm", "gate": 9, "description": "The first posture break during each Rally extends it by exactly 1 second."},
+			{"id": "warpath", "label": "Warpath", "gate": 10, "description": "During Rally, Building Force holds at +2 and committed weapon attacks gain strong hyperarmor."},
 		],
 	},
 	"vanguard": {
 		"label": "Vanguard",
-		"description": "Advance with an authored impact instead of attacking during a movement animation.",
+		"description": "Claim space with Advance, then turn posture breaks into renewed pressure.",
 		"stages": [
-			{"id": "driving_impact", "label": "Driving Impact", "gate": 2, "description": "Advance posture rises from 3 to 4 and push rises from 36 to 48."},
-			{"id": "advance_style", "label": "Advance Discipline", "gate": 3, "description": "Permanently choose how Advance claims space.", "choices": [
-				{"id": "breakthrough", "label": "Breakthrough", "description": "Gain action poise and drive through light bodies."},
-				{"id": "pursuit", "label": "Pursuit", "description": "Travel farther with a shorter cooldown, but no action poise."},
-			]},
-			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 6, "description": "Hold the original Advance input through impact to flow directly into a full sword combo."},
-			{"id": "advance_mastery", "label": "Advance Mastery", "gate": 9, "description": "Deepen Breakthrough or Pursuit according to the permanent choice already made."},
+			{"id": "driving_impact", "label": "Driving Impact", "gate": 3, "description": "Advance rises from 2 to 3 damage, 4 to 6 posture damage, and 32 to 40 push."},
+			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 5, "description": "Hold the original Advance input through impact to flow directly into your basic weapon sequence."},
+			{"id": "vanguard_bearing", "label": "Vanguard Bearing", "gate": 7, "description": "Gain exactly +2 Resolve; committed melee weapon actions gain light hyperarmor."},
+			{"id": "seize_the_line", "label": "Seize the Line", "gate": 9, "description": "Breaking any enemy's posture immediately refreshes Advance."},
 		],
 	},
 	"adopted": {

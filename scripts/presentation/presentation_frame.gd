@@ -22,6 +22,8 @@ func capture(state: RunState) -> Dictionary:
 	data["player_facing"] = state.player_facing
 	data["player_hp"] = state.player_hp
 	data["player_max_hp"] = state.player_max_hp
+	data["player_posture"] = state.player_posture
+	data["player_posture_max"] = state.player_posture_max
 	data["carried_xp"] = state.carried_xp
 	data["secured_xp"] = state.secured_xp
 	data["strength_remaining"] = state.strength_remaining
@@ -45,6 +47,7 @@ func capture(state: RunState) -> Dictionary:
 		if enemy_index < 0 or enemy_index >= state.enemies.size(): continue
 		var enemy: Dictionary = state.enemies[enemy_index]
 		if Vector2(enemy["pos"]).distance_to(state.player_pos) > state.ACTIVE_ENEMY_RADIUS: continue
+		if not state.enemy_visible_to_player(enemy): continue
 		_ensure_enemy_pool(presentation_index + 1)
 		_copy_enemy(enemy, _enemy_pool[presentation_index], state.current_layer)
 		_enemies.append(_enemy_pool[presentation_index])
@@ -73,7 +76,7 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	data["player_facing"] = _blend_direction(Vector2(current_data["player_facing"]), Vector2(following_data["player_facing"]), amount)
 	for key in ["player_hp", "player_max_hp", "carried_xp", "secured_xp", "message"]:
 		data[key] = following_data.get(key, current_data.get(key))
-	for key in ["strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "rally_remaining"]:
+	for key in ["player_posture", "player_posture_max", "strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "rally_remaining"]:
 		data[key] = lerpf(float(current_data.get(key, 0.0)), float(following_data.get(key, 0.0)), amount)
 	_blend_action(Dictionary(current_data["player_action"]), Dictionary(following_data["player_action"]), amount, _player_action)
 	_copy_flat_dictionary(Dictionary(following_data.get("lost_xp", {})), _lost_xp)

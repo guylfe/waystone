@@ -9,6 +9,8 @@ func _init() -> void:
 	test_rally_lifecycle_and_poise()
 	test_advance_momentum_chain()
 	test_evasion_mastery_reward()
+	test_fixed_damage_speed_and_resolve()
+	test_bandit_awareness_and_secret_passage()
 	test_current_save_boundary()
 	test_v19_potion_capacity_migration()
 	test_action_layout_separates_context()
@@ -43,7 +45,7 @@ func test_initial_sheet_and_gates() -> void:
 	assert(state.healing_capacity() == 5 and state.potions == 5)
 	assert(not state.has_infinite_potions())
 	var options := state.available_level_up_options()
-	assert(options == ["swordsmanship", "evasion", "warrior", "vanguard"])
+	assert(options == ["swordsmanship", "evasion", "steadfast"])
 
 func test_permanent_track_choices() -> void:
 	var state := fresh_state()
@@ -52,10 +54,10 @@ func test_permanent_track_choices() -> void:
 	assert(state.track_choice("sword_art") == "prototype_sweeping_cut")
 	assert(state.player_equipped_weapon_art == "prototype_sweeping_cut")
 	assert(not state.choose_upgrade("swordsmanship|prototype_drawing_cut"))
-	assert(state.choose_upgrade("vanguard"))
+	assert(state.choose_upgrade("evasion"))
 	assert(state.character_level() == 3)
-	assert(state.choose_upgrade("vanguard|breakthrough"))
-	assert(state.track_choice("advance_style") == "breakthrough")
+	assert(state.choose_upgrade("vanguard"))
+	assert(state.track_total("vanguard") == 1)
 	assert(not state.can_swap_weapon_art())
 
 func test_rally_lifecycle_and_poise() -> void:
@@ -66,7 +68,7 @@ func test_rally_lifecycle_and_poise() -> void:
 	advance_until(state, func() -> bool: return state.is_player_ready())
 	assert(state.rally_remaining > 0.0)
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
-	assert(float(state.player_action.get("guard_capacity", 0.0)) == 4.0)
+	assert(float(state.player_action.get("guard_capacity", 0.0)) == 5.0)
 	advance_until(state, func() -> bool: return state.is_player_ready())
 	while state.rally_remaining > 0.0:
 		assert(state.request_wait(0.50, false))
@@ -75,8 +77,7 @@ func test_rally_lifecycle_and_poise() -> void:
 
 func test_advance_momentum_chain() -> void:
 	var state := fresh_state()
-	state.track_ranks["vanguard"] = 3
-	state.track_choices["advance_style"] = "pursuit"
+	state.track_ranks["vanguard"] = 2
 	assert(state.request_advance(Vector2.RIGHT, true, false))
 	advance_until(state, func() -> bool: return String(state.player_action["kind"]) == "combo")
 	assert(bool(state.player_action.get("continue_held", false)))
@@ -84,7 +85,7 @@ func test_advance_momentum_chain() -> void:
 
 func test_evasion_mastery_reward() -> void:
 	var state := fresh_state()
-	state.track_ranks["evasion"] = 4
+	state.track_ranks["evasion"] = 3
 	state.track_choices["evasion_style"] = "sidestep"
 	assert(state.request_dodge(Vector2.RIGHT, false))
 	advance_until(state, func() -> bool: return float(state.player_action["elapsed"]) >= 0.10)
@@ -97,6 +98,37 @@ func test_evasion_mastery_reward() -> void:
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
 	assert(float(state.player_action["startup"]) < 0.30)
 	assert(state.counterstep_remaining == 0.0)
+
+func test_fixed_damage_speed_and_resolve() -> void:
+	var state := fresh_state()
+	var definition := state.player_basic_attack_definition()
+	assert(int(definition["damage_min"]) == 2 and int(definition["damage_max"]) == 2)
+	assert(is_equal_approx(state._player_personal_tempo(), 1.0))
+	state.player_attributes["speed"] = 6
+	assert(is_equal_approx(state._player_personal_tempo(), 1.03))
+	state.player_attributes["resolve"] = 9
+	state._refresh_player_posture_capacity(true)
+	assert(is_equal_approx(state.player_posture_max, 14.0))
+	state.player_action = state._idle_action()
+	state._resolve_incoming_hit(900, 2, "test")
+	assert(is_equal_approx(state.player_posture, 11.0))
+
+func test_bandit_awareness_and_secret_passage() -> void:
+	var state := fresh_state()
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.RIGHT * 360.0, 5)
+	bandit["awareness"] = "alerted"
+	state._update_bandit_concealment(bandit, 0.1)
+	assert(not state.enemy_visible_to_player(bandit))
+	state.player_attributes["awareness"] = 10
+	state._update_bandit_concealment(bandit, 0.1)
+	assert(state.enemy_visible_to_player(bandit))
+	assert(not state.secret_passages.is_empty())
+	var secret: Dictionary = state.secret_passages[0]
+	state.player_attributes["awareness"] = int(secret["concealment"])
+	state.player_pos = Vector2(secret["reveal_pos"])
+	assert(state._update_secret_passages())
+	assert(bool(state.secret_passages[0]["revealed"]))
+	assert(state.world_pickups.any(func(value: Dictionary) -> bool: return String(value.get("id", "")) == "secret_rejuvenation_old_road"))
 
 func test_current_save_boundary() -> void:
 	var path := "user://warrior-current-save-test.save"

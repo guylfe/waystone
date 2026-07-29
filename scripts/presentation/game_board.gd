@@ -878,6 +878,7 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	for enemy_value in state.enemies:
 		var enemy: Dictionary = enemy_value
 		if int(enemy.get("hp", 0)) <= 0 or String(enemy.get("layer", state.current_layer)) != state.current_layer: continue
+		if not state.enemy_visible_to_player(enemy): continue
 		var enemy_pos := Vector2(enemy["pos"])
 		if not state.is_visible(enemy_pos, visible): continue
 		var offset := enemy_pos - state.player_pos
@@ -2118,6 +2119,14 @@ func _draw_player_health_bar(header_font: int) -> void:
 	draw_rect(bar, Color("d8ddd8"), false, 2.0)
 	var label_font := maxi(12, int(height * 0.72))
 	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.77), "HP  %d / %d" % [hp, maximum], HORIZONTAL_ALIGNMENT_CENTER, width, label_font, Color("f4f2e9"))
+	var posture := float(visual.get("player_posture", state.player_posture))
+	var posture_max := maxf(1.0, float(visual.get("player_posture_max", state.player_posture_max)))
+	var posture_height := clampf(height * 0.52, 8.0, 12.0)
+	var posture_bar := Rect2(bar.position + Vector2(0.0, height + 6.0), Vector2(width, posture_height))
+	draw_rect(posture_bar, Color("17212b"))
+	draw_rect(Rect2(posture_bar.position, Vector2(posture_bar.size.x * clampf(posture / posture_max, 0.0, 1.0), posture_bar.size.y)), Color("6d9fc5"))
+	draw_rect(posture_bar, Color("cad8df"), false, 1.0)
+	draw_string(ThemeDB.fallback_font, posture_bar.position + Vector2(0.0, posture_height * 0.82), "POSTURE  %d / %d" % [roundi(posture), roundi(posture_max)], HORIZONTAL_ALIGNMENT_CENTER, width, maxi(8, int(posture_height * 0.72)), Color("edf3f5"))
 
 func _draw_player_progress_bar(header_font: int) -> void:
 	var carried := int(visual.get("carried_xp", state.carried_xp))
@@ -2126,8 +2135,9 @@ func _draw_player_progress_bar(header_font: int) -> void:
 	var target := maxi(1, maxi(state.next_upgrade_cost(), carried))
 	var width := minf(board_rect.size.x * 0.50, 340.0)
 	var health_height := clampf(board_rect.size.y * 0.016, 15.0, 24.0)
+	var posture_height := clampf(health_height * 0.52, 8.0, 12.0)
 	var height := clampf(board_rect.size.y * 0.013, 12.0, 19.0)
-	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 42.0 + health_height), Vector2(width, height))
+	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 50.0 + health_height + posture_height), Vector2(width, height))
 	draw_rect(bar.grow(3.0), Color(0.03, 0.05, 0.06, 0.94))
 	draw_rect(bar, Color("171d20"))
 	if state.mode_id == "campaign_lab":
@@ -3169,6 +3179,7 @@ func _enemy_near(screen_position: Vector2, radius: float) -> Dictionary:
 	var best_depth := -INF
 	for enemy in state.enemies:
 		if String(enemy.get("layer", state.current_layer)) != state.current_layer: continue
+		if not state.enemy_visible_to_player(enemy): continue
 		if not state.is_visible(Vector2(enemy["pos"]), _render_visible_cells()): continue
 		var world_pos := Vector2(enemy["pos"])
 		var foot := _world_to_screen(world_pos)
