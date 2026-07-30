@@ -42,6 +42,7 @@ func _init() -> void:
 	test_boar_momentum_armour_and_hound_interruptibility()
 	test_active_weapon_contact_can_still_trade()
 	test_hit_reaction_preserves_contact_and_interrupted_pose()
+	test_line_of_sight_uses_exact_wall_intersection()
 	test_navigation_routes_around_wall()
 	test_enemy_facing_and_moving_follow_real_displacement()
 	test_blocked_enemy_stops_claiming_movement_and_replans()
@@ -604,6 +605,15 @@ func test_hit_reaction_preserves_contact_and_interrupted_pose() -> void:
 	assert(String(stagger["kind"]) == "stagger")
 	assert(Vector2(stagger["reaction_contact"]).distance_to(break_contact) < 0.01)
 	assert(String(Dictionary(stagger["interrupted_action"])["technique_id"]) == "quick_cut")
+
+func test_line_of_sight_uses_exact_wall_intersection() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.walls = [Rect2(100.0, 80.0, 40.0, 160.0)]
+	state._build_wall_spatial_index()
+	assert(state._segment_intersects_rect(Vector2(40.0, 160.0), Vector2(220.0, 160.0), state.walls[0]))
+	assert(not state._segment_intersects_rect(Vector2(40.0, 40.0), Vector2(220.0, 40.0), state.walls[0]))
+	assert(not state._has_line_of_sight(Vector2(40.0, 160.0), Vector2(220.0, 160.0)))
+	assert(state._has_line_of_sight(Vector2(40.0, 40.0), Vector2(220.0, 40.0)))
 
 func test_navigation_routes_around_wall() -> void:
 	var state: RunState = RunStateScript.new(false)

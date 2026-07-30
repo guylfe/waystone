@@ -402,6 +402,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"awareness": "idle",
 		"revealed_to_player": kind != "bandit",
 		"revealed_elapsed": 0.0,
+		"player_los": false,
+		"los_refresh_remaining": 0.0,
 		"alert_remaining": 0.0,
 		"suspicious_remaining": 0.0,
 		"last_known_player": position,
@@ -414,6 +416,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"defense_id": String(combat_profile["defense_id"]),
 		"attributes": attributes,
 		"properties": Dictionary(combat_profile["properties"]).duplicate(true),
+		"personal_tempo": _tempo_from_attributes(attributes),
+		"posture_recovery_rate": float(Dictionary(combat_profile["properties"]).get("posture_recovery", 1.8)),
 	}
 	_next_enemy_id += 1
 	return enemy
@@ -453,6 +457,10 @@ func _hydrate_enemy_combat_profile(enemy: Dictionary) -> Dictionary:
 	if not enemy.has("properties"): enemy["properties"] = Dictionary(profile["properties"]).duplicate(true)
 	if not enemy.has("revealed_to_player"): enemy["revealed_to_player"] = String(enemy.get("kind", "")) != "bandit"
 	if not enemy.has("revealed_elapsed"): enemy["revealed_elapsed"] = 0.0
+	if not enemy.has("player_los"): enemy["player_los"] = false
+	if not enemy.has("los_refresh_remaining"): enemy["los_refresh_remaining"] = 0.0
+	enemy["personal_tempo"] = _tempo_from_attributes(Dictionary(enemy["attributes"]))
+	enemy["posture_recovery_rate"] = float(Dictionary(enemy["properties"]).get("posture_recovery", 1.8))
 	var posture_max := _enemy_posture_base(String(enemy.get("kind", "blade"))) + float(Dictionary(enemy["attributes"]).get("resolve", 5))
 	var posture_ratio := float(enemy.get("posture", posture_max)) / maxf(0.001, float(enemy.get("posture_max", posture_max)))
 	enemy["posture_max"] = posture_max
@@ -530,7 +538,7 @@ func _player_personal_tempo() -> float:
 	return _tempo_from_attributes(player_attributes)
 
 func _enemy_personal_tempo(enemy: Dictionary) -> float:
-	return _tempo_from_attributes(Dictionary(enemy.get("attributes", {})))
+	return float(enemy.get("personal_tempo", _tempo_from_attributes(Dictionary(enemy.get("attributes", {})))))
 
 func _refresh_player_posture_capacity(fill: bool = false) -> void:
 	var previous_max := maxf(0.001, player_posture_max)
@@ -1429,10 +1437,10 @@ func _nearby_walls(position: Vector2, radius: float) -> Array[Rect2]:
 	var seen: Dictionary = {}
 	for cell in _spatial_cells_for_rect(Rect2(position - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)):
 		for wall in Array(_wall_buckets.get(cell, [])):
-			var key := str(Rect2(wall))
-			if not seen.has(key):
-				seen[key] = true
-				result.append(wall)
+			var wall_rect := Rect2(wall)
+			if not seen.has(wall_rect):
+				seen[wall_rect] = true
+				result.append(wall_rect)
 	return result
 
 func _nearby_enemies(position: Vector2, radius: float) -> Array[Dictionary]:
@@ -1762,8 +1770,9 @@ func _tick(dt: float) -> void:
 	rally_cooldown = maxf(0.0, rally_cooldown - player_dt)
 	advance_cooldown = maxf(0.0, advance_cooldown - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
-	player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
-	if player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
+	if player_posture_recovery_delay > 0.0:
+		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
+	if player_posture < player_posture_max and player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
 		player_posture = minf(player_posture_max, player_posture + player_dt * float(player_properties.get("posture_recovery", 1.8)))
 	if rally_remaining > 0.0:
 		rally_remaining = maxf(0.0, rally_remaining - dt)
@@ -2225,7 +2234,8 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	var vision_range := (620.0 if String(enemy["kind"]) in ["archer", "hexer", "ice_caster", "fire_caster", "warden", "werewolf"] else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
 	var within_cone := distance <= 105.0 or (distance <= vision_range and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
-	var sees_player := within_cone and _has_line_of_sight(enemy_pos, player_pos)
+	if not within_cone: enemy["los_refresh_remaining"] = 0.0
+	var sees_player := within_cone and _sample_enemy_player_los(enemy, enemy_pos, dt)
 	if sees_player:
 		enemy["awareness"] = "alerted"
 		enemy["alert_remaining"] = 3.0
@@ -2250,6 +2260,18 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 			enemy["awareness"] = "idle"
 		enemy["action"] = _idle_action()
 
+func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) -> bool:
+	# Perception does not need to repeat an identical wall query at combat's
+	# 120 Hz contact resolution. A 20 Hz sample remains substantially faster
+	# than any enemy reaction or attack startup, and the staggered refresh keeps
+	# a crowd from issuing all of its sight queries on the same simulation tick.
+	var remaining := float(enemy.get("los_refresh_remaining", 0.0)) - dt
+	if remaining <= 0.0:
+		enemy["player_los"] = _has_line_of_sight(enemy_pos, player_pos)
+		remaining = 0.042 + 0.004 * float(int(enemy["id"]) % 4)
+	enemy["los_refresh_remaining"] = remaining
+	return bool(enemy.get("player_los", false))
+
 func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 	_refresh_active_enemy_cache()
 	for index in _streamed_enemy_indices:
@@ -2263,11 +2285,18 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		enemy["smoked_remaining"] = maxf(0.0, float(enemy.get("smoked_remaining", 0.0)) - dt)
 		_update_enemy_awareness(enemy, dt)
 		_update_bandit_concealment(enemy, dt)
-		enemy["pounce_cooldown"] = maxf(0.0, float(enemy.get("pounce_cooldown", 0.0)) - enemy_dt)
-		enemy["dodge_cooldown"] = maxf(0.0, float(enemy.get("dodge_cooldown", 0.0)) - enemy_dt)
-		enemy["posture_recovery_delay"] = maxf(0.0, float(enemy.get("posture_recovery_delay", 0.0)) - enemy_dt)
-		if float(enemy["posture_recovery_delay"]) <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
-			enemy["posture"] = minf(float(enemy["posture_max"]), float(enemy["posture"]) + enemy_dt * float(Dictionary(enemy.get("properties", {})).get("posture_recovery", 1.8)))
+		var pounce_cooldown := float(enemy.get("pounce_cooldown", 0.0))
+		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
+		var dodge_cooldown := float(enemy.get("dodge_cooldown", 0.0))
+		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
+		var recovery_delay := float(enemy.get("posture_recovery_delay", 0.0))
+		if recovery_delay > 0.0:
+			recovery_delay = maxf(0.0, recovery_delay - enemy_dt)
+			enemy["posture_recovery_delay"] = recovery_delay
+		var posture := float(enemy["posture"])
+		var posture_max := float(enemy["posture_max"])
+		if posture < posture_max and recovery_delay <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
+			enemy["posture"] = minf(posture_max, posture + enemy_dt * float(enemy.get("posture_recovery_rate", 1.8)))
 		var action: Dictionary = enemy["action"]
 		if String(action["kind"]) == "idle":
 			var awareness := String(enemy.get("awareness", "idle"))
@@ -3197,11 +3226,36 @@ func _point_in_wall(point: Vector2) -> bool:
 
 func _has_line_of_sight(from: Vector2, to: Vector2) -> bool:
 	var distance := from.distance_to(to)
-	var steps := maxi(1, int(ceil(distance / 12.0)))
-	for index in range(1, steps):
-		if _point_in_wall(from.lerp(to, float(index) / float(steps))):
-			return false
+	if distance <= 0.001: return true
+	var center := (from + to) * 0.5
+	for wall in _nearby_walls(center, distance * 0.5 + 4.0):
+		if _segment_intersects_rect(from, to, wall): return false
 	return true
+
+func _segment_intersects_rect(start: Vector2, finish: Vector2, rect: Rect2) -> bool:
+	# Liang-Barsky clipping gives an exact answer with a fixed amount of work,
+	# replacing the former 12-unit ray march and its repeated spatial queries.
+	var delta := finish - start
+	var minimum := 0.0
+	var maximum := 1.0
+	for axis in range(2):
+		var start_value := start.x if axis == 0 else start.y
+		var delta_value := delta.x if axis == 0 else delta.y
+		var rect_minimum := rect.position.x if axis == 0 else rect.position.y
+		var rect_maximum := rect.end.x if axis == 0 else rect.end.y
+		if absf(delta_value) <= 0.000001:
+			if start_value < rect_minimum or start_value > rect_maximum: return false
+			continue
+		var first := (rect_minimum - start_value) / delta_value
+		var second := (rect_maximum - start_value) / delta_value
+		if first > second:
+			var swap := first
+			first = second
+			second = swap
+		minimum = maxf(minimum, first)
+		maximum = minf(maximum, second)
+		if minimum > maximum: return false
+	return maximum > 0.0001 and minimum < 0.9999
 
 func _update_exploration(force: bool = false) -> void:
 	if not run_active: return

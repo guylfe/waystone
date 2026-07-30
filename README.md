@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.67`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.68`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.68: crowd perception and simulation optimization
+
+- Replaces repeated 12-unit line-of-sight ray marches with exact segment-versus-wall intersection over the existing wall spatial index.
+- Samples enemy perception at a staggered 20 Hz while preserving movement, attacks, collision, hit contact, cooldowns, and posture at the authoritative 120 Hz simulation rate.
+- Caches immutable enemy tempo and posture-recovery values and skips writes for expired cooldowns and already-full posture bars.
+- Removes string allocation from repeated nearby-wall de-duplication and adds dedicated crowd rendering and exact sight-boundary benchmarks.
+- Reduces the ten-enemy streamed simulation benchmark from roughly 7 ms to roughly 2.5 ms per displayed frame on the development machine, with larger savings as crowds grow.
 
 ### v0.0.67: regression repair and compact-sheet legibility
 
