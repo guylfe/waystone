@@ -146,6 +146,7 @@ func _ready() -> void:
 	Input.emulate_mouse_from_touch = false
 	state = RunStateScript.new(false)
 	state.load_run()
+	if state.run_active: state.prewarm_expedition_navigation()
 	_create_seed_input()
 	setup_loadout = state.loadout_id
 	setup_mode = state.mode_id
@@ -1094,6 +1095,7 @@ func _start_run() -> void:
 	setup_seed_error = ""
 	seed_input.release_focus()
 	state.start_run(setup_loadout, setup_mode, chosen_seed)
+	state.prewarm_expedition_navigation()
 	playing = false
 	streaming_action = false
 	stream_accumulator = 0.0
@@ -3167,8 +3169,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = ("WIDE / MULTI" if state.player_equipped_weapon_art == "prototype_sweeping_cut" else "NARROW / FORCEFUL") if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
 	elif name == "rally":
 		title = "RALLY"
-		available = state.rally_cooldown <= 0.0001
-		subtitle = "BOLSTER" if available else "COOLING"
+		available = state.rally_is_available()
+		subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
 	elif name == "advance":
 		title = "ADVANCE"
 		available = state.advance_cooldown <= 0.0001
@@ -3184,7 +3186,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("e47754") if name == "rally" else Color("7ac6e8") if name == "advance" else Color("d7aa58") if name == "wait" else Color("718087")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
-	if not available and name in ["defense", "skill", "rally", "advance"]:
+	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and state.rally_remaining > 0.0001):
 		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else state.rally_cooldown if name == "rally" else state.advance_cooldown
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
 		var maximum := defense_maximum if name == "defense" else state.SWEEP_COOLDOWN if name == "skill" else 12.0 if name == "rally" else 6.0

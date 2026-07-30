@@ -178,11 +178,13 @@ var _enemy_buckets: Dictionary = {}
 var _enemy_bucket_cell_by_id: Dictionary = {}
 var _enemy_spatial_cache_dirty := true
 var _terrain_feature_buckets: Dictionary = {}
+var _player_reaction_completed_this_tick := false
 var _streamed_enemy_indices := PackedInt32Array()
 var _active_captains: Array[Dictionary] = []
 var _active_enemy_cache_dirty := true
 var _flow_target_cell := Vector2i(-999999, -999999)
 var _flow_next_cell: Dictionary = {}
+var _navigation_cache: Dictionary = {}
 var performance_metrics := {
 	"last_action_ms": 0.0,
 	"last_save_ms": 0.0,
@@ -201,6 +203,9 @@ var performance_metrics := {
 	"visibility_cells": 0,
 	"presentation_capture_ms": 0.0,
 	"dropped_realtime_ms": 0.0,
+	"navigation_build_ms": 0.0,
+	"navigation_cache_hit": false,
+	"navigation_prewarm_ms": 0.0,
 }
 var _profile_action_count := 0
 var _streamed_action_cpu_usec := 0
@@ -271,6 +276,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	damage_dealt = 0
 	simulation_time = 0.0
 	_simulation_tick_index = 0
+	_navigation_cache.clear()
 	perfect_dodges = 0
 	counter_hits = 0
 	successful_blocks = 0
@@ -799,7 +805,7 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return true
 
 func request_rally(simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or rally_cooldown > 0.0001: return false
+	if not rally_is_available(): return false
 	_break_player_combo()
 	_reset_building_force()
 	player_action = _action("rally", 0.56, player_facing)
@@ -810,6 +816,9 @@ func request_rally(simulate_immediately: bool = true) -> bool:
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
+
+func rally_is_available() -> bool:
+	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and rally_remaining <= 0.0001
 
 func request_advance(direction: Vector2, continue_held: bool = false, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete or advance_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
@@ -1762,6 +1771,7 @@ func _simulate_until_ready() -> void:
 func _tick(dt: float) -> void:
 	_simulation_tick_index += 1
 	simulation_time += dt
+	_player_reaction_completed_this_tick = false
 	var player_dt := dt * _player_personal_tempo()
 	dodge_cooldown = maxf(0.0, dodge_cooldown - player_dt)
 	block_cooldown = maxf(0.0, block_cooldown - player_dt)
@@ -1853,8 +1863,10 @@ func _update_player(dt: float) -> void:
 		var continue_advance := completed_kind == "advance" and has_track_rank("vanguard", 2) and bool(player_action.get("continue_held", false))
 		_break_player_combo()
 		player_action = _idle_action()
-		if completed_kind in ["stagger", "hit_reaction"] and player_posture <= 0.0001:
-			player_posture = player_posture_max
+		if completed_kind in ["stagger", "hit_reaction"]:
+			_player_reaction_completed_this_tick = true
+			if player_posture <= 0.0001:
+				player_posture = player_posture_max
 		if rally_end_after_action: _finish_rally(true)
 		if continue_advance:
 			_begin_sword_combo(completed_direction, true, true)
@@ -2859,6 +2871,13 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	if player_hp <= 0:
 		_begin_death()
 		return
+	# Additional hits remain dangerous while the player is reeling, but they do
+	# not restart or lengthen the reaction. Because time freezes as soon as this
+	# original commitment ends, the player is guaranteed another decision
+	# instead of being held in an indefinite stagger chain by a crowd.
+	if interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick:
+		_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
+		return
 	var posture_broken := player_posture <= 0.0001
 	var guard_remaining := float(player_action.get("guard_remaining", 0.0))
 	if guard_remaining > 0.0 and not posture_broken:
@@ -3030,9 +3049,17 @@ func _cleared_area_count() -> int:
 	return count
 
 func _build_navigation() -> void:
-	navigation = AStarGrid2D.new()
 	_flow_target_cell = Vector2i(-999999, -999999)
 	_flow_next_cell.clear()
+	var cache_key := _navigation_cache_key()
+	if _navigation_cache.has(cache_key):
+		navigation = _navigation_cache[cache_key]
+		performance_metrics["navigation_build_ms"] = 0.0
+		performance_metrics["navigation_cache_hit"] = true
+		return
+	var build_start := Time.get_ticks_usec()
+	navigation = AStarGrid2D.new()
+	performance_metrics["navigation_cache_hit"] = false
 	var has_current_shapes := false
 	for shape in _loaded_floor_shapes:
 		if String(shape.get("layer", current_layer)) == current_layer:
@@ -3046,7 +3073,9 @@ func _build_navigation() -> void:
 				_loaded_floor_shapes.append(shape)
 				if loaded_region_ids.is_empty(): loaded_region_ids[int(shape.get("part_id", -1))] = true
 	_build_wall_spatial_index()
-	if _loaded_floor_shapes.is_empty(): return
+	if _loaded_floor_shapes.is_empty():
+		performance_metrics["navigation_build_ms"] = float(Time.get_ticks_usec() - build_start) / 1000.0
+		return
 	var bounds := _shape_bounds(_loaded_floor_shapes[0])
 	for shape in _loaded_floor_shapes: bounds = bounds.merge(_shape_bounds(shape))
 	bounds = bounds.grow(NAV_CELL * 2.0).intersection(Rect2(Vector2.ZERO, world_size))
@@ -3067,6 +3096,29 @@ func _build_navigation() -> void:
 					solid = true
 					break
 			navigation.set_point_solid(cell, solid)
+	_navigation_cache[cache_key] = navigation
+	performance_metrics["navigation_build_ms"] = float(Time.get_ticks_usec() - build_start) / 1000.0
+
+func _navigation_cache_key() -> String:
+	var region_ids: Array = loaded_region_ids.keys()
+	region_ids.sort()
+	return "%s|%s|%s" % [current_layer, region_ids, hash(walls)]
+
+func prewarm_expedition_navigation() -> void:
+	if mode_id != ModeRulesScript.EXPEDITION or areas.is_empty(): return
+	var started := Time.get_ticks_usec()
+	var original_area_id := current_area_id
+	for area_value in areas:
+		var area := Dictionary(area_value)
+		if String(area.get("layer", current_layer)) != current_layer: continue
+		current_area_id = int(area["id"])
+		_refresh_loaded_region_content()
+		walls.assign(base_walls)
+		_build_wall_spatial_index()
+		_build_navigation()
+	current_area_id = original_area_id
+	_apply_shortcut_world_state()
+	performance_metrics["navigation_prewarm_ms"] = float(Time.get_ticks_usec() - started) / 1000.0
 
 func _navigation_direction(enemy: Dictionary, target: Vector2) -> Vector2:
 	var origin := Vector2(enemy["pos"])

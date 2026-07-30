@@ -42,6 +42,7 @@ func _init() -> void:
 	test_boar_momentum_armour_and_hound_interruptibility()
 	test_active_weapon_contact_can_still_trade()
 	test_hit_reaction_preserves_contact_and_interrupted_pose()
+	test_player_reaction_cannot_be_stunlocked()
 	test_line_of_sight_uses_exact_wall_intersection()
 	test_navigation_routes_around_wall()
 	test_enemy_facing_and_moving_follow_real_displacement()
@@ -605,6 +606,36 @@ func test_hit_reaction_preserves_contact_and_interrupted_pose() -> void:
 	assert(String(stagger["kind"]) == "stagger")
 	assert(Vector2(stagger["reaction_contact"]).distance_to(break_contact) < 0.01)
 	assert(String(Dictionary(stagger["interrupted_action"])["technique_id"]) == "quick_cut")
+
+func test_player_reaction_cannot_be_stunlocked() -> void:
+	var state: RunState = RunStateScript.new()
+	state.enemies.clear()
+	state.player_max_hp = 100
+	state.player_hp = 100
+	state.player_posture = 1.0
+	state.player_action = state._idle_action()
+	state._resolve_incoming_hit(1, 1, "first bandit", Vector2.LEFT, state.player_pos)
+	assert(String(state.player_action["kind"]) == "stagger")
+	state.advance_streamed_action_tick()
+	var elapsed_before := float(state.player_action["elapsed"])
+	var duration_before := float(state.player_action["duration"])
+	state._resolve_incoming_hit(2, 1, "second bandit", Vector2.RIGHT, state.player_pos)
+	assert(state.player_hp == 98)
+	assert(String(state.player_action["kind"]) == "stagger")
+	assert(is_equal_approx(float(state.player_action["elapsed"]), elapsed_before))
+	assert(is_equal_approx(float(state.player_action["duration"]), duration_before))
+	var ticks := 0
+	while not state.is_player_ready() and ticks < 120:
+		if ticks % 12 == 0: state._resolve_incoming_hit(3, 1, "bandit chain", Vector2.UP, state.player_pos)
+		state.advance_streamed_action_tick()
+		ticks += 1
+	assert(state.is_player_ready())
+	assert(ticks < 120)
+	var hp_before_recovery_tick_hit := state.player_hp
+	state._player_reaction_completed_this_tick = true
+	state._resolve_incoming_hit(4, 1, "late bandit", Vector2.DOWN, state.player_pos)
+	assert(state.player_hp == hp_before_recovery_tick_hit - 1)
+	assert(state.is_player_ready())
 
 func test_line_of_sight_uses_exact_wall_intersection() -> void:
 	var state: RunState = RunStateScript.new(false)

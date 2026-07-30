@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.68`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.69`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.69: reliable Rally and uninterrupted recovery
+
+- Treats an active Rally as unavailable and greys its HUD button without starting the cooldown until Rally actually fades.
+- Prevents repeated enemy hits from restarting or extending an existing player hit reaction or stagger, while preserving their health and posture damage.
+- Guarantees a frozen-time decision after the original reaction ends, including when another enemy connects on the exact recovery tick.
+- Precomputes and caches Expedition navigation windows when a run opens, removing the synchronous pathfinding-grid rebuild that caused a visible hitch at area boundaries.
+- Adds focused regression coverage for the Rally lifecycle, stagger chains, and the cached Part 2-to-Part 3 transition.
 
 ### v0.0.68: crowd perception and simulation optimization
 
