@@ -509,9 +509,14 @@ func test_fast_enemy_posture_break() -> void:
 	var state: RunState = RunStateScript.new()
 	var knife := state._make_enemy("knife", state.player_pos + Vector2(0, -90), 8)
 	knife["action"] = state._melee_action(0.88, 0.28, 0.46, 92.0, 1, Vector2.DOWN)
+	state.player_action = state._action("attack", 0.98, Vector2.UP)
+	state.player_action["elapsed"] = 0.40
 	state._apply_posture_damage(knife, 2.0)
 	assert(String(Dictionary(knife["action"])["kind"]) == "stagger")
 	assert(float(knife["posture"]) == 0.0)
+	var player_recovery_world := (0.98 - 0.40) / state._player_personal_tempo()
+	var enemy_stagger_world := float(Dictionary(knife["action"])["duration"]) / state._enemy_personal_tempo(knife)
+	assert(enemy_stagger_world >= player_recovery_world + state.POSTURE_BREAK_OPENING_SECONDS - 0.0001)
 
 func test_grounded_heavy_resists_break() -> void:
 	var state: RunState = RunStateScript.new()
@@ -1168,7 +1173,9 @@ func test_new_enemy_roles() -> void:
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
 	assert(float(Dictionary(brute["action"])["duration"]) > 2.4)
 	var captain := state._make_enemy("captain", Vector2(120, 120), 12)
+	state.player_pos = Vector2(200, 200)
 	state.enemies = [captain]
+	state._invalidate_active_enemy_cache()
 	var blade := state._make_enemy("blade", Vector2(300, 300), 7)
 	assert(state._enemy_move_speed(blade) > 190.0)
 
@@ -1298,6 +1305,19 @@ func test_region_streaming_limits_active_world() -> void:
 	expedition._apply_shortcut_world_state()
 	assert(expedition.loaded_region_ids.has(3) and expedition.loaded_region_ids.has(4) and expedition.loaded_region_ids.has(5))
 	assert(not expedition.loaded_region_ids.has(int(first_loaded[0])))
+	var nearby := expedition._make_enemy("bandit", expedition.player_pos + Vector2.RIGHT * 400.0, 8, 4)
+	var distant := expedition._make_enemy("bandit", expedition.player_pos + Vector2.RIGHT * (expedition.ACTIVE_ENEMY_RADIUS + 300.0), 8, 4)
+	expedition.enemies = [nearby, distant]
+	expedition.loaded_region_ids = {3: true, 4: true, 5: true}
+	expedition._invalidate_active_enemy_cache()
+	expedition._refresh_active_enemy_cache()
+	assert(expedition._streamed_enemy_indices.size() == 1)
+	expedition._active_enemy_cache_dirty = false
+	expedition._enemy_spatial_cache_dirty = false
+	expedition._visibility_anchor_cell = expedition._visibility_cell(expedition.player_pos)
+	expedition.player_pos += Vector2.RIGHT * 60.0
+	expedition._update_exploration()
+	assert(expedition._active_enemy_cache_dirty)
 	var campaign: RunState = RunStateScript.new(false)
 	campaign.start_run("wayfarer", "campaign_lab", 99117)
 	assert(not campaign.loaded_region_ids.is_empty())

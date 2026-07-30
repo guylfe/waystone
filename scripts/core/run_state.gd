@@ -28,6 +28,7 @@ const SIGHT_RANGE := 520.0
 const WAYSTONE_RANGE := 145.0
 const SPATIAL_CELL := 360.0
 const ACTIVE_ENEMY_RADIUS := 1750.0
+const POSTURE_BREAK_OPENING_SECONDS := 0.72
 const ENEMY_MOVE_EPSILON := 0.05
 const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
@@ -1468,7 +1469,13 @@ func _nearby_enemies(position: Vector2, radius: float) -> Array[Dictionary]:
 	return result
 
 func _enemy_is_streamed(enemy: Dictionary) -> bool:
-	return int(enemy.get("hp", 0)) > 0 and String(enemy.get("layer", current_layer)) == current_layer and (loaded_region_ids.has(int(enemy.get("area_id", -1))) or Vector2(enemy["pos"]).distance_to(player_pos) <= ACTIVE_ENEMY_RADIUS)
+	# Loaded regions preserve terrain and enemy state, but they are much larger
+	# than the active combat neighbourhood. Simulating every resident in the
+	# previous, current, and next locale made crossing a region boundary wake
+	# several offscreen encounter groups at once.
+	return int(enemy.get("hp", 0)) > 0 \
+		and String(enemy.get("layer", current_layer)) == current_layer \
+		and Vector2(enemy["pos"]).distance_to(player_pos) <= ACTIVE_ENEMY_RADIUS
 
 func _store_current_layer_discovery() -> void:
 	discovered_cells_by_layer[current_layer] = discovered_cells
@@ -2144,7 +2151,19 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 		_add_effect("strain", Vector2(enemy["pos"]))
 		_set_message("The heavy enemy holds its grounded attack.")
 		return false
-	var stagger_duration := (0.52 if kind in ["knife", "hound", "bandit"] else 0.66 if kind in ["archer", "hexer", "ice_caster", "fire_caster", "boar"] else 0.78) + 0.08 * float(track_property_ranks.get("openings_break_duration", 0))
+	var break_bonus_seconds := 0.08 * float(track_property_ranks.get("openings_break_duration", 0))
+	var stagger_duration := (0.52 if kind in ["knife", "hound", "bandit"] else 0.66 if kind in ["archer", "hexer", "ice_caster", "fire_caster", "boar"] else 0.78) + break_bonus_seconds
+	# A posture break is meant to create an actionable opening. Its timer runs
+	# while the player's breaking strike is still recovering, so a short fixed
+	# duration could expire before time froze again. Guarantee 0.72 seconds of
+	# world time after the current player commitment ends, adjusted into the
+	# enemy's personal action clock so fast enemies receive the same opportunity.
+	var player_recovery_world_seconds := 0.0
+	if String(player_action.get("kind", "idle")) != "idle":
+		var player_action_remaining := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0)))
+		player_recovery_world_seconds = player_action_remaining / maxf(0.01, _player_personal_tempo())
+	var guaranteed_world_seconds := player_recovery_world_seconds + POSTURE_BREAK_OPENING_SECONDS + break_bonus_seconds
+	stagger_duration = maxf(stagger_duration, guaranteed_world_seconds * _enemy_personal_tempo(enemy))
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
@@ -3314,6 +3333,11 @@ func _update_exploration(force: bool = false) -> void:
 	var secret_changed := _update_secret_passages()
 	var center_cell := _visibility_cell(player_pos)
 	if not force and not secret_changed and center_cell == _visibility_anchor_cell: return
+	if center_cell != _visibility_anchor_cell:
+		# The active enemy set is distance-based. Refresh it at the same stable
+		# 50-unit cadence as visibility rather than scanning the whole run at
+		# 120 Hz or leaving an old three-region set alive after the player moves.
+		_invalidate_active_enemy_cache()
 	var profile_start := Time.get_ticks_usec()
 	_visibility_anchor_cell = center_cell
 	_visibility_anchor = (Vector2(center_cell) + Vector2(0.5, 0.5)) * VISIBILITY_CELL

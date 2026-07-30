@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.69`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.70`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.70: local combat streaming and usable posture breaks
+
+- Separates persistent region state from active combat simulation: offscreen enemies remain exactly where they were but no longer consume 120 Hz simulation merely because an adjacent region is loaded.
+- Refreshes the active combat neighbourhood at the same stable 50-unit cadence as visibility as the player travels.
+- Reduces the reported Fold save from seventeen simulated enemies to the five actually near the player.
+- Guarantees that an enemy posture break remains for at least 0.72 seconds after the player's current commitment finishes, accounting for both player and enemy Speed.
+- Extends the existing break-duration upgrade from that guaranteed usable opening.
 
 ### v0.0.69: reliable Rally and uninterrupted recovery
 
