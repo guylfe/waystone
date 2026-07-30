@@ -1,6 +1,12 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.70`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.0.71`. Android version codes match the release number so newer APKs can always upgrade older installations.
+
+### v0.0.71: finite enemy posture openings
+
+- Follow-up attacks against a staggered enemy continue dealing full health damage but cannot restart its posture break or extend the original stagger timer.
+- Suppresses additional posture damage until the original stagger ends and restores posture, preventing fast attacks and combos from holding an enemy helpless indefinitely.
+- Adds a repeated-hit regression proving that stagger duration and elapsed time remain unchanged through subsequent posture-heavy strikes.
 
 ### v0.0.70: local combat streaming and usable posture breaks
 

@@ -2134,6 +2134,13 @@ func _enemy_evades_attack(enemy: Dictionary) -> bool:
 
 func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = Vector2.INF) -> bool:
 	if amount <= 0.0 or int(enemy["hp"]) <= 0: return false
+	# Stagger is one authored opening, not a state that quick follow-up attacks
+	# may perpetually refresh. Health damage has already resolved at each caller;
+	# only additional posture damage is suppressed until the original reaction
+	# ends and restores the enemy's posture.
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "stagger":
+		enemy["posture"] = 0.0
+		return false
 	enemy["posture"] = maxf(0.0, float(enemy.get("posture", 1.0)) - amount)
 	enemy["posture_recovery_delay"] = 1.15
 	if float(enemy["posture"]) <= 0.0001:

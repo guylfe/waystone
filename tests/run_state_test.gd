@@ -37,6 +37,7 @@ func _init() -> void:
 	test_attack_geometry_stops_at_walls()
 	test_projected_weapon_endpoints_round_trip()
 	test_fast_enemy_posture_break()
+	test_enemy_stagger_cannot_be_refreshed()
 	test_grounded_heavy_resists_break()
 	test_clean_opening_hit_preserves_a_defensive_choice()
 	test_boar_momentum_armour_and_hound_interruptibility()
@@ -517,6 +518,20 @@ func test_fast_enemy_posture_break() -> void:
 	var player_recovery_world := (0.98 - 0.40) / state._player_personal_tempo()
 	var enemy_stagger_world := float(Dictionary(knife["action"])["duration"]) / state._enemy_personal_tempo(knife)
 	assert(enemy_stagger_world >= player_recovery_world + state.POSTURE_BREAK_OPENING_SECONDS - 0.0001)
+
+func test_enemy_stagger_cannot_be_refreshed() -> void:
+	var state: RunState = RunStateScript.new()
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.UP * 90.0, 20)
+	bandit["posture"] = 1.0
+	assert(state._apply_posture_damage(bandit, 2.0))
+	var original_duration := float(Dictionary(bandit["action"])["duration"])
+	bandit["action"]["elapsed"] = 0.24
+	for follow_up in range(3):
+		assert(not state._apply_posture_damage(bandit, 5.0))
+		assert(String(Dictionary(bandit["action"])["kind"]) == "stagger")
+		assert(is_equal_approx(float(Dictionary(bandit["action"])["duration"]), original_duration))
+		assert(is_equal_approx(float(Dictionary(bandit["action"])["elapsed"]), 0.24))
+		assert(is_equal_approx(float(bandit["posture"]), 0.0))
 
 func test_grounded_heavy_resists_break() -> void:
 	var state: RunState = RunStateScript.new()
