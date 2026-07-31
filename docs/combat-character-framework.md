@@ -1,0 +1,774 @@
+# Waystone combat and character framework
+
+**Status:** Design checkpoint
+
+**Recorded:** 2026-07-31
+
+**Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
+
+This document records the agreed direction for Waystone's next character-system overhaul. It is the authoritative design target, not a description of every behavior in prototype version `0.0.71`. Where the prototype differs, future implementation should migrate toward this specification deliberately and with regression coverage.
+
+Exact balance values remain provisional unless this document labels a rule as structural. Intelligence, Faith, elemental spellcasting, Blood drops, and several class-specific details are intentionally deferred until their first concrete users are designed.
+
+## Design principles
+
+- Time freezes whenever the player is ready and has not committed another action.
+- Combat depth comes from spatial judgment, action choice, and commitment rather than reflex dexterity.
+- Movement and touch controls remain simple enough for mobile while keyboard and controller equivalents preserve the same simulation.
+- Players and enemies use the same attributes, geometry, action phases, perception rules, posture rules, conditions, and damage events.
+- Damage is deterministic. Waystone may use randomness in systems such as noise detection, but ordinary damage does not use damage ranges for now.
+- Exact timing and geometry are not exposed as optimization homework. Player-facing descriptions prefer qualitative terms such as `fast`, `slow`, `long reach`, or `strong guard`.
+- Tracks are authored independently. They do not follow a mandatory branching pattern or a repeated generic node formula.
+- The same foundation should support Expedition, Endless, and Campaign without making their world topology or progression cadence identical.
+
+## 1. Time, actions, and movement
+
+### 1.1 Action phases
+
+Committed actions may contain startup, active motion or contact, and recovery. Direction locks when an attack begins unless the technique explicitly defines guided or tracking behavior. Rendering and collision sample the same world-space action geometry.
+
+The simulation remains authoritative at 120 Hz for combat contact and timing. Presentation may interpolate, but it must not create a second timeline.
+
+### 1.2 Personal tempo
+
+Speed governs an actor's personal tempo. The prototype's current starting formula remains the design baseline:
+
+```text
+personal tempo = 1 + 0.03 × (Speed - 5)
+```
+
+Speed 5 is normal tempo. Each point changes voluntary action pace by approximately 3%, subject to safe lower and upper bounds.
+
+Personal tempo accelerates:
+
+- ordinary movement;
+- attack startup, active motion, and recovery;
+- combo transitions and Weapon Arts;
+- Dodge movement and recovery;
+- Block raising, lowering, and guard rotation;
+- Endure startup and recovery;
+- spell and consumable preparation;
+- personal cooldown recovery.
+
+Speed changes time, not geometry. It does not directly change damage, posture damage, attack reach, Dodge distance, guard strength, or released projectile speed.
+
+World-time effects do not use personal tempo. This includes condition duration and damage ticks, Rally and similar buff duration, environmental hazards, hit reactions, posture-break stagger, and other imposed conditions. A faster actor can consequently fit more voluntary actions into a world-time buff.
+
+Posture recovery is governed by Resolve and world time rather than Speed. Speed must not become a universal resistance to stagger and bodily recovery.
+
+Touch and keyboard forgiveness must retain an accessibility floor. A high-Speed attack may resolve more quickly, but combo continuation and similar input buffers must not become physically difficult to operate.
+
+### 1.3 Movement controls
+
+There is no universal walk/run distinction.
+
+- A tap commits one small, fixed-distance movement step.
+- Holding chains those steps.
+- Releasing stops after the current small commitment completes.
+- Dragging can change the direction used by the next movement commitment.
+- Keyboard movement chains the same actions independently of operating-system key-repeat rate.
+- Diagonal directions are normalized.
+
+Fast and slow actors use identical controls and move the same distance per step. A fast actor completes that distance in less world time, allowing fewer enemy actions during the movement.
+
+Heavy weapons do not reduce ordinary movement by default. Their encumbrance is expressed through mobile defensive techniques and guard handling.
+
+## 2. Universal actor attributes
+
+Every player and enemy uses the same visible attribute vocabulary.
+
+### 2.1 Health
+
+Health determines how much health damage the actor can survive. Maximum-health improvements change the underlying health scale directly.
+
+### 2.2 Strength
+
+Strength is a visible universal attribute. It contributes a deterministic actor-level modifier to physical health damage:
+
+```text
+physical strike damage =
+    technique base damage
+    + actor Strength contribution
+    + explicit modifiers
+```
+
+This is not Dark Souls-style weapon scaling:
+
+- weapons do not have letter-grade attribute scaling;
+- Strength does not normally restrict weapon categories;
+- the actor's Strength contribution is general physical power;
+- weapon tracks improve authored weapon techniques rather than a scaling grade.
+
+A multi-contact technique receives the Strength contribution once in its strike damage budget and distributes that budget across its contacts. It does not add the complete Strength bonus to every knife contact. Distinct stages of a sword combo are distinct strikes and can each receive the contribution.
+
+Strength does not automatically change posture damage, status buildup, reach, speed, hyperarmor, or push distance. A specific track may create one of those interactions explicitly.
+
+### 2.3 Defense
+
+Defense is visible universal physical protection:
+
+```text
+effective Defense =
+    actor base Defense
+    + equipment contribution
+    + active ability contribution
+```
+
+Defense mitigates physical health damage. It does not ordinarily reduce posture damage, condition buildup, Poison or Burning ticks, Sleep duration, Frenzy, or knockback.
+
+The exact mitigation curve will be selected during the health-scale implementation. All multiplicative mitigation and vulnerability effects should combine before the result is rounded once.
+
+### 2.4 Speed
+
+Speed determines personal tempo as defined above. Permanent Speed increases are powerful and should be comparatively scarce. Ordinary improvements are expected to be small, with approximately 3% tempo per point as the starting balance.
+
+### 2.5 Stealth
+
+Stealth reduces the effective noise produced by the actor's actions and makes the actor more difficult to perceive through concealment rules. It does not guarantee invisibility.
+
+### 2.6 Awareness
+
+Awareness improves detection of noise, concealed actors, hidden traps, and secret geography. It does not grant hit chance or direct combat damage.
+
+### 2.7 Resolve
+
+Resolve governs:
+
+- maximum posture;
+- posture recovery;
+- the actor-level stability available to actions that can express hyperarmor.
+
+Resolve is not direct damage reduction and does not automatically make every action uninterruptible.
+
+### 2.8 Resistance
+
+Resistance is a visible universal condition-resistance attribute. It increases the buildup threshold required to trigger harmful conditions.
+
+Each actor may additionally carry condition-specific modifiers or explicit immunities. These are profile properties rather than separate visible stats for Poison, Frost, Sleep, and every other condition.
+
+Resistance affects buildup threshold only. It does not also reduce a condition's duration or damage after that condition triggers.
+
+### 2.9 Intelligence and Faith
+
+Intelligence and Faith remain universal actor attributes, associated respectively with spellcasting and prayers. Their exact effects are intentionally deferred until Mage, specialist spell tracks, prayer-bearing classes, and corresponding enemy casters are designed.
+
+Neither attribute modifies ordinary physical weapon damage by default.
+
+## 3. Health and damage scale
+
+Waystone should increase its health-unit scale by approximately five times before the roster expands substantially.
+
+The migration reference is:
+
+| Prototype value | Initial scaled equivalent |
+|---:|---:|
+| 20 player health | 100 |
+| 2 sword damage | 10 |
+| 5 potion healing | 25 |
+| +3 maximum health | +15 |
+| 4 heavy damage | 20 |
+
+These are migration equivalents, not permanent balance mandates. After conversion, values may be adjusted individually rather than remaining multiples of five.
+
+Scale:
+
+- maximum and current health;
+- direct health damage;
+- healing;
+- condition and environmental health damage;
+- health costs;
+- health upgrades;
+- Blood healing when that system is designed;
+- health-dependent AI and achievement thresholds.
+
+Do not scale:
+
+- attributes;
+- posture;
+- status buildup;
+- cooldowns;
+- movement and reach;
+- XP or upgrade levels.
+
+The implementation must separate any current logic that derives posture damage, hit-reaction duration, or block behavior directly from the old small health-damage number. Every attack should define health and posture effects explicitly.
+
+## 4. Damage-event language
+
+Each resolved damage event carries independent properties instead of being forced into one monolithic damage type.
+
+### 4.1 Health and posture
+
+Health damage and posture damage are separate values. A technique may deal one without the other.
+
+- Defense mitigates physical health damage.
+- Resolve supplies posture capacity.
+- guard profiles modify posture received while blocking.
+
+### 4.2 Direct and ongoing damage
+
+Direct damage comes from a discrete contact such as a melee strike, projectile impact, explosion, or immediate trap impact. It can interact with Dodge, Block, Endure, Parry, hit reaction, hyperarmor, unaware damage, Sleep waking, and Frost vulnerability.
+
+Ongoing damage comes from an already-triggered condition or persistent exposure, such as Poison or Burning. It does not ordinarily interrupt, deal posture damage, wake Sleep, receive unaware bonuses, receive Frost's direct-attack vulnerability, or get blocked after the condition has triggered.
+
+### 4.3 Damage channel
+
+Damage events can carry a channel such as Physical, Fire, Frost, or a future element. Only Physical needs a complete formula before spellcaster design. A poisoned physical knife can deal Physical health damage and Poison buildup in the same contact.
+
+### 4.4 Delivery
+
+Damage events identify delivery such as:
+
+- melee contact;
+- projectile;
+- area or explosion;
+- trap;
+- condition;
+- environment.
+
+The delivery determines possible defensive interactions independently of the damage channel.
+
+### 4.5 Exceptional tags
+
+Rare effects may explicitly ignore Defense, bypass Block, suppress interruption, enable friendly fire, or count as a self-inflicted cost. These remain exceptional tags rather than new universal damage categories.
+
+### 4.6 Effect frequency
+
+Authored effects state whether they occur:
+
+- per contact;
+- per target per action;
+- per action;
+- on interruption;
+- on posture break;
+- on clean evade;
+- on kill.
+
+This is especially important for multi-contact weapons, broad attacks, and conditions.
+
+### 4.7 Direct physical hit order
+
+The target resolution order is:
+
+1. confirm world-space geometric contact;
+2. resolve Dodge, Block, Parry, or Endure;
+3. calculate technique damage, Strength contribution, and explicit modifiers;
+4. combine Defense, guard leakage, Endure, vulnerability, and other health modifiers;
+5. round once;
+6. apply health damage;
+7. apply posture damage separately;
+8. resolve action stability, interruption, or posture break;
+9. apply buildup and contact effects.
+
+## 5. Weapon configurations
+
+There is no player-facing main-hand/off-hand slot system.
+
+The active combat configuration consists of:
+
+- one equipped weapon category;
+- one equipped defensive technique.
+
+A weapon category represents its complete fighting configuration, whether that presentation contains one sword, two knives, two axes, a spear, a bow, or a zweihander.
+
+A shield is not ordinary independent loot. Block is the learned defensive technique; a shield is its physical expression when the configuration permits one. A dual-wield or two-handed configuration instead guards with its weapon or weapons.
+
+Each weapon defines:
+
+- attack profile: technique, sequence, geometry, damage, posture, and timing;
+- guard profile: health leakage, posture modifier, guard recovery, arc, turn modifier, and animation;
+- encumbrance: modification to mobile defensive techniques.
+
+Weapon modifiers remain sparse and qualitative in ordinary inspection. Examples include `strong guard` and `cumbersome dodge`.
+
+Heavy encumbrance should initially lengthen Dodge recovery without changing i-frames. Extremely heavy exceptions may also shorten travel modestly. A weapon should not simultaneously cripple distance, movement speed, recovery, and i-frames.
+
+A late second-loadout feature stores two complete trained weapon configurations. It does not expose hand slots.
+
+## 6. Weapon proficiency and category switching
+
+Weapon-track nodes are completely category-specific. There are no generic nodes such as “all weapons deal more damage.”
+
+Every weapon category has five proficiency positions so cross-category proficiency remains legible, but each category authors entirely different content.
+
+Let `X` be the highest Weapon proficiency the character has achieved during the run. A newly trained category begins at:
+
+```text
+max(0, X - 1)
+```
+
+The player immediately selects the new category's weapon-specific nodes through that granted proficiency. The next ordinary Weapon investment brings it level with the previous highest proficiency instead of advancing the old weapon further.
+
+Each trained category remembers:
+
+- its proficiency;
+- permanent art choice;
+- permanent node decisions;
+- currently selected configuration.
+
+Returning to a trained category restores its recorded decisions. Switching cannot reroll a permanent Weapon Art.
+
+### 6.1 Expedition and Endless
+
+Expedition may permit immediate category retraining outside active combat for pacing reasons. The discovery should ordinarily be a procedurally placed weapon master or equivalent teaching encounter rather than an unexplained loose weapon.
+
+The interaction:
+
+1. previews the category and complete visible track;
+2. confirms the switch;
+3. grants `X - 1` proficiency;
+4. allows immediate weapon-specific choices;
+5. shows a brief, skippable training transition;
+6. resumes with the new configuration.
+
+The selection interface freezes simulation. Confirmed physical training may advance a modest fixed amount of world time without exposing the player to a hidden combat-menu attack.
+
+Endless can use the same rule unless later pacing gives it a reason not to.
+
+### 6.2 Campaign
+
+Campaign category retraining normally occurs at a Waystone, trainer, or appropriate safe location. The persistent world can support authored masters and training sites without making Expedition depend on finding one later.
+
+### 6.3 Second loadout
+
+Before the late second-loadout unlock, one trained configuration is active. After the unlock, two trained configurations can switch in the field. Each preserves its own permanent weapon-specific choices.
+
+## 7. Defensive techniques
+
+The general character-sheet category is **Defense**, not Evasion, because its techniques include Dodge, Block, Endure, and future Parry.
+
+### 7.1 Dodge
+
+Dodge combines quick directional movement with a brief true i-frame window.
+
+- Physical displacement should be fast enough to escape attack geometry without relying exclusively on i-frames.
+- I-frames permit committed close-range evasions through attacks rather than forcing every Dodge away from contact.
+- A clean evade occurs only when hostile attack geometry actually crosses the actor during the i-frame window.
+- Dodge has a cooldown.
+- Weapon encumbrance may alter recovery and exceptional travel properties, but does not normally alter i-frame proportion.
+
+Potential authored forms include a shorter, quicker Sidestep and a longer Roll with greater recovery. Both must be improvements over an intentionally modest default Dodge.
+
+### 7.2 Block
+
+Block is a sustained directional guard rather than a fixed-duration cooldown skill.
+
+- Raising the guard has startup.
+- The guard remains active while the player maintains the guarding input.
+- Time continues while the guard is held.
+- Every intercepted hit deals guard-adjusted posture damage.
+- Posture does not recover while guarding.
+- Releasing Block incurs a short lowering recovery.
+- Block has no cooldown.
+- Reaching zero posture causes a substantial guard-break stagger.
+
+The finger or pointer sets a desired guard direction while held. The shield or weapon rotates toward that direction at a finite world-time rate rather than snapping instantly. Actual current orientation determines whether a hit is blocked.
+
+Guard rotation uses:
+
+```text
+base Block turn rate
+× actor Speed modifier
+× weapon guard modifier
+```
+
+A short input-continuity allowance may smooth accidental touch lifts, but it must not create a separate tactical advantage.
+
+### 7.3 Endure
+
+Endure is a short predictive defense that converts an incoming threat into health cost and offensive momentum.
+
+- It takes `ceil(incoming health damage × 0.5)` after applicable mitigation is combined.
+- It takes no posture damage from the caught hit.
+- The caught hit does not interrupt the actor.
+- The actor gains a temporary Strength benefit only after actually enduring a hit.
+- Endure remains capable of causing death.
+- It uses a substantial cooldown, beginning after the resulting Strength effect ends.
+
+The 50% value is the starting playtest value. If Endure is not a legitimate primary defense, improve its reduction directly rather than hiding weakness behind elaborate secondary rewards.
+
+### 7.4 Parry
+
+Parry is a future Defense technique with a very short active window. A successful Parry prevents the incoming contact, interrupts the attacker, and deals substantial posture damage. In Waystone it tests prediction and commitment at a frozen decision point rather than reflex dexterity.
+
+### 7.5 Vault
+
+Vault is planned as an Acrobat ability rather than the equipped Defense technique. It nevertheless uses the universal i-frame and clean-evade events, allowing Acrobat to have a soft affinity with Dodge without requiring Dodge.
+
+### 7.6 Universal defense events
+
+Shared events include:
+
+- `cleanly_evaded`;
+- `successfully_blocked`;
+- `successfully_parried`;
+- `endured_hit`.
+
+Tracks react to these events rather than hardcoding themselves to a particular button.
+
+## 8. Posture, interruption, and hyperarmor
+
+### 8.1 Contact outcomes
+
+When an unavoided attack connects:
+
+1. apply health damage;
+2. apply posture damage;
+3. if posture reaches zero, apply posture break;
+4. otherwise test the current action's hyperarmor capacity;
+5. if insufficient, cancel the action and apply a short hit reaction.
+
+An ordinary landed hit interrupts an unprotected action before a full posture break. This preserves the advantage of landing the first strike. Posture break is the larger reward that creates an extended punish window.
+
+### 8.2 Posture
+
+Every actor has maximum posture, current posture, a world-time recovery delay, and a Resolve-influenced recovery rate.
+
+- Posture begins recovering after pressure stops.
+- It cannot recover while Block is raised.
+- It cannot recover while time is frozen.
+- A completed posture-break stagger restores posture so the victim cannot be immediately posture-locked again.
+- Hits during an existing break can deal health damage but cannot restart or extend the break.
+
+Fast enemies generally have lower posture. Heavy knights, Guardians, and bosses generally have more.
+
+### 8.3 Hit reaction
+
+A normal hit reaction:
+
+- cancels the current unprotected action;
+- is visibly distinct from a posture break;
+- is brief;
+- cannot be refreshed while already occurring.
+
+Subsequent contacts may continue dealing damage without extending the reaction.
+
+### 8.4 Posture break
+
+A posture break:
+
+- cancels ordinary actions regardless of normal hyperarmor;
+- creates a substantially longer vulnerability;
+- cannot be refreshed while active;
+- guarantees a usable opening after the attacker's current committed action finishes.
+
+The opening must not expire entirely during the recovery of the strike that caused it.
+
+### 8.5 Actor and action stability
+
+Hyperarmor combines actor stability with action stability:
+
+```text
+action hyperarmor capacity =
+    Resolve-derived actor stability
+    × action stability rating
+    + class, track, equipment, and temporary modifiers
+```
+
+Action stability ratings may be described internally as Exposed, Light, Standard, Committed, or Braced. They determine how much actor stability an action can express.
+
+The same Standard sword attack therefore has more hyperarmor when performed by a Guardian than by an Acrobat. A delicate action uses less of that difference; a deliberately grounded heavy action uses more.
+
+Incoming posture damage reduces both the action's remaining interruption resistance and the actor's persistent posture. Exhausting action hyperarmor causes an ordinary interruption; exhausting posture causes the longer break.
+
+Resolve improves stability that an action can express. It does not add a full unconditional hyperarmor value to every action. This prevents high Resolve from making healing, delicate casting, and recovery universally safe.
+
+Exceptional body types may have an internal stability modifier, but Waystone does not need a second routine upgradeable Hyperarmor stat.
+
+### 8.6 Knockback
+
+Knockback remains separate:
+
+- posture governs interruption and break;
+- actor mass and attack force govern displacement;
+- an action may resist interruption without resisting push;
+- explicitly grounded actions can resist both.
+
+## 9. Awareness, noise, and Stealth
+
+### 9.1 Knowledge states
+
+An observer can be:
+
+- **Unaware:** no reason to believe the target is nearby;
+- **Searching:** has a disturbance or last-known position but not the target's current position;
+- **Engaged:** has valid line of sight and knows the current position.
+
+Detection does not progress while world time is frozen.
+
+### 9.2 Probabilistic noise
+
+Every committed action emits an authored noise event. Stealth reduces effective noise; action type, distance, walls, terrain, and observer Awareness modify the chance of detection.
+
+A nearby observer performs a seeded random check once per meaningful action event, not every simulation tick. A success without line of sight creates Searching and records the approximate action location.
+
+Examples:
+
+- Wait is silent or nearly silent.
+- movement noise depends on action and Stealth;
+- Dodge is relatively loud;
+- light strikes are moderate;
+- heavy impacts, breaking objects, and major spells are loud.
+
+Repeated actions create repeated risk. RNG state must be saved so seeds and bug reports remain reproducible.
+
+### 9.3 Line of sight
+
+Valid line of sight creates Engaged and exact current knowledge. Hearing alone does not.
+
+Enemies do not share a global hive mind:
+
+- direct sight gives exact engagement;
+- witnessing an ally's attack may give exact knowledge if the attacker is visible;
+- hearing combat creates Searching at the sound or attack origin;
+- ranged attacks can reveal their firing origin without magically tracking the shooter afterward.
+
+### 9.4 Unaware attacks
+
+An unaware hit lands while the target does not know the attacker's current position. Searching the wrong location can still qualify.
+
+The starting universal multiplier is approximately `1.5×`, subject to playtesting.
+
+- Rogue and weapon-specific bonuses add into the final multiplier rather than multiplying one another.
+- Only the first damaging contact of an action receives the unaware bonus.
+- That contact reveals the attacker to the victim.
+- A long multi-contact knife sequence cannot multiply every contact.
+- Eligibility is checked immediately before contact; crossing valid line of sight before impact removes the bonus unless an active Stealth effect suppresses detection.
+
+### 9.5 Stealth abilities and concealed enemies
+
+Ordinary stealthy bandits should use high Stealth, quiet actions, cover-seeking behavior, and the universal perception system rather than a bespoke invisibility ability.
+
+An explicit concealment ability is reserved for exceptional effects such as Rogue Stealth, magical invisibility, or terrain-specific camouflage.
+
+Rogue Stealth is expected to:
+
+- begin as an ability usable while no enemy knows the Rogue's current position;
+- suppress ordinary visual acquisition for limited advancing world time;
+- end on attack, damage, or direct contact;
+- later upgrade to break existing engagement and leave enemies Searching the last-known position.
+
+No enemy may deliver a completely unreadable invisible attack. Hostile commitment must become perceptible before active contact.
+
+### 9.6 Traps and secrets
+
+Traps carry concealment determined by trap type, creator abilities, and terrain. Player and enemy Awareness checks use the same system against player- and enemy-created traps.
+
+Awareness also reveals secret passages and environmental clues from farther away. Low-Awareness characters can still discover appropriate secrets through very close examination unless the content explicitly requires otherwise.
+
+## 10. Conditions and buildup
+
+### 10.1 Thresholds
+
+Hostile conditions generally accumulate buildup. Each condition has a base threshold:
+
+```text
+final threshold =
+    condition base threshold
+    × universal Resistance modifier
+    × condition-specific actor modifier
+```
+
+Buildup and condition timers advance only in world time. Buildup can decay after pressure stops. Players, enemies, traps, consumables, and spells use the same system.
+
+Specific immunities remain exceptional actor properties. An undead actor can be immune to Sleep or Poison without creating a visible resistance stat for every condition.
+
+### 10.2 Buildup conditions
+
+The initial condition vocabulary is:
+
+- **Laceration:** buildup culminates in immediate fixed damage, then resets.
+- **Poison:** buildup triggers sustained damage over world time.
+- **Sleep:** completely immobilizes the actor for a fixed world-time duration. Each direct damaging hit reduces the remaining duration by a fixed amount; ongoing damage does not. The first direct hit reveals its attacker even if the victim remains immobilized.
+- **Frost:** reduces personal tempo and increases vulnerability to direct attacks. Its bonus damage should initially apply once per attack action rather than once per contact, preventing automatic dominance by high-contact weapons.
+- **Burning:** shorter and more urgent ongoing health pressure than Poison.
+- **Frenzy:** disrupts faction targeting for AI and corrupts player commands.
+
+Sleep is a forced advancing state for the player, like stagger; it cannot freeze forever merely because the player cannot act.
+
+Frenzied enemies can physically attack and damage former allies through the same geometry. Frenzy does not autonomously advance player time without input. Instead it can redirect movement, misdirect offensive skills or Defense, or replace an attempted action with a basic strike in a random direction. Potions and inventory use remain reliable; Wait remains reliable but advances enemy time.
+
+### 10.3 Direct states
+
+Not every timed effect uses buildup. Self-buffs and guaranteed ability states apply directly, including:
+
+- Rally;
+- Strength;
+- Stealth;
+- Counterstep;
+- action-granted hyperarmor.
+
+A hostile ability may exceptionally apply a condition directly, but buildup is the ordinary resisted path.
+
+### 10.4 Blood
+
+Blood drops are not a condition. They belong to a later death-reward and battlefield-pickup framework, designed with Berserker.
+
+## 11. Character and track architecture
+
+### 11.1 Sheet
+
+An ordinary character has five tracks:
+
+1. Weapon;
+2. Defense;
+3. Temperament;
+4. Main Class;
+5. Subclass.
+
+A late Adopted Track can add a sixth position in sufficiently long runs.
+
+Main Class determines the common class identity and main ability. Subclass determines the secondary class identity and ability. For example, all Rogues share the Rogue main track while Acrobat and Sharpshooter supply different subclass tracks.
+
+### 11.2 Track content
+
+A track can contain:
+
+- active abilities;
+- changes to regular attacks or combos;
+- passive properties;
+- compound or ordinary stat improvements;
+- equipment interactions;
+- condition interactions;
+- mechanical permissions;
+- authored capstones.
+
+A track is not defined solely by its active skill. It does not need a binary branch, equal node count, or generic sequence of choice, statistical improvement, skill upgrade, and capstone.
+
+Linear tracks, repeated visible package choices, one-of-three commitments, or rare completely visible branches are all valid when the subject warrants them.
+
+All future nodes and permanent consequences remain visible so the player can plan a build.
+
+### 11.3 Starting identity
+
+At run start, a character already has:
+
+- a basic weapon attack;
+- a basic defensive technique;
+- a main-class ability;
+- a subclass ability.
+
+Tracks improve and broaden identity rather than withholding it entirely.
+
+The Weapon Art is the primary exception. The first Weapon-track purchase presents a permanent choice between the category's two arts. The unchosen art is not later unlocked during that run.
+
+### 11.4 Active controls
+
+The ordinary HUD supports:
+
+- Defense;
+- Weapon Art;
+- main-class ability;
+- subclass ability;
+- late adopted ability.
+
+Regular attacks and movement come from the world field. Consumables, including rejuvenation potions, occupy a separate belt. Wait is a separate smaller button above the belt. A late weapon-loadout switch receives its own compact control.
+
+A Mage spellbook may exceptionally open a palette from one slot. Palettes should not become the default solution for every class.
+
+### 11.5 Level introduction
+
+Characters begin at level 1.
+
+- First level-up, reaching level 2: Weapon, Defense, and Temperament are introduced.
+- Second level-up, reaching level 3: Main Class becomes available.
+- Third level-up, reaching level 4: Subclass becomes available.
+
+The player ordinarily sees no more than four available upgrade destinations at once and only rarely five. A normal Expedition should allow at least one chosen track to reach completion by approximately level 9 or 10.
+
+### 11.6 Five gating positions
+
+Every track family has five potential gating positions, even when an authored track deliberately leaves a position empty. Level 10 remains a universal final opportunity.
+
+The provisional family schedules are:
+
+| Track | Potential minimum levels |
+|---|---|
+| Weapon | 2, 4, 6, 8, 10 |
+| Defense | 2, 5, 7, 9, 10 |
+| Temperament | 2, 4, 6, 8, 10 |
+| Main Class | 3, 5, 7, 9, 10 |
+| Subclass | 4, 6, 8, 9, 10 |
+
+These schedules are subject to a choice-count audit after concrete tracks exist. They are gating opportunities, not a command that every track contain five nodes.
+
+Temperament uses its gates as purchase caps. When the character is below the currently permitted number of Temperament investments, the track remains an available destination. Its two or three compound stat packages remain simultaneously visible, along with the number of purchases already made.
+
+### 11.7 Permanent choices
+
+Track choices are permanent for the run.
+
+- The unchosen Weapon Art is not a later unlock.
+- Future consequences remain visible before commitment.
+- Branch-dependent future nodes are rare.
+- Choices should change play rather than select between two nearly identical numerical bonuses.
+
+### 11.8 Adopted Track
+
+A late discovery may grant an Adopted Track, commonly a specialized subclass-style discipline associated with another class.
+
+Because it appears late, the player receives immediate catch-up investment rather than beginning from rank zero. Exact timing and catch-up count will be designed with the first concrete adopted discipline.
+
+If the track supplies an active ability, it uses the fifth active-action position.
+
+### 11.9 Wanderer
+
+Wanderer builds the same five-track sheet through forced choices among weapon, Defense, main identity, and secondary identity. The choices occur during the run or its opening rather than creating a separate progression system.
+
+The current leaning is forced construction in both Expedition and Campaign, with collection sites potentially affecting presentation in Campaign. Exact acquisition cadence remains deferred.
+
+## 12. Mode-specific boundaries
+
+- Expedition is forward-directed, permadeath, and has no Waystones or campaign-style shortcut loops.
+- Campaign can use Waystones, persistent trainers, layered regions, death recovery, and anchored knowledge.
+- Leveling remains available outside active combat in Expedition.
+- Campaign leveling and major retraining occur at Waystones or appropriate safe sites.
+- Differences in access points do not create different actor, combat, track, or proficiency rules.
+
+## 13. Explicitly deferred decisions
+
+The following are not accidental omissions:
+
+- Intelligence and Faith formulas;
+- spellbook structure and spellcaster action economy;
+- elemental damage and elemental resistance details;
+- exact condition buildup, duration, and damage values;
+- Blood-drop chance, healing, and low-health scaling;
+- final physical Defense mitigation curve;
+- final Strength-to-damage breakpoints;
+- equipment loot and armor-slot behavior;
+- exact adopted-track acquisition and catch-up amount;
+- final second-loadout timing;
+- exact Wanderer acquisition cadence;
+- final balance of Block guard profiles and weapon encumbrance;
+- final UI presentation and art.
+
+These should be decided with their first concrete classes or content rather than abstractly.
+
+## 14. Planned concrete validation
+
+The first complete consumer of this framework should be **Rogue · Acrobat**:
+
+1. Knife weapon track;
+2. an appropriate Defense track;
+3. Rogue Temperament;
+4. Rogue main-class track and Stealth ability;
+5. Acrobat subclass track and Vault.
+
+The planned design order after Acrobat is:
+
+1. Rogue · Sharpshooter;
+2. Rogue · Cutthroat;
+3. Warrior · Guardian;
+4. Warrior · Berserker;
+5. full Warrior/Rogue roster audit;
+6. third main class, likely Mage.
+
+Implementation should follow staged playable updates:
+
+1. health/damage scaling and actor-stat foundation;
+2. revised defensive and posture framework;
+3. five-track architecture and migration;
+4. Knife, Rogue, and Acrobat content;
+5. Android and PC build verification.
+
+The framework should be amended when concrete play exposes a bad assumption. Changes should be explicit rather than silently allowing implementation behavior to become the new design.
