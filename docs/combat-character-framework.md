@@ -4,6 +4,8 @@
 
 **Recorded:** 2026-07-31
 
+**Updated:** 2026-08-01 with the first complete Rogue · Acrobat specification
+
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
 This document records the agreed direction for Waystone's next character-system overhaul. It is the authoritative design target, not a description of every behavior in prototype version `0.0.71`. Where the prototype differs, future implementation should migrate toward this specification deliberately and with regression coverage.
@@ -100,6 +102,14 @@ This is not Dark Souls-style weapon scaling:
 - weapon tracks improve authored weapon techniques rather than a scaling grade.
 
 A multi-contact technique receives the Strength contribution once in its strike damage budget and distributes that budget across its contacts. It does not add the complete Strength bonus to every knife contact. Distinct stages of a sword combo are distinct strikes and can each receive the contribution.
+
+For the initial scaled-health implementation, use the deliberately simple provisional contribution:
+
+```text
+actor Strength contribution = actor Strength
+```
+
+Consequently, a one-contact technique with base damage 2 performed at Strength 4 deals 6 physical damage before Defense and explicit modifiers. This remains a playtest formula rather than a permanent balance commitment.
 
 Strength does not automatically change posture damage, status buildup, reach, speed, hyperarmor, or push distance. A specific track may create one of those interactions explicitly.
 
@@ -675,9 +685,11 @@ Characters begin at level 1.
 
 The player ordinarily sees no more than four available upgrade destinations at once and only rarely five. A normal Expedition should allow at least one chosen track to reach completion by approximately level 9 or 10.
 
-### 11.6 Five gating positions
+### 11.6 Gating positions and authored track length
 
-Every track family has five potential gating positions, even when an authored track deliberately leaves a position empty. Level 10 remains a universal final opportunity.
+Every ordinary authored track family has five potential gating positions, even when a particular track deliberately leaves positions empty. Level 10 remains a universal final opportunity.
+
+Weapon is the structural exception in the other direction: every weapon category must contain exactly five proficiency ranks so that cross-category proficiency transfer remains coherent. Defense, Main Class, and Subclass tracks use only as many of their potential positions as their content warrants.
 
 The provisional family schedules are:
 
@@ -685,13 +697,13 @@ The provisional family schedules are:
 |---|---|
 | Weapon | 2, 4, 6, 8, 10 |
 | Defense | 2, 5, 7, 9, 10 |
-| Temperament | 2, 4, 6, 8, 10 |
+| Temperament | Available repeatedly from 2, subject to its global purchase cap |
 | Main Class | 3, 5, 7, 9, 10 |
 | Subclass | 4, 6, 8, 9, 10 |
 
 These schedules are subject to a choice-count audit after concrete tracks exist. They are gating opportunities, not a command that every track contain five nodes.
 
-Temperament uses its gates as purchase caps. When the character is below the currently permitted number of Temperament investments, the track remains an available destination. Its two or three compound stat packages remain simultaneously visible, along with the number of purchases already made.
+Temperament is not a conventional node sequence. It remains an available destination from level 2 until its global four-investment cap is reached. Its two or three compound stat packages remain simultaneously visible, along with `X/4`. Temperaments share this four-purchase limit so their opportunity cost remains comparable; their identity comes from package content rather than different track lengths.
 
 ### 11.7 Permanent choices
 
@@ -744,15 +756,225 @@ The following are not accidental omissions:
 
 These should be decided with their first concrete classes or content rather than abstractly.
 
-## 14. Planned concrete validation
+## 14. First concrete consumer: Rogue · Acrobat
 
-The first complete consumer of this framework should be **Rogue · Acrobat**:
+Rogue · Acrobat is the first complete character authored against this framework. Its numerical values are initial playtest targets using the scaled health and damage language in section 3. Its structural separation tests are mandatory:
 
-1. Knife weapon track;
-2. an appropriate Defense track;
-3. Rogue Temperament;
-4. Rogue main-class track and Stealth ability;
-5. Acrobat subclass track and Vault.
+- Knife must remain useful without Rogue;
+- Rogue must remain useful with every weapon category;
+- Acrobat must remain useful with Block, Endure, Parry, or another Defense instead of Dodge;
+- the strongest synergies should emerge from shared events rather than explicit class-lock checks.
+
+### 14.1 Starting sheet
+
+| Position | Starting identity |
+|---|---|
+| Weapon | Single Knife; Weapon Art selected at the first Knife purchase |
+| Defense | Basic Dodge |
+| Temperament | Finesse |
+| Main Class | Rogue with Stealth |
+| Subclass | Acrobat with Vault |
+
+The provisional base attributes are:
+
+| Attribute | Value |
+|---|---:|
+| Health | 80 |
+| Strength | 4 |
+| Defense | 2 |
+| Speed | 7 |
+| Stealth | 7 |
+| Awareness | 6 |
+| Resolve | 3 |
+| Resistance | 4 |
+| Intelligence | 4 |
+| Faith | 2 |
+
+Intelligence and Faith remain especially provisional because their systems are deferred. The intended physical identity is approximately 20% less health than the scaled Warrior, low protection and action stability, and substantially greater Speed and Stealth.
+
+### 14.2 Knife attack language
+
+Single Knife uses four fast, compact cuts:
+
+- four distinct one-contact strikes;
+- approximately 2.3 authored seconds for a complete sequence before personal tempo;
+- approximately 92 reach;
+- compact alternating arcs of approximately 65–80 degrees;
+- technique base damage 2, delivering approximately 6 damage per contact at starting Strength;
+- approximately 1 posture damage per contact;
+- no thrust, lunge, privileged finisher, or unusually committed final strike.
+
+Twin Knives use six faster alternating cuts:
+
+- six distinct one-contact strikes;
+- approximately 2.65 authored seconds for a complete sequence before personal tempo;
+- approximately 88–92 reach;
+- technique base damage 1, delivering approximately 5 damage per contact at starting Strength;
+- less posture damage per contact than Single Knife;
+- a longer complete commitment but shorter individual commitments.
+
+Moving the original held attack touch does not redirect either sequence. Knife introduces no new aiming rule. Releasing between cuts ends the sequence after the current cut resolves.
+
+### 14.3 Knife Weapon Art
+
+The first Knife purchase permanently selects one Art.
+
+**Execution** retains Single Knife and grants a close-range execution cut:
+
+- no added reach or forward lunge;
+- approximately 1.05 seconds of total authored commitment;
+- technique base damage 8, delivering approximately 12 damage at starting Strength;
+- approximately 3 posture damage;
+- 5.5 personal-time seconds of cooldown;
+- adds `+1.0` to the unaware multiplier.
+
+With the universal `1.5x` unaware modifier and Rogue's Ambush, an unaware Rogue Execution therefore begins near `3x` damage. It remains usable but inefficient in open combat.
+
+**Twin Fang** equips a second knife and changes the regular sequence to six cuts. Its active Art is a two-contact crossing cut:
+
+- approximately 0.85 seconds of authored commitment;
+- approximately 12 total damage at starting Strength, with the one Strength contribution divided across the two contacts;
+- approximately 4.2 personal-time seconds of cooldown;
+- the inferior dual-wield guard profile when paired with Block.
+
+### 14.4 Knife proficiency
+
+Knife uses all five Weapon ranks:
+
+| Rank | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 2 | **Weapon Art:** permanently choose Execution or Twin Fang. |
+| II | 4 | **Honed Edges:** every Knife contact deals exactly +1 health damage. |
+| III | 6 | **Light Hands:** Knife startup, continuation, and recovery resolve approximately 8% faster. |
+| IV | 8 | **Relentless Cuts:** consecutive contacts in one uninterrupted sequence gain +1, then +2, then +3 damage; +3 persists until the sequence stops, misses, or is interrupted. |
+| V | 10 | **Ceaseless Cuts:** maintained attack input flows from the last regular cut directly back into the first without full combo recovery. |
+
+Ceaseless Cuts is the culmination rather than a routine Art refinement. Single Knife cycles its four-cut pattern and Twin Knives cycle their six-cut pattern. The player can still release between any two contacts.
+
+### 14.5 Dodge
+
+Rogue · Acrobat begins with the already authored three-purchase Dodge track. Acrobat does not replace or rewrite it.
+
+| Purchase | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 2 | **Practised Footwork:** basic Dodge recovery falls from 0.66 to 0.60 authored seconds and cooldown from 4.0 to 3.6 personal-time seconds. |
+| II | 5 | **Evasive Form:** permanently choose Sidestep or Long Roll. |
+| III | 9 | **Perfect Form:** clean Sidestep primes Counterstep; clean Long Roll restores 2 seconds of Dodge cooldown. |
+
+Sidestep covers the basic 168-unit distance more quickly with a 2.8-second cooldown. Long Roll covers approximately 231 units with a 3.6-second cooldown. Perfect Form responds only to the corresponding Dodge action; it does not trigger from ordinary movement or Vault.
+
+### 14.6 Finesse Temperament
+
+Finesse permits four investments from level 2. Each investment permanently selects one of two packages:
+
+- **Fleetness:** `+1 Speed` and `+5 maximum health`;
+- **Subtlety:** `+1 Stealth` and `+1 Awareness`.
+
+The sheet shows both packages directly and records `X/4`. Repeating Fleetness four times is initially permitted; its substantial opportunity cost should be tested before adding a package-specific cap.
+
+### 14.7 Stealth
+
+Stealth is the Rogue's starting main ability:
+
+- approximately 0.4 seconds of activation commitment;
+- 5 world-time seconds of concealment;
+- 12 personal-time seconds of cooldown beginning when concealment ends;
+- before Vanish, activation requires that no enemy hold the player's exact current location;
+- enemies cannot visually acquire the concealed Rogue, although noise can make them Search an approximate location;
+- damaging contact, receiving direct damage, or releasing an overtly hostile consumable ends concealment;
+- movement, defensive actions, Vault, and quiet interactions do not end it.
+
+Frozen decision time does not consume Stealth duration.
+
+### 14.8 Rogue track
+
+Rogue deliberately contains five distinct purchases because it has five worthwhile functions:
+
+| Rank | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 3 | **Ambush:** raises the universal unaware modifier from `1.5x` to `2x` with every weapon. |
+| II | 5 | **Rogue's Training:** permanently choose Shadow Training or Fleet Training. |
+| III | 7 | **Clean Work:** an unaware victim cannot broadcast an alert until the current attack action resolves; if it dies during that action, its alarm and death noise are suppressed. |
+| IV | 9 | **Vanish:** Stealth can be activated while Engaged; enemies lose the exact position and Search around the last known location. |
+| V | 10 | **Ghost:** breaking Stealth begins a brief assassination window; killing the victim without another direct witness restores Stealth at full duration. |
+
+Rogue's Training offers:
+
+- **Shadow Training:** `+1 Speed` and `+2 Stealth`;
+- **Fleet Training:** `+2 Speed`.
+
+This choice is permanent but does not branch or change later Rogue nodes.
+
+Clean Work suppresses the victim's alarm and death noise, not ordinary weapon-release noise or direct visual witnesses. During Ghost's approximately two-second assassination window, the victim and direct witnesses may see and fight the Rogue, but the victim does not propagate an alert. Failure begins the normal Stealth cooldown.
+
+The track must work across all three planned Rogue subclasses:
+
+- Acrobat repositions and finishes isolated targets;
+- Sharpshooter kills before an alert propagates;
+- Cutthroat has time for multiple fast contacts instead of requiring the first contact to kill.
+
+### 14.9 Vault
+
+Vault is Acrobat's starting subclass ability and exists independently of the equipped Defense:
+
+- tap Vault, then choose a direction using the same directional interaction as Dodge;
+- approximately 198 units of travel;
+- approximately 0.54 authored seconds of total action time;
+- i-frames during travel, not landing recovery;
+- passes through actor bodies but not walls, gates, gaps, or other solid terrain;
+- ends facing the travel direction;
+- deals no damage and does not automatically attack;
+- obstruction truncates travel and still consumes the ability;
+- approximately 0.2 seconds of landing recovery;
+- 8 personal-time seconds of cooldown beginning on landing.
+
+### 14.10 Acrobat track
+
+Acrobat contains four purchases rather than filling every potential Subclass position:
+
+| Rank | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 4 | **Soft Landing:** Vault landing recovery falls from approximately 0.2 to 0.1 seconds; held movement begins when recovery ends. |
+| II | 6 | **Elastic Moment:** adds approximately 0.06 seconds to every genuine i-frame window the actor possesses without creating i-frames on other actions. |
+| III | 8 | **Turnabout:** a clean evade empowers the next basic physical attack made within 4 world-time seconds; its first contact gains +8 health and +3 posture damage. |
+| IV | 10 | **Encore:** Vault cooldown falls from 8 to 4.8 personal-time seconds. |
+
+Turnabout triggers once per empowered attack, not once per Knife contact. Acrobat consequently has a soft affinity with Dodge while remaining fully functional with Block, Endure, or Parry.
+
+### 14.11 Universal clean evasion
+
+A clean evade can occur through:
+
+1. hostile attack geometry crossing the actor during genuine i-frames; or
+2. voluntary ordinary movement begun after hostile attack commitment narrowly carrying the actor outside the active geometry.
+
+The initial ordinary-movement test requires all of the following:
+
+- the movement began after the hostile action committed;
+- the attack misses the actor's actual current body;
+- its geometry crosses the actor's recent swept movement trail;
+- its final clearance is within a narrow initial margin of approximately 18 world units;
+- the event has not already fired for that hostile action.
+
+An attack aimed elsewhere does not qualify simply for passing nearby. Values remain subject to geometric playtesting.
+
+Every clean evade presents a brief cyan-white ring, clear `CLEAN EVADE` text, and a combat-message entry. It adds no artificial slow motion, vibration, or additional pause.
+
+Perfect Form reacts only to clean evasions performed with its equipped Dodge form. Acrobat's Turnabout reacts to every clean-evade source, including ordinary movement and Vault.
+
+### 14.12 Rogue · Acrobat level audit
+
+| Track | Concrete availability |
+|---|---|
+| Knife | 2, 4, 6, 8, 10 |
+| Dodge | 2, 5, 9 |
+| Finesse | Four investments available from level 2 |
+| Rogue | 3, 5, 7, 9, 10 |
+| Acrobat | 4, 6, 8, 10 |
+
+The ordinary route presents three or four upgrade destinations. Five may appear after deliberately leaving several earlier tracks untouched, but should not be the normal level-up experience.
+
+## 15. Planned design and implementation order
 
 The planned design order after Acrobat is:
 
