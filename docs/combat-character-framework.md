@@ -64,12 +64,21 @@ Touch and keyboard forgiveness must retain an accessibility floor. A high-Speed 
 
 There is no universal walk/run distinction.
 
-- A tap commits one small, fixed-distance movement step.
+- Touch-down initially commits neither movement nor attack. A short real-time classification window does not advance simulation.
+- Dragging beyond a screen-density-adjusted tolerance immediately classifies the contact as movement, even when touch-down occurred on an enemy or interactable.
+- A quick release on an attackable target requests one ordinary attack when that target is contextually attackable by the equipped weapon; otherwise it remains a movement tap.
+- Remaining within the tolerance for approximately 100–130 real milliseconds locks held-attack behavior.
+- A quick release on open terrain commits one small, fixed-distance movement step.
 - Holding chains those steps.
 - Releasing stops after the current small commitment completes.
 - Dragging can change the direction used by the next movement commitment.
+- Once classified as movement, a contact cannot become an attack. Once classified as attack, it cannot become movement.
 - Keyboard movement chains the same actions independently of operating-system key-repeat rate.
 - Diagonal directions are normalized.
+
+The classification delay is an input-accessibility rule, not world time. Movement begins as soon as drag intent crosses tolerance. A quick attack tap begins its authored simulation after release; held attacks begin after the hold threshold. Melee attacks ignore later finger drift so an original combo hold remains stable. Ranged weapons may explicitly interpret post-lock dragging as aim adjustment.
+
+Contextual attackability remains weapon-dependent. A melee tap on a target that is clearly beyond any plausible contact is movement; an equipped ranged weapon may legitimately attack the same distant target.
 
 Fast and slow actors use identical controls and move the same distance per step. A fast actor completes that distance in less world time, allowing fewer enemy actions during the movement.
 
@@ -974,23 +983,218 @@ Perfect Form reacts only to clean evasions performed with its equipped Dodge for
 
 The ordinary route presents three or four upgrade destinations. Five may appear after deliberately leaving several earlier tracks untouched, but should not be the normal level-up experience.
 
-## 15. Planned design and implementation order
+## 15. Second concrete consumer: Rogue · Sharpshooter
 
-The planned design order after Acrobat is:
+Rogue · Sharpshooter validates that Rogue supports a ranged subclass and that Sharpshooter remains useful without Bow. Its separation tests are mandatory:
 
-1. Rogue · Sharpshooter;
-2. Rogue · Cutthroat;
-3. Warrior · Guardian;
-4. Warrior · Berserker;
-5. full Warrior/Rogue roster audit;
-6. third main class, likely Mage.
+- Bow must provide complete ordinary ranged combat without Rogue or Sharpshooter;
+- Sharpshooter must retain perception, preparation, and precision benefits with a melee weapon;
+- Rogue's Stealth, unaware damage, Clean Work, Vanish, and Ghost must work with projectiles without Bow-specific checks;
+- aimed consumable and spell projectiles should reuse the same range-tag language as weapon projectiles.
+
+### 15.1 Starting sheet
+
+| Position | Starting identity |
+|---|---|
+| Weapon | Bow; Weapon Art selected at the first Bow purchase |
+| Defense | Basic Dodge |
+| Temperament | Patient |
+| Main Class | Rogue with Stealth and the track in section 14.8 |
+| Subclass | Sharpshooter with Take Aim |
+
+The provisional base attributes are:
+
+| Attribute | Value |
+|---|---:|
+| Health | 85 |
+| Strength | 4 |
+| Defense | 2 |
+| Speed | 6 |
+| Stealth | 7 |
+| Awareness | 8 |
+| Resolve | 4 |
+| Resistance | 4 |
+| Intelligence | 4 |
+| Faith | 2 |
+
+Compared with Rogue · Acrobat, Sharpshooter is slightly tougher, slower, more aware, and more stable under pressure.
+
+### 15.2 Bow draw, release, and aiming
+
+Bow's regular attack is a projectile shot rather than a contextual melee substitute. Pressing begins a draw; releasing always fires. Accumulated authored draw time continuously determines damage, posture force, projectile velocity, and maximum travel distance.
+
+The internal curve is presented through three readable animation states rather than numerical timing homework:
+
+- **Loose:** low bend, short range, low damage, low velocity, and negligible posture force;
+- **Drawn:** useful intermediate performance;
+- **Full:** a clear visual and audio state indicating maximum performance.
+
+There is no narrow perfect-release bonus. Holding beyond Full preserves maximum output while time continues to advance, so waiting for a better release position carries risk. A very short release debounce may reject accidental touch noise, but must not make the Bow feel unresponsive.
+
+Initial scaled-health targets are:
+
+| Draw state | Approximate damage at starting Strength | Maximum range | Posture | Total commitment after immediate release |
+|---|---:|---:|---:|---|
+| Loose | 6 | 220–250 | Minimal | Fast, approximately 0.7 seconds including recovery |
+| Drawn | 9 | Approximately 450 | Low | Intermediate |
+| Full | 12 | Approximately 650–700 | Approximately 2 | Slow, approximately 1.3 seconds including recovery |
+
+These are calibration points on a continuous curve. Damage does not decay during flight; draw strength determines the projectile at release.
+
+Bow uses the universal gesture classifier:
+
+- an immediate pre-lock drag is movement even if touch began on an enemy;
+- a quick attackable-target tap produces the minimum Loose shot;
+- holding beyond the attack threshold locks Bow draw;
+- touching an enemy supplies a soft target lock while the enemy remains visible;
+- after attack lock, dragging adjusts aim and permits manual leading instead of moving the character;
+- holding open terrain beyond the attack threshold begins free directional aiming;
+- release fires along the current aim direction;
+- the arrow never homes or turns after release.
+
+Soft lock follows the visible target at a finite turning rate but does not calculate a perfect intercept. Manual aim can lead lateral movement. If line of sight breaks, target following stops and aim retains its last valid direction.
+
+The character is immobile while drawing. A second press during post-shot recovery may buffer the next draw; continuous hold is not required because release is the firing input.
+
+### 15.3 Projectile range language
+
+Every projectile carries world-space velocity, collision geometry, and maximum travel distance. Reaching maximum distance causes a physical presentation such as an arrow dropping or embedding rather than invisible deletion.
+
+Draw strength sets Bow's base range. Directly aimed projectiles use the shared `aimed_projectile` capability tag, including:
+
+- arrows and bolts;
+- throwing knives, darts, and similar consumables;
+- lobbed firebombs and other explicitly aimed consumables;
+- direct projectile spells;
+- future ranged-weapon techniques.
+
+The tag does not include melee reach, self-centered areas, cones, beams, traps, summons, or an explosion's radius after impact. Tapping beyond attainable range launches toward the chosen direction and terminates at the maximum reachable point, so range judgment remains meaningful.
+
+Range modifiers combine additively rather than compounding:
+
+```text
+final maximum range =
+    base range × (1 + weapon range bonus + Sharpshooter range bonus + other additive bonuses)
+```
+
+Increasing range does not automatically increase projectile speed or damage. Longer flight consequently gives targets more opportunity to move.
+
+### 15.4 Bow Weapon Arts
+
+The first Bow purchase permanently selects one Art. Weapon Arts have fixed authored draws rather than reusing regular-shot release scaling.
+
+**Piercing Shot** is a slow line attack:
+
+- approximately 22 damage and 5 posture damage;
+- approximately 780 base range;
+- fast projectile after release;
+- passes through every physically crossed actor;
+- approximately 1.5 seconds of commitment;
+- approximately 6.5 personal-time seconds of cooldown.
+
+**Fan Shot** releases three independent arrows in a compact cone:
+
+- approximately 6 damage per arrow;
+- approximately 380 base range;
+- low posture damage;
+- approximately 0.9 seconds of commitment;
+- approximately 5 personal-time seconds of cooldown;
+- independent geometry permits multiple arrows to contact a sufficiently large or close target.
+
+Neither Art depends on Rogue or Sharpshooter.
+
+### 15.5 Bow proficiency
+
+Bow uses all five Weapon ranks:
+
+| Rank | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 2 | **Weapon Art:** permanently choose Piercing Shot or Fan Shot. |
+| II | 4 | **Instinctive Release:** improves the low-draw portion of the continuous curve, raising a Loose shot from approximately 6 to 8 damage and from roughly 250 to 300 maximum range. |
+| III | 6 | **Settled Draw:** Full damage rises from approximately 12 to 15 and posture damage from approximately 2 to 3. |
+| IV | 8 | **Quick Nock:** post-release recovery and a buffered next draw become approximately 20% faster. |
+| V | 10 | **Following Arrow:** a Full shot that hits permits one accelerated follow-up draw when a new press is buffered during recovery; the follow-up cannot enable another accelerated draw. |
+
+Following Arrow creates a deliberate two-shot culmination rather than automatic fire. A miss does not earn the accelerated follow-up.
+
+### 15.6 Dodge
+
+Rogue · Sharpshooter uses the existing three-purchase Dodge track in section 14.5 without modification. It relies on Dodge to recreate firing distance but receives none of Acrobat's universal i-frame or clean-evade improvements.
+
+### 15.7 Patient Temperament
+
+Patient permits four investments from level 2. Each investment permanently selects one package:
+
+- **Observation:** `+1 Awareness` and `+1 Stealth`;
+- **Composure:** `+1 Resolve` and `+5 maximum health`.
+
+Patient is not an archery-only temperament. Its packages support perception, concealment, posture, and survival with every weapon.
+
+### 15.8 Take Aim
+
+Take Aim is Sharpshooter's starting subclass ability:
+
+- select a currently visible enemy;
+- commit approximately 0.5 seconds to studying it;
+- retain the Aimed state for 6 world-time seconds;
+- the next direct physical attack against it grants +5 damage and ignores 3 points of physical Defense on its first contact;
+- the mark supplies no homing and does not permit attacks through walls;
+- temporary loss of line of sight does not erase the mark or reveal unexplored geography;
+- cooldown is approximately 8 personal-time seconds, beginning when the mark is consumed or expires.
+
+Take Aim applies to every weapon category. Only the first contact receives its damage and Defense benefit, preventing multi-contact multiplication.
+
+### 15.9 Sharpshooter track
+
+Sharpshooter contains four justified purchases:
+
+| Rank | Minimum level | Upgrade |
+|---:|---:|---|
+| I | 4 | **Keen Eye:** gain +2 Awareness and sense approximate enemy blobs outside line of sight. |
+| II | 6 | **Far Sight:** increase unobstructed sight distance by approximately 25% and maximum range of every `aimed_projectile` by approximately 15%. |
+| III | 8 | **Expose Weakness:** Take Aim's bonus rises from +5 to +10 damage, Defense ignored rises from 3 to 6, and its first contact gains +3 posture damage. |
+| IV | 10 | **Dead to Rights:** the first contact against an Aimed target deals 50% additional final physical damage and double resulting posture damage; killing the target refreshes Take Aim. |
+
+Keen Eye blobs:
+
+- represent approximate last-sensed position, not a continuously exact outline;
+- update through committed world time rather than while time is frozen;
+- do not reveal identity, health, facing, action, or targetability;
+- do not reveal unexplored terrain;
+- still require an Awareness check for concealed or exceptionally stealthy actors.
+
+Far Sight increases actor sight distance and aiming-camera lead rather than globally zooming the camera out. Its range bonus applies to Bow, other ranged weapons, aimed consumables, and direct projectile spells through capability tags rather than class checks. It does not change damage, velocity, explosion radius, or non-projectile geometry.
+
+Dead to Rights applies its multipliers once to the prepared contact. Fan Shot, Twin Knives, and other multi-contact actions do not receive the multiplier separately on every contact.
+
+### 15.10 Rogue · Sharpshooter level audit
+
+| Track | Concrete availability |
+|---|---|
+| Bow | 2, 4, 6, 8, 10 |
+| Dodge | 2, 5, 9 |
+| Patient | Four investments available from level 2 |
+| Rogue | 3, 5, 7, 9, 10 |
+| Sharpshooter | 4, 6, 8, 10 |
+
+The character's active controls are Defense, Bow Art, Stealth, Take Aim, and the late Adopted ability. Regular shots use the world field and universal gesture classifier rather than an additional ability button.
+
+## 16. Planned design and implementation order
+
+The planned design order after Sharpshooter is:
+
+1. Rogue · Cutthroat;
+2. Warrior · Guardian;
+3. Warrior · Berserker;
+4. full Warrior/Rogue roster audit;
+5. third main class, likely Mage.
 
 Implementation should follow staged playable updates:
 
 1. health/damage scaling and actor-stat foundation;
 2. revised defensive and posture framework;
 3. five-track architecture and migration;
-4. Knife, Rogue, and Acrobat content;
+4. Knife, Bow, Rogue, Acrobat, and Sharpshooter content;
 5. Android and PC build verification.
 
 The framework should be amended when concrete play exposes a bad assumption. Changes should be explicit rather than silently allowing implementation behavior to become the new design.
