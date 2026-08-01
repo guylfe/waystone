@@ -8,7 +8,7 @@
 
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
-This document records the agreed direction for Waystone's next character-system overhaul. It is the authoritative design target, not a description of every behavior in prototype version `0.0.71`. Where the prototype differs, future implementation should migrate toward this specification deliberately and with regression coverage.
+This document records the agreed combat and character framework introduced in Waystone `0.1.0`. It remains the authoritative design target where later prototypes are incomplete or deliberately defer a system, and future implementation should migrate toward it with regression coverage.
 
 Exact balance values remain provisional unless this document labels a rule as structural. Intelligence, Faith, elemental spellcasting, Blood drops, and several class-specific details are intentionally deferred until their first concrete users are designed.
 

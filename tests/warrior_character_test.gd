@@ -13,7 +13,7 @@ func _init() -> void:
 	test_bandit_awareness_and_secret_passage()
 	test_character_sheet_copy_fits_compact_boxes()
 	test_current_save_boundary()
-	test_v19_potion_capacity_migration()
+	test_v21_major_framework_boundary()
 	test_action_layout_separates_context()
 	print("Warrior character, progression, action, save, and sheet tests passed.")
 	quit()
@@ -113,7 +113,7 @@ func test_evasion_mastery_reward() -> void:
 func test_fixed_damage_speed_and_resolve() -> void:
 	var state := fresh_state()
 	var definition := state.player_basic_attack_definition()
-	assert(int(definition["damage_min"]) == 2 and int(definition["damage_max"]) == 2)
+	assert(int(definition["damage_min"]) == 10 and int(definition["damage_max"]) == 10)
 	assert(is_equal_approx(state._player_personal_tempo(), 1.0))
 	state.player_attributes["speed"] = 6
 	assert(is_equal_approx(state._player_personal_tempo(), 1.03))
@@ -192,22 +192,23 @@ func test_current_save_boundary() -> void:
 	assert(String(loaded.player_action["kind"]) == "idle")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
-func test_v19_potion_capacity_migration() -> void:
-	var path := "user://warrior-v19-potion-test.save"
+func test_v21_major_framework_boundary() -> void:
+	var path := "user://warrior-v21-framework-test.save"
 	var state := fresh_state()
 	state.potions = 3
 	assert(state.save_run(path))
 	var reader := FileAccess.open(path, FileAccess.READ)
 	var payload: Dictionary = reader.get_var(true)
 	reader.close()
-	payload["save_version"] = 19
+	payload["save_version"] = 21
 	var writer := FileAccess.open(path, FileAccess.WRITE)
 	writer.store_var(payload, true)
 	writer.close()
 	var loaded: RunState = RunStateScript.new(false)
 	assert(loaded.load_run(path))
-	assert(loaded.healing_capacity() == 5 and loaded.potions == 5)
-	assert(loaded.message.contains("refunded as XP"))
+	assert(not loaded.run_active)
+	assert(loaded.player_max_hp == 100 and loaded.healing_capacity() == 5)
+	assert(loaded.message.contains("requires a new run"))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_action_layout_separates_context() -> void:

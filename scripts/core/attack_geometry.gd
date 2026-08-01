@@ -4,6 +4,10 @@ extends RefCounted
 const TECHNIQUES := {
 	"opening_cut": {"motion": "arc", "start_angle": -0.62, "end_angle": 0.42, "radius": 9.0, "multi": false, "label": "Opening cut"},
 	"quick_cut": {"motion": "arc", "start_angle": -0.57, "end_angle": 0.57, "radius": 9.0, "multi": false, "label": "Short cut"},
+	"knife_cut_in": {"motion": "arc", "start_angle": -0.70, "end_angle": 0.38, "radius": 7.0, "multi": false, "label": "Inward cut"},
+	"knife_cut_out": {"motion": "arc", "start_angle": 0.64, "end_angle": -0.46, "radius": 7.0, "multi": false, "label": "Outward cut"},
+	"knife_rising_cut": {"motion": "arc", "start_angle": -0.43, "end_angle": 0.74, "radius": 7.0, "multi": false, "label": "Rising cut"},
+	"knife_falling_cut": {"motion": "arc", "start_angle": 0.48, "end_angle": -0.78, "radius": 7.0, "multi": false, "label": "Falling cut"},
 	"reverse_cut": {"motion": "arc", "start_angle": 0.57, "end_angle": -0.57, "radius": 11.0, "multi": false, "label": "Returning cut"},
 	"diagonal_cut": {"motion": "arc", "start_angle": -0.96, "end_angle": 0.70, "radius": 11.0, "multi": false, "label": "Diagonal cut"},
 	"broad_sweep": {"motion": "arc", "start_angle": -1.396, "end_angle": 1.396, "radius": 14.0, "multi": true, "label": "Broad sweep"},

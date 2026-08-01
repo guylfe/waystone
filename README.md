@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.0.71`. Android version codes match the release number so newer APKs can always upgrade older installations.
+Current prototype version: `0.1.0` (Android version code `100`).
+
+### v0.1.0: shared combat framework and the Rogue class
+
+- Rebuilds player and enemy combat on the same universal attribute language: Health, Strength, Defense, Speed, Stealth, Awareness, Resolve, Resistance, Intelligence, and Faith. Physical damage is fixed, health and damage use a more expressive five-times scale, and conditions now have resistance-based buildup.
+- Adds the Rogue with two complete subclasses. Acrobat uses Knife, Finesse, Stealth, and Vault; Sharpshooter uses a continuously drawn Bow, Patient temperament, Stealth, Take Aim, Far Sight, and approximate Keen Eye sensing beyond line of sight.
+- Adds Knife and Bow weapon tracks with permanent first-rank art choices, four-cut and six-cut Knife sequences, continuous Bow draw strength, finite soft lock, short-release penalties, and manual post-lock aiming.
+- Classifies touch intent before committing it: an immediate drag always moves, a brief enemy tap attacks, and holding deliberately commits a melee sequence or Bow draw. PC Bow draw uses the dedicated attack key and releases on key-up.
+- Expands the character sheet and setup screen for Warrior · Vanguard, Rogue · Acrobat, and Rogue · Sharpshooter while preserving bounded, predictable track progression.
 
 ### v0.0.71: finite enemy posture openings
 
@@ -80,7 +88,7 @@ An original Android-first committed-action roguelike prototype inspired by the l
 - Swipe and hold: continue moving in that direction; release to freeze time.
 - Tap an enemy within plausible opening-strike distance: commit to one compact basic strike. A clearly distant melee target instead becomes a movement touch; ranged weapons keep their long-distance attack input.
 - Tap an empty reachable position: move precisely toward it.
-- The Warrior · Vanguard is the only prototype character. Press an enemy to begin a compact cut; keep holding through its recovery to commit the next strike, or release to finish the current one and freeze time. An uninterrupted original touch always remains a combo hold, even if it drifts into a swipe. If a finger rises accidentally, touch the field again at any point before the current strike ends and keep holding: it will continue normally if the finger is still down at the recovery boundary. Only a directional drag from that later re-touch queues movement after the strike and prevents a further combo link. The chain progresses through compact, reverse, and driving hitboxes without a separate attack-mode button.
+- Choose Warrior · Vanguard, Rogue · Acrobat, or Rogue · Sharpshooter at setup. Press an enemy to begin the equipped weapon's attack; an immediate drag remains movement even when it begins over an enemy, while holding deliberately commits a melee sequence or draws the Bow. Knife sequences contain four cuts, or six with Twin Knives. Bow damage, speed, recovery, and range depend on draw time; release fires in the current aim direction.
 - Tap Dodge and choose a direction to use the equipped defensive action.
 - Swordsmanship's first rank offers Sweeping Cut or Drawing Cut. The chosen Sword Art is permanent for the run and the unchosen art is not later unlocked.
 - Tap Sheet (or press `C`) to inspect universal attributes, equipment by body slot, combat identity, and six compact progression tracks arranged as three columns by two rows. During leveling, tap an eligible gold track to inspect and confirm its next stage.

@@ -18,7 +18,7 @@ const CAMERA_WORLD_HEIGHT := 1000.0
 const ISO_ZOOM := 1.38
 const ISO_CAMERA_DROP := 0.075
 const ISO_WALL_HEIGHT := 54.0
-const MOUSE_HOLD_DELAY := 0.14
+const ATTACK_INTENT_DELAY := 0.12
 const AUTOSAVE_DELAY := 2.0
 const AUTOSAVE_QUIET_DELAY := 0.24
 const MAP_LAYERS_PER_PAGE := 5
@@ -49,6 +49,7 @@ var stream_blended_frame = PresentationFrameScript.new()
 var touch_start := Vector2.ZERO
 var touch_current := Vector2.ZERO
 var pointer_down := false
+var pointer_intent := ""
 var hold_elapsed := 0.0
 var hold_consumed := false
 var inspected_enemy_id := -1
@@ -61,6 +62,7 @@ var attack_pointer_held := false
 var attack_touch_is_original := false
 var attack_key_held := false
 var advance_pointer_held := false
+var defense_pointer_held := false
 var desktop_movement_keys: Dictionary = {}
 var board_rect := Rect2()
 var world_scale := 1.0
@@ -329,17 +331,19 @@ func _process(delta: float) -> void:
 			var keyboard_direction := _desktop_held_direction()
 			if not keyboard_direction.is_zero_approx(): _begin_streamed_move(keyboard_direction, state.MOVE_RANGE, finished_streamed_movement)
 	if finished_streamed_movement and not streaming_action: stream_accumulator = 0.0
-	if pointer_down and not playing and not held_movement and inspected_enemy_id < 0 and board_rect.has_point(touch_start):
+	if pointer_down and pointer_intent == "" and not held_movement and inspected_enemy_id < 0 and board_rect.has_point(touch_start):
 		hold_elapsed += delta
-		if pointer_is_mouse and hold_elapsed >= MOUSE_HOLD_DELAY and selected_action == "":
-			held_movement = true
-			_commit_mouse_primary()
-		elif not pointer_is_mouse and hold_elapsed >= 0.46:
-			var inspected := _enemy_near(touch_start, 68.0)
-			if not inspected.is_empty():
-				inspected_enemy_id = int(inspected["id"])
-				hold_consumed = true
-				needs_redraw = true
+		if hold_elapsed >= ATTACK_INTENT_DELAY and selected_action == "":
+			var direction := _screen_to_world(touch_current) - state.player_pos
+			if direction.length_squared() < 0.01: direction = state.player_facing
+			var touched_enemy := _enemy_near(touch_start, 54.0)
+			var soft_target_id := int(touched_enemy.get("id", -1)) if not touched_enemy.is_empty() else -1
+			var began := state.begin_bow_draw(direction, soft_target_id) if state.player_uses_ranged_basic_attack() else state.request_combo(direction, false)
+			if began:
+				pointer_intent = "attack"
+				attack_pointer_held = true
+				attack_touch_is_original = true
+				_begin_streamed_action(true)
 	if _update_temporal_tint(delta): needs_redraw = true
 	if _update_area_title(delta): needs_redraw = true
 	if needs_redraw:
@@ -385,7 +389,7 @@ func _interpolate_snapshots(current: Dictionary, following: Dictionary, weight: 
 	result["player_pos"] = Vector2(current["player_pos"]).lerp(Vector2(following["player_pos"]), amount)
 	result["player_facing"] = _interpolate_direction(Vector2(current["player_facing"]), Vector2(following["player_facing"]), amount)
 	result["player_action"] = _interpolate_action(Dictionary(current["player_action"]), Dictionary(following["player_action"]), amount)
-	for key in ["dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "strength_remaining"]:
+	for key in ["dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "stealth_remaining", "aimed_remaining", "strength_remaining"]:
 		result[key] = lerpf(float(current.get(key, 0.0)), float(following.get(key, 0.0)), amount)
 	result["enemies"] = _interpolate_enemies(Array(current.get("enemies", [])), Array(following.get("enemies", [])), amount)
 	result["projectiles"] = _interpolate_visual_array(Array(current.get("projectiles", [])), Array(following.get("projectiles", [])), amount, ["pos"], [])
@@ -455,7 +459,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if not state.run_active:
-		for choice in ["warrior"]:
+		for choice in CombatCatalogScript.loadout_ids():
 			if _setup_class_rect(choice).has_point(position):
 				setup_loadout = choice
 				queue_redraw()
@@ -586,6 +590,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if state.player_hp <= 0:
 		return
 	pointer_down = true
+	pointer_intent = ""
 	pointer_is_mouse = is_mouse
 	held_movement = false
 	attack_pointer_held = false
@@ -597,19 +602,20 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	touch_start = position
 	touch_current = position
 	if selected_action == "advance" and board_rect.has_point(position):
+		if state.loadout_id == "rogue_sharpshooter": return
 		var advance_direction := _screen_to_world(position) - state.player_pos
 		if advance_direction.length_squared() < 0.01: advance_direction = state.player_facing
 		selected_action = ""
-		advance_pointer_held = true
-		_begin_streamed_action(state.request_advance(advance_direction, true, false))
+		advance_pointer_held = state.loadout_id == "warrior"
+		_begin_streamed_action(_request_subclass_direction(advance_direction))
 		return
-	if selected_action == "" and board_rect.has_point(position):
-		var enemy := _enemy_near(position, 54.0)
-		if not enemy.is_empty() and _enemy_touch_should_attack(enemy) and state.request_combo(Vector2(enemy["pos"]) - state.player_pos, false):
-			attack_pointer_held = true
-			attack_touch_is_original = true
-			_begin_streamed_action(true)
-			return
+	if selected_action == "defense" and state.defense_id == "block" and board_rect.has_point(position):
+		var guard_direction := _screen_to_world(position) - state.player_pos
+		if guard_direction.length_squared() < 0.01: guard_direction = state.player_facing
+		selected_action = ""
+		defense_pointer_held = true
+		_begin_streamed_action(state.request_block(guard_direction, false))
+		return
 
 func _handle_sheet_detail_press(position: Vector2) -> void:
 	var kind := String(sheet_detail.get("kind", ""))
@@ -654,6 +660,10 @@ func _pointer_dragged(position: Vector2) -> void:
 		return
 	touch_current = position
 	if attack_pointer_held:
+		if state.player_uses_ranged_basic_attack() and String(state.player_action.get("kind", "")) == "bow_draw":
+			state.set_bow_aim(_screen_to_world(position) - state.player_pos)
+			queue_redraw()
+			return
 		if attack_touch_is_original:
 			# An uninterrupted original press always means "keep attacking," even if
 			# the finger drifts into a directional swipe.
@@ -671,6 +681,10 @@ func _pointer_dragged(position: Vector2) -> void:
 		queued_movement_after_attack = true
 		queue_redraw()
 		return
+	if defense_pointer_held:
+		state.set_block_direction(_screen_to_world(position) - state.player_pos)
+		queue_redraw()
+		return
 	if advance_pointer_held:
 		advance_pointer_held = false
 		state.set_advance_hold(false)
@@ -681,12 +695,7 @@ func _pointer_dragged(position: Vector2) -> void:
 	if drag.length() < threshold or selected_action != "" or not board_rect.has_point(touch_start):
 		return
 	inspected_enemy_id = -1
-	if pointer_is_mouse:
-		if not held_movement:
-			held_movement = true
-			if not playing: _commit_mouse_primary()
-		return
-	if not _enemy_near(position, 62.0).is_empty(): return
+	pointer_intent = "move"
 	held_direction = _screen_delta_to_world_direction(drag)
 	if not held_movement:
 		held_movement = true
@@ -698,10 +707,18 @@ func _pointer_released(position: Vector2) -> void:
 		return
 	pointer_down = false
 	pointer_is_mouse = false
+	if defense_pointer_held:
+		defense_pointer_held = false
+		state.set_block_hold(false)
+		pointer_intent = ""
+		queue_redraw()
+		return
 	if attack_pointer_held:
 		attack_pointer_held = false
 		attack_touch_is_original = false
-		state.set_attack_hold(false)
+		if String(state.player_action.get("kind", "")) == "bow_draw": state.release_bow_attack(_screen_to_world(position) - state.player_pos)
+		else: state.set_attack_hold(false)
+		pointer_intent = ""
 		queue_redraw()
 		return
 	if hold_consumed:
@@ -713,13 +730,16 @@ func _pointer_released(position: Vector2) -> void:
 	if held_movement:
 		held_movement = false
 		held_direction = Vector2.ZERO
+		pointer_intent = ""
 		return
 	_handle_gesture(position)
+	pointer_intent = ""
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if desktop_controls and event.keycode == KEY_F:
 		if event.pressed:
 			if event.echo: return
+			if String(state.player_action.get("kind", "")) == "bow_draw": return
 			if playing:
 				if state.resume_combo_hold():
 					attack_key_held = true
@@ -728,13 +748,15 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if not _can_repeat_primary_action(): return
 			var attack_direction := _desktop_held_direction()
 			if attack_direction.is_zero_approx(): attack_direction = state.player_facing
-			if state.request_combo(attack_direction, false):
+			var began := state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false)
+			if began:
 				attack_key_held = true
 				_begin_streamed_action(true)
 		else:
 			if attack_key_held:
 				attack_key_held = false
-				state.set_attack_hold(false)
+				if String(state.player_action.get("kind", "")) == "bow_draw": state.release_bow_attack(state.player_facing)
+				else: state.set_attack_hold(false)
 				queue_redraw()
 		return
 	if desktop_controls and _is_desktop_movement_key(event.keycode):
@@ -752,6 +774,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not state.run_active:
 		match event.keycode:
 			KEY_1: setup_loadout = "warrior"
+			KEY_2: setup_loadout = "rogue_acrobat"
+			KEY_3: setup_loadout = "rogue_sharpshooter"
 			KEY_TAB: setup_mode = "campaign_lab" if setup_mode == "expedition" else "expedition"
 			KEY_ENTER: _start_run()
 			_: return
@@ -895,8 +919,10 @@ func _notification(what: int) -> void:
 		attack_key_held = false
 		attack_pointer_held = false
 		advance_pointer_held = false
+		defense_pointer_held = false
 		if state != null: state.set_attack_hold(false)
 		if state != null: state.set_advance_hold(false)
+		if state != null: state.set_block_hold(false)
 		pointer_down = false
 		held_movement = false
 		if streaming_action and state != null:
@@ -943,7 +969,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 			var world_direction := _screen_delta_to_world_direction(drag)
 			if action == "defense": _begin_streamed_action(state.request_defense(world_direction, false))
 			elif action == "skill": _begin_streamed_action(state.request_skill(world_direction, false))
-			elif action == "advance": _begin_streamed_action(state.request_advance(world_direction, false, false))
+			elif action == "advance": _begin_streamed_action(_request_subclass_direction(world_direction))
 			else: _begin_streamed_action(state.request_consumable(int(action.trim_prefix("consumable_")), world_direction, false))
 		else:
 			var enemy := _enemy_near(end_position, 62.0)
@@ -956,6 +982,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 		if selected_action == "skill":
 			selected_action = ""
 			_begin_streamed_action(state.request_skill(Vector2(enemy["pos"]) - state.player_pos, false))
+		elif selected_action == "advance" and state.loadout_id == "rogue_sharpshooter":
+			selected_action = ""
+			_begin_streamed_action(state.request_take_aim(int(enemy["id"]), false))
 		elif selected_action == "" and not _enemy_touch_should_attack(enemy):
 			var move_delta := Vector2(enemy["pos"]) - state.player_pos
 			_begin_streamed_move(move_delta, minf(move_delta.length(), state.MOVE_RANGE))
@@ -969,7 +998,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 		_begin_streamed_action(state.request_skill(_screen_to_world(end_position) - state.player_pos, false))
 	elif selected_action == "advance":
 		selected_action = ""
-		_begin_streamed_action(state.request_advance(_screen_to_world(end_position) - state.player_pos, false, false))
+		_begin_streamed_action(_request_subclass_direction(_screen_to_world(end_position) - state.player_pos))
 	elif selected_action.begins_with("consumable_"):
 		var slot := int(selected_action.trim_prefix("consumable_"))
 		selected_action = ""
@@ -990,9 +1019,10 @@ func _handle_button(name: String) -> void:
 				selected_action = "" if selected_action == "skill" else "skill"
 		"rally":
 			selected_action = ""
-			_begin_streamed_action(state.request_rally(false))
+			_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
 		"advance":
-			if state.advance_cooldown <= 0.0001:
+			var remaining := state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown
+			if remaining <= 0.0001:
 				selected_action = "" if selected_action == "advance" else "advance"
 		"adopted":
 			selected_action = ""
@@ -1024,12 +1054,19 @@ func _commit_direction(direction: Vector2) -> void:
 		_begin_streamed_action(state.request_skill(direction, false))
 	elif selected_action == "advance":
 		selected_action = ""
-		_begin_streamed_action(state.request_advance(direction, not _desktop_held_direction().is_zero_approx(), false))
+		_begin_streamed_action(_request_subclass_direction(direction))
 	elif selected_action.begins_with("consumable_"):
 		var slot := int(selected_action.trim_prefix("consumable_"))
 		selected_action = ""
 		_begin_streamed_action(state.request_consumable(slot, direction, false))
 	else: _begin_streamed_move(direction)
+
+func _request_subclass_direction(direction: Vector2) -> bool:
+	if state.loadout_id == "rogue_acrobat": return state.request_vault(direction, false)
+	if state.loadout_id == "rogue_sharpshooter":
+		state.message = "Tap a visible enemy to Take Aim."
+		return false
+	return state.request_advance(direction, not _desktop_held_direction().is_zero_approx(), false)
 
 func _begin_streamed_move(direction: Vector2, distance: float = -1.0, preserve_stream_time: bool = false) -> void:
 	if distance < 0.0: distance = state.MOVE_RANGE
@@ -1283,6 +1320,13 @@ func _draw_world() -> void:
 			var feature_pos := Vector2(feature["pos"])
 			if String(feature.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(feature_pos, float(feature.get("radius", 45.0)) * 2.5) and _terrain_feature_revealed(feature_pos, discovered): _draw_terrain_feature(feature)
 	_draw_landmarks(visible, discovered)
+	for sensed in Array(visual.get("sensed_enemies", [])):
+		if String(sensed.get("layer", state.current_layer)) != state.current_layer: continue
+		var sensed_pos := Vector2(sensed.get("pos", Vector2.ZERO))
+		if not _world_point_on_camera(sensed_pos, 38.0): continue
+		var sensed_screen := _world_to_screen(sensed_pos)
+		draw_circle(sensed_screen, maxf(8.0, 13.0 * world_scale), Color(0.50, 0.74, 0.84, 0.12))
+		draw_arc(sensed_screen, maxf(8.0, 13.0 * world_scale), 0.0, TAU, 16, Color(0.50, 0.74, 0.84, 0.48), maxf(1.5, 2.0 * world_scale))
 	for projectile in Array(visual.get("projectiles", [])):
 		if String(projectile.get("layer", state.current_layer)) != state.current_layer: continue
 		if not _world_point_on_camera(Vector2(projectile["pos"]), 30.0): continue
@@ -1790,11 +1834,14 @@ func _draw_player() -> void:
 		else:
 			draw_circle(pos, collision_radius * 1.48, Color(0.92, 0.38, 0.20, 0.12))
 			draw_arc(pos, collision_radius * 1.48, 0.0, TAU, 24, Color("e47754"), maxf(1.5, collision_radius * 0.08))
+	if float(visual.get("stealth_remaining", state.stealth_remaining)) > 0.0:
+		draw_arc(pos, collision_radius * 1.34, 0.0, TAU, 24, Color("8cc6d7", 0.72), maxf(1.5, collision_radius * 0.07))
 	if String(action.get("kind", "idle")) == "dodge":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos - world_facing * state.PLAYER_RADIUS * 0.7, state.PLAYER_RADIUS * 1.25, Color(DODGE_COLOR, 0.16))
 		else: draw_circle(pos - facing * collision_radius * 0.7, collision_radius * 1.25, Color(DODGE_COLOR, 0.16))
 	_draw_actor(pos, foot, facing, radius, PLAYER_COLOR, Color("ffffff"))
-	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo"]: _draw_weapon(world_pos, action, true)
+	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo", "art_combo"]: _draw_weapon(world_pos, action, true)
+	elif String(action.get("kind", "idle")) in ["bow_draw", "bow_release", "bow_art"]: _draw_bow(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
 	elif String(action.get("kind", "idle")) == "potion": draw_circle(pos + Vector2(radius * 0.7, -radius * 0.8), radius * 0.25, Color("e35f62"))
@@ -1802,7 +1849,7 @@ func _draw_player() -> void:
 		var drive := _screen_direction(Vector2(action.get("direction", world_facing))).normalized()
 		draw_line(pos - drive * radius * 0.35, pos + drive * radius * 1.75, Color("aee7ff"), maxf(3.0, radius * 0.18))
 		draw_circle(pos + drive * radius * 1.75, maxf(3.0, radius * 0.18), Color("e8c35d"))
-	if String(action.get("kind", "idle")) == "combo": _draw_combo_commitment(pos, radius, action)
+	if String(action.get("kind", "idle")) in ["combo", "art_combo"]: _draw_combo_commitment(pos, radius, action)
 	var phase := _phase(action)
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
 
@@ -1812,7 +1859,11 @@ func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> 
 	var holding := bool(action.get("continue_held", false))
 	var spacing := maxf(8.0, radius * 0.48)
 	var origin := pos + Vector2(-spacing, -radius * 2.85)
-	for index in range(3):
+	var count := Array(action.get("phases", [])).size()
+	if count <= 0: count = 3
+	var total_width := spacing * float(count - 1)
+	origin.x = pos.x - total_width * 0.5
+	for index in range(count):
 		var color := Color("465359")
 		if index <= active_index: color = Color("f1e8d0")
 		elif index <= committed_index or holding: color = Color("d7aa58")
@@ -1842,6 +1893,8 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	if kind == "captain": draw_arc(pos, radius * 1.5, 0.0, TAU, 20, Color(color, 0.45), maxf(2.0, radius * 0.12))
 	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling)
 	_draw_enemy_identity(kind, pos, facing, radius, color)
+	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
+		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
 	if kind == "shield": _draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
 	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false)
 	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(visual_world_pos, action, false)
@@ -2307,7 +2360,7 @@ func _closed_points(points: PackedVector2Array) -> PackedVector2Array:
 
 func _draw_bow(pos: Vector2, facing: Vector2, radius: float, action: Dictionary) -> void:
 	var side := facing.rotated(PI * 0.5)
-	var draw_amount := clampf(float(action["elapsed"]) / float(action.get("startup", 0.72)), 0.0, 1.0)
+	var draw_amount := float(action.get("draw_ratio", clampf(float(action["elapsed"]) / float(action.get("startup", 0.72)), 0.0, 1.0)))
 	var center := pos + facing * radius * 0.8
 	draw_arc(center, radius * 0.75, facing.angle() - 1.2, facing.angle() + 1.2, 12, Color("e9cf91"), 2.0)
 	draw_line(center + side * radius * 0.7, center - facing * radius * draw_amount, Color("d8d2c3"), 1.5)
@@ -2336,7 +2389,15 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["startup"]): return "DRAWING BACK"
 		if elapsed < float(action["active_end"]): return "SWEEPING"
 		return "RECOVERING"
-	if kind == "combo":
+	if kind == "bow_draw":
+		var ratio := float(action.get("draw_ratio", 0.0))
+		return "FULL DRAW" if ratio >= 0.995 else "DRAWING" if ratio >= 0.35 else "LOOSE DRAW"
+	if kind in ["bow_release", "bow_art"]:
+		return "RELEASING" if not bool(action.get("shot_spawned", false)) else "RECOVERING"
+	if kind == "vault": return "VAULTING" if elapsed <= float(action.get("move_end", 0.34)) else "LANDING"
+	if kind == "stealth": return "VANISHING"
+	if kind == "take_aim": return "STUDYING"
+	if kind in ["combo", "art_combo"]:
 		return "COMBO %d" % (int(action.get("phase_index", 0)) + 1)
 	if kind == "rally":
 		return "RALLYING" if elapsed < float(action.get("effect_start", 0.18)) else "STANDING FIRM"
@@ -2478,7 +2539,8 @@ func _draw_character_sheet() -> void:
 	var body_font := maxi(12, int(header_font * 0.56))
 	var level_context := String(data.get("level_up_context", ""))
 	var leveling := not level_context.is_empty()
-	var title := "WARRIOR · VANGUARD · LEVEL UP" if leveling else "WARRIOR · VANGUARD"
+	var character_name := String(data.get("name", "Wayfarer")).to_upper()
+	var title := "%s · LEVEL UP" % character_name if leveling else character_name
 	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % ["EXPEDITION" if level_context == "expedition" else "WAYSTONE", int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
 	var title_width := panel.size.x - 2.0 * margin - 104.0
 	var title_font := _sheet_fit_font_size(title, title_width, header_font, 12)
@@ -2566,15 +2628,18 @@ func _draw_sheet_stats(rect: Rect2, attributes: Dictionary, font: int) -> void:
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, heading_font * 1.30), "ATTRIBUTES", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, heading_font, Color("d7aa58"))
 	var stats := [
 		{"label": "HEALTH", "value": "%d/%d" % [state.player_hp, int(attributes.get("health", 0))]},
+		{"label": "STRENGTH", "value": str(attributes.get("strength", 0))},
+		{"label": "DEFENSE", "value": str(attributes.get("defense", 0))},
 		{"label": "SPEED", "value": str(attributes.get("speed", 0))},
 		{"label": "STEALTH", "value": str(attributes.get("stealth", 0))},
 		{"label": "AWARENESS", "value": str(attributes.get("awareness", 0))},
 		{"label": "RESOLVE", "value": str(attributes.get("resolve", 0))},
+		{"label": "RESISTANCE", "value": str(attributes.get("resistance", 0))},
 		{"label": "INTELLECT", "value": str(attributes.get("intelligence", 0))},
 		{"label": "FAITH", "value": str(attributes.get("faith", 0))},
 	]
 	var column_width := (rect.size.x - 16.0) * 0.5
-	var line_height := maxf(16.0, (rect.size.y - font * 1.8) / 4.0)
+	var line_height := maxf(13.0, (rect.size.y - font * 1.8) / 5.0)
 	for index in range(stats.size()):
 		var stat: Dictionary = stats[index]
 		var column := index % 2
@@ -2591,7 +2656,8 @@ func _draw_sheet_combat_summary(rect: Rect2, data: Dictionary, font: int) -> voi
 	var weapon_label := String(CombatCatalogScript.weapon_frame(String(data["weapon_frame"])).get("label", "Weapon"))
 	var art_id := String(data.get("equipped_art", ""))
 	var art_label := "LOCKED" if art_id == "" else String(CombatCatalogScript.weapon_art(art_id).get("label", art_id)).to_upper()
-	var weapon_text := "%s  ·  CUT › POKE › DRIVING CUT" % weapon_label.to_upper()
+	var form_text := "DRAW › RELEASE" if String(data["weapon_frame"]) == "bow" else "FOUR COMPACT CUTS" if String(data["weapon_frame"]) == "knife" else "SIX ALTERNATING CUTS" if String(data["weapon_frame"]) == "twin_knives" else "CUT › RETURN › DRIVING CUT"
+	var weapon_text := "%s  ·  %s" % [weapon_label.to_upper(), form_text]
 	var weapon_font := _sheet_fit_font_size(weapon_text, rect.size.x * 0.58 - 8.0, font, 6)
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, weapon_font * 1.22), weapon_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.58 - 8.0, weapon_font, Color("eef4ef"))
 	var defense := String(data.get("defense", "dodge")).capitalize()
@@ -2911,13 +2977,13 @@ func _draw_setup() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.16), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, size.x, title_font, Color("f2e7c8"))
 	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
 	if desktop_controls:
-		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1 class  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
-	for choice in ["warrior"]:
+		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
+	for choice in CombatCatalogScript.loadout_ids():
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("58d2cf") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.58), String(choice).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.58), CombatCatalogScript.loadout_name(String(choice)).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 	for mode in progression_rects:
 		var rect := Rect2(progression_rects[mode])
 		var selected: bool = setup_mode == String(mode)
@@ -2935,7 +3001,11 @@ func _draw_setup() -> void:
 
 func _setup_class_rect(choice: String) -> Rect2:
 	var total_width := minf(size.x * 0.84, 760.0)
-	return Rect2(Vector2((size.x - total_width) * 0.5, size.y * 0.33), Vector2(total_width, 82.0))
+	var choices := CombatCatalogScript.loadout_ids()
+	var index := maxi(0, choices.find(choice))
+	var gap := 10.0
+	var height := clampf(size.y * 0.052, 48.0, 66.0)
+	return Rect2(Vector2((size.x - total_width) * 0.5, size.y * 0.305 + float(index) * (height + gap)), Vector2(total_width, height))
 
 func _upgrade_leave_rect() -> Rect2:
 	return Rect2(Vector2(board_rect.get_center().x - 80.0, board_rect.end.y - 72.0), Vector2(160.0, 48.0))
@@ -3166,15 +3236,21 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		var art := CombatCatalogScript.weapon_art(state.player_equipped_weapon_art)
 		title = String(art.get("label", "ART LOCKED")).to_upper()
 		available = not art.is_empty() and state.skill_cooldown <= 0.0001
-		subtitle = ("WIDE / MULTI" if state.player_equipped_weapon_art == "prototype_sweeping_cut" else "NARROW / FORCEFUL") if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
+		var art_subtitles := {"prototype_sweeping_cut": "WIDE / MULTI", "prototype_drawing_cut": "NARROW / FORCEFUL", "knife_execution": "UNAWARE / FORCEFUL", "knife_twin_fang": "TWO CONTACTS", "bow_piercing_shot": "LINE / PIERCING", "bow_fan_shot": "CONE / THREE ARROWS"}
+		subtitle = String(art_subtitles.get(state.player_equipped_weapon_art, "WEAPON ART")) if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
 	elif name == "rally":
-		title = "RALLY"
-		available = state.rally_is_available()
-		subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
+		if state.loadout_id.begins_with("rogue_"):
+			title = "STEALTH"
+			available = state.main_ability_cooldown <= 0.0001 and state.stealth_remaining <= 0.0001
+			subtitle = "CONCEAL" if available else "CONCEALED" if state.stealth_remaining > 0.0001 else "COOLING"
+		else:
+			title = "RALLY"
+			available = state.rally_is_available()
+			subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
 	elif name == "advance":
-		title = "ADVANCE"
-		available = state.advance_cooldown <= 0.0001
-		subtitle = "DRIVE FORWARD" if available else "COOLING"
+		title = "VAULT" if state.loadout_id == "rogue_acrobat" else "TAKE AIM" if state.loadout_id == "rogue_sharpshooter" else "ADVANCE"
+		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001
+		subtitle = ("EVADE / REPOSITION" if state.loadout_id == "rogue_acrobat" else "SELECT TARGET" if state.loadout_id == "rogue_sharpshooter" else "DRIVE FORWARD") if available else "COOLING"
 	elif name == "adopted":
 		title = "UNDISCOVERED"
 		available = false
@@ -3186,10 +3262,10 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("e47754") if name == "rally" else Color("7ac6e8") if name == "advance" else Color("d7aa58") if name == "wait" else Color("718087")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
-	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and state.rally_remaining > 0.0001):
-		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else state.rally_cooldown if name == "rally" else state.advance_cooldown
+	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)):
+		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
-		var maximum := defense_maximum if name == "defense" else state.SWEEP_COOLDOWN if name == "skill" else 12.0 if name == "rally" else 6.0
+		var maximum := defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))

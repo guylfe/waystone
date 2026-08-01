@@ -6,14 +6,17 @@ extends RefCounted
 # catalogue gives every actor the same vocabulary so future character tracks,
 # equipment, and enemy variants can use one foundation.
 
-const ATTRIBUTE_KEYS := ["health", "speed", "stealth", "awareness", "resolve", "intelligence", "faith"]
+const ATTRIBUTE_KEYS := ["health", "strength", "defense", "speed", "stealth", "awareness", "resolve", "resistance", "intelligence", "faith"]
 
 const ATTRIBUTE_DEFAULTS := {
 	"health": 5,
+	"strength": 5,
+	"defense": 0,
 	"speed": 5,
 	"stealth": 0,
 	"awareness": 5,
 	"resolve": 5,
+	"resistance": 5,
 	"intelligence": 0,
 	"faith": 0,
 }
@@ -48,12 +51,13 @@ const MARTIAL_DEFAULTS := {
 }
 
 const WEAPON_FRAMES := {
+	"knife": {"label": "Knife", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["knife_execution", "knife_twin_fang"], "guard_profile": "light"},
 	"sword": {"label": "Sword", "delivery": "melee", "basic_technique": "diagonal_cut", "art_ids": ["sword_thrust", "sword_riposte"]},
 	"axe": {"label": "Hand Axe", "delivery": "melee", "basic_technique": "heavy_chop", "art_ids": ["axe_hook", "axe_splitter"]},
 	"zweihander": {"label": "Zweihander", "delivery": "melee", "basic_technique": "heavy_cleave", "art_ids": ["zweihander_sweep", "zweihander_half_sword"]},
 	"spear": {"label": "Spear", "delivery": "melee", "basic_technique": "thrust", "art_ids": ["spear_brace", "spear_lunge"]},
-	"twin_knives": {"label": "Twin Knives", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["twin_flurry", "twin_evasive_counter"]},
-	"bow": {"label": "Bow", "delivery": "ranged", "basic_technique": "drawn_shot", "art_ids": ["bow_drawn_shot", "bow_scatter_shot"]},
+	"twin_knives": {"label": "Twin Knives", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["knife_twin_fang"], "guard_profile": "dual"},
+	"bow": {"label": "Bow", "delivery": "ranged", "basic_technique": "drawn_shot", "art_ids": ["bow_piercing_shot", "bow_fan_shot"], "guard_profile": "awkward"},
 	"impact": {"label": "Impact Weapon", "delivery": "melee", "basic_technique": "forward_smash", "art_ids": ["impact_ground_smash", "impact_guard_break"]},
 	"staff": {"label": "Staff", "delivery": "melee", "basic_technique": "staff_strike", "art_ids": ["staff_push_sweep", "staff_vault"]},
 	"natural": {"label": "Natural Weapon", "delivery": "melee", "basic_technique": "bite", "art_ids": ["natural_pounce", "natural_flurry"]},
@@ -61,6 +65,10 @@ const WEAPON_FRAMES := {
 }
 
 const WEAPON_ARTS := {
+	"knife_execution": {"label": "Execution", "frame": "knife", "style": "unaware", "gate": "first_rank"},
+	"knife_twin_fang": {"label": "Twin Fang", "frame": "knife", "style": "pressure", "gate": "first_rank"},
+	"bow_piercing_shot": {"label": "Piercing Shot", "frame": "bow", "style": "line", "gate": "first_rank"},
+	"bow_fan_shot": {"label": "Fan Shot", "frame": "bow", "style": "space_control", "gate": "first_rank"},
 	"sword_thrust": {"label": "Measured Thrust", "frame": "sword", "style": "reach", "gate": "martial_manual"},
 	"sword_riposte": {"label": "Guarding Riposte", "frame": "sword", "style": "counter", "gate": "veteran_trainer"},
 	"axe_hook": {"label": "Hooking Chop", "frame": "axe", "style": "displace", "gate": "hunter_cache"},
@@ -86,10 +94,12 @@ const WEAPON_ARTS := {
 }
 
 const LOADOUT_PROFILES := {
-	"warrior": {"weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 20, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}},
+	"warrior": {"name": "Warrior · Vanguard", "weapon_frame": "sword", "track_order": ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 100, "strength": 5, "defense": 4, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "resistance": 6, "intelligence": 2, "faith": 2}, "properties": {"mass": 1.05}},
+	"rogue_acrobat": {"name": "Rogue · Acrobat", "weapon_frame": "knife", "track_order": ["knife", "evasion", "finesse", "rogue", "acrobat", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 80, "strength": 4, "defense": 2, "speed": 7, "stealth": 7, "awareness": 6, "resolve": 3, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.82}},
+	"rogue_sharpshooter": {"name": "Rogue · Sharpshooter", "weapon_frame": "bow", "track_order": ["bow", "evasion", "patient", "rogue", "sharpshooter", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 85, "strength": 4, "defense": 2, "speed": 6, "stealth": 7, "awareness": 8, "resolve": 4, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.88}},
 }
 
-const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"]
+const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "knife", "finesse", "rogue", "acrobat", "bow", "patient", "sharpshooter", "adopted"]
 
 # Each stage is the next node in a compact track. A gate is a minimum character
 # level, so an unchosen node remains available after its gate instead of
@@ -127,7 +137,7 @@ const CHARACTER_TRACKS := {
 		"description": "Temperament: repeatedly choose between Toughness and Vigilance, up to four times.",
 		"stages": [
 			{"id": "steadfast_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Steadfast package.", "choices": [
-				{"id": "toughness", "label": "Toughness", "description": "+3 maximum health and +1 Resolve."},
+				{"id": "toughness", "label": "Toughness", "description": "+15 maximum health and +1 Resolve."},
 				{"id": "vigilance", "label": "Vigilance", "description": "+1 Speed and +1 Awareness."},
 			]},
 			{"id": "steadfast_2", "label": "Temperament II", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
@@ -139,7 +149,7 @@ const CHARACTER_TRACKS := {
 		"label": "Warrior",
 		"description": "Physical conditioning, sustained weapon pressure, and Rally.",
 		"stages": [
-			{"id": "warriors_physique", "label": "Warrior's Physique", "gate": 3, "description": "Gain exactly +4 maximum health and +1 Speed."},
+			{"id": "warriors_physique", "label": "Warrior's Physique", "gate": 3, "description": "Gain exactly +20 maximum health and +1 Speed."},
 			{"id": "building_force", "label": "Building Force", "gate": 5, "description": "Consecutive basic weapon hits gain +0, +1, then +2 damage before the sequence resets."},
 			{"id": "rallying_cry", "label": "Rallying Cry", "gate": 7, "description": "Rally lasts 5.5 seconds, grants +1 damage, +2 posture damage, and stronger action poise."},
 			{"id": "battle_rhythm", "label": "Battle Rhythm", "gate": 9, "description": "The first posture break during each Rally extends it by exactly 1 second."},
@@ -154,6 +164,94 @@ const CHARACTER_TRACKS := {
 			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 5, "description": "Hold the original Advance input through impact to flow directly into your basic weapon sequence."},
 			{"id": "vanguard_bearing", "label": "Vanguard Bearing", "gate": 7, "description": "Gain exactly +2 Resolve; committed melee weapon actions gain light hyperarmor."},
 			{"id": "seize_the_line", "label": "Seize the Line", "gate": 9, "description": "Breaking any enemy's posture immediately refreshes Advance."},
+		],
+	},
+	"knife": {
+		"label": "Knife",
+		"description": "Fast compact cuts, a permanent fighting style, and sustained pressure.",
+		"stages": [
+			{"id": "knife_art", "label": "Knife Art", "gate": 2, "description": "Permanently choose Execution or Twin Fang for this run.", "choices": [
+				{"id": "knife_execution", "label": "Execution", "description": "Keep one knife and gain a close execution cut with an additional unaware multiplier."},
+				{"id": "knife_twin_fang", "label": "Twin Fang", "description": "Equip twin knives, gain a six-cut sequence, and a fast crossing Art."},
+			]},
+			{"id": "honed_edges", "label": "Honed Edges", "gate": 4, "description": "Every Knife contact deals exactly +1 health damage."},
+			{"id": "light_hands", "label": "Light Hands", "gate": 6, "description": "Knife startup, continuation, and recovery resolve approximately 8% faster."},
+			{"id": "relentless_cuts", "label": "Relentless Cuts", "gate": 8, "description": "Uninterrupted contacts build from +1 to +3 damage until the sequence ends or misses."},
+			{"id": "ceaseless_cuts", "label": "Ceaseless Cuts", "gate": 10, "description": "Maintained attack input cycles directly back to the first Knife cut."},
+		],
+	},
+	"finesse": {
+		"label": "Finesse",
+		"description": "Temperament: repeatedly choose Fleetness or Subtlety, up to four times.",
+		"stages": [
+			{"id": "finesse_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Finesse package.", "choices": [
+				{"id": "fleetness", "label": "Fleetness", "description": "+1 Speed and +5 maximum health."},
+				{"id": "subtlety", "label": "Subtlety", "description": "+1 Stealth and +1 Awareness."},
+			]},
+			{"id": "finesse_2", "label": "Temperament II", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+			{"id": "finesse_3", "label": "Temperament III", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+			{"id": "finesse_4", "label": "Temperament IV", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+		],
+	},
+	"rogue": {
+		"label": "Rogue",
+		"description": "Unaware damage, disciplined training, alarm control, and advanced concealment.",
+		"stages": [
+			{"id": "ambush", "label": "Ambush", "gate": 3, "description": "Your universal unaware multiplier rises from 1.5× to 2× with every weapon."},
+			{"id": "rogue_training", "label": "Rogue's Training", "gate": 5, "description": "Permanently choose Shadow Training or Fleet Training.", "choices": [
+				{"id": "shadow_training", "label": "Shadow Training", "description": "+1 Speed and +2 Stealth."},
+				{"id": "fleet_training", "label": "Fleet Training", "description": "+2 Speed."},
+			]},
+			{"id": "clean_work", "label": "Clean Work", "gate": 7, "description": "An unaware victim cannot broadcast an alert until the current attack resolves."},
+			{"id": "vanish", "label": "Vanish", "gate": 9, "description": "Stealth may be activated while Engaged; enemies search the last known location."},
+			{"id": "ghost", "label": "Ghost", "gate": 10, "description": "A clean assassination after breaking Stealth restores full concealment when unwitnessed."},
+		],
+	},
+	"acrobat": {
+		"label": "Acrobat",
+		"description": "Refine Vault and turn universal clean evasions into counter-pressure.",
+		"stages": [
+			{"id": "soft_landing", "label": "Soft Landing", "gate": 4, "description": "Vault landing recovery falls from 0.20 to 0.10 authored seconds."},
+			{"id": "elastic_moment", "label": "Elastic Moment", "gate": 6, "description": "Every genuine i-frame window you possess gains approximately 0.06 seconds."},
+			{"id": "turnabout", "label": "Turnabout", "gate": 8, "description": "A clean evade empowers the next basic attack within 4 seconds for +8 health and +3 posture damage."},
+			{"id": "encore", "label": "Encore", "gate": 10, "description": "Vault cooldown falls from 8 to 4.8 personal-time seconds."},
+		],
+	},
+	"bow": {
+		"label": "Bow",
+		"description": "Release-scaled shots, a permanent Art, and deliberate follow-up pressure.",
+		"stages": [
+			{"id": "bow_art", "label": "Bow Art", "gate": 2, "description": "Permanently choose Piercing Shot or Fan Shot for this run.", "choices": [
+				{"id": "bow_piercing_shot", "label": "Piercing Shot", "description": "A slow, powerful line shot that passes through every crossed body."},
+				{"id": "bow_fan_shot", "label": "Fan Shot", "description": "Release three independent arrows in a compact short-range cone."},
+			]},
+			{"id": "instinctive_release", "label": "Instinctive Release", "gate": 4, "description": "Loose shots rise from 6 to 8 damage and from roughly 250 to 300 maximum range."},
+			{"id": "settled_draw", "label": "Settled Draw", "gate": 6, "description": "Full shots rise from 12 to 15 damage and from 2 to 3 posture damage."},
+			{"id": "quick_nock", "label": "Quick Nock", "gate": 8, "description": "Post-release recovery and a buffered next draw become approximately 20% faster."},
+			{"id": "following_arrow", "label": "Following Arrow", "gate": 10, "description": "A Full shot that hits permits one accelerated buffered follow-up draw."},
+		],
+	},
+	"patient": {
+		"label": "Patient",
+		"description": "Temperament: repeatedly choose Observation or Composure, up to four times.",
+		"stages": [
+			{"id": "patient_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Patient package.", "choices": [
+				{"id": "observation", "label": "Observation", "description": "+1 Awareness and +1 Stealth."},
+				{"id": "composure", "label": "Composure", "description": "+1 Resolve and +5 maximum health."},
+			]},
+			{"id": "patient_2", "label": "Temperament II", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+			{"id": "patient_3", "label": "Temperament III", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+			{"id": "patient_4", "label": "Temperament IV", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+		],
+	},
+	"sharpshooter": {
+		"label": "Sharpshooter",
+		"description": "Perception, universal projectile range, and prepared physical attacks.",
+		"stages": [
+			{"id": "keen_eye", "label": "Keen Eye", "gate": 4, "description": "+2 Awareness and sense approximate enemy blobs beyond line of sight."},
+			{"id": "far_sight", "label": "Far Sight", "gate": 6, "description": "+25% unobstructed sight distance and +15% maximum range for every aimed projectile."},
+			{"id": "expose_weakness", "label": "Expose Weakness", "gate": 8, "description": "Take Aim grants +10 damage, ignores 6 Defense, and adds +3 posture damage."},
+			{"id": "dead_to_rights", "label": "Dead to Rights", "gate": 10, "description": "First Aimed contact deals +50% final physical damage and double posture; a kill refreshes Take Aim."},
 		],
 	},
 	"adopted": {
@@ -212,6 +310,19 @@ static func character_stage_by_id(id: String) -> Dictionary:
 			var stage := character_stage(String(track_id), rank)
 			if String(stage.get("id", "")) == id: return stage
 	return {}
+
+static func loadout_ids() -> Array[String]:
+	return ["warrior", "rogue_acrobat", "rogue_sharpshooter"]
+
+static func track_order_for_loadout(id: String) -> Array[String]:
+	var profile := Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"]))
+	var result: Array[String] = []
+	for value in Array(profile.get("track_order", LOADOUT_PROFILES["warrior"]["track_order"])):
+		result.append(String(value))
+	return result
+
+static func loadout_name(id: String) -> String:
+	return String(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"])).get("name", "Warrior · Vanguard"))
 
 static func loadout_profile(id: String) -> Dictionary:
 	return _profile_with_defaults(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"])))
