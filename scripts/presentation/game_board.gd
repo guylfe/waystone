@@ -245,45 +245,50 @@ func _build_survey_feedback_overlay() -> void:
 	survey_overlay.add_child(scroll)
 	var content := VBoxContainer.new()
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 10)
+	content.add_theme_constant_override("separation", 13)
 	scroll.add_child(content)
 	var title := Label.new()
 	title.text = "ROOM %d COMPLETE" % state.survey_room_number
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_font_size_override("font_size", 30)
 	content.add_child(title)
 	var reproduction := Label.new()
 	reproduction.text = "RUN SEED %d  •  ROOM SEED %d  •  %s" % [state.run_seed, state.survey_room_seed, String(state.survey_room_definition.get("arena", "arena")).replace("_", " ").to_upper()]
 	reproduction.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	reproduction.add_theme_font_size_override("font_size", 13)
+	reproduction.add_theme_font_size_override("font_size", 15)
 	content.add_child(reproduction)
 	var prompt := Label.new()
 	prompt.text = "Rate the encounter while it is fresh. 1 is low; 5 is high."
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt.add_theme_font_size_override("font_size", 18)
 	content.add_child(prompt)
 	var questions := {
 		"difficulty": "Difficulty",
 		"fun": "Fun",
 		"fairness": "Fairness",
 		"tactical_interest": "Tactical interest",
-		"expedition_fit": "Expedition fit",
+		"want_again": "Want a room like this again?",
 	}
 	for question_id in questions:
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
+		row.custom_minimum_size.y = 58.0
+		row.add_theme_constant_override("separation", 8)
 		var label := Label.new()
 		label.text = String(questions[question_id])
-		label.custom_minimum_size = Vector2(150, 42)
+		label.custom_minimum_size = Vector2(225, 58)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 16)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.add_theme_font_size_override("font_size", 19)
 		row.add_child(label)
 		var buttons: Array[Button] = []
 		for rating in range(1, 6):
 			var button := Button.new()
 			button.text = str(rating)
 			button.toggle_mode = true
-			button.custom_minimum_size = Vector2(48, 42)
-			button.add_theme_font_size_override("font_size", 17)
+			button.custom_minimum_size = Vector2(54, 54)
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.add_theme_font_size_override("font_size", 22)
+			_apply_survey_toggle_style(button)
 			button.pressed.connect(_survey_rating_pressed.bind(String(question_id), rating))
 			row.add_child(button)
 			buttons.append(button)
@@ -291,7 +296,7 @@ func _build_survey_feedback_overlay() -> void:
 		content.add_child(row)
 	var tag_label := Label.new()
 	tag_label.text = "Tags — choose any that apply"
-	tag_label.add_theme_font_size_override("font_size", 17)
+	tag_label.add_theme_font_size_override("font_size", 20)
 	content.add_child(tag_label)
 	var tag_grid := GridContainer.new()
 	tag_grid.columns = 3
@@ -301,28 +306,74 @@ func _build_survey_feedback_overlay() -> void:
 		var button := Button.new()
 		button.text = String(tag).to_upper()
 		button.toggle_mode = true
-		button.custom_minimum_size = Vector2(150, 42)
-		button.add_theme_font_size_override("font_size", 12)
+		button.custom_minimum_size = Vector2(150, 50)
+		button.add_theme_font_size_override("font_size", 15)
+		_apply_survey_toggle_style(button)
 		button.toggled.connect(_survey_tag_toggled.bind(String(tag)))
 		tag_grid.add_child(button)
 		survey_tag_buttons[String(tag)] = button
 	content.add_child(tag_grid)
 	var notes_label := Label.new()
 	notes_label.text = "Optional notes"
+	notes_label.add_theme_font_size_override("font_size", 20)
 	content.add_child(notes_label)
 	survey_notes = TextEdit.new()
 	survey_notes.placeholder_text = "What made this room work or fail?"
-	survey_notes.custom_minimum_size = Vector2(0, 96)
+	survey_notes.custom_minimum_size = Vector2(0, 132)
 	survey_notes.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	survey_notes.add_theme_font_size_override("font_size", 15)
+	survey_notes.virtual_keyboard_enabled = true
+	survey_notes.add_theme_font_size_override("font_size", 19)
+	survey_notes.gui_input.connect(_survey_notes_gui_input)
+	survey_notes.focus_entered.connect(_survey_notes_focus_entered)
 	content.add_child(survey_notes)
 	survey_submit_button = Button.new()
 	survey_submit_button.text = "ANSWER ALL FIVE RATINGS"
 	survey_submit_button.disabled = true
-	survey_submit_button.custom_minimum_size = Vector2(0, 58)
-	survey_submit_button.add_theme_font_size_override("font_size", 18)
+	survey_submit_button.custom_minimum_size = Vector2(0, 64)
+	survey_submit_button.add_theme_font_size_override("font_size", 20)
 	survey_submit_button.pressed.connect(_submit_survey_feedback)
 	content.add_child(survey_submit_button)
+
+func _apply_survey_toggle_style(button: Button) -> void:
+	button.add_theme_color_override("font_color", Color("eaf6f8"))
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	button.add_theme_color_override("font_pressed_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_pressed_color", Color.WHITE)
+	button.add_theme_color_override("font_focus_color", Color.WHITE)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color("14252c")
+	normal.border_color = Color("536a73")
+	normal.set_border_width_all(2)
+	normal.set_corner_radius_all(5)
+	var hover: StyleBoxFlat = normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color("1b343d")
+	hover.border_color = Color("78a4af")
+	var pressed: StyleBoxFlat = normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color("176b79")
+	pressed.border_color = Color("62eaff")
+	pressed.set_border_width_all(3)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", pressed)
+	button.add_theme_stylebox_override("hover_pressed", pressed)
+	button.add_theme_stylebox_override("focus", pressed)
+
+func _survey_notes_gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		survey_notes.grab_focus()
+		get_viewport().set_input_as_handled()
+		call_deferred("_show_survey_notes_keyboard")
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		survey_notes.grab_focus()
+
+func _survey_notes_focus_entered() -> void:
+	if not desktop_controls: call_deferred("_show_survey_notes_keyboard")
+
+func _show_survey_notes_keyboard() -> void:
+	if survey_notes == null or not is_instance_valid(survey_notes) or not survey_notes.is_inside_tree(): return
+	survey_notes.grab_focus()
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		DisplayServer.virtual_keyboard_show(survey_notes.text, Rect2(survey_notes.global_position, survey_notes.size))
 
 func _survey_rating_pressed(question_id: String, rating: int) -> void:
 	survey_feedback_ratings[question_id] = rating
@@ -829,6 +880,7 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 
 func _gui_input(event: InputEvent) -> void:
 	autosave_quiet_elapsed = 0.0
+	if survey_overlay != null and survey_overlay.visible: return
 	if event is InputEventScreenTouch:
 		if event.pressed: _pointer_pressed(event.position, false)
 		else: _pointer_released(event.position)

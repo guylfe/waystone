@@ -19,8 +19,12 @@ func _initialize() -> void:
 	board._survey_rating_pressed("fun", 4)
 	board._survey_rating_pressed("fairness", 4)
 	board._survey_rating_pressed("tactical_interest", 5)
-	board._survey_rating_pressed("expedition_fit", 4)
+	board._survey_rating_pressed("want_again", 4)
 	assert(not board.survey_submit_button.disabled)
+	assert(board.survey_notes.virtual_keyboard_enabled)
+	assert(board.survey_notes.get_theme_font_size("font_size") >= 19)
+	var selected_button: Button = board.survey_rating_buttons["want_again"][3]
+	assert(selected_button.get_theme_color("font_pressed_color").get_luminance() > 0.9)
 	board._submit_survey_feedback()
 	assert(board.state.survey_room_number == 2)
 	assert(not board.state.survey_feedback_pending)

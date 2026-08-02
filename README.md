@@ -1,6 +1,13 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.2` (Android version code `102`).
+Current prototype version: `0.1.3` (Android version code `103`).
+
+### v0.1.3: Combat Survey readability and mobile input
+
+- Replaces the ambiguous `Expedition fit` score with the direct question `Want a room like this again?` while preserving older archived scores in reports.
+- Enlarges survey labels, ratings, tags, notes, and touch targets to better use phone and Fold screen space.
+- Gives selected ratings and tags an explicit high-contrast style instead of relying on the platform theme.
+- Explicitly focuses the notes field and requests the Android virtual keyboard when it is touched.
 
 ### v0.1.2: Combat Survey laboratory
 

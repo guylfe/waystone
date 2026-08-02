@@ -17,7 +17,7 @@ func _init() -> void:
 	first._remove_dead_enemies()
 	assert(first.survey_feedback_pending)
 	assert(String(first.survey_pending_record["outcome"]) == "victory")
-	var ratings := {"difficulty": 3, "fun": 4, "fairness": 5, "tactical_interest": 4, "expedition_fit": 4}
+	var ratings := {"difficulty": 3, "fun": 4, "fairness": 5, "tactical_interest": 4, "want_again": 4}
 	first.submit_survey_feedback(ratings, ["fair", "good mix"], "Deterministic survey smoke test.")
 	assert(not first.survey_feedback_pending)
 	assert(first.survey_room_number == 2)
@@ -33,5 +33,6 @@ func _init() -> void:
 	assert("RUN SEED" not in report or "Run seed: 424242" in report)
 	assert("ROOM 1" in report and "ROOM 2" in report)
 	assert("Room seed:" in report and "Tags: fair, good mix" in report)
+	assert("Want a room like this again: 4/5" in report)
 	print("COMBAT SURVEY deterministic rooms, feedback, archive, and report: PASS")
 	quit(0)

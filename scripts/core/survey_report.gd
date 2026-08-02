@@ -79,7 +79,7 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))
 		lines.append("Fairness: %s" % _rating_text(ratings.get("fairness", 0)))
 		lines.append("Tactical interest: %s" % _rating_text(ratings.get("tactical_interest", 0)))
-		lines.append("Expedition fit: %s" % _rating_text(ratings.get("expedition_fit", 0)))
+		lines.append("Want a room like this again: %s" % _rating_text(ratings.get("want_again", ratings.get("expedition_fit", 0))))
 		var tags := PackedStringArray(room.get("tags", []))
 		lines.append("Tags: %s" % (", ".join(tags) if not tags.is_empty() else "none"))
 		var notes := String(room.get("notes", "")).strip_edges()
