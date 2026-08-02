@@ -1,6 +1,11 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.3` (Android version code `103`).
+Current prototype version: `0.1.4` (Android version code `104`).
+
+### v0.1.4: Safer survey ending and sword finisher
+
+- `END RUN` now opens a confirmation prompt explaining that the current room will still be rated before the report is archived.
+- The sword sequence's third hit is now a delayed, long-reaching turning slash instead of a prolonged forward thrust.
 
 ### v0.1.3: Combat Survey readability and mobile input
 

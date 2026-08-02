@@ -177,8 +177,11 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	var phases: Array = state.player_action["phases"]
 	assert(String(Dictionary(phases[0])["technique"]) == "opening_cut")
 	assert(String(Dictionary(phases[1])["technique"]) == "reverse_cut")
-	assert(String(Dictionary(phases[2])["technique"]) == "driving_cut")
+	assert(String(Dictionary(phases[2])["technique"]) == "turning_slash")
 	assert(float(Dictionary(phases[2])["reach"]) > float(Dictionary(phases[1])["reach"]))
+	assert(float(Dictionary(phases[2])["reach"]) == 194.0)
+	assert(float(Dictionary(phases[2])["startup"]) - float(Dictionary(phases[1])["end"]) >= 0.37)
+	assert(String(AttackGeometryScript.technique("turning_slash")["motion"]) == "arc")
 	while float(state.player_action["elapsed"]) < 2.40: state.advance_streamed_action_tick()
 	assert(String(state.player_action["kind"]) == "combo")
 	while state.advance_streamed_action_tick(): pass

@@ -36,7 +36,7 @@ const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
 const SAVE_VERSION := 24
-const GAME_VERSION := "0.1.3"
+const GAME_VERSION := "0.1.4"
 const SURVEY_GENERATOR_VERSION := 1
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
@@ -1304,7 +1304,7 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	player_action["phases"] = [
 		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut"},
 		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 130.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut"},
-		{"startup": 2.08 if flowing else 2.30, "active_end": 2.42 if flowing else 2.64, "end": duration, "reach": 184.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "driving_cut"},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 194.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash"},
 	]
 	player_action["combo_length"] = 3
 	player_action["combo_instance_id"] = _next_combo_instance_id

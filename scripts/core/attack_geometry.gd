@@ -9,6 +9,7 @@ const TECHNIQUES := {
 	"knife_rising_cut": {"motion": "arc", "start_angle": -0.43, "end_angle": 0.74, "radius": 7.0, "multi": false, "label": "Rising cut"},
 	"knife_falling_cut": {"motion": "arc", "start_angle": 0.48, "end_angle": -0.78, "radius": 7.0, "multi": false, "label": "Falling cut"},
 	"reverse_cut": {"motion": "arc", "start_angle": 0.57, "end_angle": -0.57, "radius": 11.0, "multi": false, "label": "Returning cut"},
+	"turning_slash": {"motion": "arc", "start_angle": -1.15, "end_angle": 1.15, "radius": 12.0, "multi": true, "label": "Turning slash"},
 	"diagonal_cut": {"motion": "arc", "start_angle": -0.96, "end_angle": 0.70, "radius": 11.0, "multi": false, "label": "Diagonal cut"},
 	"broad_sweep": {"motion": "arc", "start_angle": -1.396, "end_angle": 1.396, "radius": 14.0, "multi": true, "label": "Broad sweep"},
 	"heavy_cleave": {"motion": "arc", "start_angle": -1.658, "end_angle": 1.658, "radius": 18.0, "multi": true, "label": "Heavy cleave"},

@@ -216,9 +216,9 @@ func _create_survey_overlay() -> void:
 
 func _sync_survey_overlay() -> void:
 	if survey_overlay == null: return
-	if survey_overlay.visible and survey_overlay.get_meta("kind", "") == "archive": return
+	if survey_overlay.visible and survey_overlay.get_meta("kind", "") in ["archive", "end_confirm"]: return
 	if state.mode_id == "combat_survey" and state.survey_feedback_pending:
-		if not survey_overlay.visible or survey_overlay.get_child_count() == 0: _build_survey_feedback_overlay()
+		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "feedback": _build_survey_feedback_overlay()
 		survey_overlay.visible = true
 	elif state.mode_id == "combat_survey" and state.trial_complete and state.run_active:
 		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "report": _build_survey_report_overlay()
@@ -430,6 +430,56 @@ func _survey_action_button(label: String, callback: Callable) -> Button:
 	button.add_theme_font_size_override("font_size", 17)
 	button.pressed.connect(callback)
 	return button
+
+func _build_survey_end_confirmation() -> void:
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "end_confirm")
+	survey_overlay.visible = true
+	var center := CenterContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	survey_overlay.add_child(center)
+	var content := VBoxContainer.new()
+	content.custom_minimum_size.x = minf(620.0, maxf(360.0, survey_overlay.size.x - 48.0))
+	content.add_theme_constant_override("separation", 18)
+	center.add_child(content)
+	var title := Label.new()
+	title.text = "END THIS SURVEY RUN?"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 30)
+	content.add_child(title)
+	var warning := Label.new()
+	warning.text = "This ends the current room and the run. You will still rate this room, then Waystone will archive the complete report."
+	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	warning.add_theme_font_size_override("font_size", 19)
+	content.add_child(warning)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 14)
+	var cancel := _survey_action_button("CANCEL — KEEP PLAYING", _cancel_survey_end_confirmation)
+	cancel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(cancel)
+	var confirm := _survey_action_button("END RUN", _confirm_survey_end_run)
+	confirm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	confirm.add_theme_color_override("font_color", Color("ffd9d5"))
+	confirm.add_theme_color_override("font_hover_color", Color.WHITE)
+	buttons.add_child(confirm)
+	content.add_child(buttons)
+
+func _cancel_survey_end_confirmation() -> void:
+	survey_overlay.visible = false
+	survey_overlay.set_meta("kind", "")
+	queue_redraw()
+
+func _confirm_survey_end_run() -> void:
+	if state.mode_id != "combat_survey" or state.survey_feedback_pending or state.trial_complete: return
+	state.end_survey_run()
+	visual = _presentation_snapshot()
+	_mark_autosave(true)
+	survey_overlay.visible = false
+	survey_overlay.set_meta("kind", "")
+	_sync_survey_overlay()
+	queue_redraw()
 
 func _build_survey_archive_overlay() -> void:
 	_clear_survey_overlay()
@@ -920,11 +970,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		if start_rect.has_point(position): _start_run()
 		return
 	if state.mode_id == "combat_survey" and survey_end_rect.has_point(position) and not state.survey_feedback_pending and not state.trial_complete:
-		state.end_survey_run()
-		visual = _presentation_snapshot()
-		_sync_survey_overlay()
-		_mark_autosave(true)
-		queue_redraw()
+		_build_survey_end_confirmation()
 		return
 	if character_sheet_open:
 		if not sheet_detail.is_empty():
