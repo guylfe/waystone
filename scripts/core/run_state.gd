@@ -5,6 +5,7 @@ const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 const ModeRulesScript = preload("res://scripts/core/mode_rules.gd")
+const SurveyReportScript = preload("res://scripts/core/survey_report.gd")
 
 signal changed
 signal message_changed(text: String)
@@ -34,7 +35,9 @@ const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-const SAVE_VERSION := 23
+const SAVE_VERSION := 24
+const GAME_VERSION := "0.1.2"
+const SURVEY_GENERATOR_VERSION := 1
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -122,6 +125,9 @@ var perfect_dodges := 0
 var counter_hits := 0
 var successful_blocks := 0
 var successful_endures := 0
+var damage_received_total := 0
+var hits_received_total := 0
+var potions_used_total := 0
 var effects: Array[Dictionary] = []
 var message := "Time is frozen. Choose an action."
 var last_timeline: Array[Dictionary] = []
@@ -227,6 +233,17 @@ var _profile_action_count := 0
 var _streamed_action_cpu_usec := 0
 var _simulation_tick_index := 0
 var _next_combo_instance_id := 1
+var survey_profile := "encounter"
+var survey_room_number := 0
+var survey_room_seed := 0
+var survey_feedback_pending := false
+var survey_run_ending := false
+var survey_end_reason := ""
+var survey_room_definition: Dictionary = {}
+var survey_room_entry: Dictionary = {}
+var survey_pending_record: Dictionary = {}
+var survey_session: Dictionary = {}
+var survey_last_report: Dictionary = {}
 
 func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
@@ -240,11 +257,12 @@ func build_laboratory() -> void:
 func build_expedition_room() -> void:
 	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
-func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1) -> void:
+func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter") -> void:
 	loadout_id = chosen_loadout if CombatCatalogScript.loadout_ids().has(chosen_loadout) else "warrior"
 	mode_id = ModeRulesScript.normalize(chosen_mode)
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
+	survey_profile = survey_profile_override if survey_profile_override in ["encounter", "attrition"] else "encounter"
 	if seed_override >= 0: run_seed = seed_override
 	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
 	_apply_loadout()
@@ -313,6 +331,30 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	counter_hits = 0
 	successful_blocks = 0
 	successful_endures = 0
+	damage_received_total = 0
+	hits_received_total = 0
+	potions_used_total = 0
+	survey_room_number = 1 if mode_id == ModeRulesScript.COMBAT_SURVEY else 0
+	survey_room_seed = 0
+	survey_feedback_pending = false
+	survey_run_ending = false
+	survey_end_reason = ""
+	survey_room_definition.clear()
+	survey_room_entry.clear()
+	survey_pending_record.clear()
+	survey_last_report.clear()
+	survey_session = {
+		"format_version": 1,
+		"game_version": GAME_VERSION,
+		"generator_version": SURVEY_GENERATOR_VERSION,
+		"run_seed": run_seed,
+		"profile": survey_profile,
+		"loadout": CombatCatalogScript.loadout_name(loadout_id),
+		"started_at": Time.get_datetime_string_from_system(false, true),
+		"ended_at": "",
+		"end_reason": "",
+		"rooms": [],
+	} if mode_id == ModeRulesScript.COMBAT_SURVEY else {}
 	effects.clear()
 	hazards.clear()
 	projectiles.clear()
@@ -322,7 +364,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	shortcut_unlocked = false
 	_boss_defeated = false
 	rng.seed = run_seed
-	var layout: Dictionary = FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
+	var layout: Dictionary = _generate_survey_layout(survey_room_number) if mode_id == ModeRulesScript.COMBAT_SURVEY else FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
 	world_size = Vector2(layout.get("world_size", WORLD_SIZE))
 	geometry_style = String(layout.get("geometry_style", "rooms"))
 	areas.assign(Array(layout["areas"]).duplicate(true))
@@ -342,7 +384,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	base_walls_by_layer = Dictionary(layout.get("layer_walls", {})).duplicate(true)
 	bonfire_pos = Vector2(layout["bonfire_pos"])
 	active_waystone_id = String(waystones[0]["id"]) if not waystones.is_empty() else ""
-	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "expedition_surface"
+	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "survey_arena" if mode_id == ModeRulesScript.COMBAT_SURVEY else "expedition_surface"
 	if base_walls_by_layer.is_empty(): base_walls_by_layer[current_layer] = Array(layout["base_walls"]).duplicate()
 	_player_start = Vector2(layout["player_start"])
 	player_pos = _player_start
@@ -366,7 +408,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	_apply_shortcut_world_state()
 	run_active = true
 	_update_exploration(true)
-	if bool(mode_config["waystone_available"]):
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		_capture_survey_room_entry()
+		SurveyReportScript.save_current(survey_session)
+		message = "Combat Survey room 1. Time is frozen; assess the encounter naturally."
+	elif bool(mode_config["waystone_available"]):
 		_capture_anchor_history()
 		message = "The Waystone anchors this moment. Time is frozen."
 	else:
@@ -374,6 +420,281 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	last_timeline.clear()
 	changed.emit()
 	message_changed.emit(message)
+
+func _generate_survey_layout(room_number: int) -> Dictionary:
+	survey_room_seed = _survey_seed_for_room(room_number)
+	var room_rng := RandomNumberGenerator.new()
+	room_rng.seed = survey_room_seed
+	var threat_roll := room_rng.randf()
+	var threat_band := "stress" if threat_roll > 0.91 else "unusual" if threat_roll > 0.72 else "conventional"
+	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
+	var formation_ids := ["frontline", "spread", "flanked", "ranged_support", "surround", "split"]
+	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
+	var formation_id := String(formation_ids[room_rng.randi_range(0, formation_ids.size() - 1)])
+	var enemy_plan := _survey_enemy_plan(room_rng, room_number, threat_band)
+	var layer := "survey_arena"
+	var center := Vector2(850.0, 700.0)
+	var player_start := Vector2(850.0, 1080.0)
+	var walls_for_layer: Array[Rect2] = []
+	var features: Array[Dictionary] = []
+	var obstacle_rects: Array[Rect2] = []
+	match arena_id:
+		"central_cover": obstacle_rects = [Rect2(735, 555, 230, 150)]
+		"broken_sightline": obstacle_rects = [Rect2(505, 485, 105, 250), Rect2(1090, 485, 105, 250)]
+		"split_approach": obstacle_rects = [Rect2(680, 430, 95, 305), Rect2(925, 430, 95, 305)]
+		"scattered_cover": obstacle_rects = [Rect2(500, 560, 110, 95), Rect2(1050, 430, 110, 95), Rect2(955, 805, 115, 90)]
+		"wide_lane": obstacle_rects = [Rect2(365, 430, 90, 420), Rect2(1245, 430, 90, 420)]
+		_: obstacle_rects = []
+	for obstacle in obstacle_rects:
+		walls_for_layer.append(obstacle)
+		features.append({"kind": "ancient_ruin", "pos": obstacle.get_center(), "radius": maxf(obstacle.size.x, obstacle.size.y) * 0.48, "part_id": 0, "layer": layer})
+	var spawn_slots := _survey_formation_slots(formation_id)
+	var templates: Array[Dictionary] = []
+	var enemy_labels: Array[String] = []
+	for index in range(enemy_plan.size()):
+		var slot := spawn_slots[index % spawn_slots.size()]
+		var jitter := Vector2(room_rng.randf_range(-34.0, 34.0), room_rng.randf_range(-28.0, 28.0))
+		var spawn_position: Vector2 = slot + jitter
+		for obstacle in obstacle_rects:
+			if obstacle.grow(70.0).has_point(spawn_position):
+				var away := (spawn_position - obstacle.get_center()).normalized()
+				if away.is_zero_approx(): away = Vector2.UP
+				spawn_position = obstacle.get_center() + away * (maxf(obstacle.size.x, obstacle.size.y) * 0.72 + 90.0)
+		var kind := String(enemy_plan[index])
+		templates.append({"kind": kind, "pos": spawn_position, "layer": layer})
+		enemy_labels.append(kind.replace("_", " ").capitalize())
+	var threat_tier := 1 + int(floor(float(room_number - 1) * 0.5))
+	survey_room_definition = {
+		"room_number": room_number,
+		"room_seed": survey_room_seed,
+		"arena": arena_id,
+		"formation": formation_id,
+		"threat_tier": threat_tier,
+		"threat_band": threat_band,
+		"enemy_labels": enemy_labels,
+	}
+	var layers := {layer: {"name": "Combat Survey", "depth": 0}}
+	var layer_walls := {layer: walls_for_layer}
+	return {
+		"world_size": Vector2(1700.0, 1400.0),
+		"geometry_style": "arena",
+		"areas": [{"id": 0, "name": "Survey Arena %d" % room_number, "arrival_text": "%s · %s" % [arena_id.replace("_", " ").capitalize(), formation_id.replace("_", " ").capitalize()], "kind": "survey", "rect": Rect2(175, 75, 1350, 1250), "center": center, "layer": layer, "discovered": true}],
+		"connections": [],
+		"route_recipe": [],
+		"run_graph": {"nodes": [0], "edges": []},
+		"locale_catalog": {},
+		"floor_shapes": [{"kind": "circle", "center": center, "radius": 650.0, "part_id": 0, "layer": layer}],
+		"terrain_features": features,
+		"pickups": [],
+		"waystones": [],
+		"shortcuts": [],
+		"transitions": [],
+		"secret_passages": [],
+		"layers": layers,
+		"encounters": {0: templates},
+		"layer_walls": layer_walls,
+		"base_walls": walls_for_layer,
+		"bonfire_pos": Vector2.ZERO,
+		"player_start": player_start,
+		"shortcut_gate": Rect2(),
+		"shortcut_unlock_pos": Vector2.ZERO,
+		"shortcut_start_pos": Vector2.ZERO,
+	}
+
+func _survey_seed_for_room(room_number: int) -> int:
+	return absi(hash("waystone-survey:%d:%d:%d" % [SURVEY_GENERATOR_VERSION, run_seed, room_number]))
+
+func _survey_enemy_plan(room_rng: RandomNumberGenerator, room_number: int, threat_band: String) -> Array[String]:
+	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
+	var budget := mini(18, 2 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
+	var pool: Array[Dictionary] = [{"id": "boar", "cost": 1}, {"id": "hound", "cost": 1}]
+	if tier >= 2: pool.append_array([{"id": "bandit", "cost": 2}, {"id": "knife", "cost": 1}])
+	if tier >= 3: pool.append_array([{"id": "blade", "cost": 2}, {"id": "archer", "cost": 2}])
+	if tier >= 5: pool.append_array([{"id": "ice_caster", "cost": 3}, {"id": "fire_caster", "cost": 3}])
+	if tier >= 6: pool.append({"id": "polearm", "cost": 3})
+	if tier >= 7: pool.append_array([{"id": "brute", "cost": 4}, {"id": "captain", "cost": 4}])
+	if tier >= 9: pool.append({"id": "knight", "cost": 5})
+	var result: Array[String] = []
+	var casters := 0
+	if threat_band == "unusual" and tier >= 3:
+		result.append("archer")
+		budget -= 2
+	elif threat_band == "stress" and tier >= 5:
+		var pressure_kind := "ice_caster" if room_rng.randf() < 0.5 else "fire_caster"
+		result.append(pressure_kind)
+		casters = 1
+		budget -= 3
+	while budget > 0 and result.size() < 6:
+		var affordable: Array[Dictionary] = []
+		for option in pool:
+			var option_id := String(option["id"])
+			if int(option["cost"]) <= budget and (casters < 2 or option_id not in ["ice_caster", "fire_caster"]): affordable.append(option)
+		if affordable.is_empty(): break
+		var chosen := affordable[room_rng.randi_range(0, affordable.size() - 1)]
+		var chosen_id := String(chosen["id"])
+		result.append(chosen_id)
+		budget -= int(chosen["cost"])
+		if chosen_id in ["ice_caster", "fire_caster"]: casters += 1
+	if result.is_empty(): result.append("boar")
+	return result
+
+func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
+	match formation_id:
+		"spread": return [Vector2(470, 410), Vector2(850, 330), Vector2(1230, 410), Vector2(560, 650), Vector2(1140, 650), Vector2(850, 560)]
+		"flanked": return [Vector2(420, 720), Vector2(1280, 720), Vector2(650, 360), Vector2(1050, 360), Vector2(540, 470), Vector2(1160, 470)]
+		"ranged_support": return [Vector2(700, 610), Vector2(1000, 610), Vector2(570, 340), Vector2(850, 280), Vector2(1130, 340), Vector2(850, 490)]
+		"surround": return [Vector2(510, 690), Vector2(1190, 690), Vector2(670, 380), Vector2(1030, 380), Vector2(560, 930), Vector2(1140, 930)]
+		"split": return [Vector2(520, 420), Vector2(630, 570), Vector2(1180, 420), Vector2(1070, 570), Vector2(480, 750), Vector2(1220, 750)]
+		_: return [Vector2(610, 460), Vector2(770, 390), Vector2(930, 390), Vector2(1090, 460), Vector2(690, 610), Vector2(1010, 610)]
+
+func _capture_survey_room_entry() -> void:
+	survey_room_entry = {
+		"time": simulation_time,
+		"damage_dealt": damage_dealt,
+		"damage_received": damage_received_total,
+		"hits_received": hits_received_total,
+		"potions_used": potions_used_total,
+		"perfect_dodges": perfect_dodges,
+		"successful_blocks": successful_blocks,
+		"successful_endures": successful_endures,
+	}
+
+func _survey_build_summary() -> String:
+	var ranks: Array[String] = []
+	for track_id in track_ranks:
+		var rank := int(track_ranks[track_id])
+		if rank > 0: ranks.append("%s %d" % [String(track_id).replace("_", " ").capitalize(), rank])
+	return "%s; %s; %s" % [CombatCatalogScript.loadout_name(loadout_id), CombatCatalogScript.weapon_frame(player_weapon_frame).get("label", player_weapon_frame), ", ".join(ranks) if not ranks.is_empty() else "base tracks"]
+
+func _complete_survey_room(outcome: String) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY or survey_feedback_pending or trial_complete: return
+	survey_pending_record = survey_room_definition.duplicate(true)
+	survey_pending_record.merge({
+		"outcome": outcome,
+		"build_summary": _survey_build_summary(),
+		"combat_time": simulation_time - float(survey_room_entry.get("time", simulation_time)),
+		"damage_dealt": damage_dealt - int(survey_room_entry.get("damage_dealt", damage_dealt)),
+		"damage_received": damage_received_total - int(survey_room_entry.get("damage_received", damage_received_total)),
+		"hits_received": hits_received_total - int(survey_room_entry.get("hits_received", hits_received_total)),
+		"potions_used": potions_used_total - int(survey_room_entry.get("potions_used", potions_used_total)),
+		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
+		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
+		"successful_endures": successful_endures - int(survey_room_entry.get("successful_endures", successful_endures)),
+		"ratings": {}, "tags": [], "notes": "",
+	}, true)
+	survey_feedback_pending = true
+	survey_run_ending = outcome in ["death", "manual_end"]
+	survey_end_reason = outcome
+	player_action = _idle_action()
+	projectiles.clear()
+	hazards.clear()
+	_set_message("Room %d complete. Record how the encounter felt." % survey_room_number)
+	changed.emit()
+
+func submit_survey_feedback(ratings: Dictionary, tags: Array, notes: String) -> void:
+	if not survey_feedback_pending: return
+	survey_pending_record["ratings"] = ratings.duplicate(true)
+	survey_pending_record["tags"] = tags.duplicate()
+	survey_pending_record["notes"] = notes.strip_edges()
+	var rooms: Array = survey_session.get("rooms", [])
+	rooms.append(survey_pending_record.duplicate(true))
+	survey_session["rooms"] = rooms
+	survey_feedback_pending = false
+	survey_pending_record.clear()
+	SurveyReportScript.save_current(survey_session)
+	if survey_run_ending:
+		_finalize_survey_run(survey_end_reason)
+	else:
+		rooms_cleared += 1
+		_load_next_survey_room()
+
+func end_survey_run() -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY or trial_complete or survey_feedback_pending: return
+	_complete_survey_room("manual_end")
+
+func _finalize_survey_run(reason: String) -> void:
+	survey_session["ended_at"] = Time.get_datetime_string_from_system(false, true)
+	survey_session["end_reason"] = reason
+	survey_last_report = SurveyReportScript.archive_session(survey_session)
+	trial_complete = true
+	survey_run_ending = true
+	_set_message("Combat Survey saved: %d rooms recorded." % Array(survey_session.get("rooms", [])).size())
+	changed.emit()
+
+func _load_next_survey_room() -> void:
+	survey_room_number += 1
+	if survey_profile == "encounter":
+		player_hp = player_max_hp
+		player_posture = player_posture_max
+		potions = healing_capacity()
+		dodge_cooldown = 0.0
+		block_cooldown = 0.0
+		endure_cooldown = 0.0
+		skill_cooldown = 0.0
+		rally_cooldown = 0.0
+		advance_cooldown = 0.0
+		main_ability_cooldown = 0.0
+		subclass_ability_cooldown = 0.0
+		weapon_sequence_cooldown = 0.0
+		player_conditions.clear()
+		player_condition_buildup.clear()
+	var layout := _generate_survey_layout(survey_room_number)
+	world_size = Vector2(layout["world_size"])
+	geometry_style = String(layout["geometry_style"])
+	areas.assign(Array(layout["areas"]).duplicate(true))
+	connections.assign(Array(layout["connections"]).duplicate(true))
+	route_recipe.assign(Array(layout["route_recipe"]).duplicate(true))
+	run_graph = Dictionary(layout["run_graph"]).duplicate(true)
+	locale_catalog = Dictionary(layout["locale_catalog"]).duplicate(true)
+	floor_shapes.assign(Array(layout["floor_shapes"]).duplicate(true))
+	terrain_features.assign(Array(layout["terrain_features"]).duplicate(true))
+	world_pickups.clear()
+	waystones.clear()
+	shortcuts.clear()
+	transitions.clear()
+	secret_passages.clear()
+	world_layers = Dictionary(layout["layers"]).duplicate(true)
+	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
+	base_walls_by_layer = Dictionary(layout["layer_walls"]).duplicate(true)
+	current_layer = "survey_arena"
+	_player_start = Vector2(layout["player_start"])
+	player_pos = _player_start
+	player_facing = Vector2.UP
+	player_action = _idle_action()
+	projectiles.clear()
+	hazards.clear()
+	effects.clear()
+	_navigation_cache.clear()
+	discovered_cells.clear()
+	discovered_cells_by_layer.clear()
+	discovered_cells_by_layer[current_layer] = discovered_cells
+	visible_cells.clear()
+	discovery_revision += 1
+	discovery_epoch += 1
+	world_render_revision += 1
+	_build_shape_spatial_index()
+	current_area_id = 0
+	_respawn_enemies()
+	_apply_shortcut_world_state()
+	rng.seed = survey_room_seed ^ 0x51A7E
+	_update_exploration(true)
+	_capture_survey_room_entry()
+	SurveyReportScript.save_current(survey_session)
+	_set_message("Combat Survey room %d. Seed %d." % [survey_room_number, survey_room_seed])
+	last_timeline.clear()
+	changed.emit()
+
+func survey_report_text() -> String:
+	return SurveyReportScript.build_text(survey_last_report if not survey_last_report.is_empty() else survey_session)
+
+func survey_report_filename() -> String:
+	return SurveyReportScript.report_filename(survey_last_report if not survey_last_report.is_empty() else survey_session)
+
+func survey_archive() -> Dictionary:
+	return SurveyReportScript.load_archive()
+
+func survey_all_reports_text() -> String:
+	return SurveyReportScript.all_reports_text()
 
 func abandon_run() -> void:
 	run_active = false
@@ -1194,6 +1515,7 @@ func request_potion(simulate_immediately: bool = true) -> bool:
 	_break_player_combo()
 	_reset_building_force()
 	if not has_infinite_potions(): potions -= 1
+	potions_used_total += 1
 	player_action = _action("potion", maxf(0.48, 0.72 - 0.06 * float(track_property_ranks.get("fieldcraft_recovery", 0))), Vector2.ZERO)
 	_emit_sound(player_pos, 90.0)
 	_set_message("You draw from the rejuvenation pouch.")
@@ -3662,6 +3984,8 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		var leakage := 0.25 if guard_profile in ["dual", "awkward"] else 0.0
 		var chip_damage := roundi(float(mitigated_damage) * leakage)
 		player_hp = maxi(0, player_hp - chip_damage)
+		damage_received_total += chip_damage
+		hits_received_total += 1
 		player_posture = maxf(0.0, player_posture - posture_damage)
 		player_posture_recovery_delay = 1.15
 		_add_effect("block", impact, chip_damage)
@@ -3680,6 +4004,8 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		player_action["effect_done"] = true
 		var endured_damage := int(ceil(float(mitigated_damage) * 0.50))
 		player_hp = maxi(0, player_hp - endured_damage)
+		damage_received_total += endured_damage
+		hits_received_total += 1
 		strength_remaining = maxf(strength_remaining, 5.0)
 		_apply_source_condition_to_player(source_name)
 		_add_effect("endure", impact, endured_damage)
@@ -3691,6 +4017,8 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	var interrupted_action := player_action.duplicate(true)
 	var damage_received := mitigated_damage
 	player_hp = maxi(0, player_hp - damage_received)
+	damage_received_total += damage_received
+	hits_received_total += 1
 	player_posture = maxf(0.0, player_posture - posture_damage)
 	player_posture_recovery_delay = 1.15
 	_add_effect("hurt", impact, damage_received)
@@ -3757,6 +4085,9 @@ func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 
 func _begin_death() -> void:
 	if death_pending: return
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		_complete_survey_room("death")
+		return
 	var previous_shadow_erased := bool(lost_xp.get("active", false))
 	var xp_before_death := carried_xp
 	var forgotten_cells := unanchored_discovery_count()
@@ -3865,6 +4196,9 @@ func _remove_dead_enemies() -> void:
 			else: _set_message("The %s falls. XP gained." % kind)
 	enemies = living
 	_invalidate_active_enemy_cache()
+	if mode_id == ModeRulesScript.COMBAT_SURVEY and enemies.is_empty():
+		_complete_survey_room("victory")
+		return
 	for area_id in defeated_areas:
 		var still_alive := false
 		for enemy in enemies:
@@ -3941,7 +4275,7 @@ func _navigation_cache_key() -> String:
 	return "%s|%s|%s" % [current_layer, region_ids, hash(walls)]
 
 func prewarm_expedition_navigation() -> void:
-	if mode_id != ModeRulesScript.EXPEDITION or areas.is_empty(): return
+	if mode_id not in [ModeRulesScript.EXPEDITION, ModeRulesScript.COMBAT_SURVEY] or areas.is_empty(): return
 	var started := Time.get_ticks_usec()
 	var original_area_id := current_area_id
 	for area_value in areas:
@@ -4398,6 +4732,9 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"rooms_cleared": rooms_cleared,
 		"enemies_defeated": enemies_defeated,
 		"damage_dealt": damage_dealt,
+		"damage_received_total": damage_received_total,
+		"hits_received_total": hits_received_total,
+		"potions_used_total": potions_used_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -4442,6 +4779,13 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"upgrade_context": upgrade_context,
 		"death_pending": death_pending,
 		"run_failed": run_failed,
+		"survey_profile": survey_profile,
+		"survey_room_number": survey_room_number,
+		"survey_room_seed": survey_room_seed,
+		"survey_feedback_pending": survey_feedback_pending,
+		"survey_run_ending": survey_run_ending,
+		"survey_end_reason": survey_end_reason,
+		"survey_session": survey_session.duplicate(true),
 		"anchor_state": {} if lightweight else anchor_state.duplicate(true),
 		"performance_metrics": performance_metrics.duplicate(),
 	}
@@ -4580,6 +4924,9 @@ func _build_save_payload() -> Dictionary:
 		"rooms_cleared": rooms_cleared,
 		"enemies_defeated": enemies_defeated,
 		"damage_dealt": damage_dealt,
+		"damage_received_total": damage_received_total,
+		"hits_received_total": hits_received_total,
+		"potions_used_total": potions_used_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -4604,6 +4951,17 @@ func _build_save_payload() -> Dictionary:
 		"counter_hits": counter_hits,
 		"successful_blocks": successful_blocks,
 		"successful_endures": successful_endures,
+		"survey_profile": survey_profile,
+		"survey_room_number": survey_room_number,
+		"survey_room_seed": survey_room_seed,
+		"survey_feedback_pending": survey_feedback_pending,
+		"survey_run_ending": survey_run_ending,
+		"survey_end_reason": survey_end_reason,
+		"survey_room_definition": survey_room_definition.duplicate(true),
+		"survey_room_entry": survey_room_entry.duplicate(true),
+		"survey_pending_record": survey_pending_record.duplicate(true),
+		"survey_session": survey_session.duplicate(true),
+		"survey_last_report": survey_last_report.duplicate(true),
 		"rng_state": rng.state,
 	}
 
@@ -4619,7 +4977,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -4644,7 +5002,12 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
 	run_seed = int(payload.get("run_seed", run_seed))
-	start_run(loadout_id, mode_id, run_seed)
+	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")))
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		var saved_survey_room := int(payload.get("survey_room_number", 1))
+		if saved_survey_room > 1:
+			survey_room_number = saved_survey_room - 1
+			_load_next_survey_room()
 	current_layer = String(payload.get("current_layer", current_layer))
 	active_waystone_id = String(payload.get("active_waystone_id", active_waystone_id))
 	for stone in waystones:
@@ -4813,10 +5176,25 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	rooms_cleared = int(payload.get("rooms_cleared", 0))
 	enemies_defeated = int(payload.get("enemies_defeated", 0))
 	damage_dealt = int(payload.get("damage_dealt", 0))
+	damage_received_total = int(payload.get("damage_received_total", 0))
+	hits_received_total = int(payload.get("hits_received_total", 0))
+	potions_used_total = int(payload.get("potions_used_total", 0))
 	perfect_dodges = int(payload.get("perfect_dodges", 0))
 	counter_hits = int(payload.get("counter_hits", 0))
 	successful_blocks = int(payload.get("successful_blocks", 0))
 	successful_endures = int(payload.get("successful_endures", 0))
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		survey_profile = String(payload.get("survey_profile", "encounter"))
+		survey_room_number = int(payload.get("survey_room_number", 1))
+		survey_room_seed = int(payload.get("survey_room_seed", _survey_seed_for_room(survey_room_number)))
+		survey_feedback_pending = bool(payload.get("survey_feedback_pending", false))
+		survey_run_ending = bool(payload.get("survey_run_ending", false))
+		survey_end_reason = String(payload.get("survey_end_reason", ""))
+		survey_room_definition = Dictionary(payload.get("survey_room_definition", survey_room_definition)).duplicate(true)
+		survey_room_entry = Dictionary(payload.get("survey_room_entry", survey_room_entry)).duplicate(true)
+		survey_pending_record = Dictionary(payload.get("survey_pending_record", {})).duplicate(true)
+		survey_session = Dictionary(payload.get("survey_session", survey_session)).duplicate(true)
+		survey_last_report = Dictionary(payload.get("survey_last_report", {})).duplicate(true)
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:

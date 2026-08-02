@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.1` (Android version code `101`).
+Current prototype version: `0.1.2` (Android version code `102`).
+
+### v0.1.2: Combat Survey laboratory
+
+- Adds an endless deterministic Combat Survey mode with visible run and room seeds, independently reproducible room generation, six arena/formation families, bounded six-enemy encounters, and two resource profiles: per-room reset or continuing attrition.
+- Prompts after every cleared or fatal room for five one-to-five ratings, multi-select diagnostic tags, and optional notes; manual `END RUN` uses the same final-room report flow.
+- Records exact enemy composition, geometry, formation, threat tier, character build, combat time, damage, incoming hits, potion use, dodges, blocks, and Endures for every room.
+- Autosaves the current session, archives the last 100 completed runs, and produces Word-friendly UTF-8 reports with a stable room-by-room structure.
+- Adds report copy, Android share-sheet support, direct `Downloads/Waystone` text export, archive browsing, latest-report copy, and combined archive export.
 
 ### v0.1.1: Rogue combat and Stealth corrections
 

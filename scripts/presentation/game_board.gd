@@ -96,6 +96,9 @@ var map_mode_rect := Rect2()
 var seed_copy_rect := Rect2()
 var start_rect := Rect2()
 var progression_rects: Dictionary = {}
+var survey_profile_rects: Dictionary = {}
+var archive_button_rect := Rect2()
+var survey_end_rect := Rect2()
 var map_open := false
 var character_sheet_open := false
 var map_view_layer := ""
@@ -109,6 +112,7 @@ var autosave_quiet_elapsed := 0.0
 var autosave_deferred := false
 var setup_loadout := "warrior"
 var setup_mode := "expedition"
+var setup_survey_profile := "encounter"
 var waystone_menu_open := false
 var seed_input: LineEdit
 var setup_seed_error := ""
@@ -139,6 +143,14 @@ var _presented_area_id := -999999
 var area_title_remaining := 0.0
 var area_title_name := ""
 var area_title_subtitle := ""
+var survey_overlay: PanelContainer
+var survey_notes: TextEdit
+var survey_rating_buttons: Dictionary = {}
+var survey_tag_buttons: Dictionary = {}
+var survey_feedback_ratings: Dictionary = {}
+var survey_feedback_tags: Array[String] = []
+var survey_submit_button: Button
+var survey_archived_run: Dictionary = {}
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -150,8 +162,10 @@ func _ready() -> void:
 	state.load_run()
 	if state.run_active: state.prewarm_expedition_navigation()
 	_create_seed_input()
+	_create_survey_overlay()
 	setup_loadout = state.loadout_id
 	setup_mode = state.mode_id
+	setup_survey_profile = state.survey_profile
 	map_view_layer = state.current_layer
 	visual = _presentation_snapshot()
 	_update_area_title(0.0)
@@ -185,6 +199,354 @@ func _on_seed_submitted(_text: String) -> void:
 
 func _sync_setup_controls() -> void:
 	if seed_input != null: seed_input.visible = not state.run_active
+	_sync_survey_overlay()
+
+func _create_survey_overlay() -> void:
+	survey_overlay = PanelContainer.new()
+	survey_overlay.visible = false
+	survey_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	survey_overlay.z_index = 100
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.025, 0.04, 0.05, 0.985)
+	style.border_color = Color("58d2cf")
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(8)
+	survey_overlay.add_theme_stylebox_override("panel", style)
+	add_child(survey_overlay)
+
+func _sync_survey_overlay() -> void:
+	if survey_overlay == null: return
+	if survey_overlay.visible and survey_overlay.get_meta("kind", "") == "archive": return
+	if state.mode_id == "combat_survey" and state.survey_feedback_pending:
+		if not survey_overlay.visible or survey_overlay.get_child_count() == 0: _build_survey_feedback_overlay()
+		survey_overlay.visible = true
+	elif state.mode_id == "combat_survey" and state.trial_complete and state.run_active:
+		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "report": _build_survey_report_overlay()
+		survey_overlay.visible = true
+	else:
+		survey_overlay.visible = false
+
+func _clear_survey_overlay() -> void:
+	for child in survey_overlay.get_children():
+		survey_overlay.remove_child(child)
+		child.queue_free()
+	survey_rating_buttons.clear()
+	survey_tag_buttons.clear()
+	survey_notes = null
+	survey_submit_button = null
+
+func _build_survey_feedback_overlay() -> void:
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "feedback")
+	survey_feedback_ratings.clear()
+	survey_feedback_tags.clear()
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	survey_overlay.add_child(scroll)
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 10)
+	scroll.add_child(content)
+	var title := Label.new()
+	title.text = "ROOM %d COMPLETE" % state.survey_room_number
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	content.add_child(title)
+	var reproduction := Label.new()
+	reproduction.text = "RUN SEED %d  •  ROOM SEED %d  •  %s" % [state.run_seed, state.survey_room_seed, String(state.survey_room_definition.get("arena", "arena")).replace("_", " ").to_upper()]
+	reproduction.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reproduction.add_theme_font_size_override("font_size", 13)
+	content.add_child(reproduction)
+	var prompt := Label.new()
+	prompt.text = "Rate the encounter while it is fresh. 1 is low; 5 is high."
+	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	content.add_child(prompt)
+	var questions := {
+		"difficulty": "Difficulty",
+		"fun": "Fun",
+		"fairness": "Fairness",
+		"tactical_interest": "Tactical interest",
+		"expedition_fit": "Expedition fit",
+	}
+	for question_id in questions:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var label := Label.new()
+		label.text = String(questions[question_id])
+		label.custom_minimum_size = Vector2(150, 42)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size", 16)
+		row.add_child(label)
+		var buttons: Array[Button] = []
+		for rating in range(1, 6):
+			var button := Button.new()
+			button.text = str(rating)
+			button.toggle_mode = true
+			button.custom_minimum_size = Vector2(48, 42)
+			button.add_theme_font_size_override("font_size", 17)
+			button.pressed.connect(_survey_rating_pressed.bind(String(question_id), rating))
+			row.add_child(button)
+			buttons.append(button)
+		survey_rating_buttons[String(question_id)] = buttons
+		content.add_child(row)
+	var tag_label := Label.new()
+	tag_label.text = "Tags — choose any that apply"
+	tag_label.add_theme_font_size_override("font_size", 17)
+	content.add_child(tag_label)
+	var tag_grid := GridContainer.new()
+	tag_grid.columns = 3
+	tag_grid.add_theme_constant_override("h_separation", 7)
+	tag_grid.add_theme_constant_override("v_separation", 7)
+	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure"]:
+		var button := Button.new()
+		button.text = String(tag).to_upper()
+		button.toggle_mode = true
+		button.custom_minimum_size = Vector2(150, 42)
+		button.add_theme_font_size_override("font_size", 12)
+		button.toggled.connect(_survey_tag_toggled.bind(String(tag)))
+		tag_grid.add_child(button)
+		survey_tag_buttons[String(tag)] = button
+	content.add_child(tag_grid)
+	var notes_label := Label.new()
+	notes_label.text = "Optional notes"
+	content.add_child(notes_label)
+	survey_notes = TextEdit.new()
+	survey_notes.placeholder_text = "What made this room work or fail?"
+	survey_notes.custom_minimum_size = Vector2(0, 96)
+	survey_notes.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	survey_notes.add_theme_font_size_override("font_size", 15)
+	content.add_child(survey_notes)
+	survey_submit_button = Button.new()
+	survey_submit_button.text = "ANSWER ALL FIVE RATINGS"
+	survey_submit_button.disabled = true
+	survey_submit_button.custom_minimum_size = Vector2(0, 58)
+	survey_submit_button.add_theme_font_size_override("font_size", 18)
+	survey_submit_button.pressed.connect(_submit_survey_feedback)
+	content.add_child(survey_submit_button)
+
+func _survey_rating_pressed(question_id: String, rating: int) -> void:
+	survey_feedback_ratings[question_id] = rating
+	var buttons: Array = survey_rating_buttons.get(question_id, [])
+	for index in range(buttons.size()):
+		var rating_button: Button = buttons[index]
+		rating_button.set_pressed_no_signal(index + 1 == rating)
+	if survey_submit_button != null:
+		survey_submit_button.disabled = survey_feedback_ratings.size() < 5
+		survey_submit_button.text = "SUBMIT ROOM & CONTINUE" if not survey_submit_button.disabled else "ANSWER ALL FIVE RATINGS"
+
+func _survey_tag_toggled(enabled: bool, tag: String) -> void:
+	if enabled and not survey_feedback_tags.has(tag): survey_feedback_tags.append(tag)
+	elif not enabled: survey_feedback_tags.erase(tag)
+
+func _submit_survey_feedback() -> void:
+	if survey_feedback_ratings.size() < 5: return
+	var notes := survey_notes.text if survey_notes != null else ""
+	state.submit_survey_feedback(survey_feedback_ratings, survey_feedback_tags, notes)
+	visual = _presentation_snapshot()
+	_static_query_revision = -1
+	_floor_cache_revision = -1
+	_mark_autosave(true)
+	_sync_survey_overlay()
+	queue_redraw()
+
+func _build_survey_report_overlay() -> void:
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "report")
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 12)
+	survey_overlay.add_child(content)
+	var title := Label.new()
+	title.text = "COMBAT SURVEY SAVED"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	content.add_child(title)
+	var room_count := Array(state.survey_session.get("rooms", [])).size()
+	var summary := Label.new()
+	summary.text = "%d rooms  •  run seed %d  •  ended by %s\nThe UTF-8 report is archived inside Waystone." % [room_count, state.run_seed, state.survey_end_reason.replace("_", " ")]
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.add_theme_font_size_override("font_size", 16)
+	content.add_child(summary)
+	content.add_child(_survey_action_button("SAVE TXT TO DOWNLOADS", _save_current_survey_report))
+	content.add_child(_survey_action_button("SHARE REPORT", _share_current_survey_report))
+	content.add_child(_survey_action_button("COPY REPORT", _copy_current_survey_report))
+	content.add_child(_survey_action_button("VIEW ARCHIVE", _build_survey_archive_overlay))
+	content.add_child(_survey_action_button("RETURN TO SETUP", _return_from_survey_report))
+
+func _survey_action_button(label: String, callback: Callable) -> Button:
+	var button := Button.new()
+	button.text = label
+	button.custom_minimum_size = Vector2(0, 56)
+	button.add_theme_font_size_override("font_size", 17)
+	button.pressed.connect(callback)
+	return button
+
+func _build_survey_archive_overlay() -> void:
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "archive")
+	survey_overlay.visible = true
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 9)
+	survey_overlay.add_child(content)
+	var title := Label.new()
+	title.text = "COMBAT SURVEY ARCHIVE"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	content.add_child(title)
+	var archive := state.survey_archive()
+	var runs: Array = archive.get("runs", [])
+	var overview := Label.new()
+	overview.text = "%d saved run%s" % [runs.size(), "" if runs.size() == 1 else "s"]
+	overview.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	content.add_child(overview)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	for index in range(mini(12, runs.size())):
+		var run := Dictionary(runs[index])
+		var row := Button.new()
+		row.text = "%02d. Seed %d  •  %d rooms  •  %s  •  %s" % [index + 1, int(run.get("run_seed", 0)), Array(run.get("rooms", [])).size(), String(run.get("loadout", "unknown")), String(run.get("ended_at", "unknown"))]
+		row.add_theme_font_size_override("font_size", 14)
+		row.custom_minimum_size = Vector2(0, 44)
+		row.pressed.connect(_open_archived_survey.bind(index))
+		list.add_child(row)
+	if runs.is_empty():
+		var empty := Label.new()
+		empty.text = "No completed survey runs yet."
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		list.add_child(empty)
+	content.add_child(scroll)
+	content.add_child(_survey_action_button("EXPORT ALL REPORTS", _export_all_survey_reports))
+	content.add_child(_survey_action_button("COPY LATEST", _copy_latest_survey_report))
+	content.add_child(_survey_action_button("CLOSE", _close_survey_archive))
+
+func _open_archived_survey(index: int) -> void:
+	var runs: Array = state.survey_archive().get("runs", [])
+	if index < 0 or index >= runs.size(): return
+	survey_archived_run = Dictionary(runs[index]).duplicate(true)
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "archive")
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 11)
+	survey_overlay.add_child(content)
+	var title := Label.new()
+	title.text = "ARCHIVED SURVEY — SEED %d" % int(survey_archived_run.get("run_seed", 0))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 25)
+	content.add_child(title)
+	var summary := Label.new()
+	summary.text = "%d rooms  •  %s  •  %s\n%s" % [Array(survey_archived_run.get("rooms", [])).size(), String(survey_archived_run.get("loadout", "unknown")), String(survey_archived_run.get("profile", "encounter")).capitalize(), String(survey_archived_run.get("ended_at", "unknown"))]
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.add_theme_font_size_override("font_size", 16)
+	content.add_child(summary)
+	content.add_child(_survey_action_button("SAVE THIS TXT", _save_archived_survey_report))
+	content.add_child(_survey_action_button("SHARE THIS REPORT", _share_archived_survey_report))
+	content.add_child(_survey_action_button("COPY THIS REPORT", _copy_archived_survey_report))
+	content.add_child(_survey_action_button("BACK TO ARCHIVE", _build_survey_archive_overlay))
+
+func _archived_report_text() -> String:
+	return String(survey_archived_run.get("report_text", ""))
+
+func _archived_report_filename() -> String:
+	var seed := int(survey_archived_run.get("run_seed", 0))
+	var started := String(survey_archived_run.get("started_at", "unknown")).replace(":", "-").replace(" ", "_")
+	return "Waystone_Combat_Survey_%d_%s.txt" % [seed, started]
+
+func _save_archived_survey_report() -> void:
+	_save_report_text(_archived_report_filename(), _archived_report_text())
+
+func _copy_archived_survey_report() -> void:
+	DisplayServer.clipboard_set(_archived_report_text())
+	state.message = "Archived Combat Survey report copied."
+
+func _share_archived_survey_report() -> void:
+	_share_report_text(_archived_report_filename(), _archived_report_text())
+
+func _close_survey_archive() -> void:
+	if state.run_active and state.trial_complete: _build_survey_report_overlay()
+	else:
+		survey_overlay.visible = false
+		survey_overlay.set_meta("kind", "")
+
+func _return_from_survey_report() -> void:
+	survey_overlay.visible = false
+	_restart()
+
+func _copy_current_survey_report() -> void:
+	DisplayServer.clipboard_set(state.survey_report_text())
+	state.message = "Combat Survey report copied."
+
+func _copy_latest_survey_report() -> void:
+	var runs: Array = state.survey_archive().get("runs", [])
+	if runs.is_empty(): return
+	DisplayServer.clipboard_set(String(Dictionary(runs[0]).get("report_text", "")))
+	state.message = "Latest Combat Survey report copied."
+
+func _save_current_survey_report() -> void:
+	_save_report_text(state.survey_report_filename(), state.survey_report_text())
+
+func _export_all_survey_reports() -> void:
+	var text := state.survey_all_reports_text()
+	if text.is_empty():
+		state.message = "The Combat Survey archive is empty."
+		return
+	_save_report_text("Waystone_Combat_Survey_ALL_%s.txt" % Time.get_date_string_from_system(), text)
+
+func _share_current_survey_report() -> void:
+	_share_report_text(state.survey_report_filename(), state.survey_report_text())
+
+func _share_report_text(filename: String, text: String) -> void:
+	if OS.has_feature("android") and Engine.has_singleton("AndroidRuntime"):
+		var android_runtime = Engine.get_singleton("AndroidRuntime")
+		var activity = android_runtime.getActivity()
+		var Intent = JavaClassWrapper.wrap("android.content.Intent")
+		var intent = Intent.Intent()
+		intent.setAction(Intent.ACTION_SEND)
+		intent.putExtra(Intent.EXTRA_SUBJECT, filename)
+		intent.putExtra(Intent.EXTRA_TEXT, text)
+		intent.setType("text/plain")
+		activity.startActivity(Intent.createChooser(intent, "Share Waystone combat report"))
+		state.message = "Android share sheet opened."
+	else:
+		DisplayServer.clipboard_set(text)
+		state.message = "Report copied; paste it into the destination you want."
+
+func _save_report_text(filename: String, text: String) -> void:
+	if OS.has_feature("android") and Engine.has_singleton("AndroidRuntime"):
+		var android_runtime = Engine.get_singleton("AndroidRuntime")
+		var activity = android_runtime.getActivity()
+		var BuildVersion = JavaClassWrapper.wrap("android.os.Build$VERSION")
+		if int(BuildVersion.SDK_INT) < 29:
+			state.message = "Use Share or Copy on this Android version."
+			return
+		var ContentValues = JavaClassWrapper.wrap("android.content.ContentValues")
+		var Downloads = JavaClassWrapper.wrap("android.provider.MediaStore$Downloads")
+		var values = ContentValues.ContentValues()
+		values.put("_display_name", filename)
+		values.put("mime_type", "text/plain")
+		values.put("relative_path", "Download/Waystone")
+		var resolver = activity.getContentResolver()
+		var uri = resolver.insert(Downloads.EXTERNAL_CONTENT_URI, values)
+		if uri != null:
+			var stream = resolver.openOutputStream(uri)
+			if stream != null:
+				stream.write(text.to_utf8_buffer())
+				stream.flush()
+				stream.close()
+				state.message = "Saved to Downloads/Waystone/%s" % filename
+				return
+		state.message = "Android could not save the report; use Share or Copy instead."
+		return
+	var downloads := OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
+	var path := downloads.path_join(filename)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		state.message = "Could not save %s" % filename
+		return
+	file.store_string(text)
+	file.flush()
+	state.message = "Saved %s" % path
 
 func _layout() -> void:
 	var portrait := size.y >= size.x
@@ -195,6 +557,7 @@ func _layout() -> void:
 	loadout_rects.clear()
 	upgrade_rects.clear()
 	progression_rects.clear()
+	survey_profile_rects.clear()
 	var names := ["defense", "skill", "rally", "advance", "adopted"]
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
@@ -238,19 +601,42 @@ func _layout() -> void:
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	sheet_button_rect = Rect2(map_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
+	survey_end_rect = Rect2(sheet_button_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	var sheet_size := Vector2(minf(size.x - 30.0, 1080.0), minf(size.y - 34.0, 790.0))
 	sheet_panel_rect = Rect2((size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
-	var setup_width := minf(size.x * 0.76, 640.0)
-	var setup_left := (size.x - setup_width) * 0.5
-	var setup_center_y := size.y * 0.52
-	var setup_gap := clampf(minf(size.x, size.y) * 0.025, 12.0, 28.0)
-	var option_width := (setup_width - setup_gap) * 0.5
-	progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
-	progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
-	seed_input.position = Vector2(setup_left, setup_center_y + 94.0)
-	seed_input.size = Vector2(setup_width, 58.0)
-	start_rect = Rect2(setup_left, setup_center_y + 168.0, setup_width, 78.0)
+	var setup_gap := clampf(minf(size.x, size.y) * 0.018, 8.0, 20.0)
+	var setup_width := minf(size.x * 0.76, 640.0) if portrait else minf(size.x * 0.44, 580.0)
+	var setup_left := (size.x - setup_width) * 0.5 if portrait else size.x - setup_width - 24.0
+	if portrait:
+		var setup_center_y := size.y * 0.57
+		var option_width := (setup_width - setup_gap * 2.0) / 3.0
+		progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
+		progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
+		progression_rects["combat_survey"] = Rect2(setup_left + (option_width + setup_gap) * 2.0, setup_center_y, option_width, 74.0)
+		var profile_width := (setup_width - setup_gap) * 0.5
+		survey_profile_rects["encounter"] = Rect2(setup_left, setup_center_y + 84.0, profile_width, 48.0)
+		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, setup_center_y + 84.0, profile_width, 48.0)
+		seed_input.position = Vector2(setup_left, setup_center_y + 142.0)
+		seed_input.size = Vector2(setup_width, 58.0)
+		start_rect = Rect2(setup_left, setup_center_y + 210.0, setup_width, 72.0)
+	else:
+		var setup_top := 78.0
+		var mode_height := clampf((size.y * 0.48 - setup_gap * 2.0) / 3.0, 50.0, 64.0)
+		for index in range(3):
+			var mode_id: String = ["expedition", "campaign_lab", "combat_survey"][index]
+			progression_rects[mode_id] = Rect2(setup_left, setup_top + float(index) * (mode_height + setup_gap), setup_width, mode_height)
+		var profile_top := setup_top + 3.0 * (mode_height + setup_gap)
+		var profile_width := (setup_width - setup_gap) * 0.5
+		survey_profile_rects["encounter"] = Rect2(setup_left, profile_top, profile_width, 42.0)
+		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, profile_top, profile_width, 42.0)
+		seed_input.position = Vector2(setup_left, profile_top + 50.0)
+		seed_input.size = Vector2(setup_width, 50.0)
+		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, size.y - seed_input.position.y - 68.0))
+	archive_button_rect = Rect2(Vector2(size.x - 174.0, 18.0), Vector2(156.0, 44.0))
+	if survey_overlay != null:
+		survey_overlay.position = Vector2(maxf(12.0, size.x * 0.04), maxf(12.0, size.y * 0.035))
+		survey_overlay.size = Vector2(size.x - survey_overlay.position.x * 2.0, size.y - survey_overlay.position.y * 2.0)
 	map_mode_rect = _map_action_rect(1)
 	seed_copy_rect = _map_action_rect(2)
 	queue_redraw()
@@ -269,6 +655,7 @@ func _process(delta: float) -> void:
 		frame_metric_elapsed = 0.0
 		frame_metric_worst_ms = 0.0
 	var needs_redraw := false
+	_sync_survey_overlay()
 	var finished_streamed_movement := false
 	if _autosave_frame_is_quiet(): autosave_quiet_elapsed += delta
 	else: autosave_quiet_elapsed = 0.0
@@ -459,6 +846,9 @@ func _gui_input(event: InputEvent) -> void:
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if not state.run_active:
+		if archive_button_rect.has_point(position):
+			_build_survey_archive_overlay()
+			return
 		for choice in CombatCatalogScript.loadout_ids():
 			if _setup_class_rect(choice).has_point(position):
 				setup_loadout = choice
@@ -469,7 +859,20 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 				setup_mode = String(mode)
 				queue_redraw()
 				return
+		if setup_mode == "combat_survey":
+			for profile in survey_profile_rects:
+				if Rect2(survey_profile_rects[profile]).has_point(position):
+					setup_survey_profile = String(profile)
+					queue_redraw()
+					return
 		if start_rect.has_point(position): _start_run()
+		return
+	if state.mode_id == "combat_survey" and survey_end_rect.has_point(position) and not state.survey_feedback_pending and not state.trial_complete:
+		state.end_survey_run()
+		visual = _presentation_snapshot()
+		_sync_survey_overlay()
+		_mark_autosave(true)
+		queue_redraw()
 		return
 	if character_sheet_open:
 		if not sheet_detail.is_empty():
@@ -736,6 +1139,7 @@ func _pointer_released(position: Vector2) -> void:
 	pointer_intent = ""
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if survey_overlay != null and survey_overlay.visible: return
 	if desktop_controls and event.keycode == KEY_F:
 		if event.pressed:
 			if event.echo: return
@@ -776,7 +1180,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_1: setup_loadout = "warrior"
 			KEY_2: setup_loadout = "rogue_acrobat"
 			KEY_3: setup_loadout = "rogue_sharpshooter"
-			KEY_TAB: setup_mode = "campaign_lab" if setup_mode == "expedition" else "expedition"
+			KEY_TAB:
+				var modes := ["expedition", "campaign_lab", "combat_survey"]
+				setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
 			KEY_ENTER: _start_run()
 			_: return
 		queue_redraw()
@@ -869,7 +1275,7 @@ func _desktop_held_direction() -> Vector2:
 	return _screen_delta_to_world_direction(screen_direction) if not screen_direction.is_zero_approx() else Vector2.ZERO
 
 func _can_repeat_primary_action() -> bool:
-	if not state.run_active or not state.is_player_ready() or state.trial_complete: return false
+	if not state.run_active or not state.is_player_ready() or state.trial_complete or state.survey_feedback_pending: return false
 	if waystone_menu_open or state.death_pending or character_sheet_open: return false
 	return not (map_open and state.map_presentation == "full")
 
@@ -1131,7 +1537,7 @@ func _start_run() -> void:
 		chosen_seed = int(entered_seed)
 	setup_seed_error = ""
 	seed_input.release_focus()
-	state.start_run(setup_loadout, setup_mode, chosen_seed)
+	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile)
 	state.prewarm_expedition_navigation()
 	playing = false
 	streaming_action = false
@@ -1297,6 +1703,7 @@ func _draw() -> void:
 	_draw_view_button()
 	_draw_map_button()
 	_draw_sheet_button()
+	if state.mode_id == "combat_survey": _draw_survey_end_button()
 	if map_open: _draw_map()
 	if character_sheet_open: _draw_character_sheet()
 	if state.death_pending: _draw_death_overlay()
@@ -1361,6 +1768,7 @@ func _draw_world() -> void:
 	_draw_selected_action_hint()
 	_draw_area_title()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
+	if state.mode_id == "combat_survey": label += "  •  RUN %d" % state.run_seed
 	var color := Color("f0b45a") if playing else DODGE_COLOR
 	var font := maxi(14, int(minf(size.x, size.y) * 0.026))
 	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, font + 10), label, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.5, font, color)
@@ -1368,6 +1776,7 @@ func _draw_world() -> void:
 	var safe_xp := int(visual.get("secured_xp", state.secured_xp))
 	var risk_xp := maxi(0, current_xp - safe_xp)
 	var area_text := "%s  •  %d XP" % [state.current_area_name().to_upper(), current_xp]
+	if state.mode_id == "combat_survey": area_text = "ROOM %d  •  SEED %d" % [state.survey_room_number, state.survey_room_seed]
 	if state.mode_id == "campaign_lab":
 		area_text = "%s  •  TIMELINE SECURE" % state.current_area_name().to_upper() if risk_xp == 0 else "%s  •  %d XP AT RISK" % [state.current_area_name().to_upper(), risk_xp]
 	var area_width := minf(board_rect.size.x * 0.50, 360.0)
@@ -2494,6 +2903,8 @@ func _draw_hud() -> void:
 		_draw_button("wait", interaction_rect)
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
+	if state.mode_id == "combat_survey":
+		hp_text = "ROOM %d" % state.survey_room_number
 	if state.mode_id == "campaign_lab":
 		var safe := int(visual.get("secured_xp", state.secured_xp))
 		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
@@ -3006,11 +3417,14 @@ func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, mark + Vector2(-32, -30), "%d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 64, maxi(10, int(13 * world_scale)), Color("e9f4b1"))
 
 func _draw_setup() -> void:
+	var portrait := size.y >= size.x
 	var title_font := maxi(28, int(minf(size.x, size.y) * 0.055))
 	var body_font := maxi(14, int(title_font * 0.44))
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.16), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, size.x, title_font, Color("f2e7c8"))
-	draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.23), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, size.x, body_font, Color("9fb2b7"))
-	if desktop_controls:
+	var heading_x := 0.0 if portrait else 24.0
+	var heading_width := size.x if portrait else minf(size.x * 0.42, 520.0)
+	draw_string(ThemeDB.fallback_font, Vector2(heading_x, size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
+	draw_string(ThemeDB.fallback_font, Vector2(heading_x, size.y * (0.23 if portrait else 0.17)), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
+	if desktop_controls and portrait:
 		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
 	for choice in CombatCatalogScript.loadout_ids():
 		var rect: Rect2 = _setup_class_rect(String(choice))
@@ -3023,23 +3437,45 @@ func _draw_setup() -> void:
 		var selected: bool = setup_mode == String(mode)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN LAB"
-		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS"
+		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN LAB" if String(mode) == "campaign_lab" else "COMBAT SURVEY"
+		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "ENDLESS • ROOM LOGS"
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
+	if setup_mode == "combat_survey":
+		for profile in survey_profile_rects:
+			var rect := Rect2(survey_profile_rects[profile])
+			var selected := setup_survey_profile == String(profile)
+			draw_rect(rect, Color("17272d"))
+			draw_rect(rect, Color("58d2cf") if selected else Color("45545a"), false, 2.0)
+			var label := "ENCOUNTER" if String(profile) == "encounter" else "ATTRITION"
+			var subtitle := "RESET BETWEEN ROOMS" if String(profile) == "encounter" else "RESOURCES CARRY"
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.54)), Color("9fb2b7"))
+	draw_rect(archive_button_rect, Color("10191e"))
+	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
 	if setup_seed_error != "":
 		draw_string(ThemeDB.fallback_font, Vector2(start_rect.position.x, start_rect.end.y + 24.0), setup_seed_error, HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(12, int(body_font * 0.8)), Color("e46c63"))
 
+func _draw_survey_end_button() -> void:
+	draw_rect(survey_end_rect, Color(0.10, 0.055, 0.055, 0.92))
+	draw_rect(survey_end_rect, Color("d76a68"), false, 1.5)
+	var label := "END RUN"
+	draw_string(ThemeDB.fallback_font, survey_end_rect.position + Vector2(0, survey_end_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, survey_end_rect.size.x, maxi(8, int(survey_end_rect.size.y * 0.26)), Color("f0d2cf"))
+
 func _setup_class_rect(choice: String) -> Rect2:
-	var total_width := minf(size.x * 0.84, 760.0)
+	var portrait := size.y >= size.x
+	var total_width := minf(size.x * 0.84, 760.0) if portrait else minf(size.x * 0.42, 520.0)
 	var choices := CombatCatalogScript.loadout_ids()
 	var index := maxi(0, choices.find(choice))
 	var gap := 10.0
 	var height := clampf(size.y * 0.052, 48.0, 66.0)
-	return Rect2(Vector2((size.x - total_width) * 0.5, size.y * 0.305 + float(index) * (height + gap)), Vector2(total_width, height))
+	var left := (size.x - total_width) * 0.5 if portrait else 24.0
+	var top := size.y * 0.305 if portrait else 110.0
+	return Rect2(Vector2(left, top + float(index) * (height + gap)), Vector2(total_width, height))
 
 func _upgrade_leave_rect() -> Rect2:
 	return Rect2(Vector2(board_rect.get_center().x - 80.0, board_rect.end.y - 72.0), Vector2(160.0, 48.0))

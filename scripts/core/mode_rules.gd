@@ -3,6 +3,7 @@ extends RefCounted
 
 const EXPEDITION := "expedition"
 const CAMPAIGN_LAB := "campaign_lab"
+const COMBAT_SURVEY := "combat_survey"
 
 const DEFINITIONS := {
 	EXPEDITION: {
@@ -21,6 +22,15 @@ const DEFINITIONS := {
 		"waystone_available": true,
 		"shadow_enabled": true,
 		"geography_policy": "stable",
+		"infinite_potions_for_testing": false,
+	},
+	COMBAT_SURVEY: {
+		"label": "Combat Survey",
+		"death_policy": "survey_end",
+		"upgrade_policy": "safe_sheet",
+		"waystone_available": false,
+		"shadow_enabled": false,
+		"geography_policy": "room_sequence",
 		"infinite_potions_for_testing": false,
 	},
 }
