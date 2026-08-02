@@ -1,6 +1,15 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.0` (Android version code `100`).
+Current prototype version: `0.1.1` (Android version code `101`).
+
+### v0.1.1: Rogue combat and Stealth corrections
+
+- Makes the overhead sequence display reflect the actual weapon combo: four Knife cuts, six Twin-Knife cuts, and three Sword cuts.
+- Lets one uninterrupted six-cut sequence sustain hit reactions on light enemies, then imposes a one-second personal-time attack recovery that still permits movement, defense, and skills. A new sequence cannot prolong the previous sequence's reaction.
+- Rebuilds Twin Fang as a short lunge whose two crossing blades contact simultaneously for two independent 8-damage hits, rather than a weaker sequential combo.
+- Gives Bow draw a prominent gold circular meter and a white-gold pulse at Full Draw.
+- Makes Stealth eligibility explicit: Alerted enemies disable and grey the skill as `NOTICED` until Vanish is learned; Vanish demotes only those Alerted enemies to searching. Hostile commitments and incoming contact break concealment, while non-hostile actions do not.
+- Adds survivor-based ally alerts, Clean Work's delayed broadcast, and distance/cone/line-of-sight witness checks for Ghost, while preserving v0.1.0 run saves through save version 23.
 
 ### v0.1.0: shared combat framework and the Rogue class
 

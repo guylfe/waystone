@@ -172,12 +172,12 @@ const CHARACTER_TRACKS := {
 		"stages": [
 			{"id": "knife_art", "label": "Knife Art", "gate": 2, "description": "Permanently choose Execution or Twin Fang for this run.", "choices": [
 				{"id": "knife_execution", "label": "Execution", "description": "Keep one knife and gain a close execution cut with an additional unaware multiplier."},
-				{"id": "knife_twin_fang", "label": "Twin Fang", "description": "Equip twin knives, gain a six-cut sequence, and a fast crossing Art."},
+				{"id": "knife_twin_fang", "label": "Twin Fang", "description": "Equip twin knives, gain a six-cut sequence, and lunge with two simultaneous crossing hits."},
 			]},
 			{"id": "honed_edges", "label": "Honed Edges", "gate": 4, "description": "Every Knife contact deals exactly +1 health damage."},
 			{"id": "light_hands", "label": "Light Hands", "gate": 6, "description": "Knife startup, continuation, and recovery resolve approximately 8% faster."},
 			{"id": "relentless_cuts", "label": "Relentless Cuts", "gate": 8, "description": "Uninterrupted contacts build from +1 to +3 damage until the sequence ends or misses."},
-			{"id": "ceaseless_cuts", "label": "Ceaseless Cuts", "gate": 10, "description": "Maintained attack input cycles directly back to the first Knife cut."},
+			{"id": "ceaseless_cuts", "label": "Ceaseless Cuts", "gate": 10, "description": "Completing all six Twin-Knife cuts reduces sequence recovery from 1 second to 0.55 seconds."},
 		],
 	},
 	"finesse": {

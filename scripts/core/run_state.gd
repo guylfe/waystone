@@ -33,7 +33,8 @@ const ENEMY_MOVE_EPSILON := 0.05
 const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
-const SAVE_VERSION := 22
+const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
+const SAVE_VERSION := 23
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -85,6 +86,7 @@ var rally_cooldown := 0.0
 var advance_cooldown := 0.0
 var main_ability_cooldown := 0.0
 var subclass_ability_cooldown := 0.0
+var weapon_sequence_cooldown := 0.0
 var stealth_remaining := 0.0
 var stealth_cooldown_pending := false
 var assassination_window_remaining := 0.0
@@ -224,6 +226,7 @@ var performance_metrics := {
 var _profile_action_count := 0
 var _streamed_action_cpu_usec := 0
 var _simulation_tick_index := 0
+var _next_combo_instance_id := 1
 
 func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
@@ -257,6 +260,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	advance_cooldown = 0.0
 	main_ability_cooldown = 0.0
 	subclass_ability_cooldown = 0.0
+	weapon_sequence_cooldown = 0.0
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
 	assassination_window_remaining = 0.0
@@ -268,6 +272,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	bow_followup_ready = false
 	bow_followup_consumed = false
 	_condition_tick_accumulator = 0.0
+	_next_combo_instance_id = 1
 	rally_remaining = 0.0
 	rally_end_after_action = false
 	rally_break_extension_used = false
@@ -682,7 +687,7 @@ func request_move_to(target: Vector2, simulate_immediately: bool = true) -> bool
 	return request_move(delta, minf(delta.length(), MOVE_RANGE), simulate_immediately)
 
 func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete:
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001:
 		return false
 	if player_weapon_frame == "bow":
 		if not begin_bow_draw(target - player_pos, _enemy_id_near_position(target)): return false
@@ -729,7 +734,7 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return false
 
 func request_combo(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
 	_break_player_combo()
 	_reset_building_force()
 	_reset_building_force_if_unavailable()
@@ -845,6 +850,9 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 		})
 	player_action = _action("combo", total, player_facing)
 	player_action["phases"] = phases
+	player_action["combo_length"] = phases.size()
+	player_action["combo_instance_id"] = _next_combo_instance_id
+	_next_combo_instance_id += 1
 	player_action["phase_index"] = -1
 	player_action["continue_held"] = held
 	player_action["committed_phase"] = 0
@@ -877,19 +885,13 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
 	player_facing = direction.normalized()
-	player_action = _action("art_combo", 0.85, player_facing)
-	player_action["phases"] = [
-		{"startup": 0.18, "active_end": 0.32, "end": 0.43, "reach": 96.0, "damage_min": 6 + int(player_attributes.get("strength", 4) - 4) / 2, "damage_max": 6 + int(player_attributes.get("strength", 4) - 4) / 2, "posture": 1.4, "technique": "knife_cut_in"},
-		{"startup": 0.43, "active_end": 0.59, "end": 0.85, "reach": 96.0, "damage_min": 6 + int(player_attributes.get("strength", 4) - 4) / 2, "damage_max": 6 + int(player_attributes.get("strength", 4) - 4) / 2, "posture": 1.4, "technique": "knife_cut_out"},
-	]
-	player_action["phase_index"] = -1
-	player_action["continue_held"] = true
-	player_action["committed_phase"] = 1
+	player_action = _action("twin_fang", 0.68, player_facing)
+	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_twin_fang")
-	skill_cooldown = 4.2 * _skill_cooldown_multiplier
+	skill_cooldown = 4.5 * _skill_cooldown_multiplier
 	_emit_sound(player_pos, 300.0)
-	_set_message("Twin Fang crosses through the opening.")
+	_set_message("Twin Fang drives both blades through one opening.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
@@ -907,13 +909,27 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 	else: _streamed_action_cpu_usec = 0
 	return true
 
+func player_is_noticed() -> bool:
+	_refresh_active_enemy_cache()
+	for index in _streamed_enemy_indices:
+		if index < 0 or index >= enemies.size(): continue
+		var enemy: Dictionary = enemies[index]
+		if _enemy_on_current_layer(enemy) and int(enemy.get("hp", 0)) > 0 and String(enemy.get("awareness", "idle")) == "alerted": return true
+	return false
+
+func stealth_status() -> String:
+	if not loadout_id.begins_with("rogue_"): return "locked"
+	if stealth_remaining > 0.0001: return "active"
+	if main_ability_cooldown > 0.0001: return "cooldown"
+	if not has_track_rank("rogue", 4) and player_is_noticed(): return "noticed"
+	return "available"
+
 func request_stealth(simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or main_ability_cooldown > 0.0001 or stealth_remaining > 0.0001: return false
-	if not has_track_rank("rogue", 4):
-		for enemy in _nearby_enemies(player_pos, 520.0):
-			if _enemy_on_current_layer(enemy) and String(enemy.get("awareness", "idle")) == "alerted" and Vector2(enemy.get("last_known_player", Vector2.INF)).distance_to(player_pos) < 80.0:
-				_set_message("An enemy knows exactly where you are. Vanish is required.")
-				return false
+	if not is_player_ready(): return false
+	var status := stealth_status()
+	if status != "available":
+		if status == "noticed": _set_message("An enemy knows where you are. Vanish is required.")
+		return false
 	player_action = _action("stealth", 0.40, player_facing)
 	player_action["effect_start"] = 0.24
 	player_action["effect_done"] = false
@@ -969,6 +985,9 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 130.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut"},
 		{"startup": 2.08 if flowing else 2.30, "active_end": 2.42 if flowing else 2.64, "end": duration, "reach": 184.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "driving_cut"},
 	]
+	player_action["combo_length"] = 3
+	player_action["combo_instance_id"] = _next_combo_instance_id
+	_next_combo_instance_id += 1
 	player_action["phase_index"] = -1
 	# The first cut starts immediately. A release may be corrected by touching down
 	# again during recovery; that restores the same held state as an uninterrupted
@@ -2132,6 +2151,7 @@ func _tick(dt: float) -> void:
 	advance_cooldown = maxf(0.0, advance_cooldown - player_dt)
 	main_ability_cooldown = maxf(0.0, main_ability_cooldown - player_dt)
 	subclass_ability_cooldown = maxf(0.0, subclass_ability_cooldown - player_dt)
+	weapon_sequence_cooldown = maxf(0.0, weapon_sequence_cooldown - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
 	turnabout_remaining = maxf(0.0, turnabout_remaining - dt)
 	assassination_window_remaining = maxf(0.0, assassination_window_remaining - dt)
@@ -2266,12 +2286,19 @@ func _update_player(dt: float) -> void:
 				player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
 		"attack":
 			if elapsed >= float(player_action["startup"]) and elapsed <= float(player_action["active_end"]):
+				if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
 				_resolve_player_attack_tick(elapsed)
 		"combo", "art_combo":
 			_update_player_combo(elapsed)
 			elapsed = float(player_action.get("elapsed", elapsed))
+		"twin_fang":
+			if elapsed >= float(player_action.get("move_start", 0.05)) and elapsed <= float(player_action.get("move_end", 0.24)):
+				player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
+			if elapsed >= float(player_action["startup"]) and elapsed <= float(player_action["active_end"]):
+				_resolve_twin_fang_tick(elapsed)
 		"sweep":
 			if elapsed >= float(player_action["startup"]) and elapsed <= float(player_action["active_end"]):
+				if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
 				_resolve_player_attack_tick(elapsed)
 		"rally":
 			if elapsed >= float(player_action.get("effect_start", 0.18)) and not bool(player_action.get("rally_started", false)):
@@ -2298,7 +2325,11 @@ func _update_player(dt: float) -> void:
 				_apply_consumable_effect(String(player_action.get("item_id", "")), Vector2(player_action.get("direction", player_facing)))
 		"bow_draw":
 			_update_bow_soft_aim(dt)
+			var previous_draw := float(player_action.get("draw_ratio", 0.0))
 			player_action["draw_ratio"] = clampf(elapsed / 0.90, 0.0, 1.0)
+			if previous_draw < 0.995 and float(player_action["draw_ratio"]) >= 0.995:
+				_add_effect("full_draw", player_pos)
+				_set_message("The Bow reaches Full Draw.")
 		"bow_release":
 			if elapsed >= float(player_action.get("startup", 0.06)) and not bool(player_action.get("shot_spawned", false)):
 				player_action["shot_spawned"] = true
@@ -2312,11 +2343,12 @@ func _update_player(dt: float) -> void:
 				player_action["effect_done"] = true
 				stealth_remaining = 5.0
 				stealth_cooldown_pending = true
-				for enemy in _nearby_enemies(player_pos, 900.0):
-					if not _enemy_on_current_layer(enemy): continue
-					enemy["awareness"] = "suspicious"
-					enemy["last_known_player"] = player_pos
-					enemy["suspicious_remaining"] = maxf(float(enemy.get("suspicious_remaining", 0.0)), 2.0)
+				if has_track_rank("rogue", 4):
+					for enemy in _nearby_enemies(player_pos, ACTIVE_ENEMY_RADIUS):
+						if not _enemy_on_current_layer(enemy) or String(enemy.get("awareness", "idle")) != "alerted": continue
+						enemy["awareness"] = "suspicious"
+						enemy["last_known_player"] = player_pos
+						enemy["suspicious_remaining"] = maxf(float(enemy.get("suspicious_remaining", 0.0)), 2.6)
 				_add_effect("stealth", player_pos)
 				_set_message("You disappear from direct perception.")
 		"vault":
@@ -2339,6 +2371,10 @@ func _update_player(dt: float) -> void:
 		var completed_kind := kind
 		var completed_direction := Vector2(player_action.get("direction", player_facing))
 		var continue_advance := completed_kind == "advance" and has_track_rank("vanguard", 2) and bool(player_action.get("continue_held", false))
+		var completed_twin_sequence := completed_kind == "combo" and bool(player_action.get("knife_sequence", false)) and player_weapon_frame == "twin_knives" and int(player_action.get("committed_phase", 0)) >= int(player_action.get("combo_length", 6)) - 1
+		if completed_twin_sequence:
+			weapon_sequence_cooldown = 0.55 if has_track_rank("knife", 5) else TWIN_KNIFE_SEQUENCE_RECOVERY
+			_set_message("The full sequence leaves your knives recovering.")
 		_break_player_combo()
 		player_action = _idle_action()
 		if completed_kind in ["stagger", "hit_reaction"]:
@@ -2394,8 +2430,7 @@ func _resolve_advance_impact() -> void:
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
 		var posture_broken := _apply_posture_damage(enemy, float(resolved["posture"]), impact)
 		enemy["pos"] = _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"]))
-		enemy["awareness"] = "alerted"
-		enemy["last_known_player"] = player_pos
+		_register_enemy_hit_awareness(enemy, resolved, player_action)
 		_add_effect("hit", impact, damage, {"direction": direction})
 		_handle_player_contact_aftermath(enemy, resolved)
 	_set_message("Advance lands with a driving impact.")
@@ -2422,8 +2457,12 @@ func _push_enemy(enemy: Dictionary, direction: Vector2, distance: float) -> Vect
 
 func _apply_consumable_effect(item_id: String, direction: Vector2) -> void:
 	match item_id:
-		"throwing_knife": _spawn_player_projectile("throwing_knife", direction)
-		"firebomb": _spawn_player_projectile("firebomb", direction)
+		"throwing_knife":
+			_break_stealth_for_hostile_action()
+			_spawn_player_projectile("throwing_knife", direction)
+		"firebomb":
+			_break_stealth_for_hostile_action()
+			_spawn_player_projectile("firebomb", direction)
 		"smoke_vial":
 			for enemy in _nearby_enemies(player_pos, 360.0):
 				if not _enemy_on_current_layer(enemy): continue
@@ -2440,14 +2479,6 @@ func _update_player_combo(elapsed: float) -> void:
 		player_action["duration"] = elapsed
 		return
 	var committed_phase := int(player_action.get("committed_phase", 0))
-	if bool(player_action.get("knife_sequence", false)) and has_track_rank("knife", 5) and committed_phase >= phases.size() - 1 and elapsed >= float(Dictionary(phases[-1])["end"]) and bool(player_action.get("continue_held", false)):
-		player_action["elapsed"] = 0.0
-		player_action["committed_phase"] = 0
-		player_action["phase_index"] = -1
-		player_action["hit_ids"] = []
-		player_action["duration"] = float(Dictionary(phases[-1])["end"])
-		_set_message("Ceaseless Cuts flows back to the opening cut.")
-		return
 	while committed_phase < phases.size() - 1 and elapsed >= float(Dictionary(phases[committed_phase])["end"]):
 		if not bool(player_action.get("continue_held", false)):
 			player_action["duration"] = float(Dictionary(phases[committed_phase])["end"])
@@ -2478,7 +2509,9 @@ func _update_player_combo(elapsed: float) -> void:
 			player_action["hit_ids"] = []
 			player_action["building_force_registered"] = false
 			player_action["building_force_bonus"] = _building_force_bonus()
-		if elapsed >= float(phase["startup"]) and elapsed <= float(phase["active_end"]): _resolve_player_attack_tick(elapsed)
+		if elapsed >= float(phase["startup"]) and elapsed <= float(phase["active_end"]):
+			if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
+			_resolve_player_attack_tick(elapsed)
 		return
 
 func _break_player_combo() -> void:
@@ -2525,6 +2558,63 @@ func _follow_the_opening(phase_index: int) -> void:
 		player_facing = best_direction
 		player_action["direction"] = best_direction
 
+func _resolve_twin_fang_tick(elapsed: float) -> void:
+	if bool(player_action.get("contact_done", false)): return
+	# Resolve after the short lunge has carried the actor into the crossing point.
+	# Both blades are still sampled on this exact simulation tick.
+	if elapsed < 0.245: return
+	player_action["contact_done"] = true
+	if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
+	var contacts_by_id: Dictionary = {}
+	var pending_awareness: Array[Dictionary] = []
+	for technique_id in ["knife_cut_in", "knife_cut_out"]:
+		var sampled_action := player_action.duplicate()
+		sampled_action["technique_id"] = technique_id
+		sampled_action["elapsed"] = elapsed
+		var sample := AttackGeometryScript.pose(sampled_action, player_pos, player_facing, _nearby_walls(player_pos, float(player_action.get("reach", 104.0)) + 70.0))
+		var first_contact: Dictionary = {}
+		for enemy in _nearby_enemies(player_pos, float(player_action.get("reach", 104.0)) + 100.0):
+			if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
+			if not AttackGeometryScript.hits_circle(sample, Vector2(enemy["pos"]), float(enemy["radius"])): continue
+			var order := AttackGeometryScript.contact_order(sample, Vector2(enemy["pos"]))
+			if first_contact.is_empty() or order < float(first_contact["order"]):
+				first_contact = {"enemy": enemy, "order": order, "point": AttackGeometryScript.contact_point(sample, Vector2(enemy["pos"]))}
+		if not first_contact.is_empty():
+			var enemy: Dictionary = first_contact["enemy"]
+			var enemy_id := int(enemy["id"])
+			var contact := Dictionary(contacts_by_id.get(enemy_id, {"enemy": enemy, "blades": 0, "point": Vector2.ZERO}))
+			contact["blades"] = int(contact["blades"]) + 1
+			contact["point"] = Vector2(contact["point"]) + Vector2(first_contact["point"])
+			contacts_by_id[enemy_id] = contact
+	for enemy_id in contacts_by_id:
+		var contact := Dictionary(contacts_by_id[enemy_id])
+		var enemy: Dictionary = contact["enemy"]
+		var blade_count := int(contact["blades"])
+		var hit_point := Vector2(contact["point"]) / float(blade_count)
+		var awareness_before := String(enemy.get("awareness", "idle"))
+		var action_before := Dictionary(enemy.get("action", _idle_action())).duplicate(true)
+		var per_blade_damage := int(player_action.get("damage_per_blade", 8)) + (1 if has_track_rank("knife", 2) else 0)
+		var resolved := _resolve_player_physical_values(enemy, per_blade_damage * blade_count, float(player_action.get("posture_per_blade", 2.0)) * float(blade_count), player_action)
+		var damage := int(resolved["damage"])
+		var posture := float(resolved["posture"])
+		enemy["hp"] = int(enemy["hp"]) - damage
+		damage_dealt += damage
+		var posture_broken := _apply_posture_damage(enemy, posture, hit_point)
+		var reaction_applied := false
+		if not posture_broken: reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
+		pending_awareness.append({"enemy": enemy, "result": resolved})
+		for blade in range(blade_count):
+			var blade_offset := player_facing.rotated(PI * 0.5) * (float(blade) - 0.5 * float(blade_count - 1)) * 8.0
+			_add_effect("hit", hit_point + blade_offset, damage if blade == 0 else 0, {"direction": (Vector2(enemy["pos"]) - hit_point).normalized(), "interrupted": reaction_applied})
+		_handle_player_contact_aftermath(enemy, resolved)
+		var hit_ids: Array = player_action["hit_ids"]
+		hit_ids.append(int(enemy_id))
+		player_action["hit_ids"] = hit_ids
+	for pending in pending_awareness:
+		_register_enemy_hit_awareness(Dictionary(pending["enemy"]), Dictionary(pending["result"]), player_action)
+	if contacts_by_id.is_empty(): _set_message("Twin Fang closes on empty air.")
+	else: _set_message("Both blades land in the same instant.")
+
 func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
 	# A direct tap or ×1 command always uses the compact opener. The varied
 	# three-form chain belongs to request_combo(), where it is one uninterrupted
@@ -2547,6 +2637,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 	var sample: Dictionary = AttackGeometryScript.pose(sampled_action, player_pos, player_facing, _nearby_walls(player_pos, action_reach + 90.0))
 	var hit_ids: Array = player_action["hit_ids"]
 	var contacts: Array[Dictionary] = []
+	var pending_awareness: Array[Dictionary] = []
 	for enemy in _nearby_enemies(player_pos, action_reach + 120.0):
 		if not _enemy_on_current_layer(enemy): continue
 		var enemy_id := int(enemy["id"])
@@ -2599,7 +2690,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			var posture_broken := _apply_posture_damage(enemy, posture_damage, hit_point)
 			var reaction_applied := false
 			if not posture_broken:
-				reaction_applied = _apply_enemy_hit_reaction(enemy, posture_damage, awareness_before, action_before, hit_point)
+				reaction_applied = _apply_enemy_hit_reaction(enemy, posture_damage, awareness_before, action_before, hit_point, player_action)
 			if enemy_committed and int(track_property_ranks.get("openings_composure", 0)) > 0:
 				dodge_cooldown = maxf(0.0, dodge_cooldown - 0.25)
 				skill_cooldown = maxf(0.0, skill_cooldown - 0.25)
@@ -2608,11 +2699,14 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 				player_action["building_force_registered"] = true
 				_register_building_force_hit()
 			_set_message("The %s connects." % AttackGeometryScript.label(String(player_action.get("technique_id", "diagonal_cut"))).to_lower())
-		if not bool(player_action.get("suppress_alert_until_end", false)) or int(enemy.get("hp", 0)) > 0:
-			enemy["awareness"] = "alerted"
-			enemy["alert_remaining"] = 3.0
-			enemy["last_known_player"] = player_pos
-		if not contact_result.is_empty(): _handle_player_contact_aftermath(enemy, contact_result)
+		if not contact_result.is_empty():
+			pending_awareness.append({"enemy": enemy, "result": contact_result})
+			_handle_player_contact_aftermath(enemy, contact_result)
+	# Contacts sampled on the same simulation tick share the awareness state they
+	# had when the weapon crossed them. Broadcast only after all damage resolves,
+	# so enemy-array/path order cannot change unaware damage within one strike.
+	for pending in pending_awareness:
+		_register_enemy_hit_awareness(Dictionary(pending["enemy"]), Dictionary(pending["result"]), player_action)
 	player_action["hit_ids"] = hit_ids
 
 func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, posture_damage: float, source_action: Dictionary = {}) -> Dictionary:
@@ -2649,6 +2743,47 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	var final_damage := maxi(1, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
 	return {"damage": final_damage, "posture": posture_damage, "unaware": unaware, "aimed": aimed_contact}
 
+func _register_enemy_hit_awareness(enemy: Dictionary, contact_result: Dictionary, source_action: Dictionary = {}) -> void:
+	if int(enemy.get("hp", 0)) <= 0:
+		enemy.erase("alarm_remaining")
+		enemy.erase("alarm_position")
+		return
+	enemy["awareness"] = "alerted"
+	enemy["alert_remaining"] = 3.0
+	enemy["last_known_player"] = player_pos
+	var clean_work := bool(contact_result.get("unaware", false)) and has_track_rank("rogue", 3)
+	if clean_work:
+		var resolution_time := float(source_action.get("duration", 0.0))
+		if String(source_action.get("kind", "")) in ["combo", "art_combo"]:
+			var phases: Array = source_action.get("phases", [])
+			var phase_index := clampi(int(source_action.get("phase_index", 0)), 0, maxi(0, phases.size() - 1))
+			if not phases.is_empty(): resolution_time = float(Dictionary(phases[phase_index]).get("end", resolution_time))
+		var remaining_personal := maxf(0.0, resolution_time - float(source_action.get("elapsed", 0.0)))
+		enemy["alarm_remaining"] = maxf(0.18, remaining_personal / maxf(0.01, _player_personal_tempo()))
+		enemy["alarm_position"] = player_pos
+	else:
+		_broadcast_enemy_alarm(enemy, player_pos)
+
+func _broadcast_enemy_alarm(source: Dictionary, known_position: Vector2) -> void:
+	var source_id := int(source.get("id", -1))
+	for ally in _nearby_enemies(Vector2(source.get("pos", known_position)), 480.0):
+		if int(ally.get("id", -1)) == source_id or int(ally.get("hp", 0)) <= 0 or not _enemy_on_current_layer(ally): continue
+		ally["awareness"] = "alerted"
+		ally["alert_remaining"] = 3.0
+		ally["last_known_player"] = known_position
+		ally["suspicious_remaining"] = 0.0
+
+func _update_enemy_alarm(enemy: Dictionary, dt: float) -> void:
+	if not enemy.has("alarm_remaining"): return
+	var remaining := maxf(0.0, float(enemy.get("alarm_remaining", 0.0)) - dt)
+	if remaining > 0.0:
+		enemy["alarm_remaining"] = remaining
+		return
+	var known_position := Vector2(enemy.get("alarm_position", player_pos))
+	enemy.erase("alarm_remaining")
+	enemy.erase("alarm_position")
+	if int(enemy.get("hp", 0)) > 0: _broadcast_enemy_alarm(enemy, known_position)
+
 func _handle_player_contact_aftermath(enemy: Dictionary, contact_result: Dictionary = {}) -> void:
 	var conditions := Dictionary(enemy.get("conditions", {}))
 	if float(conditions.get("sleep", 0.0)) > 0.0:
@@ -2670,12 +2805,20 @@ func _break_stealth_for_hostile_action() -> void:
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
 	main_ability_cooldown = 12.0
-	if has_track_rank("rogue", 5): assassination_window_remaining = 2.0
+	if has_track_rank("rogue", 5):
+		var remaining_action := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0))) / maxf(0.01, _player_personal_tempo())
+		assassination_window_remaining = maxf(2.0, remaining_action + 0.35)
 
 func _enemy_death_has_witness(victim: Dictionary) -> bool:
 	for enemy in _nearby_enemies(Vector2(victim.get("pos", player_pos)), 620.0):
 		if int(enemy.get("id", -1)) == int(victim.get("id", -1)) or int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
-		if _has_line_of_sight(Vector2(enemy["pos"]), player_pos): return true
+		var enemy_pos := Vector2(enemy["pos"])
+		var offset := player_pos - enemy_pos
+		var distance := offset.length()
+		var vision_range := float(Dictionary(enemy.get("properties", {})).get("vision_range", SIGHT_RANGE))
+		var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
+		var within_perception := distance <= 105.0 or (distance <= vision_range and offset.length_squared() > 0.001 and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
+		if within_perception and _has_line_of_sight(enemy_pos, player_pos): return true
 	return false
 
 func _enemy_blocks_attack(enemy: Dictionary) -> bool:
@@ -2751,11 +2894,15 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	_set_message("The %s loses its footing." % kind)
 	return true
 
-func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_before: String, action_before: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
+func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_before: String, action_before: Dictionary, contact: Vector2 = Vector2.INF, source_action: Dictionary = {}) -> bool:
 	if int(enemy.get("hp", 0)) <= 0: return false
 	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "stagger": return false
 	var enemy_kind := String(enemy.get("kind", "blade"))
 	var action_kind := String(action_before.get("kind", "idle"))
+	if action_kind == "hit_reaction":
+		var incoming_combo_id := int(source_action.get("combo_instance_id", -1))
+		var existing_combo_id := int(action_before.get("reaction_combo_id", -2))
+		if incoming_combo_id < 0 or incoming_combo_id != existing_combo_id: return false
 	var elapsed := float(action_before.get("elapsed", 0.0))
 	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
 	var high_impact := impact >= 3.5
@@ -2809,6 +2956,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 		"reaction_strength": reaction_strength,
 		"reaction_source_kind": action_kind,
 		"interrupted_action": action_before.duplicate(true),
+		"reaction_combo_id": int(source_action.get("combo_instance_id", -1)),
 	}, true)
 	enemy["posture_recovery_delay"] = maxf(float(enemy.get("posture_recovery_delay", 0.0)), duration)
 	_add_effect("interrupt", contact_point, 0, {"direction": reaction_direction, "strength": reaction_strength})
@@ -2887,6 +3035,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			continue
 		enemy["smoked_remaining"] = maxf(0.0, float(enemy.get("smoked_remaining", 0.0)) - dt)
 		_update_enemy_awareness(enemy, dt)
+		_update_enemy_alarm(enemy, dt)
 		_update_bandit_concealment(enemy, dt)
 		var pounce_cooldown := float(enemy.get("pounce_cooldown", 0.0))
 		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
@@ -3478,7 +3627,7 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	if int(enemy.get("hp", 0)) <= 0: return
 	var awareness_before := String(enemy.get("awareness", "idle"))
 	var action_before := Dictionary(enemy.get("action", _idle_action())).duplicate(true)
-	var source_action := {"ability_id": String(projectile.get("ability_id", projectile.get("kind", "projectile")))}
+	var source_action := {"ability_id": String(projectile.get("ability_id", projectile.get("kind", "projectile"))), "duration": 0.35, "elapsed": 0.0}
 	var resolved := _resolve_player_physical_values(enemy, int(projectile.get("damage", 0)), float(projectile.get("posture", 0.0)), source_action)
 	var damage := int(resolved["damage"])
 	var posture := float(resolved["posture"])
@@ -3487,11 +3636,8 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var posture_broken := _apply_posture_damage(enemy, posture, contact)
 	var reaction_applied := false
 	if not posture_broken:
-		reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, contact)
-	if not (bool(resolved.get("unaware", false)) and has_track_rank("rogue", 3) and int(enemy.get("hp", 0)) <= 0):
-		enemy["awareness"] = "alerted"
-		enemy["alert_remaining"] = 3.0
-		enemy["last_known_player"] = player_pos
+		reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, contact, source_action)
+	_register_enemy_hit_awareness(enemy, resolved, source_action)
 	_add_effect("hit", contact, damage, {"direction": (Vector2(enemy["pos"]) - contact).normalized(), "interrupted": reaction_applied})
 	_handle_player_contact_aftermath(enemy, resolved)
 	if bool(projectile.get("full_draw", false)) and has_track_rank("bow", 5) and not bow_followup_consumed:
@@ -3509,6 +3655,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		_trigger_clean_dodge(impact, source_name)
 		return
 	if _is_blocking(source_id, incoming_from):
+		_break_stealth_for_hostile_action()
 		successful_blocks += 1
 		player_action["effect_done"] = true
 		var guard_profile := String(CombatCatalogScript.weapon_frame(player_weapon_frame).get("guard_profile", "standard"))
@@ -3528,6 +3675,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 			_set_message("Your guard catches the %s." % source_name)
 		return
 	if _is_enduring():
+		_break_stealth_for_hostile_action()
 		successful_endures += 1
 		player_action["effect_done"] = true
 		var endured_damage := int(ceil(float(mitigated_damage) * 0.50))
@@ -4223,6 +4371,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"advance_cooldown": advance_cooldown,
 		"main_ability_cooldown": main_ability_cooldown,
 		"subclass_ability_cooldown": subclass_ability_cooldown,
+		"weapon_sequence_cooldown": weapon_sequence_cooldown,
 		"stealth_remaining": stealth_remaining,
 		"turnabout_remaining": turnabout_remaining,
 		"aimed_enemy_id": aimed_enemy_id,
@@ -4399,6 +4548,7 @@ func _build_save_payload() -> Dictionary:
 		"advance_cooldown": advance_cooldown,
 		"main_ability_cooldown": main_ability_cooldown,
 		"subclass_ability_cooldown": subclass_ability_cooldown,
+		"weapon_sequence_cooldown": weapon_sequence_cooldown,
 		"stealth_remaining": stealth_remaining,
 		"stealth_cooldown_pending": stealth_cooldown_pending,
 		"assassination_window_remaining": assassination_window_remaining,
@@ -4469,7 +4619,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, SAVE_VERSION]: return false
+	if save_version not in [21, 22, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -4560,6 +4710,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	advance_cooldown = float(payload.get("advance_cooldown", 0.0))
 	main_ability_cooldown = float(payload.get("main_ability_cooldown", 0.0))
 	subclass_ability_cooldown = float(payload.get("subclass_ability_cooldown", 0.0))
+	weapon_sequence_cooldown = float(payload.get("weapon_sequence_cooldown", 0.0))
 	stealth_remaining = float(payload.get("stealth_remaining", 0.0))
 	stealth_cooldown_pending = bool(payload.get("stealth_cooldown_pending", false))
 	assassination_window_remaining = float(payload.get("assassination_window_remaining", 0.0))

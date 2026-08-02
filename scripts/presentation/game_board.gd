@@ -389,7 +389,7 @@ func _interpolate_snapshots(current: Dictionary, following: Dictionary, weight: 
 	result["player_pos"] = Vector2(current["player_pos"]).lerp(Vector2(following["player_pos"]), amount)
 	result["player_facing"] = _interpolate_direction(Vector2(current["player_facing"]), Vector2(following["player_facing"]), amount)
 	result["player_action"] = _interpolate_action(Dictionary(current["player_action"]), Dictionary(following["player_action"]), amount)
-	for key in ["dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "stealth_remaining", "aimed_remaining", "strength_remaining"]:
+	for key in ["dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "weapon_sequence_cooldown", "stealth_remaining", "aimed_remaining", "strength_remaining"]:
 		result[key] = lerpf(float(current.get(key, 0.0)), float(following.get(key, 0.0)), amount)
 	result["enemies"] = _interpolate_enemies(Array(current.get("enemies", [])), Array(following.get("enemies", [])), amount)
 	result["projectiles"] = _interpolate_visual_array(Array(current.get("projectiles", [])), Array(following.get("projectiles", [])), amount, ["pos"], [])
@@ -1841,6 +1841,7 @@ func _draw_player() -> void:
 		else: draw_circle(pos - facing * collision_radius * 0.7, collision_radius * 1.25, Color(DODGE_COLOR, 0.16))
 	_draw_actor(pos, foot, facing, radius, PLAYER_COLOR, Color("ffffff"))
 	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo", "art_combo"]: _draw_weapon(world_pos, action, true)
+	elif String(action.get("kind", "idle")) == "twin_fang": _draw_twin_fang(world_pos, action)
 	elif String(action.get("kind", "idle")) in ["bow_draw", "bow_release", "bow_art"]: _draw_bow(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
@@ -1850,6 +1851,8 @@ func _draw_player() -> void:
 		draw_line(pos - drive * radius * 0.35, pos + drive * radius * 1.75, Color("aee7ff"), maxf(3.0, radius * 0.18))
 		draw_circle(pos + drive * radius * 1.75, maxf(3.0, radius * 0.18), Color("e8c35d"))
 	if String(action.get("kind", "idle")) in ["combo", "art_combo"]: _draw_combo_commitment(pos, radius, action)
+	elif float(visual.get("weapon_sequence_cooldown", state.weapon_sequence_cooldown)) > 0.0001 and state.player_weapon_frame == "twin_knives":
+		_draw_sequence_recovery(pos, radius, float(visual.get("weapon_sequence_cooldown", state.weapon_sequence_cooldown)))
 	var phase := _phase(action)
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
 
@@ -1859,7 +1862,7 @@ func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> 
 	var holding := bool(action.get("continue_held", false))
 	var spacing := maxf(8.0, radius * 0.48)
 	var origin := pos + Vector2(-spacing, -radius * 2.85)
-	var count := Array(action.get("phases", [])).size()
+	var count := int(action.get("combo_length", Array(action.get("phases", [])).size()))
 	if count <= 0: count = 3
 	var total_width := spacing * float(count - 1)
 	origin.x = pos.x - total_width * 0.5
@@ -1868,6 +1871,25 @@ func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> 
 		if index <= active_index: color = Color("f1e8d0")
 		elif index <= committed_index or holding: color = Color("d7aa58")
 		draw_circle(origin + Vector2(index * spacing, 0.0), maxf(2.8, radius * 0.12), color)
+
+func _draw_sequence_recovery(pos: Vector2, radius: float, remaining: float) -> void:
+	var count := 6
+	var spacing := maxf(8.0, radius * 0.48)
+	var total_width := spacing * float(count - 1)
+	var origin := pos + Vector2(-total_width * 0.5, -radius * 2.85)
+	var maximum := 0.55 if state.has_track_rank("knife", 5) else state.TWIN_KNIFE_SEQUENCE_RECOVERY
+	var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
+	var ready_count := floori(ready_ratio * float(count) + 0.001)
+	for index in range(count):
+		var color := Color("d7aa58") if index < ready_count else Color("465359")
+		draw_circle(origin + Vector2(index * spacing, 0.0), maxf(2.8, radius * 0.12), color)
+
+func _draw_twin_fang(world_pos: Vector2, action: Dictionary) -> void:
+	for technique_id in ["knife_cut_in", "knife_cut_out"]:
+		var blade_action := action.duplicate()
+		blade_action["technique_id"] = technique_id
+		blade_action["reach"] = float(action.get("reach", 104.0))
+		_draw_weapon(world_pos, blade_action, true)
 
 func _draw_enemy(enemy: Dictionary) -> void:
 	var world_pos := Vector2(enemy["pos"])
@@ -2114,6 +2136,7 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif kind == "interrupt": color = Color("ffe2b5")
 	elif kind == "posture_break": color = Color("ffb55d")
 	elif kind == "strain": color = Color("d7a35e")
+	elif kind == "full_draw": color = Color("fff2b4")
 	var radius := lerpf(10.0, 46.0, progress)
 	var alpha := 1.0 - progress
 	if kind in ["hit", "hurt", "endure"]:
@@ -2365,6 +2388,16 @@ func _draw_bow(pos: Vector2, facing: Vector2, radius: float, action: Dictionary)
 	draw_arc(center, radius * 0.75, facing.angle() - 1.2, facing.angle() + 1.2, 12, Color("e9cf91"), 2.0)
 	draw_line(center + side * radius * 0.7, center - facing * radius * draw_amount, Color("d8d2c3"), 1.5)
 	draw_line(center - side * radius * 0.7, center - facing * radius * draw_amount, Color("d8d2c3"), 1.5)
+	if String(action.get("kind", "")) == "bow_draw":
+		var meter_radius := radius * 1.58
+		var start_angle := -PI * 0.5
+		draw_arc(pos, meter_radius, start_angle, start_angle + TAU, 36, Color("3c4649", 0.88), maxf(2.0, radius * 0.10))
+		if draw_amount > 0.001:
+			draw_arc(pos, meter_radius, start_angle, start_angle + TAU * minf(draw_amount, 0.999), 36, Color("e8c35d"), maxf(3.0, radius * 0.15))
+		if draw_amount >= 0.995:
+			var pulse := 0.80 + 0.20 * sin(float(action.get("elapsed", 0.0)) * 10.0)
+			draw_arc(pos, meter_radius, 0.0, TAU, 36, Color(1.0, 0.96, 0.78, pulse), maxf(4.0, radius * 0.20))
+			draw_circle(center + facing * radius * 0.92, maxf(3.0, radius * 0.16), Color("fff2b4"))
 
 func _draw_health(pos: Vector2, radius: float, hp: int, max_hp: int, color: Color) -> void:
 	var bar := Rect2(pos + Vector2(-radius, -radius * 1.75), Vector2(radius * 2.0, maxf(3.0, radius * 0.18)))
@@ -2397,6 +2430,7 @@ func _phase(action: Dictionary) -> String:
 	if kind == "vault": return "VAULTING" if elapsed <= float(action.get("move_end", 0.34)) else "LANDING"
 	if kind == "stealth": return "VANISHING"
 	if kind == "take_aim": return "STUDYING"
+	if kind == "twin_fang": return "TWIN FANG" if elapsed < float(action.get("active_end", 0.29)) else "RECOVERING"
 	if kind in ["combo", "art_combo"]:
 		return "COMBO %d" % (int(action.get("phase_index", 0)) + 1)
 	if kind == "rally":
@@ -3236,13 +3270,14 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		var art := CombatCatalogScript.weapon_art(state.player_equipped_weapon_art)
 		title = String(art.get("label", "ART LOCKED")).to_upper()
 		available = not art.is_empty() and state.skill_cooldown <= 0.0001
-		var art_subtitles := {"prototype_sweeping_cut": "WIDE / MULTI", "prototype_drawing_cut": "NARROW / FORCEFUL", "knife_execution": "UNAWARE / FORCEFUL", "knife_twin_fang": "TWO CONTACTS", "bow_piercing_shot": "LINE / PIERCING", "bow_fan_shot": "CONE / THREE ARROWS"}
+		var art_subtitles := {"prototype_sweeping_cut": "WIDE / MULTI", "prototype_drawing_cut": "NARROW / FORCEFUL", "knife_execution": "UNAWARE / FORCEFUL", "knife_twin_fang": "SIMULTANEOUS / BURST", "bow_piercing_shot": "LINE / PIERCING", "bow_fan_shot": "CONE / THREE ARROWS"}
 		subtitle = String(art_subtitles.get(state.player_equipped_weapon_art, "WEAPON ART")) if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
 	elif name == "rally":
 		if state.loadout_id.begins_with("rogue_"):
 			title = "STEALTH"
-			available = state.main_ability_cooldown <= 0.0001 and state.stealth_remaining <= 0.0001
-			subtitle = "CONCEAL" if available else "CONCEALED" if state.stealth_remaining > 0.0001 else "COOLING"
+			var stealth_state := state.stealth_status()
+			available = stealth_state == "available"
+			subtitle = "CONCEAL" if available else "CONCEALED" if stealth_state == "active" else "NOTICED" if stealth_state == "noticed" else "COOLING" if stealth_state == "cooldown" else "LOCKED"
 		else:
 			title = "RALLY"
 			available = state.rally_is_available()
@@ -3262,7 +3297,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	var color := Color("6ec4e8") if name == "defense" and state.defense_id == "block" else Color("ee6645") if name == "defense" and state.defense_id == "endure" else DODGE_COLOR if name == "defense" else Color("e8c35d") if name == "skill" else Color("e47754") if name == "rally" else Color("7ac6e8") if name == "advance" else Color("d7aa58") if name == "wait" else Color("718087")
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
-	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)):
+	var stealth_without_cooldown := name == "rally" and state.loadout_id.begins_with("rogue_") and state.stealth_status() != "cooldown"
+	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)) and not stealth_without_cooldown:
 		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
 		var maximum := defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0
