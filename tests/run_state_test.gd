@@ -58,6 +58,7 @@ func _init() -> void:
 	test_desktop_held_keys_combine_diagonally()
 	test_desktop_hold_attack_key()
 	test_melee_enemy_tap_intent_classifier()
+	test_immediate_touch_drag_claims_movement()
 	test_playback_interpolates_between_simulation_steps()
 	test_actions_stream_without_precomputation()
 	test_streaming_caps_realtime_catchup()
@@ -179,7 +180,7 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	assert(String(Dictionary(phases[1])["technique"]) == "reverse_cut")
 	assert(String(Dictionary(phases[2])["technique"]) == "turning_slash")
 	assert(float(Dictionary(phases[2])["reach"]) > float(Dictionary(phases[1])["reach"]))
-	assert(float(Dictionary(phases[2])["reach"]) == 194.0)
+	assert(float(Dictionary(phases[2])["reach"]) == 158.0)
 	assert(float(Dictionary(phases[2])["startup"]) - float(Dictionary(phases[1])["end"]) >= 0.37)
 	assert(String(AttackGeometryScript.technique("turning_slash")["motion"]) == "arc")
 	while float(state.player_action["elapsed"]) < 2.40: state.advance_streamed_action_tick()
@@ -934,6 +935,22 @@ func test_melee_enemy_tap_intent_classifier() -> void:
 	board.state.player_weapon_frame = "bow"
 	assert(board._enemy_touch_should_attack(distant_boar))
 	board.free()
+
+func test_immediate_touch_drag_claims_movement() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.visual = board.state.snapshot(true)
+	board.desktop_controls = false
+	board.set_size(Vector2(1080.0, 1920.0))
+	board.board_rect = Rect2(0.0, 0.0, 1080.0, 1600.0)
+	board.pointer_down = true
+	board.pointer_intent = ""
+	board.touch_start = Vector2(500.0, 500.0)
+	board.touch_current = board.touch_start
+	board._pointer_dragged(Vector2(520.0, 500.0))
+	assert(board.pointer_intent == "move")
+	assert(board.held_movement)
+	board.free()
 func test_playback_interpolates_between_simulation_steps() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new()
@@ -1185,6 +1202,9 @@ func test_new_enemy_roles() -> void:
 	state._choose_enemy_action(hound)
 	assert(String(Dictionary(hound["action"])["kind"]) == "charge")
 	assert(String(Dictionary(hound["action"])["label"]) == "pounce")
+	var futile_hound := state._make_enemy("hound", state.player_pos + Vector2(0, -310), 6)
+	state._choose_enemy_action(futile_hound)
+	assert(String(Dictionary(futile_hound["action"])["kind"]) == "move")
 	hound["pounce_cooldown"] = 0.8
 	state._choose_enemy_action(hound)
 	assert(String(Dictionary(hound["action"])["kind"]) == "evade")
@@ -1219,6 +1239,7 @@ func test_back_half_expedition_roles() -> void:
 	ice["pos"] = state.player_pos + Vector2.UP * 250.0
 	state._choose_enemy_action(ice)
 	assert(String(Dictionary(ice["action"])["kind"]) == "ice_cone")
+	assert(float(Dictionary(ice["action"])["startup"]) >= 0.90)
 	var fire := state._make_enemy("fire_caster", state.player_pos + Vector2.UP * 400.0, 8)
 	state._choose_enemy_action(fire)
 	assert(String(Dictionary(fire["action"])["kind"]) == "shoot" and String(Dictionary(fire["action"])["label"]) == "firebolt")
@@ -1234,13 +1255,19 @@ func test_back_half_expedition_roles() -> void:
 	state._spawn_projectile(archer)
 	var arrow_speed := Vector2(state.projectiles[0]["vel"]).length()
 	assert(arrow_speed >= 680.0 and arrow_speed <= 720.0)
+	var screening_blade := state._make_enemy("blade", archer["pos"] + Vector2.DOWN * 120.0, 7)
+	state.enemies = [archer, screening_blade]
+	state._invalidate_active_enemy_cache()
+	assert(not state._archer_has_clear_lane(archer))
+	state._choose_enemy_action(archer)
+	assert(String(Dictionary(archer["action"])["kind"]) == "move")
 	var knight := state._make_enemy("knight", state.player_pos + Vector2.UP * 220.0, 28)
 	state._choose_enemy_action(knight)
 	assert(String(Dictionary(knight["action"])["technique_id"]) == "thrust")
 	knight["pos"] = state.player_pos + Vector2.UP * 150.0
 	state._choose_enemy_action(knight)
 	assert(String(Dictionary(knight["action"])["technique_id"]) == "heavy_cleave")
-	assert(float(knight["posture_max"]) >= 20.0 and state._enemy_move_speed(knight) <= 60.0)
+	assert(float(knight["posture_max"]) >= 20.0 and state._enemy_move_speed(knight) <= 70.0)
 	var wolf := state._make_enemy("werewolf", state.player_pos + Vector2.UP * 125.0, 42)
 	state._choose_enemy_action(wolf)
 	assert(String(Dictionary(wolf["action"])["kind"]) == "claw_combo")

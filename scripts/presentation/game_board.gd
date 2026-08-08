@@ -18,7 +18,9 @@ const CAMERA_WORLD_HEIGHT := 1000.0
 const ISO_ZOOM := 1.38
 const ISO_CAMERA_DROP := 0.075
 const ISO_WALL_HEIGHT := 54.0
-const ATTACK_INTENT_DELAY := 0.12
+const ATTACK_INTENT_DELAY := 0.16
+const TOUCH_MOVE_SLOP_MIN := 14.0
+const TOUCH_MOVE_SLOP_SCALE := 0.014
 const AUTOSAVE_DELAY := 2.0
 const AUTOSAVE_QUIET_DELAY := 0.24
 const MAP_LAYERS_PER_PAGE := 5
@@ -150,7 +152,10 @@ var survey_tag_buttons: Dictionary = {}
 var survey_feedback_ratings: Dictionary = {}
 var survey_feedback_tags: Array[String] = []
 var survey_submit_button: Button
+var survey_skip_button: Button
 var survey_archived_run: Dictionary = {}
+var survey_export_status := ""
+var survey_export_status_label: Label
 
 func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
@@ -234,6 +239,7 @@ func _clear_survey_overlay() -> void:
 	survey_tag_buttons.clear()
 	survey_notes = null
 	survey_submit_button = null
+	survey_skip_button = null
 
 func _build_survey_feedback_overlay() -> void:
 	_clear_survey_overlay()
@@ -333,6 +339,12 @@ func _build_survey_feedback_overlay() -> void:
 	survey_submit_button.add_theme_font_size_override("font_size", 20)
 	survey_submit_button.pressed.connect(_submit_survey_feedback)
 	content.add_child(survey_submit_button)
+	survey_skip_button = Button.new()
+	survey_skip_button.text = "SKIP — NOT ENOUGH INFORMATION"
+	survey_skip_button.custom_minimum_size = Vector2(0, 58)
+	survey_skip_button.add_theme_font_size_override("font_size", 18)
+	survey_skip_button.pressed.connect(_skip_survey_feedback)
+	content.add_child(survey_skip_button)
 
 func _apply_survey_toggle_style(button: Button) -> void:
 	button.add_theme_color_override("font_color", Color("eaf6f8"))
@@ -393,6 +405,16 @@ func _submit_survey_feedback() -> void:
 	if survey_feedback_ratings.size() < 5: return
 	var notes := survey_notes.text if survey_notes != null else ""
 	state.submit_survey_feedback(survey_feedback_ratings, survey_feedback_tags, notes)
+	visual = _presentation_snapshot()
+	_static_query_revision = -1
+	_floor_cache_revision = -1
+	_mark_autosave(true)
+	_sync_survey_overlay()
+	queue_redraw()
+
+func _skip_survey_feedback() -> void:
+	var notes := survey_notes.text if survey_notes != null else ""
+	state.skip_survey_feedback(notes)
 	visual = _presentation_snapshot()
 	_static_query_revision = -1
 	_floor_cache_revision = -1
@@ -519,6 +541,14 @@ func _build_survey_archive_overlay() -> void:
 		list.add_child(empty)
 	content.add_child(scroll)
 	content.add_child(_survey_action_button("EXPORT ALL REPORTS", _export_all_survey_reports))
+	survey_export_status_label = Label.new()
+	survey_export_status_label.text = survey_export_status
+	survey_export_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	survey_export_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	survey_export_status_label.add_theme_font_size_override("font_size", 15)
+	survey_export_status_label.add_theme_color_override("font_color", Color("b9c8c5"))
+	survey_export_status_label.visible = not survey_export_status.is_empty()
+	content.add_child(survey_export_status_label)
 	content.add_child(_survey_action_button("COPY LATEST", _copy_latest_survey_report))
 	content.add_child(_survey_action_button("CLOSE", _close_survey_archive))
 
@@ -590,7 +620,7 @@ func _save_current_survey_report() -> void:
 func _export_all_survey_reports() -> void:
 	var text := state.survey_all_reports_text()
 	if text.is_empty():
-		state.message = "The Combat Survey archive is empty."
+		_set_survey_export_status("Nothing exported: the Combat Survey archive is empty.", false)
 		return
 	_save_report_text("Waystone_Combat_Survey_ALL_%s.txt" % Time.get_date_string_from_system(), text)
 
@@ -613,41 +643,81 @@ func _share_report_text(filename: String, text: String) -> void:
 		DisplayServer.clipboard_set(text)
 		state.message = "Report copied; paste it into the destination you want."
 
-func _save_report_text(filename: String, text: String) -> void:
-	if OS.has_feature("android") and Engine.has_singleton("AndroidRuntime"):
+func _save_report_text(filename: String, text: String) -> bool:
+	if OS.has_feature("android"):
+		if not Engine.has_singleton("AndroidRuntime"):
+			return _android_report_export_failed("Android's export bridge is unavailable.", text)
 		var android_runtime = Engine.get_singleton("AndroidRuntime")
 		var activity = android_runtime.getActivity()
+		if activity == null or _android_call_failed("getting the app activity"):
+			return _android_report_export_failed("Android could not access the app activity.", text)
 		var BuildVersion = JavaClassWrapper.wrap("android.os.Build$VERSION")
 		if int(BuildVersion.SDK_INT) < 29:
-			state.message = "Use Share or Copy on this Android version."
-			return
+			return _android_report_export_failed("This Android version cannot export directly to Downloads.", text)
 		var ContentValues = JavaClassWrapper.wrap("android.content.ContentValues")
 		var Downloads = JavaClassWrapper.wrap("android.provider.MediaStore$Downloads")
 		var values = ContentValues.ContentValues()
 		values.put("_display_name", filename)
 		values.put("mime_type", "text/plain")
 		values.put("relative_path", "Download/Waystone")
+		values.put("is_pending", 1)
+		if _android_call_failed("preparing the Downloads entry"):
+			return _android_report_export_failed("Android rejected the report metadata.", text)
 		var resolver = activity.getContentResolver()
 		var uri = resolver.insert(Downloads.EXTERNAL_CONTENT_URI, values)
-		if uri != null:
-			var stream = resolver.openOutputStream(uri)
-			if stream != null:
-				stream.write(text.to_utf8_buffer())
-				stream.flush()
-				stream.close()
-				state.message = "Saved to Downloads/Waystone/%s" % filename
-				return
-		state.message = "Android could not save the report; use Share or Copy instead."
-		return
+		if uri == null or _android_call_failed("creating the Downloads entry"):
+			return _android_report_export_failed("Android could not create the report in Downloads.", text)
+		var stream = resolver.openOutputStream(uri, "w")
+		if stream == null or _android_call_failed("opening the report file"):
+			resolver.delete(uri, null, null)
+			_android_call_failed("removing the incomplete report")
+			return _android_report_export_failed("Android could not open the report file.", text)
+		stream.write(text.to_utf8_buffer())
+		stream.flush()
+		stream.close()
+		if _android_call_failed("writing the report"):
+			resolver.delete(uri, null, null)
+			_android_call_failed("removing the incomplete report")
+			return _android_report_export_failed("Android could not finish writing the report.", text)
+		var completed_values = ContentValues.ContentValues()
+		completed_values.put("is_pending", 0)
+		resolver.update(uri, completed_values, null, null)
+		if _android_call_failed("publishing the report"):
+			resolver.delete(uri, null, null)
+			_android_call_failed("removing the unpublished report")
+			return _android_report_export_failed("Android wrote the report but could not publish it to Downloads.", text)
+		_set_survey_export_status("EXPORTED — Downloads/Waystone/%s" % filename, true)
+		return true
 	var downloads := OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
 	var path := downloads.path_join(filename)
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		state.message = "Could not save %s" % filename
-		return
+		_set_survey_export_status("Export failed: could not save %s" % filename, false)
+		return false
 	file.store_string(text)
 	file.flush()
-	state.message = "Saved %s" % path
+	_set_survey_export_status("EXPORTED — %s" % path, true)
+	return true
+
+func _android_call_failed(context: String) -> bool:
+	var exception = JavaClassWrapper.get_exception()
+	if exception == null: return false
+	printerr("Android report export failed while %s: %s" % [context, exception])
+	return true
+
+func _android_report_export_failed(reason: String, text: String) -> bool:
+	DisplayServer.clipboard_set(text)
+	_set_survey_export_status("EXPORT FAILED — %s The complete report was copied to the clipboard." % reason, false)
+	return false
+
+func _set_survey_export_status(text: String, succeeded: bool) -> void:
+	survey_export_status = text
+	state.message = text
+	if survey_export_status_label != null and is_instance_valid(survey_export_status_label):
+		survey_export_status_label.text = text
+		survey_export_status_label.visible = true
+		survey_export_status_label.add_theme_color_override("font_color", Color("8de0ad") if succeeded else Color("ffb4a8"))
+	queue_redraw()
 
 func _layout() -> void:
 	var portrait := size.y >= size.x
@@ -821,7 +891,10 @@ func _process(delta: float) -> void:
 	if finished_streamed_movement and not streaming_action: stream_accumulator = 0.0
 	if pointer_down and pointer_intent == "" and not held_movement and inspected_enemy_id < 0 and board_rect.has_point(touch_start):
 		hold_elapsed += delta
-		if hold_elapsed >= ATTACK_INTENT_DELAY and selected_action == "":
+		# A stationary hold is an attack commitment. Even a modest intentional drag
+		# claims movement first, so a crowded screen or a bow cannot turn a movement
+		# gesture into a phantom attack after the hold timer expires.
+		if hold_elapsed >= ATTACK_INTENT_DELAY and selected_action == "" and touch_current.distance_to(touch_start) < _touch_move_threshold():
 			var direction := _screen_to_world(touch_current) - state.player_pos
 			if direction.length_squared() < 0.01: direction = state.player_facing
 			var touched_enemy := _enemy_near(touch_start, 54.0)
@@ -1170,7 +1243,7 @@ func _pointer_dragged(position: Vector2) -> void:
 			# the finger drifts into a directional swipe.
 			return
 		var attack_drag := position - touch_start
-		var attack_threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
+		var attack_threshold := _touch_move_threshold()
 		if attack_drag.length() < attack_threshold or not board_rect.has_point(touch_start): return
 		# A directional drag is an exit plan, never a latent attack continuation.
 		attack_pointer_held = false
@@ -1192,7 +1265,7 @@ func _pointer_dragged(position: Vector2) -> void:
 		queue_redraw()
 		return
 	var drag := position - touch_start
-	var threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
+	var threshold := _touch_move_threshold()
 	if drag.length() < threshold or selected_action != "" or not board_rect.has_point(touch_start):
 		return
 	inspected_enemy_id = -1
@@ -1465,7 +1538,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 	if _try_waystone_press(end_position): return
 	if _try_transition_press(end_position): return
 	var drag := end_position - touch_start
-	var threshold := maxf(22.0, minf(size.x, size.y) * 0.025)
+	var threshold := _touch_move_threshold()
 	if drag.length() >= threshold:
 		if selected_action in ["defense", "skill", "advance"] or selected_action.begins_with("consumable_"):
 			var action := selected_action
@@ -1510,6 +1583,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 	else:
 		var target := _screen_to_world(end_position)
 		_begin_streamed_move(target - state.player_pos, minf(target.distance_to(state.player_pos), state.MOVE_RANGE))
+
+func _touch_move_threshold() -> float:
+	return maxf(TOUCH_MOVE_SLOP_MIN, minf(size.x, size.y) * TOUCH_MOVE_SLOP_SCALE)
 
 func _handle_button(name: String) -> void:
 	match name:
@@ -3084,7 +3160,8 @@ func _draw_character_sheet() -> void:
 	var leveling := not level_context.is_empty()
 	var character_name := String(data.get("name", "Wayfarer")).to_upper()
 	var title := "%s · LEVEL UP" % character_name if leveling else character_name
-	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % ["EXPEDITION" if level_context == "expedition" else "WAYSTONE", int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
+	var level_source := "EXPEDITION" if level_context == "expedition" else "COMBAT SURVEY" if level_context == "survey" else "WAYSTONE"
+	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % [level_source, int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
 	var title_width := panel.size.x - 2.0 * margin - 104.0
 	var title_font := _sheet_fit_font_size(title, title_width, header_font, 12)
 	var subtitle_font := _sheet_fit_font_size(subtitle, panel.size.x - 2.0 * margin, body_font, 8)

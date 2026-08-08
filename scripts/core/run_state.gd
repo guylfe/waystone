@@ -35,9 +35,9 @@ const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-const SAVE_VERSION := 24
-const GAME_VERSION := "0.1.4"
-const SURVEY_GENERATOR_VERSION := 1
+const SAVE_VERSION := 25
+const GAME_VERSION := "0.1.7"
+const SURVEY_GENERATOR_VERSION := 2
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -244,6 +244,8 @@ var survey_room_entry: Dictionary = {}
 var survey_pending_record: Dictionary = {}
 var survey_session: Dictionary = {}
 var survey_last_report: Dictionary = {}
+var survey_action_counts: Dictionary = {}
+var survey_last_damage_source := ""
 
 func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
@@ -343,6 +345,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_room_entry.clear()
 	survey_pending_record.clear()
 	survey_last_report.clear()
+	survey_action_counts.clear()
+	survey_last_damage_source = ""
 	survey_session = {
 		"format_version": 1,
 		"game_version": GAME_VERSION,
@@ -449,10 +453,12 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		walls_for_layer.append(obstacle)
 		features.append({"kind": "ancient_ruin", "pos": obstacle.get_center(), "radius": maxf(obstacle.size.x, obstacle.size.y) * 0.48, "part_id": 0, "layer": layer})
 	var spawn_slots := _survey_formation_slots(formation_id)
+	var available_spawn_slots := spawn_slots.duplicate()
 	var templates: Array[Dictionary] = []
 	var enemy_labels: Array[String] = []
 	for index in range(enemy_plan.size()):
-		var slot := spawn_slots[index % spawn_slots.size()]
+		var kind := String(enemy_plan[index])
+		var slot := _survey_take_spawn_slot(available_spawn_slots, kind, player_start)
 		var jitter := Vector2(room_rng.randf_range(-34.0, 34.0), room_rng.randf_range(-28.0, 28.0))
 		var spawn_position: Vector2 = slot + jitter
 		for obstacle in obstacle_rects:
@@ -460,7 +466,6 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 				var away := (spawn_position - obstacle.get_center()).normalized()
 				if away.is_zero_approx(): away = Vector2.UP
 				spawn_position = obstacle.get_center() + away * (maxf(obstacle.size.x, obstacle.size.y) * 0.72 + 90.0)
-		var kind := String(enemy_plan[index])
 		templates.append({"kind": kind, "pos": spawn_position, "layer": layer})
 		enemy_labels.append(kind.replace("_", " ").capitalize())
 	var threat_tier := 1 + int(floor(float(room_number - 1) * 0.5))
@@ -473,6 +478,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"threat_band": threat_band,
 		"enemy_labels": enemy_labels,
 	}
+
 	var layers := {layer: {"name": "Combat Survey", "depth": 0}}
 	var layer_walls := {layer: walls_for_layer}
 	return {
@@ -500,6 +506,20 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"shortcut_unlock_pos": Vector2.ZERO,
 		"shortcut_start_pos": Vector2.ZERO,
 	}
+
+func _survey_take_spawn_slot(available: Array, enemy_kind: String, player_start: Vector2) -> Vector2:
+	if available.is_empty(): return player_start + Vector2.UP * 420.0
+	var ranged_role := enemy_kind in ["archer", "hexer", "ice_caster", "fire_caster"]
+	var chosen_index := 0
+	var chosen_distance := -INF if ranged_role else INF
+	for index in range(available.size()):
+		var distance := Vector2(available[index]).distance_squared_to(player_start)
+		if (ranged_role and distance > chosen_distance) or (not ranged_role and distance < chosen_distance):
+			chosen_distance = distance
+			chosen_index = index
+	var chosen := Vector2(available[chosen_index])
+	available.remove_at(chosen_index)
+	return chosen
 
 func _survey_seed_for_room(room_number: int) -> int:
 	return absi(hash("waystone-survey:%d:%d:%d" % [SURVEY_GENERATOR_VERSION, run_seed, room_number]))
@@ -550,6 +570,9 @@ func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
 func _capture_survey_room_entry() -> void:
 	survey_room_entry = {
 		"time": simulation_time,
+		"hp": player_hp,
+		"max_hp": player_max_hp,
+		"potions": potions,
 		"damage_dealt": damage_dealt,
 		"damage_received": damage_received_total,
 		"hits_received": hits_received_total,
@@ -557,7 +580,17 @@ func _capture_survey_room_entry() -> void:
 		"perfect_dodges": perfect_dodges,
 		"successful_blocks": successful_blocks,
 		"successful_endures": successful_endures,
+		"action_counts": survey_action_counts.duplicate(true),
 	}
+	survey_last_damage_source = ""
+
+func _survey_action_count_delta() -> Dictionary:
+	var before := Dictionary(survey_room_entry.get("action_counts", {}))
+	var result: Dictionary = {}
+	for action_id in survey_action_counts:
+		var count := int(survey_action_counts[action_id]) - int(before.get(action_id, 0))
+		if count > 0: result[action_id] = count
+	return result
 
 func _survey_build_summary() -> String:
 	var ranks: Array[String] = []
@@ -572,6 +605,13 @@ func _complete_survey_room(outcome: String) -> void:
 	survey_pending_record.merge({
 		"outcome": outcome,
 		"build_summary": _survey_build_summary(),
+		"entry_hp": int(survey_room_entry.get("hp", player_hp)),
+		"entry_max_hp": int(survey_room_entry.get("max_hp", player_max_hp)),
+		"exit_hp": player_hp,
+		"entry_potions": int(survey_room_entry.get("potions", potions)),
+		"exit_potions": potions,
+		"death_source": survey_last_damage_source if outcome == "death" else "",
+		"action_usage": _survey_action_count_delta(),
 		"combat_time": simulation_time - float(survey_room_entry.get("time", simulation_time)),
 		"damage_dealt": damage_dealt - int(survey_room_entry.get("damage_dealt", damage_dealt)),
 		"damage_received": damage_received_total - int(survey_room_entry.get("damage_received", damage_received_total)),
@@ -580,7 +620,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
 		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
 		"successful_endures": successful_endures - int(survey_room_entry.get("successful_endures", successful_endures)),
-		"ratings": {}, "tags": [], "notes": "",
+		"ratings": {}, "tags": [], "notes": "", "subjective_skipped": false,
 	}, true)
 	survey_feedback_pending = true
 	survey_run_ending = outcome in ["death", "manual_end"]
@@ -596,6 +636,18 @@ func submit_survey_feedback(ratings: Dictionary, tags: Array, notes: String) -> 
 	survey_pending_record["ratings"] = ratings.duplicate(true)
 	survey_pending_record["tags"] = tags.duplicate()
 	survey_pending_record["notes"] = notes.strip_edges()
+	survey_pending_record["subjective_skipped"] = false
+	_store_survey_feedback()
+
+func skip_survey_feedback(notes: String = "") -> void:
+	if not survey_feedback_pending: return
+	survey_pending_record["ratings"] = {}
+	survey_pending_record["tags"] = []
+	survey_pending_record["notes"] = notes.strip_edges()
+	survey_pending_record["subjective_skipped"] = true
+	_store_survey_feedback()
+
+func _store_survey_feedback() -> void:
 	var rooms: Array = survey_session.get("rooms", [])
 	rooms.append(survey_pending_record.duplicate(true))
 	survey_session["rooms"] = rooms
@@ -893,7 +945,7 @@ func _apply_loadout() -> void:
 			player_damage_min = 6
 			player_damage_max = 6
 			player_attack_technique = "knife_cut_in"
-			player_attack_reach = 92.0
+			player_attack_reach = 74.0
 			player_attack_posture = 1.0
 		"bow":
 			player_attack_duration = 0.70
@@ -911,7 +963,7 @@ func _apply_loadout() -> void:
 			player_damage_min = 10
 			player_damage_max = 10
 			player_attack_technique = "diagonal_cut"
-			player_attack_reach = 136.0
+			player_attack_reach = 112.0
 			player_attack_posture = 2.0
 
 func _tempo_from_attributes(attributes: Dictionary) -> float:
@@ -1163,7 +1215,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 			"startup": phase_start + interval * 0.18,
 			"active_end": phase_start + interval * 0.48,
 			"end": phase_start + interval,
-			"reach": 90.0 if twin else 92.0,
+			"reach": 72.0 if twin else 74.0,
 			"damage_min": _player_physical_damage(1 if twin else 2) + (1 if has_track_rank("knife", 2) else 0),
 			"damage_max": _player_physical_damage(1 if twin else 2) + (1 if has_track_rank("knife", 2) else 0),
 			"posture": 0.65 if twin else 1.0,
@@ -1302,9 +1354,9 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	var opener_posture := 2.3 if from_advance and has_track_rank("vanguard", 2) else 1.8
 	player_action = _action("combo", duration, player_facing)
 	player_action["phases"] = [
-		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut"},
-		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 130.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut"},
-		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 194.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash"},
+		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut"},
+		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut"},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash"},
 	]
 	player_action["combo_length"] = 3
 	player_action["combo_instance_id"] = _next_combo_instance_id
@@ -1517,6 +1569,7 @@ func request_potion(simulate_immediately: bool = true) -> bool:
 	if not has_infinite_potions(): potions -= 1
 	potions_used_total += 1
 	player_action = _action("potion", maxf(0.48, 0.72 - 0.06 * float(track_property_ranks.get("fieldcraft_recovery", 0))), Vector2.ZERO)
+	_annotate_player_action("rejuvenation_potion")
 	_emit_sound(player_pos, 90.0)
 	_set_message("You draw from the rejuvenation pouch.")
 	if simulate_immediately: _simulate_until_ready()
@@ -1564,6 +1617,7 @@ func request_consumable(slot: int, direction: Vector2 = Vector2.ZERO, simulate_i
 	player_action["item_id"] = item_id
 	player_action["slot"] = slot
 	player_action["startup"] = 0.24 if item_id != "firebomb" else 0.34
+	_annotate_player_action("consumable_%s" % item_id)
 	_emit_sound(player_pos, 115.0 if item_id == "firebomb" else 72.0)
 	_set_message("You ready the %s." % String(definition.get("label", item_id)).to_lower())
 	if simulate_immediately: _simulate_until_ready()
@@ -1710,6 +1764,8 @@ func level_up_context() -> String:
 	if not is_player_ready() or trial_complete: return ""
 	if mode_id == ModeRulesScript.EXPEDITION:
 		return "expedition" if carried_xp >= next_upgrade_cost() else ""
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		return "survey" if carried_xp >= next_upgrade_cost() else ""
 	if mode_id == ModeRulesScript.CAMPAIGN_LAB and not nearby_waystone().is_empty() and secured_xp >= next_upgrade_cost():
 		return "waystone"
 	return ""
@@ -2163,7 +2219,7 @@ func choose_upgrade(choice: String) -> bool:
 		return false
 	var cost := next_upgrade_cost()
 	if context == "waystone" and secured_xp < cost: return false
-	if context == "expedition" and carried_xp < cost: return false
+	if context != "waystone" and carried_xp < cost: return false
 	carried_xp = maxi(0, carried_xp - cost)
 	if context == "waystone": secured_xp = maxi(0, secured_xp - cost)
 	var stage_id := String(stage["id"])
@@ -2361,6 +2417,8 @@ func _annotate_player_action(ability_id: String) -> void:
 	player_action["weapon_frame"] = player_weapon_frame
 	player_action["ability_id"] = ability_id
 	player_action["defense_id"] = defense_id
+	if mode_id == ModeRulesScript.COMBAT_SURVEY and ability_id != "bow_draw":
+		survey_action_counts[ability_id] = int(survey_action_counts.get(ability_id, 0)) + 1
 
 func _rally_action_capacity() -> float:
 	if rally_remaining <= 0.0: return 0.0
@@ -2524,7 +2582,9 @@ func apply_player_condition_buildup(condition_id: String, amount: float) -> bool
 
 func _trigger_player_condition(condition_id: String) -> void:
 	match condition_id:
-		"laceration": player_hp = maxi(0, player_hp - 15)
+		"laceration":
+			player_hp = maxi(0, player_hp - 15)
+			survey_last_damage_source = "laceration"
 		"poison": player_conditions[condition_id] = 8.0
 		"sleep":
 			player_conditions[condition_id] = 3.0
@@ -2566,8 +2626,12 @@ func _update_conditions(dt: float) -> void:
 	if _condition_tick_accumulator >= 1.0:
 		_condition_tick_accumulator -= 1.0
 		ongoing_tick = true
-		if float(player_conditions.get("poison", 0.0)) > 0.0: player_hp = maxi(0, player_hp - 3)
-		if float(player_conditions.get("burning", 0.0)) > 0.0: player_hp = maxi(0, player_hp - 6)
+		if float(player_conditions.get("poison", 0.0)) > 0.0:
+			player_hp = maxi(0, player_hp - 3)
+			survey_last_damage_source = "poison"
+		if float(player_conditions.get("burning", 0.0)) > 0.0:
+			player_hp = maxi(0, player_hp - 6)
+			survey_last_damage_source = "burning"
 		if player_hp <= 0: _begin_death()
 	_refresh_active_enemy_cache()
 	for index in _streamed_enemy_indices:
@@ -2943,7 +3007,7 @@ func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
 	# commitment and cannot be resumed after time freezes.
 	if player_weapon_frame != "sword":
 		return {"step": 0, "duration": player_attack_duration, "startup": player_attack_startup, "active_end": player_attack_active_end, "reach": player_attack_reach, "damage_min": player_damage_min, "damage_max": player_damage_max, "posture": player_attack_posture, "technique": player_attack_technique}
-	var result := {"duration": 0.98, "startup": 0.30, "active_end": 0.52, "reach": 116.0, "damage_min": 10, "damage_max": 10, "posture": 1.8, "technique": "opening_cut"}
+	var result := {"duration": 0.98, "startup": 0.30, "active_end": 0.52, "reach": 104.0, "damage_min": 10, "damage_max": 10, "posture": 1.8, "technique": "opening_cut"}
 	if has_track_rank("swordsmanship", 3):
 		result["damage_min"] = int(result["damage_min"]) + 1
 		result["damage_max"] = int(result["damage_min"])
@@ -3221,10 +3285,10 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "stagger": return false
 	var enemy_kind := String(enemy.get("kind", "blade"))
 	var action_kind := String(action_before.get("kind", "idle"))
-	if action_kind == "hit_reaction":
-		var incoming_combo_id := int(source_action.get("combo_instance_id", -1))
-		var existing_combo_id := int(action_before.get("reaction_combo_id", -2))
-		if incoming_combo_id < 0 or incoming_combo_id != existing_combo_id: return false
+	# Damage and posture still resolve during a chain, but a hit reaction is one
+	# authored opening. Later contacts cannot restart its timer and pin an enemy
+	# indefinitely; a posture break may still replace it with a distinct stagger.
+	if action_kind == "hit_reaction": return false
 	var elapsed := float(action_before.get("elapsed", 0.0))
 	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
 	var high_impact := impact >= 3.5
@@ -3489,7 +3553,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		enemy["action"] = _enemy_move_action(enemy, player_pos, 0.24)
 		return
 	if enemy_kind == "boar":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and distance <= 350.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.52, 0.96):
 			enemy["action"] = _charge_action(1.54, 0.52, 0.96, 360.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
 			enemy["action"]["momentum_armour_start"] = 0.70
@@ -3499,12 +3563,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "bandit":
 		if float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance >= 112.0 and distance <= 245.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.10, 0.40, 0.62, 96.0, 1, direction, "quick_cut", "dodge_strike")
+			enemy["action"] = _melee_action(1.10, 0.40, 0.62, 84.0, 1, direction, "quick_cut", "dodge_strike")
 			enemy["action"]["dodge_end"] = 0.30
 			enemy["action"]["speed"] = 390.0
 			enemy["dodge_cooldown"] = 2.00
-		elif distance <= 94.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(0.86, 0.26, 0.45, 94.0, 1, direction, "quick_cut")
+		elif distance <= 112.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(0.86, 0.26, 0.45, 82.0, 1, direction, "quick_cut")
 		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance < 155.0:
 			var evade_direction := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.45).normalized()
 			enemy["action"] = _action("evade", 0.38, evade_direction)
@@ -3512,13 +3576,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["dodge_cooldown"] = 1.45
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.32)
 	elif enemy_kind == "blade":
-		if distance <= 125.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 128.0, 2, direction, "diagonal_cut")
+		if distance <= 132.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 112.0, 2, direction, "diagonal_cut")
 		else:
 			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "knife":
-		if distance <= 92.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(0.88, 0.28, 0.46, 92.0, 1, direction, "quick_cut")
+		if distance <= 108.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(0.88, 0.28, 0.46, 80.0, 1, direction, "quick_cut")
 		else:
 			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.32)
 	elif enemy_kind == "polearm":
@@ -3530,7 +3594,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if distance <= 120.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.65, 0.62, 0.92, 122.0, 2, direction)
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.58)
 	elif enemy_kind == "hound":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance <= 350.0 and distance >= 88.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 440.0, 0.30, 0.68):
 			enemy["action"] = _charge_action(1.18, 0.30, 0.68, 440.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
 			enemy["pounce_cooldown"] = 1.78
@@ -3543,15 +3607,15 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction, "forward_smash")
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.78)
 	elif enemy_kind == "captain":
-		if distance <= 138.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.22, 0.42, 0.70, 140.0, 2, direction, "thrust")
+		if distance <= 162.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.22, 0.42, 0.70, 132.0, 2, direction, "thrust")
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.44)
 	elif enemy_kind == "ice_caster":
 		if distance <= 310.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("ice_cone", 1.92, direction)
-			enemy["action"]["startup"] = 0.68
+			enemy["action"] = _action("ice_cone", 2.18, direction)
+			enemy["action"]["startup"] = 0.92
 		elif distance <= 650.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("ice_hex", 2.02, direction)
-			enemy["action"]["startup"] = 0.78
+			enemy["action"] = _action("ice_hex", 2.34, direction)
+			enemy["action"]["startup"] = 1.05
 			enemy["action"]["target"] = player_pos + player_facing * 20.0
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "fire_caster":
@@ -3566,7 +3630,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var fire_target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 210.0 if distance < 480.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
 	elif enemy_kind == "archer":
-		if distance <= 690.0 and distance >= 215.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos) and _archer_has_clear_lane(enemy):
 			enemy["action"] = _action("shoot", 1.62, direction)
 			enemy["action"]["startup"] = 0.68
 		else:
@@ -3576,7 +3640,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _melee_action(2.78, 1.08, 1.66, 194.0, 4, direction, "heavy_cleave")
 		elif distance <= 252.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _melee_action(2.54, 0.94, 1.46, 248.0, 4, direction, "thrust")
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.82)
+		else: enemy["action"] = _enemy_move_action(enemy, _heavy_intercept_target(enemy), 0.72)
 	elif enemy_kind == "hexer":
 		if distance <= 620.0 and distance >= 150.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("hex", 1.98, direction)
@@ -3586,7 +3650,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 220.0 if distance < 500.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, target, 0.52)
 	elif enemy_kind == "werewolf":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and distance <= 430.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and _charge_can_contact(enemy, distance, 420.0, 0.34, 0.76):
 			if rng.randf() < 0.55: enemy["action"] = _werewolf_pounce_combo(direction)
 			else:
 				enemy["action"] = _charge_action(1.42, 0.34, 0.78, 430.0, 4, direction)
@@ -3626,6 +3690,28 @@ func _enemy_move_action(enemy: Dictionary, target: Vector2, duration: float) -> 
 	result["steer_elapsed"] = 0.0
 	result["recovery_elapsed"] = 0.0
 	return result
+
+func _charge_can_contact(enemy: Dictionary, distance: float, speed: float, startup: float, active_end: float) -> bool:
+	if not _has_line_of_sight(Vector2(enemy["pos"]), player_pos): return false
+	var contact_allowance := float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + 18.0
+	return distance <= speed * maxf(0.0, active_end - startup) + contact_allowance
+
+func _archer_has_clear_lane(archer: Dictionary) -> bool:
+	var origin := Vector2(archer["pos"])
+	for ally in _nearby_enemies(origin, origin.distance_to(player_pos)):
+		if int(ally.get("id", -1)) == int(archer.get("id", -1)) or int(ally.get("hp", 0)) <= 0 or not _enemy_on_current_layer(ally): continue
+		var closest := Geometry2D.get_closest_point_to_segment(Vector2(ally["pos"]), origin, player_pos)
+		if closest.distance_to(Vector2(ally["pos"])) <= float(ally.get("radius", ENEMY_RADIUS)) + 12.0:
+			return false
+	return true
+
+func _heavy_intercept_target(_enemy: Dictionary) -> Vector2:
+	# Slow heavies aim for the player's lane instead of following the exact current
+	# point forever. They remain slow, but can occupy space and protect a back line.
+	var lead := player_facing.normalized() * 64.0
+	if String(player_action.get("kind", "idle")) == "move":
+		lead = Vector2(player_action.get("direction", player_facing)).normalized() * 92.0
+	return player_pos + lead
 
 func _advance_enemy_locomotion(enemy: Dictionary, action: Dictionary, step_distance: float, stall_dt: float) -> void:
 	var origin := Vector2(enemy["pos"])
@@ -3687,7 +3773,7 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"boar": 185.0, "bandit": 225.0, "knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 142.0, "shield": 120.0, "hound": 255.0, "brute": 82.0, "knight": 58.0, "hexer": 125.0, "ice_caster": 122.0, "fire_caster": 132.0, "captain": 180.0, "warden": 105.0, "werewolf": 218.0}.get(kind, 135.0))
+	var speed: float = float({"boar": 185.0, "bandit": 225.0, "knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 142.0, "shield": 120.0, "hound": 255.0, "brute": 82.0, "knight": 68.0, "hexer": 125.0, "ice_caster": 122.0, "fire_caster": 132.0, "captain": 180.0, "warden": 105.0, "werewolf": 218.0}.get(kind, 135.0))
 	if kind != "captain" and _captain_near(enemy): speed *= 1.14
 	return speed
 
@@ -3983,6 +4069,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		var guard_profile := String(CombatCatalogScript.weapon_frame(player_weapon_frame).get("guard_profile", "standard"))
 		var leakage := 0.25 if guard_profile in ["dual", "awkward"] else 0.0
 		var chip_damage := roundi(float(mitigated_damage) * leakage)
+		if chip_damage > 0: survey_last_damage_source = source_name
 		player_hp = maxi(0, player_hp - chip_damage)
 		damage_received_total += chip_damage
 		hits_received_total += 1
@@ -4003,6 +4090,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		successful_endures += 1
 		player_action["effect_done"] = true
 		var endured_damage := int(ceil(float(mitigated_damage) * 0.50))
+		survey_last_damage_source = source_name
 		player_hp = maxi(0, player_hp - endured_damage)
 		damage_received_total += endured_damage
 		hits_received_total += 1
@@ -4016,6 +4104,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	var interrupted_kind := String(player_action.get("kind", "idle"))
 	var interrupted_action := player_action.duplicate(true)
 	var damage_received := mitigated_damage
+	survey_last_damage_source = source_name
 	player_hp = maxi(0, player_hp - damage_received)
 	damage_received_total += damage_received
 	hits_received_total += 1
@@ -4962,6 +5051,8 @@ func _build_save_payload() -> Dictionary:
 		"survey_pending_record": survey_pending_record.duplicate(true),
 		"survey_session": survey_session.duplicate(true),
 		"survey_last_report": survey_last_report.duplicate(true),
+		"survey_action_counts": survey_action_counts.duplicate(true),
+		"survey_last_damage_source": survey_last_damage_source,
 		"rng_state": rng.state,
 	}
 
@@ -4977,7 +5068,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, 24, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -5195,6 +5286,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		survey_pending_record = Dictionary(payload.get("survey_pending_record", {})).duplicate(true)
 		survey_session = Dictionary(payload.get("survey_session", survey_session)).duplicate(true)
 		survey_last_report = Dictionary(payload.get("survey_last_report", {})).duplicate(true)
+		survey_action_counts = Dictionary(payload.get("survey_action_counts", {})).duplicate(true)
+		survey_last_damage_source = String(payload.get("survey_last_damage_source", ""))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:

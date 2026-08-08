@@ -112,8 +112,8 @@ func test_combo_scoped_hit_reaction() -> void:
 	var first_reaction := Dictionary(enemy["action"]).duplicate(true)
 	first_reaction["elapsed"] = 0.30
 	enemy["action"] = first_reaction
-	assert(state._apply_enemy_hit_reaction(enemy, 1.0, "alerted", first_reaction, Vector2(enemy["pos"]), first_source))
-	assert(is_zero_approx(float(Dictionary(enemy["action"])["elapsed"])))
+	assert(not state._apply_enemy_hit_reaction(enemy, 1.0, "alerted", first_reaction, Vector2(enemy["pos"]), first_source))
+	assert(is_equal_approx(float(Dictionary(enemy["action"])["elapsed"]), 0.30))
 	var second_source := {"combo_instance_id": 42}
 	var current_reaction := Dictionary(enemy["action"]).duplicate(true)
 	assert(not state._apply_enemy_hit_reaction(enemy, 1.0, "alerted", current_reaction, Vector2(enemy["pos"]), second_source))

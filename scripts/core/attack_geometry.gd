@@ -2,15 +2,18 @@ class_name AttackGeometry
 extends RefCounted
 
 const TECHNIQUES := {
-	"opening_cut": {"motion": "arc", "start_angle": -0.62, "end_angle": 0.42, "radius": 9.0, "multi": false, "label": "Opening cut"},
-	"quick_cut": {"motion": "arc", "start_angle": -0.57, "end_angle": 0.57, "radius": 9.0, "multi": false, "label": "Short cut"},
-	"knife_cut_in": {"motion": "arc", "start_angle": -0.70, "end_angle": 0.38, "radius": 7.0, "multi": false, "label": "Inward cut"},
-	"knife_cut_out": {"motion": "arc", "start_angle": 0.64, "end_angle": -0.46, "radius": 7.0, "multi": false, "label": "Outward cut"},
-	"knife_rising_cut": {"motion": "arc", "start_angle": -0.43, "end_angle": 0.74, "radius": 7.0, "multi": false, "label": "Rising cut"},
-	"knife_falling_cut": {"motion": "arc", "start_angle": 0.48, "end_angle": -0.78, "radius": 7.0, "multi": false, "label": "Falling cut"},
-	"reverse_cut": {"motion": "arc", "start_angle": 0.57, "end_angle": -0.57, "radius": 11.0, "multi": false, "label": "Returning cut"},
-	"turning_slash": {"motion": "arc", "start_angle": -1.15, "end_angle": 1.15, "radius": 12.0, "multi": true, "label": "Turning slash"},
-	"diagonal_cut": {"motion": "arc", "start_angle": -0.96, "end_angle": 0.70, "radius": 11.0, "multi": false, "label": "Diagonal cut"},
+	# Ordinary cuts are intentionally compact. Multi-target contact still comes
+	# from every body the blade physically crosses; it is no longer granted by a
+	# near-semicircular default swing.
+	"opening_cut": {"motion": "arc", "start_angle": -0.48, "end_angle": 0.32, "radius": 8.0, "multi": false, "label": "Opening cut"},
+	"quick_cut": {"motion": "arc", "start_angle": -0.38, "end_angle": 0.38, "radius": 7.0, "multi": false, "label": "Short cut"},
+	"knife_cut_in": {"motion": "arc", "start_angle": -0.44, "end_angle": 0.24, "radius": 5.0, "multi": false, "label": "Inward cut"},
+	"knife_cut_out": {"motion": "arc", "start_angle": 0.42, "end_angle": -0.26, "radius": 5.0, "multi": false, "label": "Outward cut"},
+	"knife_rising_cut": {"motion": "arc", "start_angle": -0.26, "end_angle": 0.46, "radius": 5.0, "multi": false, "label": "Rising cut"},
+	"knife_falling_cut": {"motion": "arc", "start_angle": 0.28, "end_angle": -0.48, "radius": 5.0, "multi": false, "label": "Falling cut"},
+	"reverse_cut": {"motion": "arc", "start_angle": 0.45, "end_angle": -0.42, "radius": 9.0, "multi": false, "label": "Returning cut"},
+	"turning_slash": {"motion": "arc", "start_angle": -0.92, "end_angle": 0.92, "radius": 11.0, "multi": true, "label": "Turning slash"},
+	"diagonal_cut": {"motion": "arc", "start_angle": -0.68, "end_angle": 0.52, "radius": 9.0, "multi": false, "label": "Diagonal cut"},
 	"broad_sweep": {"motion": "arc", "start_angle": -1.396, "end_angle": 1.396, "radius": 14.0, "multi": true, "label": "Broad sweep"},
 	"heavy_cleave": {"motion": "arc", "start_angle": -1.658, "end_angle": 1.658, "radius": 18.0, "multi": true, "label": "Heavy cleave"},
 	"heavy_chop": {"motion": "arc", "start_angle": -0.48, "end_angle": 0.18, "radius": 18.0, "multi": false, "label": "Heavy chop"},

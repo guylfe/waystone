@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 1
+const FORMAT_VERSION := 2
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -66,6 +66,8 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Formation: %s" % String(room.get("formation", "unknown")))
 		lines.append("Enemies: %s" % ", ".join(PackedStringArray(room.get("enemy_labels", []))))
 		lines.append("Build: %s" % String(room.get("build_summary", "unknown")))
+		lines.append("Health: %d/%d -> %d/%d" % [int(room.get("entry_hp", 0)), int(room.get("entry_max_hp", 0)), int(room.get("exit_hp", 0)), int(room.get("entry_max_hp", 0))])
+		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))
 		lines.append("Damage dealt: %d" % int(room.get("damage_dealt", 0)))
 		lines.append("Damage received: %d" % int(room.get("damage_received", 0)))
@@ -74,12 +76,17 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Perfect dodges: %d" % int(room.get("perfect_dodges", 0)))
 		lines.append("Blocks: %d" % int(room.get("successful_blocks", 0)))
 		lines.append("Endures: %d" % int(room.get("successful_endures", 0)))
+		lines.append("Action usage: %s" % _action_usage_text(Dictionary(room.get("action_usage", {}))))
+		if String(room.get("outcome", "")) == "death": lines.append("Death source: %s" % String(room.get("death_source", "unknown")))
 		var ratings := Dictionary(room.get("ratings", {}))
-		lines.append("Difficulty: %s" % _rating_text(ratings.get("difficulty", 0)))
-		lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))
-		lines.append("Fairness: %s" % _rating_text(ratings.get("fairness", 0)))
-		lines.append("Tactical interest: %s" % _rating_text(ratings.get("tactical_interest", 0)))
-		lines.append("Want a room like this again: %s" % _rating_text(ratings.get("want_again", ratings.get("expedition_fit", 0))))
+		if bool(room.get("subjective_skipped", false)):
+			lines.append("Subjective ratings: skipped / not enough information")
+		else:
+			lines.append("Difficulty: %s" % _rating_text(ratings.get("difficulty", 0)))
+			lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))
+			lines.append("Fairness: %s" % _rating_text(ratings.get("fairness", 0)))
+			lines.append("Tactical interest: %s" % _rating_text(ratings.get("tactical_interest", 0)))
+			lines.append("Want a room like this again: %s" % _rating_text(ratings.get("want_again", ratings.get("expedition_fit", 0))))
 		var tags := PackedStringArray(room.get("tags", []))
 		lines.append("Tags: %s" % (", ".join(tags) if not tags.is_empty() else "none"))
 		var notes := String(room.get("notes", "")).strip_edges()
@@ -98,6 +105,15 @@ static func all_reports_text() -> String:
 static func _rating_text(value: Variant) -> String:
 	var rating := int(value)
 	return "%d/5" % rating if rating > 0 else "not rated"
+
+static func _action_usage_text(usage: Dictionary) -> String:
+	if usage.is_empty(): return "none"
+	var ids: Array = usage.keys()
+	ids.sort()
+	var parts: Array[String] = []
+	for action_id in ids:
+		parts.append("%s x%d" % [String(action_id).replace("_", " "), int(usage[action_id])])
+	return ", ".join(parts)
 
 static func _write_json(path: String, value: Variant) -> bool:
 	return _write_text(path, JSON.stringify(value, "\t"))

@@ -13,10 +13,13 @@ func _init() -> void:
 	assert(first.current_layer == "survey_arena")
 	assert(first.survey_room_number == 1)
 	var first_seed: int = first.survey_room_seed
+	first._annotate_player_action("test_ability")
 	for enemy in first.enemies: enemy["hp"] = 0
 	first._remove_dead_enemies()
 	assert(first.survey_feedback_pending)
 	assert(String(first.survey_pending_record["outcome"]) == "victory")
+	assert(int(first.survey_pending_record["entry_hp"]) == first.player_max_hp)
+	assert(int(Dictionary(first.survey_pending_record["action_usage"]).get("test_ability", 0)) == 1)
 	var ratings := {"difficulty": 3, "fun": 4, "fairness": 5, "tactical_interest": 4, "want_again": 4}
 	first.submit_survey_feedback(ratings, ["fair", "good mix"], "Deterministic survey smoke test.")
 	assert(not first.survey_feedback_pending)
@@ -34,5 +37,27 @@ func _init() -> void:
 	assert("ROOM 1" in report and "ROOM 2" in report)
 	assert("Room seed:" in report and "Tags: fair, good mix" in report)
 	assert("Want a room like this again: 4/5" in report)
+	assert("Health:" in report and "Action usage:" in report)
+
+	var attrition = RunStateScript.new(false)
+	attrition.start_run("warrior", "combat_survey", 515151, "attrition")
+	attrition.carried_xp = attrition.next_upgrade_cost()
+	assert(attrition.level_up_context() == "survey")
+	assert(attrition.can_open_level_sheet())
+	assert(attrition.available_level_up_options().has("evasion"))
+	var attrition_choice := "evasion"
+	assert(attrition.choose_upgrade(attrition_choice))
+	assert(attrition.upgrade_count == 1 and attrition.carried_xp == 0)
+	var encounter = RunStateScript.new(false)
+	encounter.start_run("warrior", "combat_survey", 616161, "encounter")
+	encounter.carried_xp = encounter.next_upgrade_cost()
+	assert(encounter.level_up_context() == "survey")
+	assert(encounter.can_open_level_sheet())
+	for enemy in encounter.enemies: enemy["hp"] = 0
+	encounter._remove_dead_enemies()
+	encounter.skip_survey_feedback("Too brief to judge.")
+	var skipped := Dictionary(Array(encounter.survey_session["rooms"])[0])
+	assert(bool(skipped["subjective_skipped"]))
+	assert(Dictionary(skipped["ratings"]).is_empty())
 	print("COMBAT SURVEY deterministic rooms, feedback, archive, and report: PASS")
 	quit(0)

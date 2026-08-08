@@ -1,6 +1,21 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.4` (Android version code `104`).
+Current prototype version: `0.1.7` (Android version code `107`).
+
+### v0.1.7: Survey-informed combat correction
+
+- Tightens ordinary Sword, Knife, Twin Knife, and common-enemy melee geometry while preserving multi-target contact for every body actually crossed; broad coverage remains an authored strength of heavy attacks and Weapon Arts.
+- Makes immediate drag claim movement before a stationary hold can become an attack, prevents combo hit reactions from refreshing into stunlock, and restricts pounces to trajectories that can physically reach the player.
+- Improves ranged/support roles with rear-biased Survey placement, Archer firing-lane checks and repositioning, more readable Ice Caster startup, and lane-leading movement for heavy interceptors.
+- Expands Combat Survey reports with entry/exit health and potions, action usage, death source, and a `Skip — Not Enough Information` response that preserves objective telemetry. Both Survey profiles can now spend earned XP; Encounter still refreshes resources between rooms.
+
+### v0.1.6: Reliable Android report export
+
+Combat Survey exports now publish completed text files through Android's Downloads collection and show an explicit success or failure result inside the archive panel. Failed direct exports copy the complete combined report to the clipboard and explain the failure instead of silently disappearing behind the overlay.
+
+### v0.1.5: Attrition leveling fix
+
+Combat Survey's Attrition profile now permits character-sheet level-ups whenever the player is idle and has enough accumulated XP. Upgrade eligibility, purchase validation, XP spending, and the sheet's Attrition Survey label use the same progression context; the per-encounter reset profile intentionally remains non-leveling.
 
 ### v0.1.4: Safer survey ending and sword finisher
 
