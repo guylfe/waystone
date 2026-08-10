@@ -9,6 +9,12 @@ func _init() -> void:
 	second.start_run("warrior", "combat_survey", 424242, "encounter")
 	assert(first.survey_room_seed == second.survey_room_seed)
 	assert(first.survey_room_definition == second.survey_room_definition)
+	var acrobat = RunStateScript.new(false)
+	acrobat.start_run("rogue_acrobat", "combat_survey", 424242, "encounter")
+	var sharpshooter = RunStateScript.new(false)
+	sharpshooter.start_run("rogue_sharpshooter", "combat_survey", 424242, "encounter")
+	assert(first.survey_room_definition == acrobat.survey_room_definition)
+	assert(first.survey_room_definition == sharpshooter.survey_room_definition)
 	assert(first.enemies.size() > 0 and first.enemies.size() <= 6)
 	assert(first.current_layer == "survey_arena")
 	assert(first.survey_room_number == 1)
@@ -16,6 +22,7 @@ func _init() -> void:
 		var opening_offset: Vector2 = Vector2(enemy["pos"]) - first.player_pos
 		assert(opening_offset.length() >= 359.9)
 		assert(Vector2(enemy["facing"]).dot(opening_offset.normalized()) > 0.99)
+		assert(String(enemy["awareness"]) == "idle")
 	var first_seed: int = first.survey_room_seed
 	first._annotate_player_action("test_ability")
 	for enemy in first.enemies: enemy["hp"] = 0
@@ -42,6 +49,34 @@ func _init() -> void:
 	assert("Room seed:" in report and "Tags: fair, good mix" in report)
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Action usage:" in report)
+	assert("Pacing:" in report and "Recipe:" in report and "Roles:" in report)
+
+	var director = RunStateScript.new(false)
+	director.start_run("rogue_acrobat", "combat_survey", 7777333, "encounter")
+	var previous_recipe := ""
+	var previous_family := ""
+	var expected_phases := ["opening", "development", "contrast", "pressure", "climax", "respite"]
+	for room_index in range(12):
+		var definition: Dictionary = director.survey_room_definition
+		var recipe_id := String(definition["recipe_id"])
+		var family := String(definition["recipe_family"])
+		assert(String(definition["pacing_phase"]) == String(expected_phases[room_index % expected_phases.size()]))
+		assert(not recipe_id.is_empty() and recipe_id != "unknown")
+		assert(int(definition["composition_cost"]) > 0)
+		assert(int(definition["ranged_pressure_count"]) <= 2)
+		assert(Array(definition["enemy_roles"]).size() == director.enemies.size())
+		if not previous_recipe.is_empty(): assert(recipe_id != previous_recipe)
+		if not previous_family.is_empty(): assert(family != previous_family)
+		for enemy in director.enemies:
+			var offset: Vector2 = Vector2(enemy["pos"]) - director.player_pos
+			assert(offset.length() >= 359.9)
+			assert(Vector2(enemy["facing"]).dot(offset.normalized()) > 0.99)
+			assert(String(enemy["awareness"]) == "idle")
+		previous_recipe = recipe_id
+		previous_family = family
+		for enemy in director.enemies: enemy["hp"] = 0
+		director._remove_dead_enemies()
+		director.submit_survey_feedback(ratings, [], "Director regression room.")
 
 	var attrition = RunStateScript.new(false)
 	attrition.start_run("warrior", "combat_survey", 515151, "attrition")

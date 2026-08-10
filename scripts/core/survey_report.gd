@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 2
+const FORMAT_VERSION := 3
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -62,9 +62,15 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Room seed: %d" % int(room.get("room_seed", 0)))
 		lines.append("Outcome: %s" % String(room.get("outcome", "unknown")))
 		lines.append("Threat tier: %d (%s)" % [int(room.get("threat_tier", 0)), String(room.get("threat_band", "conventional"))])
+		lines.append("Pacing: %s" % String(room.get("pacing_phase", "unknown")))
+		lines.append("Recipe: %s [%s]" % [String(room.get("recipe_label", "Unknown")), String(room.get("recipe_id", "unknown"))])
+		lines.append("Recipe family: %s" % String(room.get("recipe_family", "unknown")))
+		lines.append("Composition cost: %d" % int(room.get("composition_cost", 0)))
+		lines.append("Ranged pressure: %d" % int(room.get("ranged_pressure_count", 0)))
 		lines.append("Arena: %s" % String(room.get("arena", "unknown")))
 		lines.append("Formation: %s" % String(room.get("formation", "unknown")))
 		lines.append("Enemies: %s" % ", ".join(PackedStringArray(room.get("enemy_labels", []))))
+		lines.append("Roles: %s" % ", ".join(PackedStringArray(room.get("enemy_roles", []))))
 		lines.append("Build: %s" % String(room.get("build_summary", "unknown")))
 		lines.append("Health: %d/%d -> %d/%d" % [int(room.get("entry_hp", 0)), int(room.get("entry_max_hp", 0)), int(room.get("exit_hp", 0)), int(room.get("entry_max_hp", 0))])
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])

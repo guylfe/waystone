@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.8` (Android version code `108`).
+Current prototype version: `0.1.9` (Android version code `109`).
+
+### v0.1.9: Composition and pacing director
+
+- Replaces the Combat Survey's largely random threat-budget assembly with authored tactical recipes built around pursuit, melee pressure, screened ranged support, crossfire, area denial, and heavy anchors.
+- Sequences rooms through a repeating opening, development, contrast, pressure, climax, and respite rhythm while suppressing recently used recipes and recipe families.
+- Assigns frontline, flanker, ranged-pressure, area-denial, and anchor placement roles without consulting the chosen character. Every loadout receives identical seeded rooms, and every room begins with enemies idle, facing away, and outside immediate detection distance.
+- Caps simultaneous ranged-pressure roles at two and records pacing phase, recipe identity, family, composition cost, ranged pressure, and individual enemy roles in report format 3.
+- Preserves the existing Survey arena shapes and formation coordinates so the new composition data remains comparable before the planned geometry laboratory.
 
 ### v0.1.8: Combat role integrity
 

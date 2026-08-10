@@ -36,8 +36,8 @@ const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
 const SAVE_VERSION := 25
-const GAME_VERSION := "0.1.8"
-const SURVEY_GENERATOR_VERSION := 2
+const GAME_VERSION := "0.1.9"
+const SURVEY_GENERATOR_VERSION := 3
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -429,13 +429,14 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	survey_room_seed = _survey_seed_for_room(room_number)
 	var room_rng := RandomNumberGenerator.new()
 	room_rng.seed = survey_room_seed
-	var threat_roll := room_rng.randf()
-	var threat_band := "stress" if threat_roll > 0.91 else "unusual" if threat_roll > 0.72 else "conventional"
+	var pacing_phase := _survey_pacing_phase(room_number)
+	var threat_band := _survey_threat_band(pacing_phase, room_rng)
+	var composition := _survey_composition(room_rng, room_number, threat_band, pacing_phase)
 	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
-	var formation_ids := ["frontline", "spread", "flanked", "ranged_support", "surround", "split"]
 	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
-	var formation_id := String(formation_ids[room_rng.randi_range(0, formation_ids.size() - 1)])
-	var enemy_plan := _survey_enemy_plan(room_rng, room_number, threat_band)
+	var formation_options: Array = composition.get("formations", ["spread"])
+	var formation_id := String(formation_options[room_rng.randi_range(0, formation_options.size() - 1)])
+	var enemy_plan: Array = composition.get("enemies", [])
 	var layer := "survey_arena"
 	var center := Vector2(850.0, 700.0)
 	var player_start := Vector2(850.0, 1080.0)
@@ -456,9 +457,12 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	var available_spawn_slots := spawn_slots.duplicate()
 	var templates: Array[Dictionary] = []
 	var enemy_labels: Array[String] = []
+	var enemy_roles: Array[String] = []
 	for index in range(enemy_plan.size()):
-		var kind := String(enemy_plan[index])
-		var slot := _survey_take_spawn_slot(available_spawn_slots, kind, player_start)
+		var planned_enemy := Dictionary(enemy_plan[index])
+		var kind := String(planned_enemy["kind"])
+		var role := String(planned_enemy.get("role", "frontline"))
+		var slot := _survey_take_spawn_slot(available_spawn_slots, role, player_start)
 		var jitter := Vector2(room_rng.randf_range(-34.0, 34.0), room_rng.randf_range(-28.0, 28.0))
 		var spawn_position: Vector2 = slot + jitter
 		for obstacle in obstacle_rects:
@@ -474,8 +478,9 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 			var safe_direction := from_player.normalized() if from_player.length_squared() > 0.001 else Vector2.UP
 			spawn_position = player_start + safe_direction * 360.0
 		var initial_facing := (spawn_position - player_start).normalized()
-		templates.append({"kind": kind, "pos": spawn_position, "facing": initial_facing, "layer": layer})
+		templates.append({"kind": kind, "role": role, "pos": spawn_position, "facing": initial_facing, "layer": layer})
 		enemy_labels.append(kind.replace("_", " ").capitalize())
+		enemy_roles.append("%s: %s" % [kind.replace("_", " ").capitalize(), role.replace("_", " ")])
 	var threat_tier := 1 + int(floor(float(room_number - 1) * 0.5))
 	survey_room_definition = {
 		"room_number": room_number,
@@ -484,7 +489,14 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"formation": formation_id,
 		"threat_tier": threat_tier,
 		"threat_band": threat_band,
+		"pacing_phase": pacing_phase,
+		"recipe_id": String(composition.get("id", "unknown")),
+		"recipe_label": String(composition.get("label", "Unknown")),
+		"recipe_family": String(composition.get("family", "unknown")),
+		"composition_cost": int(composition.get("cost", 0)),
+		"ranged_pressure_count": int(composition.get("ranged_pressure_count", 0)),
 		"enemy_labels": enemy_labels,
+		"enemy_roles": enemy_roles,
 	}
 
 	var layers := {layer: {"name": "Combat Survey", "depth": 0}}
@@ -515,15 +527,22 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"shortcut_start_pos": Vector2.ZERO,
 	}
 
-func _survey_take_spawn_slot(available: Array, enemy_kind: String, player_start: Vector2) -> Vector2:
+func _survey_take_spawn_slot(available: Array, role: String, player_start: Vector2) -> Vector2:
 	if available.is_empty(): return player_start + Vector2.UP * 420.0
-	var ranged_role := enemy_kind in ["archer", "hexer", "ice_caster", "fire_caster"]
 	var chosen_index := 0
-	var chosen_distance := -INF if ranged_role else INF
+	var chosen_score := -INF
 	for index in range(available.size()):
-		var distance := Vector2(available[index]).distance_squared_to(player_start)
-		if (ranged_role and distance > chosen_distance) or (not ranged_role and distance < chosen_distance):
-			chosen_distance = distance
+		var slot := Vector2(available[index])
+		var distance := slot.distance_to(player_start)
+		var lateral := absf(slot.x - player_start.x)
+		var score := -absf(distance - 410.0)
+		match role:
+			"ranged_pressure", "area_denial": score = distance - lateral * 0.08
+			"flanker": score = lateral * 1.25 + distance * 0.18
+			"anchor": score = -absf(distance - 480.0) - lateral * 0.12
+			_: score = -absf(distance - 390.0) - lateral * 0.05
+		if score > chosen_score:
+			chosen_score = score
 			chosen_index = index
 	var chosen := Vector2(available[chosen_index])
 	available.remove_at(chosen_index)
@@ -532,38 +551,96 @@ func _survey_take_spawn_slot(available: Array, enemy_kind: String, player_start:
 func _survey_seed_for_room(room_number: int) -> int:
 	return absi(hash("waystone-survey:%d:%d:%d" % [SURVEY_GENERATOR_VERSION, run_seed, room_number]))
 
-func _survey_enemy_plan(room_rng: RandomNumberGenerator, room_number: int, threat_band: String) -> Array[String]:
+func _survey_pacing_phase(room_number: int) -> String:
+	var phases := ["opening", "development", "contrast", "pressure", "climax", "respite"]
+	return String(phases[posmod(room_number - 1, phases.size())])
+
+func _survey_threat_band(pacing_phase: String, room_rng: RandomNumberGenerator) -> String:
+	match pacing_phase:
+		"contrast": return "unusual"
+		"pressure": return "stress" if room_rng.randf() < 0.24 else "unusual"
+		"climax": return "stress"
+		"development": return "unusual" if room_rng.randf() < 0.18 else "conventional"
+		_: return "conventional"
+
+func _survey_recipe_catalog() -> Array[Dictionary]:
+	return [
+		{"id": "opening_pursuit", "label": "Opening Pursuit", "family": "pursuit", "min_tier": 1, "phases": ["opening", "respite"], "formations": ["frontline", "spread"], "enemies": [{"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "knife", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
+		{"id": "mixed_skirmish", "label": "Mixed Skirmish", "family": "skirmish", "min_tier": 1, "phases": ["development", "contrast", "respite"], "formations": ["spread", "flanked", "split"], "enemies": [{"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
+		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "boar", "role": "frontline"}]},
+		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
+		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "blade", "role": "frontline"}]},
+		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 4, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
+		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster", "role": "area_denial"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}]},
+		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 5, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster", "role": "area_denial"}, {"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
+		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster", "role": "area_denial"}, {"kind": "fire_caster", "role": "area_denial"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
+		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 6, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
+		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 7, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
+		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 7, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "hound", "role": "flanker"}, {"kind": "blade", "role": "frontline"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}]},
+		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 9, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "ice_caster", "role": "area_denial"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
+	]
+
+func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
 	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
-	var budget := mini(18, 2 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
-	var pool: Array[Dictionary] = [{"id": "boar", "cost": 1}, {"id": "hound", "cost": 1}]
-	if tier >= 2: pool.append_array([{"id": "bandit", "cost": 2}, {"id": "knife", "cost": 1}])
-	if tier >= 3: pool.append_array([{"id": "blade", "cost": 2}, {"id": "archer", "cost": 2}])
-	if tier >= 5: pool.append_array([{"id": "ice_caster", "cost": 3}, {"id": "fire_caster", "cost": 3}])
-	if tier >= 6: pool.append({"id": "polearm", "cost": 3})
-	if tier >= 7: pool.append_array([{"id": "brute", "cost": 4}, {"id": "captain", "cost": 4}])
-	if tier >= 9: pool.append({"id": "knight", "cost": 5})
-	var result: Array[String] = []
-	var casters := 0
-	if threat_band == "unusual" and tier >= 3:
-		result.append("archer")
-		budget -= 2
-	elif threat_band == "stress" and tier >= 5:
-		var pressure_kind := "ice_caster" if room_rng.randf() < 0.5 else "fire_caster"
-		result.append(pressure_kind)
-		casters = 1
-		budget -= 3
-	while budget > 0 and result.size() < 6:
-		var affordable: Array[Dictionary] = []
-		for option in pool:
-			var option_id := String(option["id"])
-			if int(option["cost"]) <= budget and (casters < 2 or option_id not in ["ice_caster", "fire_caster"]): affordable.append(option)
-		if affordable.is_empty(): break
-		var chosen := affordable[room_rng.randi_range(0, affordable.size() - 1)]
-		var chosen_id := String(chosen["id"])
-		result.append(chosen_id)
-		budget -= int(chosen["cost"])
-		if chosen_id in ["ice_caster", "fire_caster"]: casters += 1
-	if result.is_empty(): result.append("boar")
+	var candidates: Array[Dictionary] = []
+	for recipe_value in _survey_recipe_catalog():
+		var recipe := Dictionary(recipe_value)
+		if tier >= int(recipe["min_tier"]) and Array(recipe["phases"]).has(pacing_phase): candidates.append(recipe)
+	if candidates.is_empty(): candidates.append(Dictionary(_survey_recipe_catalog()[0]))
+	var recent_ids: Array[String] = []
+	var recent_family := ""
+	var completed_rooms: Array = survey_session.get("rooms", [])
+	for index in range(maxi(0, completed_rooms.size() - 2), completed_rooms.size()):
+		recent_ids.append(String(Dictionary(completed_rooms[index]).get("recipe_id", "")))
+	if not completed_rooms.is_empty(): recent_family = String(Dictionary(completed_rooms[-1]).get("recipe_family", ""))
+	var unused: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return not recent_ids.has(String(recipe["id"])))
+	if not unused.is_empty(): candidates = unused
+	var different_family: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return String(recipe["family"]) != recent_family)
+	if not different_family.is_empty(): candidates = different_family
+	var chosen := Dictionary(candidates[room_rng.randi_range(0, candidates.size() - 1)]).duplicate(true)
+	var enemies: Array[Dictionary] = []
+	for enemy_value in Array(chosen["enemies"]): enemies.append(Dictionary(enemy_value).duplicate())
+	var target_budget := mini(18, 2 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
+	if pacing_phase == "respite": target_budget = maxi(3, target_budget - 2)
+	var cost := _survey_composition_cost(enemies)
+	var reinforcements: Array = chosen.get("reinforcements", [])
+	var attempts := 0
+	while cost < target_budget and enemies.size() < 6 and not reinforcements.is_empty() and attempts < 18:
+		attempts += 1
+		var option := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
+		var kind := String(option["kind"])
+		var option_cost := _survey_enemy_cost(kind)
+		if cost + option_cost > target_budget: continue
+		if _survey_plan_kind_count(enemies, kind) >= 2: continue
+		if _survey_is_ranged_pressure(option) and _survey_ranged_pressure_count(enemies) >= 2: continue
+		enemies.append(option.duplicate())
+		cost += option_cost
+	chosen["enemies"] = enemies
+	chosen["cost"] = cost
+	chosen["ranged_pressure_count"] = _survey_ranged_pressure_count(enemies)
+	return chosen
+
+func _survey_enemy_cost(kind: String) -> int:
+	return int({"boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
+
+func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
+	var result := 0
+	for planned_enemy in enemies_plan: result += _survey_enemy_cost(String(planned_enemy["kind"]))
+	return result
+
+func _survey_is_ranged_pressure(planned_enemy: Dictionary) -> bool:
+	return String(planned_enemy.get("role", "")) in ["ranged_pressure", "area_denial"]
+
+func _survey_plan_kind_count(enemies_plan: Array[Dictionary], kind: String) -> int:
+	var result := 0
+	for planned_enemy in enemies_plan:
+		if String(planned_enemy.get("kind", "")) == kind: result += 1
+	return result
+
+func _survey_ranged_pressure_count(enemies_plan: Array[Dictionary]) -> int:
+	var result := 0
+	for planned_enemy in enemies_plan:
+		if _survey_is_ranged_pressure(planned_enemy): result += 1
 	return result
 
 func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
@@ -856,6 +933,7 @@ func _respawn_enemies() -> void:
 			if kind in ["warden", "werewolf"] and _boss_defeated: continue
 			var enemy := _make_enemy(kind, Vector2(template["pos"]), _enemy_base_hp(kind), area_id)
 			enemy["layer"] = String(template.get("layer", "expedition_surface"))
+			if template.has("role"): enemy["survey_role"] = String(template["role"])
 			if template.has("facing"):
 				var authored_facing := Vector2(template["facing"])
 				if authored_facing.length_squared() > 0.001: enemy["facing"] = authored_facing.normalized()
