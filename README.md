@@ -1,6 +1,13 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.7` (Android version code `107`).
+Current prototype version: `0.1.8` (Android version code `108`).
+
+### v0.1.8: Combat role integrity
+
+- Separates Bow release identities: loose arrows are weaker emergency shots without ordinary hit reaction, while Full Draw carries higher damage, posture pressure, and stopping power. Take Aim now requires an interruptible preparation commitment, and Keen Eye correctly senses enemies hidden behind discovered obstructions.
+- Makes Knife and Acrobat play more deliberately with a clearer isometric contact footprint, a less spammable four-cut sequence, an Execution step-in that preserves its committed unaware target until contact, and brief Vault disruption against light enemies.
+- Strengthens enemy roles without changing Survey compositions or arena geometry: heavy attacks resist light interruption, Polearms and Captains gain close-range cuts, Ice Caster startup is slower, suspicious enemies actively search, and Survey openings provide a consistent stealth buffer.
+- Holding `WAIT` now advances consecutive half-second intervals until release, preserving frozen-time control while making deliberate observation easier.
 
 ### v0.1.7: Survey-informed combat correction
 

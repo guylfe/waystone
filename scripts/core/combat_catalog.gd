@@ -171,7 +171,7 @@ const CHARACTER_TRACKS := {
 		"description": "Fast compact cuts, a permanent fighting style, and sustained pressure.",
 		"stages": [
 			{"id": "knife_art", "label": "Knife Art", "gate": 2, "description": "Permanently choose Execution or Twin Fang for this run.", "choices": [
-				{"id": "knife_execution", "label": "Execution", "description": "Keep one knife and gain a close execution cut with an additional unaware multiplier."},
+				{"id": "knife_execution", "label": "Execution", "description": "Keep one knife and gain a short step-in cut whose damage is greatly multiplied against an unaware target."},
 				{"id": "knife_twin_fang", "label": "Twin Fang", "description": "Equip twin knives, gain a six-cut sequence, and lunge with two simultaneous crossing hits."},
 			]},
 			{"id": "honed_edges", "label": "Honed Edges", "gate": 4, "description": "Every Knife contact deals exactly +1 health damage."},
@@ -225,8 +225,8 @@ const CHARACTER_TRACKS := {
 				{"id": "bow_piercing_shot", "label": "Piercing Shot", "description": "A slow, powerful line shot that passes through every crossed body."},
 				{"id": "bow_fan_shot", "label": "Fan Shot", "description": "Release three independent arrows in a compact short-range cone."},
 			]},
-			{"id": "instinctive_release", "label": "Instinctive Release", "gate": 4, "description": "Loose shots rise from 6 to 8 damage and from roughly 250 to 300 maximum range."},
-			{"id": "settled_draw", "label": "Settled Draw", "gate": 6, "description": "Full shots rise from 12 to 15 damage and from 2 to 3 posture damage."},
+			{"id": "instinctive_release", "label": "Instinctive Release", "gate": 4, "description": "Loose shots rise from 4 to 6 damage and from roughly 250 to 300 maximum range."},
+			{"id": "settled_draw", "label": "Settled Draw", "gate": 6, "description": "Full shots rise from 13 to 16 damage and from 2.5 to 3.25 posture damage."},
 			{"id": "quick_nock", "label": "Quick Nock", "gate": 8, "description": "Post-release recovery and a buffered next draw become approximately 20% faster."},
 			{"id": "following_arrow", "label": "Following Arrow", "gate": 10, "description": "A Full shot that hits permits one accelerated buffered follow-up draw."},
 		],

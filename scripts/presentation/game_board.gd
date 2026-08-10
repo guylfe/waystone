@@ -54,6 +54,7 @@ var pointer_down := false
 var pointer_intent := ""
 var hold_elapsed := 0.0
 var hold_consumed := false
+var wait_pointer_held := false
 var inspected_enemy_id := -1
 var held_movement := false
 var held_direction := Vector2.ZERO
@@ -879,7 +880,9 @@ func _process(delta: float) -> void:
 			visual = _interpolate_playback_snapshot(playback_accumulator / state.FRAME_DT)
 			needs_redraw = true
 	if not playing and _can_repeat_primary_action():
-		if queued_movement_after_attack:
+		if wait_pointer_held and pointer_down:
+			_begin_streamed_action(state.request_wait(0.50, false), finished_streamed_movement)
+		elif queued_movement_after_attack:
 			queued_movement_after_attack = false
 			_begin_streamed_move(queued_attack_exit_direction, state.MOVE_RANGE, finished_streamed_movement)
 		elif held_movement and pointer_down:
@@ -1175,6 +1178,11 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	inspected_enemy_id = -1
 	touch_start = position
 	touch_current = position
+	if interaction_rect.has_point(position) and state.interaction_label() == "WAIT":
+		pointer_intent = "wait"
+		wait_pointer_held = true
+		_begin_streamed_action(state.request_wait(0.50, false))
+		return
 	if selected_action == "advance" and board_rect.has_point(position):
 		if state.loadout_id == "rogue_sharpshooter": return
 		var advance_direction := _screen_to_world(position) - state.player_pos
@@ -1281,8 +1289,14 @@ func _pointer_released(position: Vector2) -> void:
 		return
 	pointer_down = false
 	pointer_is_mouse = false
+	if wait_pointer_held or pointer_intent == "wait":
+		wait_pointer_held = false
+		pointer_intent = ""
+		queue_redraw()
+		return
 	if defense_pointer_held:
 		defense_pointer_held = false
+		wait_pointer_held = false
 		state.set_block_hold(false)
 		pointer_intent = ""
 		queue_redraw()
@@ -1497,6 +1511,7 @@ func _notification(what: int) -> void:
 		attack_pointer_held = false
 		advance_pointer_held = false
 		defense_pointer_held = false
+		wait_pointer_held = false
 		if state != null: state.set_attack_hold(false)
 		if state != null: state.set_advance_hold(false)
 		if state != null: state.set_block_hold(false)
@@ -2603,6 +2618,14 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool) -
 	var facing := Vector2(action.get("direction", Vector2.UP)).normalized()
 	var sample: Dictionary = AttackGeometryScript.pose(action, world_pos, facing, state.walls)
 	var technique := String(sample.get("technique_id", "diagonal_cut"))
+	# Isometric lift makes a short blade easier to see but can make its contact
+	# distance look longer than the world-space hit. A restrained ground shadow
+	# projects the blade's real current capsule without drawing a telegraph zone.
+	if player_weapon and view_mode == "isometric" and technique in ["quick_cut", "knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"] and String(sample.get("shape", "")) == "segment":
+		var ground_body := _project_world_capsule(Vector2(sample["start"]), Vector2(sample["end"]), float(sample.get("radius", 5.0)))
+		var shadow_alpha := 0.20 if bool(sample.get("active", false)) else 0.09
+		draw_colored_polygon(ground_body, Color(0.97, 0.78, 0.36, shadow_alpha))
+		draw_polyline(_closed_points(ground_body), Color(1.0, 0.91, 0.63, shadow_alpha + 0.16), maxf(1.0, world_scale * 1.4))
 	var visual_lift := Vector2(0.0, -_weapon_visual_height(technique))
 	var weapon_start := _world_to_screen(Vector2(sample["weapon_start"])) + visual_lift
 	var weapon_end := _world_to_screen(Vector2(sample["weapon_end"])) + visual_lift

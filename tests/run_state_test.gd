@@ -57,6 +57,7 @@ func _init() -> void:
 	test_desktop_movement_tracks_screen_directions()
 	test_desktop_held_keys_combine_diagonally()
 	test_desktop_hold_attack_key()
+	test_held_wait_repeats_until_release()
 	test_melee_enemy_tap_intent_classifier()
 	test_immediate_touch_drag_claims_movement()
 	test_playback_interpolates_between_simulation_steps()
@@ -280,6 +281,11 @@ func test_polearm_reach_and_timing() -> void:
 	assert(float(action["reach"]) >= 210.0)
 	assert(float(action["startup"]) >= 0.9)
 	assert(float(action["duration"]) >= 2.2)
+	enemy["pos"] = state.player_pos + Vector2(0.0, -95.0)
+	state._choose_enemy_action(enemy)
+	action = enemy["action"]
+	assert(String(action["technique_id"]) == "reverse_cut")
+	assert(float(action["reach"]) >= 120.0)
 
 func test_projectile_motion() -> void:
 	var state: RunState = RunStateScript.new()
@@ -552,6 +558,13 @@ func test_grounded_heavy_resists_break() -> void:
 	brute["action"]["elapsed"] = 1.10
 	state._apply_posture_damage(brute, 20.0)
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
+	var startup := state._melee_action(2.55, 1.02, 1.52, 158.0, 4, Vector2.DOWN, "forward_smash")
+	startup["elapsed"] = 0.40
+	brute["action"] = startup
+	assert(not state._apply_enemy_hit_reaction(brute, 1.8, "alerted", startup))
+	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
+	assert(state._apply_enemy_hit_reaction(brute, 4.0, "alerted", startup))
+	assert(String(Dictionary(brute["action"])["kind"]) == "hit_reaction")
 
 func test_clean_opening_hit_preserves_a_defensive_choice() -> void:
 	for enemy_kind in ["bandit", "boar"]:
@@ -912,6 +925,28 @@ func test_desktop_hold_attack_key() -> void:
 	assert(not board.attack_key_held and not bool(board.state.player_action.get("continue_held", true)))
 	board.free()
 
+func test_held_wait_repeats_until_release() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.start_run("warrior", "combat_survey", 919191, "encounter")
+	board.visual = board.state.snapshot(true)
+	board.size = Vector2(1280, 800)
+	board._create_seed_input()
+	board._layout()
+	var start_time: float = board.state.simulation_time
+	var wait_point: Vector2 = board.interaction_rect.get_center()
+	board._pointer_pressed(wait_point)
+	assert(board.wait_pointer_held and board.pointer_down)
+	for _frame in range(24): board._process(0.10)
+	assert(board.state.simulation_time > start_time + 0.75)
+	board._pointer_released(wait_point)
+	assert(not board.wait_pointer_held and not board.pointer_down)
+	for _frame in range(16): board._process(0.10)
+	var stopped_time: float = board.state.simulation_time
+	for _frame in range(6): board._process(0.10)
+	assert(is_equal_approx(board.state.simulation_time, stopped_time))
+	board.free()
+
 func test_melee_enemy_tap_intent_classifier() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
@@ -1222,6 +1257,12 @@ func test_new_enemy_roles() -> void:
 	state._choose_enemy_action(brute)
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
 	assert(float(Dictionary(brute["action"])["duration"]) > 2.4)
+	var close_polearm := state._make_enemy("polearm", state.player_pos + Vector2.UP * 94.0, 12)
+	state._choose_enemy_action(close_polearm)
+	assert(String(Dictionary(close_polearm["action"])["technique_id"]) == "reverse_cut")
+	var close_captain := state._make_enemy("captain", state.player_pos + Vector2.UP * 90.0, 12)
+	state._choose_enemy_action(close_captain)
+	assert(String(Dictionary(close_captain["action"])["technique_id"]) == "quick_cut")
 	var captain := state._make_enemy("captain", Vector2(120, 120), 12)
 	state.player_pos = Vector2(200, 200)
 	state.enemies = [captain]
@@ -1235,11 +1276,12 @@ func test_back_half_expedition_roles() -> void:
 	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2.UP * 400.0, 8)
 	state._choose_enemy_action(ice)
 	assert(String(Dictionary(ice["action"])["kind"]) == "ice_hex")
+	assert(float(Dictionary(ice["action"])["startup"]) >= 1.29)
 	assert(Vector2(Dictionary(ice["action"])["target"]).distance_to(state.player_pos) <= 21.0)
 	ice["pos"] = state.player_pos + Vector2.UP * 250.0
 	state._choose_enemy_action(ice)
 	assert(String(Dictionary(ice["action"])["kind"]) == "ice_cone")
-	assert(float(Dictionary(ice["action"])["startup"]) >= 0.90)
+	assert(float(Dictionary(ice["action"])["startup"]) >= 1.15)
 	var fire := state._make_enemy("fire_caster", state.player_pos + Vector2.UP * 400.0, 8)
 	state._choose_enemy_action(fire)
 	assert(String(Dictionary(fire["action"])["kind"]) == "shoot" and String(Dictionary(fire["action"])["label"]) == "firebolt")

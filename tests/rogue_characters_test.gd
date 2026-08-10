@@ -14,6 +14,7 @@ func _init() -> void:
 	test_stealth_eligibility_breaks_and_alerts()
 	test_bow_draw_release_and_arts()
 	test_sharpshooter_preparation_and_range()
+	test_role_integrity_corrections()
 	test_universal_attributes_conditions_and_defenses()
 	test_v010_save_migration()
 	print("Rogue, weapon, touch-era framework, and universal combat tests passed.")
@@ -203,9 +204,63 @@ func test_sharpshooter_preparation_and_range() -> void:
 	assert(state.aimed_enemy_id == int(target["id"]))
 	state.track_ranks["sharpshooter"] = 2
 	assert(is_equal_approx(state._aimed_projectile_range_multiplier(), 1.15))
-	state.track_ranks["sharpshooter"] = 1
-	state.visible_cells.clear()
-	assert(not state._sensed_enemy_presentations().is_empty())
+	var keen := fresh("rogue_sharpshooter")
+	keen.track_ranks["sharpshooter"] = 1
+	var hidden := keen._make_enemy("blade", keen.player_pos + Vector2.RIGHT * 250.0, 35)
+	hidden["layer"] = keen.current_layer
+	keen.enemies.append(hidden)
+	keen._invalidate_active_enemy_cache()
+	keen.visible_cells[keen._visibility_cell(Vector2(hidden["pos"]))] = true
+	keen.walls.assign([Rect2(keen.player_pos + Vector2(105.0, -70.0), Vector2(35.0, 140.0))])
+	keen._build_wall_spatial_index()
+	assert(not keen._sensed_enemy_presentations().is_empty())
+
+func test_role_integrity_corrections() -> void:
+	var execution := fresh("rogue_acrobat")
+	assert(execution.choose_upgrade("knife|knife_execution"))
+	var victim := execution._make_enemy("knife", execution.player_pos + Vector2.RIGHT * 145.0, 80)
+	victim["layer"] = execution.current_layer
+	victim["facing"] = Vector2.LEFT
+	execution.enemies.append(victim)
+	execution._invalidate_active_enemy_cache()
+	var execution_origin := execution.player_pos
+	assert(execution.request_execution(Vector2.RIGHT, false))
+	assert(int(execution.player_action["execution_target_id"]) == int(victim["id"]))
+	for _tick in range(30): execution.advance_streamed_action_tick()
+	assert(String(victim["awareness"]) != "alerted")
+	advance_until_ready(execution)
+	assert(execution.player_pos.distance_to(execution_origin) > 25.0)
+	assert(int(victim["hp"]) <= 50)
+
+	var acrobat := fresh("rogue_acrobat")
+	var crossed := acrobat._make_enemy("knife", acrobat.player_pos + Vector2.RIGHT * 105.0, 30)
+	crossed["layer"] = acrobat.current_layer
+	acrobat.enemies.append(crossed)
+	acrobat._invalidate_active_enemy_cache()
+	assert(acrobat.request_vault(Vector2.RIGHT, false))
+	for _tick in range(30):
+		acrobat.advance_streamed_action_tick()
+		if String(Dictionary(crossed["action"])["kind"]) == "hit_reaction": break
+	assert(String(Dictionary(crossed["action"])["kind"]) == "hit_reaction")
+	assert(Array(acrobat.player_action["vault_crossed_ids"]).has(int(crossed["id"])))
+
+	var bow := fresh("rogue_sharpshooter")
+	var bow_target := bow._make_enemy("blade", bow.player_pos + Vector2.RIGHT * 250.0, 80)
+	bow_target["layer"] = bow.current_layer
+	bow_target["awareness"] = "alerted"
+	bow.enemies.append(bow_target)
+	bow._invalidate_active_enemy_cache()
+	bow_target["action"] = bow._enemy_move_action(bow_target, bow.player_pos, 0.5)
+	bow._damage_enemy_from_player_projectile(bow_target, {"kind": "player_arrow", "damage": 4, "posture": 0.0, "draw_ratio": 0.0}, Vector2(bow_target["pos"]))
+	assert(String(Dictionary(bow_target["action"])["kind"]) == "move")
+	bow_target["action"] = bow._enemy_move_action(bow_target, bow.player_pos, 0.5)
+	bow._damage_enemy_from_player_projectile(bow_target, {"kind": "player_arrow", "damage": 13, "posture": 2.5, "draw_ratio": 1.0}, Vector2(bow_target["pos"]))
+	assert(String(Dictionary(bow_target["action"])["kind"]) == "hit_reaction")
+	bow.player_action = bow._idle_action()
+	bow.visible_cells[bow._visibility_cell(Vector2(bow_target["pos"]))] = true
+	assert(bow.request_take_aim(int(bow_target["id"]), false))
+	assert(float(bow.player_action["effect_start"]) >= 1.0)
+	assert(float(bow.player_action["duration"]) > float(bow.player_action["effect_start"]))
 
 func test_universal_attributes_conditions_and_defenses() -> void:
 	var state := fresh("rogue_acrobat")

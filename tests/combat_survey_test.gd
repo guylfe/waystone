@@ -12,6 +12,10 @@ func _init() -> void:
 	assert(first.enemies.size() > 0 and first.enemies.size() <= 6)
 	assert(first.current_layer == "survey_arena")
 	assert(first.survey_room_number == 1)
+	for enemy in first.enemies:
+		var opening_offset: Vector2 = Vector2(enemy["pos"]) - first.player_pos
+		assert(opening_offset.length() >= 359.9)
+		assert(Vector2(enemy["facing"]).dot(opening_offset.normalized()) > 0.99)
 	var first_seed: int = first.survey_room_seed
 	first._annotate_player_action("test_ability")
 	for enemy in first.enemies: enemy["hp"] = 0
