@@ -42,7 +42,12 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 		offset = direction * world_radius * 0.16 * (1.0 - progress)
 		width_scale = 0.94
 		height_scale = 1.06
-	elif kind in ["move", "charge", "advance", "dodge", "evade", "vault"]:
+	elif kind == "move":
+		# World-space interpolation already communicates ordinary locomotion.
+		# Keep the placeholder body steady so repeated short movement pulses do
+		# not read as bobbing or squash-and-stretch.
+		commitment = progress
+	elif kind in ["charge", "advance", "dodge", "evade", "vault"]:
 		var motion := sin(progress * PI)
 		commitment = motion
 		offset = direction * world_radius * (0.12 + motion * 0.12)

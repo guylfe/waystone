@@ -1,6 +1,10 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.0` (Android version code `200`).
+Current prototype version: `0.2.1` (Android version code `201`).
+
+### v0.2.1: Stable locomotion presentation
+
+- Removes the procedural body bob, squash, and forward offset from ordinary movement. The character now glides steadily with its rendered body and feet anchored to the authoritative moving position; committed attacks, Dodge, Vault, Advance, and other authored actions retain their distinct poses.
 
 ### v0.2.0: Isometric-first presentation foundation
 
