@@ -4,6 +4,7 @@ const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
+const IsometricPoseScript = preload("res://scripts/presentation/isometric_pose.gd")
 const BG := Color("0d151b")
 const FLOOR := Color("17272d")
 const WALL := Color("344148")
@@ -27,7 +28,7 @@ const MAP_LAYERS_PER_PAGE := 5
 const MAX_SIM_TICKS_PER_FRAME := 4
 const RENDER_QUERY_REUSE_DISTANCE := 220.0
 const FLOOR_RENDER_CHUNK_CELLS := 8
-const TEMPORAL_TINT_ALPHA := 0.16
+const TEMPORAL_TINT_ALPHA := 0.13
 const TEMPORAL_TINT_FADE_IN := 2.6
 const TEMPORAL_TINT_FADE_OUT := 4.0
 const AREA_TITLE_DURATION := 2.8
@@ -73,6 +74,7 @@ var board_area := Rect2()
 var iso_origin := Vector2.ZERO
 var view_mode := "isometric"
 var debug_hitboxes := false
+var _occlusion_focus_bounds: Array[Rect2] = []
 var selected_action := ""
 var buttons: Dictionary = {}
 var consumable_rects: Dictionary = {}
@@ -180,6 +182,7 @@ func _ready() -> void:
 	_layout()
 	call_deferred("_layout")
 	_sync_setup_controls()
+	state.record_survey_view_mode(view_mode, false)
 
 func _create_seed_input() -> void:
 	seed_input = LineEdit.new()
@@ -309,7 +312,7 @@ func _build_survey_feedback_overlay() -> void:
 	tag_grid.columns = 3
 	tag_grid.add_theme_constant_override("h_separation", 7)
 	tag_grid.add_theme_constant_override("v_separation", 7)
-	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure"]:
+	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure"]:
 		var button := Button.new()
 		button.text = String(tag).to_upper()
 		button.toggle_mode = true
@@ -1727,6 +1730,7 @@ func _start_run() -> void:
 	setup_seed_error = ""
 	seed_input.release_focus()
 	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile)
+	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
 	playing = false
 	streaming_action = false
@@ -1904,6 +1908,7 @@ func _draw_world() -> void:
 	_draw_grid()
 	var discovered := _render_discovered_cells()
 	var visible: Dictionary = _render_visible_cells()
+	_prepare_occlusion_focus_bounds(visible)
 	if view_mode == "top_down":
 		for wall in _render_walls():
 			if not _world_rect_on_camera(wall): continue
@@ -1923,18 +1928,9 @@ func _draw_world() -> void:
 		var sensed_screen := _world_to_screen(sensed_pos)
 		draw_circle(sensed_screen, maxf(8.0, 13.0 * world_scale), Color(0.50, 0.74, 0.84, 0.12))
 		draw_arc(sensed_screen, maxf(8.0, 13.0 * world_scale), 0.0, TAU, 16, Color(0.50, 0.74, 0.84, 0.48), maxf(1.5, 2.0 * world_scale))
-	for projectile in Array(visual.get("projectiles", [])):
-		if String(projectile.get("layer", state.current_layer)) != state.current_layer: continue
-		if not _world_point_on_camera(Vector2(projectile["pos"]), 30.0): continue
-		if not state.is_visible(Vector2(projectile["pos"]), visible): continue
-		var center := _world_to_screen(Vector2(projectile["pos"]))
-		var direction := _screen_direction(Vector2(projectile["vel"]).normalized())
-		if String(projectile.get("kind", "arrow")) == "firebolt":
-			draw_line(center - direction * 22.0 * world_scale, center, Color(0.94, 0.31, 0.10, 0.48), maxf(3.0, world_scale * 9.0))
-			draw_circle(center, maxf(5.0, float(projectile.get("radius", 13.0)) * world_scale * 0.72), Color("f06b24"))
-			draw_circle(center - direction * 2.0, maxf(2.0, world_scale * 4.0), Color("ffd36a"))
-		else:
-			draw_line(center - direction * 15.0, center + direction * 9.0, Color("f1ce72"), maxf(2.0, world_scale * 8.0))
+	if view_mode == "top_down":
+		for projectile in Array(visual.get("projectiles", [])):
+			if _projectile_is_renderable(Dictionary(projectile), visible): _draw_projectile(Dictionary(projectile))
 	for hazard in Array(visual.get("hazards", [])):
 		if String(hazard.get("layer", state.current_layer)) != state.current_layer: continue
 		if not _world_point_on_camera(Vector2(hazard["pos"]), float(hazard.get("radius", 100.0))): continue
@@ -1953,6 +1949,7 @@ func _draw_world() -> void:
 		if String(effect.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(effect["pos"]), 80.0) and state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
 	_draw_shadow_guidance()
 	_draw_temporal_tint()
+	_draw_isometric_focus_overlay(visible)
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
 	_draw_area_title()
@@ -1977,6 +1974,50 @@ func _draw_world() -> void:
 func _draw_temporal_tint() -> void:
 	if temporal_tint_strength <= 0.001: return
 	draw_rect(board_rect, Color(0.06, 0.38, 0.66, TEMPORAL_TINT_ALPHA * temporal_tint_strength))
+
+func _projectile_is_renderable(projectile: Dictionary, visible: Dictionary) -> bool:
+	var position := Vector2(projectile.get("pos", Vector2.ZERO))
+	return String(projectile.get("layer", state.current_layer)) == state.current_layer \
+		and _world_point_on_camera(position, 45.0) \
+		and state.is_visible(position, visible)
+
+func _draw_projectile(projectile: Dictionary) -> void:
+	var world_center := Vector2(projectile["pos"])
+	var ground := _world_to_screen(world_center)
+	var world_direction := Vector2(projectile.get("vel", Vector2.UP)).normalized()
+	var direction := _screen_direction(world_direction)
+	var kind := String(projectile.get("kind", "arrow"))
+	var radius := maxf(4.0, float(projectile.get("radius", 8.0)) * world_scale)
+	var elevation := (18.0 if kind == "firebolt" else 10.0) * world_scale if view_mode == "isometric" else 0.0
+	var center := ground + Vector2(0.0, -elevation)
+	if view_mode == "isometric":
+		var shadow_direction := _world_to_screen(world_center + world_direction * 14.0) - ground
+		draw_line(ground - shadow_direction * 0.55, ground + shadow_direction * 0.55, Color(0.01, 0.02, 0.025, 0.58), maxf(2.0, radius * 0.62))
+		draw_circle(ground, maxf(2.0, radius * 0.38), Color(0.01, 0.02, 0.025, 0.68))
+		draw_line(ground, center, Color(0.62, 0.78, 0.83, 0.18), maxf(1.0, world_scale))
+	if kind == "firebolt":
+		draw_line(center - direction * 22.0 * world_scale, center, Color(0.94, 0.31, 0.10, 0.48), maxf(3.0, world_scale * 9.0))
+		draw_circle(center, maxf(5.0, radius * 0.72), Color("f06b24"))
+		draw_circle(center - direction * 2.0, maxf(2.0, world_scale * 4.0), Color("ffd36a"))
+	else:
+		draw_line(center - direction * 15.0, center + direction * 9.0, Color("f1ce72"), maxf(2.0, world_scale * 8.0))
+		var tip := center + direction * 10.0
+		var side := direction.rotated(PI * 0.5)
+		draw_colored_polygon(PackedVector2Array([tip, center + direction * 4.0 + side * 3.5, center + direction * 4.0 - side * 3.5]), Color("fff1b8"))
+
+func _draw_isometric_focus_overlay(visible: Dictionary) -> void:
+	if view_mode != "isometric": return
+	var frozen_alpha := 0.10 + temporal_tint_strength * 0.12
+	var player_world := Vector2(visual.get("player_pos", state.player_pos))
+	var player_pos := _actor_visual_center(player_world, state.PLAYER_RADIUS)
+	draw_arc(player_pos, _actor_body_radius(state.PLAYER_RADIUS) * 1.08, 0.0, TAU, 24, Color(0.78, 0.96, 1.0, frozen_alpha + 0.10), maxf(1.0, world_scale * 1.3))
+	for enemy_value in Array(visual.get("enemies", [])):
+		var enemy := Dictionary(enemy_value)
+		var enemy_world := Vector2(enemy.get("pos", Vector2.ZERO))
+		if String(enemy.get("layer", state.current_layer)) != state.current_layer or not state.is_visible(enemy_world, visible): continue
+		var radius := float(enemy.get("radius", state.ENEMY_RADIUS))
+		var body := _actor_visual_center(enemy_world, radius)
+		draw_arc(body, _actor_body_radius(radius) * 1.08, 0.0, TAU, 24, Color(0.94, 0.92, 0.82, frozen_alpha), maxf(1.0, world_scale))
 
 func _draw_area_title() -> void:
 	if area_title_remaining <= 0.0 or area_title_name.is_empty(): return
@@ -2011,6 +2052,10 @@ func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void
 		if not _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5): continue
 		if not state.is_visible(Vector2(enemy["pos"]), visible): continue
 		entries.append({"kind": "enemy", "enemy": enemy, "depth": _world_to_screen(Vector2(enemy["pos"])).y})
+	for projectile_value in Array(visual.get("projectiles", [])):
+		var projectile := Dictionary(projectile_value)
+		if not _projectile_is_renderable(projectile, visible): continue
+		entries.append({"kind": "projectile", "projectile": projectile, "depth": _world_to_screen(Vector2(projectile["pos"])).y})
 	for feature in _render_features():
 		if String(feature.get("layer", state.current_layer)) != state.current_layer: continue
 		var feature_pos := Vector2(feature["pos"])
@@ -2032,7 +2077,10 @@ func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void
 				var gate_rect := Rect2(shortcut["gate"])
 				_draw_shortcut_gate(shortcut, _wall_occlusion_alpha(gate_rect))
 			"enemy": _draw_enemy(Dictionary(entry["enemy"]))
-			"feature": _draw_terrain_feature(Dictionary(entry["feature"]))
+			"feature":
+				var feature := Dictionary(entry["feature"])
+				_draw_terrain_feature(feature, _feature_occlusion_alpha(feature))
+			"projectile": _draw_projectile(Dictionary(entry["projectile"]))
 			"player": _draw_player()
 
 func _render_query_radius() -> float:
@@ -2080,10 +2128,42 @@ func _wall_occlusion_alpha(wall: Rect2) -> float:
 	var bounds := Rect2(base[0], Vector2.ZERO)
 	for point in base: bounds = bounds.expand(point)
 	bounds = bounds.expand(bounds.position - Vector2(0.0, ISO_WALL_HEIGHT * world_scale))
-	var player_foot := _world_to_screen(Vector2(visual.get("player_pos", state.player_pos)))
-	var player_radius := state.PLAYER_RADIUS * world_scale
-	var player_bounds := Rect2(player_foot + Vector2(-player_radius, -player_radius * 2.65), Vector2(player_radius * 2.0, player_radius * 2.9))
-	return 0.30 if bounds.intersects(player_bounds, true) else 1.0
+	for index in range(_occlusion_focus_bounds.size()):
+		if bounds.intersects(_occlusion_focus_bounds[index], true): return 0.20 if index == 0 else 0.36
+	return 1.0
+
+func _prepare_occlusion_focus_bounds(visible: Dictionary) -> void:
+	_occlusion_focus_bounds.clear()
+	_occlusion_focus_bounds.append(_actor_screen_bounds(Vector2(visual.get("player_pos", state.player_pos)), state.PLAYER_RADIUS))
+	var player_world := Vector2(visual.get("player_pos", state.player_pos))
+	for enemy_value in Array(visual.get("enemies", [])):
+		var enemy := Dictionary(enemy_value)
+		var position := Vector2(enemy.get("pos", Vector2.ZERO))
+		if String(enemy.get("layer", state.current_layer)) != state.current_layer or player_world.distance_to(position) > 760.0: continue
+		if not state.is_visible(position, visible): continue
+		_occlusion_focus_bounds.append(_actor_screen_bounds(position, float(enemy.get("radius", state.ENEMY_RADIUS))))
+	for projectile_value in Array(visual.get("projectiles", [])):
+		var projectile := Dictionary(projectile_value)
+		if not _projectile_is_renderable(projectile, visible): continue
+		var center := _world_to_screen(Vector2(projectile["pos"]))
+		var radius := maxf(8.0, float(projectile.get("radius", 8.0)) * world_scale)
+		_occlusion_focus_bounds.append(Rect2(center - Vector2.ONE * radius * 2.0, Vector2.ONE * radius * 4.0))
+
+func _actor_screen_bounds(world_pos: Vector2, world_radius: float) -> Rect2:
+	var foot := _world_to_screen(world_pos)
+	var radius := maxf(8.0, world_radius * world_scale)
+	return Rect2(foot + Vector2(-radius, -radius * 2.55), Vector2(radius * 2.0, radius * 2.85))
+
+func _feature_occlusion_alpha(feature: Dictionary) -> float:
+	if view_mode != "isometric" or String(feature.get("kind", "tree")) in ["brook", "old_road", "meadow", "flowers", "forest_pass", "stone_circle", "roots", "undergrowth", "ancient_ruin", "ruin_fragment"]: return 1.0
+	var foot := _world_to_screen(Vector2(feature["pos"]))
+	var radius := float(feature.get("radius", 44.0)) * world_scale
+	var canopy_center := foot + Vector2(0.0, -radius * 1.33)
+	var bounds := Rect2(canopy_center - Vector2.ONE * radius * 0.86, Vector2.ONE * radius * 1.72)
+	bounds = bounds.expand(foot)
+	for index in range(_occlusion_focus_bounds.size()):
+		if bounds.intersects(_occlusion_focus_bounds[index], true): return 0.18 if index == 0 else 0.32
+	return 1.0
 
 func _draw_shadow_guidance() -> void:
 	var shadow: Dictionary = visual.get("lost_xp", state.lost_xp)
@@ -2233,6 +2313,7 @@ func _draw_wall(wall: Rect2, alpha: float = 1.0) -> void:
 	draw_colored_polygon(PackedVector2Array([top[2], top[3], base[3], base[2]]), Color(Color("26343a"), alpha))
 	draw_colored_polygon(PackedVector2Array([top[1], top[2], base[2], base[1]]), Color(Color("2d3b42"), alpha))
 	draw_colored_polygon(top, Color(WALL, alpha))
+	draw_polyline(PackedVector2Array([base[0], base[1], base[2], base[3], base[0]]), Color(0.06, 0.10, 0.12, 0.90 * alpha), maxf(2.0, world_scale * 2.2))
 	draw_polyline(PackedVector2Array([top[0], top[1], top[2], top[3], top[0]]), Color(Color("718087"), alpha), maxf(1.5, world_scale))
 
 func _locked_shortcut_for_wall(wall: Rect2) -> Dictionary:
@@ -2273,6 +2354,7 @@ func _draw_shortcut_gate(shortcut: Dictionary, alpha: float = 1.0) -> void:
 	draw_colored_polygon(PackedVector2Array([top[2], top[3], base[3], base[2]]), dark_bark)
 	draw_colored_polygon(PackedVector2Array([top[1], top[2], base[2], base[1]]), bark.darkened(0.12))
 	draw_colored_polygon(top, bark)
+	draw_polyline(PackedVector2Array([base[0], base[1], base[2], base[3], base[0]]), Color(0.10, 0.055, 0.025, 0.92 * alpha), maxf(2.0, world_scale * 2.2))
 	draw_polyline(PackedVector2Array([top[0], top[1], top[2], top[3], top[0]]), edge, maxf(2.0, 2.5 * world_scale))
 	for ratio in [0.20, 0.40, 0.60, 0.80]:
 		var start := top[0].lerp(top[3], float(ratio))
@@ -2310,7 +2392,7 @@ func _draw_shortcut_gate_labels(discovered: Dictionary) -> void:
 		draw_rect(label_rect, Color("e19a58") if can_unlock else Color("b8664d"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, label_rect.position + Vector2(0, 17), label, HORIZONTAL_ALIGNMENT_CENTER, label_rect.size.x, 11, Color("fff0cf"))
 
-func _draw_terrain_feature(feature: Dictionary) -> void:
+func _draw_terrain_feature(feature: Dictionary, alpha: float = 1.0) -> void:
 	var world_pos := Vector2(feature["pos"])
 	var foot := _world_to_screen(world_pos)
 	var radius := float(feature.get("radius", 44.0)) * world_scale
@@ -2392,16 +2474,16 @@ func _draw_terrain_feature(feature: Dictionary) -> void:
 		draw_line(foot - Vector2(width * 0.55, 0), foot - Vector2(width * 0.55, radius * 0.42), ruin_color.darkened(0.12), maxf(3.0, radius * 0.09))
 		return
 	var underground := String(feature.get("layer", state.current_layer)) == "ruin_depths"
-	var trunk_color := Color("394638") if not underground else Color("3e4138")
-	var canopy_color := Color("294f31") if kind == "heart_tree" else Color("264b2d") if kind == "thicket" else Color("315e39") if not underground else Color("52614a")
+	var trunk_color := Color(Color("394638") if not underground else Color("3e4138"), alpha)
+	var canopy_color := Color(Color("294f31") if kind == "heart_tree" else Color("264b2d") if kind == "thicket" else Color("315e39") if not underground else Color("52614a"), alpha)
 	if view_mode == "top_down":
-		draw_circle(foot, radius * 0.88, Color(0.02, 0.04, 0.025, 0.62))
+		draw_circle(foot, radius * 0.88, Color(0.02, 0.04, 0.025, 0.62 * alpha))
 		draw_circle(foot, radius * 0.72, canopy_color)
 		draw_circle(foot, maxf(3.0, radius * 0.20), trunk_color)
 		return
 	var trunk_top := foot + Vector2(0.0, -radius * 1.25)
 	draw_line(foot, trunk_top, trunk_color, maxf(3.0, radius * 0.24))
-	draw_circle(trunk_top, radius * 0.82, Color(0.015, 0.03, 0.02, 0.72))
+	draw_circle(trunk_top, radius * 0.82, Color(0.015, 0.03, 0.02, 0.72 * alpha))
 	draw_circle(trunk_top + Vector2(0.0, -radius * 0.08), radius * 0.68, canopy_color)
 	draw_arc(trunk_top, radius * 0.70, 0.0, TAU, 18, canopy_color.lightened(0.16), maxf(1.5, radius * 0.07))
 
@@ -2416,9 +2498,11 @@ func _draw_player() -> void:
 	var world_pos := Vector2(visual.get("player_pos", state.player_pos))
 	var world_facing := Vector2(visual.get("player_facing", Vector2.UP)).normalized()
 	var foot := _world_to_screen(world_pos)
-	var pos := _actor_visual_center(world_pos, state.PLAYER_RADIUS)
-	var facing := _screen_direction(world_facing)
 	var action: Dictionary = visual.get("player_action", {})
+	var pose_direction := Vector2(action.get("direction", world_facing)).normalized()
+	var pose := IsometricPoseScript.sample(action, pose_direction, state.PLAYER_RADIUS) if view_mode == "isometric" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
+	var pos := _actor_visual_center(world_pos, state.PLAYER_RADIUS) + _project_world_delta(Vector2(pose["world_offset"])) - Vector2(0.0, float(pose["vertical_lift"]) * world_scale)
+	var facing := _screen_direction(world_facing).rotated(float(pose["facing_twist"]))
 	var collision_radius := state.PLAYER_RADIUS * world_scale
 	var radius := _actor_body_radius(state.PLAYER_RADIUS)
 	_draw_actor_footprint(world_pos, state.PLAYER_RADIUS, Color("f5fbff"), true)
@@ -2437,10 +2521,10 @@ func _draw_player() -> void:
 	if String(action.get("kind", "idle")) == "dodge":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos - world_facing * state.PLAYER_RADIUS * 0.7, state.PLAYER_RADIUS * 1.25, Color(DODGE_COLOR, 0.16))
 		else: draw_circle(pos - facing * collision_radius * 0.7, collision_radius * 1.25, Color(DODGE_COLOR, 0.16))
-	_draw_actor(pos, foot, facing, radius, PLAYER_COLOR, Color("ffffff"))
-	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo", "art_combo"]: _draw_weapon(world_pos, action, true)
+	_draw_actor(pos, foot, facing, radius, PLAYER_COLOR, Color("ffffff"), false, Vector2(pose["body_scale"]), float(pose["stride"]))
+	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo", "art_combo"]: _draw_weapon(world_pos, action, true, state.PLAYER_RADIUS)
 	elif String(action.get("kind", "idle")) == "twin_fang": _draw_twin_fang(world_pos, action)
-	elif String(action.get("kind", "idle")) in ["bow_draw", "bow_release", "bow_art"]: _draw_bow(pos, facing, radius, action)
+	elif String(action.get("kind", "idle")) in ["bow_draw", "bow_release", "bow_art"]: _draw_bow(pos, facing, radius, action, world_pos)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
 	elif String(action.get("kind", "idle")) == "endure": _draw_endure(pos, radius, action)
 	elif String(action.get("kind", "idle")) == "potion": draw_circle(pos + Vector2(radius * 0.7, -radius * 0.8), radius * 0.25, Color("e35f62"))
@@ -2487,41 +2571,44 @@ func _draw_twin_fang(world_pos: Vector2, action: Dictionary) -> void:
 		var blade_action := action.duplicate()
 		blade_action["technique_id"] = technique_id
 		blade_action["reach"] = float(action.get("reach", 104.0))
-		_draw_weapon(world_pos, blade_action, true)
+		_draw_weapon(world_pos, blade_action, true, state.PLAYER_RADIUS)
 
 func _draw_enemy(enemy: Dictionary) -> void:
 	var world_pos := Vector2(enemy["pos"])
 	var world_radius := float(enemy["radius"])
 	var action: Dictionary = enemy["action"]
 	var reeling := String(action.get("kind", "idle")) in ["hit_reaction", "stagger"]
-	var visual_world_pos := world_pos + _reaction_visual_offset(action, world_radius)
-	var foot := _world_to_screen(visual_world_pos)
-	var pos := _actor_visual_center(visual_world_pos, world_radius)
+	var reaction_offset := _reaction_visual_offset(action, world_radius)
+	var foot := _world_to_screen(world_pos)
 	var world_facing := Vector2(enemy["facing"]).normalized()
 	if reeling:
 		var reaction_direction := Vector2(action.get("reaction_direction", Vector2.ZERO)).normalized()
 		if reaction_direction.length_squared() > 0.001: world_facing = reaction_direction
-	var facing := _screen_direction(world_facing)
+	var pose_direction := Vector2(action.get("direction", world_facing)).normalized()
+	var pose := IsometricPoseScript.sample(action, pose_direction, world_radius) if view_mode == "isometric" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
+	var visual_world_pos := world_pos + reaction_offset
+	var pos := _actor_visual_center(world_pos, world_radius) + _project_world_delta(Vector2(pose["world_offset"]) + reaction_offset) - Vector2(0.0, float(pose["vertical_lift"]) * world_scale)
+	var facing := _screen_direction(world_facing).rotated(float(pose["facing_twist"]))
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
 	var colors := {"boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "captain": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
-	_draw_actor_footprint(visual_world_pos, world_radius, color.lightened(0.28), false)
+	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
 	if reeling: _draw_reaction_motion(pos, facing, radius, action, color)
 	if kind == "captain": draw_arc(pos, radius * 1.5, 0.0, TAU, 20, Color(color, 0.45), maxf(2.0, radius * 0.12))
-	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling)
+	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling, Vector2(pose["body_scale"]), float(pose["stride"]))
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
 		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
 	if kind == "shield": _draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
-	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false)
-	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(visual_world_pos, action, false)
+	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false, world_radius)
+	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(world_pos, action, false)
 	elif String(action["kind"]) in ["claw_combo", "pounce_combo"]: _draw_claw_combo(world_pos, action, color)
 	elif String(action["kind"]) == "shoot":
 		if String(action.get("label", "")) == "firebolt": _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
-		else: _draw_bow(pos, facing, radius, action)
+		else: _draw_bow(pos, facing, radius, action, world_pos)
 	elif String(action["kind"]) in ["charge", "pounce_combo"]: draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "evade": draw_line(pos, pos - _screen_direction(Vector2(action.get("direction", Vector2.ZERO))) * radius * 1.8, Color(color, 0.42), maxf(3.0, radius * 0.22))
 	elif String(action["kind"]) == "slam":
@@ -2538,18 +2625,37 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var phase := _phase(action)
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
 
-func _draw_actor(pos: Vector2, foot: Vector2, facing: Vector2, radius: float, color: Color, marker_color: Color, reeling: bool = false) -> void:
+func _draw_actor(pos: Vector2, foot: Vector2, facing: Vector2, radius: float, color: Color, marker_color: Color, reeling: bool = false, body_scale: Vector2 = Vector2.ONE, stride: float = 0.0) -> void:
 	if view_mode == "isometric":
 		draw_line(foot, pos + Vector2(0.0, radius * 0.45), Color(0.02, 0.03, 0.04, 0.66), maxf(1.5, radius * 0.16))
-	draw_circle(pos, radius, Color(0.015, 0.025, 0.035, 0.94))
-	draw_circle(pos, radius * 0.84, color)
-	draw_arc(pos, radius, 0.0, TAU, 24, color.lightened(0.28), maxf(1.5, radius * 0.11))
+		var foot_side := facing.rotated(PI * 0.5)
+		var stride_screen := clampf(stride * world_scale, -radius * 0.52, radius * 0.52)
+		var left_foot := foot - foot_side * radius * 0.34 + facing * stride_screen
+		var right_foot := foot + foot_side * radius * 0.34 - facing * stride_screen
+		draw_circle(left_foot, maxf(2.2, radius * 0.18), Color(0.02, 0.03, 0.035, 0.88))
+		draw_circle(right_foot, maxf(2.2, radius * 0.18), Color(0.02, 0.03, 0.035, 0.88))
+		var outer := _ellipse_points(pos, Vector2(radius * body_scale.x, radius * body_scale.y), 24)
+		var inner := _ellipse_points(pos, Vector2(radius * 0.84 * body_scale.x, radius * 0.84 * body_scale.y), 24)
+		draw_colored_polygon(outer, Color(0.015, 0.025, 0.035, 0.94))
+		draw_colored_polygon(inner, color)
+		draw_polyline(_closed_points(outer), color.lightened(0.28), maxf(1.5, radius * 0.11))
+	else:
+		draw_circle(pos, radius, Color(0.015, 0.025, 0.035, 0.94))
+		draw_circle(pos, radius * 0.84, color)
+		draw_arc(pos, radius, 0.0, TAU, 24, color.lightened(0.28), maxf(1.5, radius * 0.11))
 	if reeling:
 		var side := facing.rotated(PI * 0.5)
 		draw_line(pos - facing * radius * 0.48 - side * radius * 0.18, pos + facing * radius * 0.35 + side * radius * 0.12, Color("f3e6ca"), maxf(1.5, radius * 0.13))
 	var marker := _actor_marker_points(pos, facing.rotated(0.28 if reeling else 0.0), radius * (0.78 if reeling else 1.0))
 	draw_colored_polygon(marker, marker_color)
 	draw_polyline(PackedVector2Array([marker[0], marker[1], marker[2], marker[0]]), Color(0.015, 0.025, 0.035, 0.94), maxf(1.0, radius * 0.09))
+
+func _ellipse_points(center: Vector2, radii: Vector2, segments: int = 24) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for index in range(segments):
+		var angle := TAU * float(index) / float(segments)
+		points.append(center + Vector2(cos(angle) * radii.x, sin(angle) * radii.y))
+	return points
 
 func _reaction_visual_offset(action: Dictionary, world_radius: float) -> Vector2:
 	var kind := String(action.get("kind", "idle"))
@@ -2614,24 +2720,27 @@ func _draw_spell_cast(pos: Vector2, facing: Vector2, radius: float, action: Dict
 	draw_circle(focus, radius * (0.18 + progress * 0.26), Color(color, 0.32 + progress * 0.42))
 	draw_arc(focus, radius * (0.36 + progress * 0.30), 0.0, TAU, 18, color, maxf(2.0, radius * 0.10))
 
-func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool) -> void:
+func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, actor_world_radius: float) -> void:
 	var facing := Vector2(action.get("direction", Vector2.UP)).normalized()
 	var sample: Dictionary = AttackGeometryScript.pose(action, world_pos, facing, state.walls)
 	var technique := String(sample.get("technique_id", "diagonal_cut"))
-	# Isometric lift makes a short blade easier to see but can make its contact
-	# distance look longer than the world-space hit. A restrained ground shadow
-	# projects the blade's real current capsule without drawing a telegraph zone.
-	if player_weapon and view_mode == "isometric" and technique in ["quick_cut", "knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"] and String(sample.get("shape", "")) == "segment":
-		var ground_body := _project_world_capsule(Vector2(sample["start"]), Vector2(sample["end"]), float(sample.get("radius", 5.0)))
-		var shadow_alpha := 0.20 if bool(sample.get("active", false)) else 0.09
-		draw_colored_polygon(ground_body, Color(0.97, 0.78, 0.36, shadow_alpha))
-		draw_polyline(_closed_points(ground_body), Color(1.0, 0.91, 0.63, shadow_alpha + 0.16), maxf(1.0, world_scale * 1.4))
-	var visual_lift := Vector2(0.0, -_weapon_visual_height(technique))
+	var active := bool(sample.get("active", false))
+	if view_mode == "isometric":
+		if String(sample.get("shape", "")) == "segment":
+			var ground_body := _project_world_capsule(Vector2(sample["start"]), Vector2(sample["end"]), float(sample.get("radius", 5.0)))
+			var shadow_alpha := 0.16 if active else 0.075
+			var shadow_color := Color(0.98, 0.78, 0.34, shadow_alpha) if player_weapon and active else Color(0.015, 0.025, 0.03, shadow_alpha + 0.10)
+			draw_colored_polygon(ground_body, shadow_color)
+			if debug_hitboxes: draw_polyline(_closed_points(ground_body), Color("ff4fd8"), maxf(1.5, world_scale * 1.5))
+		elif String(sample.get("shape", "")) == "circle":
+			var ground_circle := _project_world_circle(Vector2(sample.get("center", sample["weapon_end"])), float(sample.get("head_radius", sample.get("radius", 16.0))))
+			draw_colored_polygon(ground_circle, Color(0.015, 0.025, 0.03, 0.22 if active else 0.11))
+			if debug_hitboxes: draw_polyline(_closed_points(ground_circle), Color("ff4fd8"), maxf(1.5, world_scale * 1.5))
+	var visual_lift := Vector2(0.0, -IsometricPoseScript.weapon_lift(action, technique, actor_world_radius) * world_scale) if view_mode == "isometric" else Vector2.ZERO
 	var weapon_start := _world_to_screen(Vector2(sample["weapon_start"])) + visual_lift
 	var weapon_end := _world_to_screen(Vector2(sample["weapon_end"])) + visual_lift
 	var screen_direction := (weapon_end - weapon_start).normalized()
 	var side := screen_direction.rotated(PI * 0.5)
-	var active := bool(sample.get("active", false))
 	var color := Color("fff1b8") if player_weapon else Color("ead9c8")
 	var width := maxf(2.0, world_scale * (4.0 if technique in ["heavy_chop", "heavy_cleave", "forward_smash"] else 2.7))
 	if technique == "bite":
@@ -2649,6 +2758,8 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool) -
 		draw_colored_polygon(body, Color(color, 0.13 if not active else 0.24))
 		draw_polyline(_closed_points(body), Color(color, 0.50 if not active else 0.86), maxf(1.0, width * 0.42))
 	draw_line(weapon_start, weapon_end, color, width)
+	if view_mode == "isometric" and visual_lift.length_squared() > 1.0:
+		draw_line(_world_to_screen(Vector2(sample["weapon_start"])), weapon_start, Color(color, 0.22), maxf(1.0, width * 0.28))
 	if technique == "thrust":
 		var tip := maxf(5.0, world_scale * 8.0)
 		draw_colored_polygon(PackedVector2Array([weapon_end + screen_direction * tip, weapon_end - screen_direction * tip * 0.65 + side * tip * 0.55, weapon_end - screen_direction * tip * 0.65 - side * tip * 0.55]), color)
@@ -2667,7 +2778,7 @@ func _draw_interrupted_weapon(world_pos: Vector2, reaction: Dictionary, player_w
 	var technique := String(interrupted.get("technique_id", "diagonal_cut"))
 	var direction := Vector2(interrupted.get("direction", Vector2.UP)).normalized()
 	var sample: Dictionary = AttackGeometryScript.pose(interrupted, world_pos, direction, state.walls)
-	var visual_lift := Vector2(0.0, -_weapon_visual_height(technique))
+	var visual_lift := Vector2(0.0, -IsometricPoseScript.weapon_lift(interrupted, technique, state.ENEMY_RADIUS) * world_scale) if view_mode == "isometric" else Vector2.ZERO
 	var start := _world_to_screen(Vector2(sample["weapon_start"])) + visual_lift
 	var finish := _world_to_screen(Vector2(sample["weapon_end"])) + visual_lift
 	var reaction_direction := _screen_direction(Vector2(reaction.get("reaction_direction", Vector2.RIGHT))).normalized()
@@ -2700,17 +2811,13 @@ func _draw_claw_combo(world_pos: Vector2, action: Dictionary, color: Color) -> v
 	sampled["startup"] = second_start if second else first_start
 	sampled["active_end"] = second_end if second else first_end
 	var sample := AttackGeometryScript.pose(sampled, world_pos, Vector2(action.get("direction", Vector2.UP)), state.walls)
-	var start := _world_to_screen(Vector2(sample["weapon_start"])) + Vector2(0.0, -_weapon_visual_height("quick_cut"))
-	var finish := _world_to_screen(Vector2(sample["weapon_end"])) + Vector2(0.0, -_weapon_visual_height("quick_cut"))
+	var claw_lift := Vector2(0.0, -IsometricPoseScript.weapon_lift(sampled, "quick_cut", 30.0) * world_scale) if view_mode == "isometric" else Vector2.ZERO
+	var start := _world_to_screen(Vector2(sample["weapon_start"])) + claw_lift
+	var finish := _world_to_screen(Vector2(sample["weapon_end"])) + claw_lift
 	var direction := (finish - start).normalized()
 	var side := direction.rotated(PI * 0.5)
 	var claw_color := Color("f1d3bd")
 	for offset in [-4.5, 0.0, 4.5]: draw_line(start + side * offset * world_scale, finish + side * offset * world_scale, claw_color, maxf(1.5, world_scale * 2.4))
-
-func _weapon_visual_height(technique: String) -> float:
-	if view_mode != "isometric": return 0.0
-	var factor := 7.0 if technique in ["bite", "forward_smash"] else 11.0
-	return factor * world_scale
 
 func _draw_guard(pos: Vector2, facing: Vector2, radius: float, action: Dictionary) -> void:
 	var elapsed := float(action.get("elapsed", 0.0))
@@ -2987,13 +3094,22 @@ func _closed_points(points: PackedVector2Array) -> PackedVector2Array:
 	if not points.is_empty(): closed.append(points[0])
 	return closed
 
-func _draw_bow(pos: Vector2, facing: Vector2, radius: float, action: Dictionary) -> void:
+func _draw_bow(pos: Vector2, facing: Vector2, radius: float, action: Dictionary, world_pos: Vector2 = Vector2.INF) -> void:
 	var side := facing.rotated(PI * 0.5)
 	var draw_amount := float(action.get("draw_ratio", clampf(float(action["elapsed"]) / float(action.get("startup", 0.72)), 0.0, 1.0)))
-	var center := pos + facing * radius * 0.8
+	var center := pos + facing * radius * 0.72
+	var draw_hand := center - facing * radius * (0.18 + draw_amount * 0.82)
+	draw_line(pos - side * radius * 0.34, center + side * radius * 0.56, Color("d7c59c"), maxf(1.5, radius * 0.10))
+	draw_line(pos + side * radius * 0.28, draw_hand, Color("d7c59c"), maxf(1.5, radius * 0.10))
 	draw_arc(center, radius * 0.75, facing.angle() - 1.2, facing.angle() + 1.2, 12, Color("e9cf91"), 2.0)
-	draw_line(center + side * radius * 0.7, center - facing * radius * draw_amount, Color("d8d2c3"), 1.5)
-	draw_line(center - side * radius * 0.7, center - facing * radius * draw_amount, Color("d8d2c3"), 1.5)
+	draw_line(center + side * radius * 0.7, draw_hand, Color("d8d2c3"), 1.5)
+	draw_line(center - side * radius * 0.7, draw_hand, Color("d8d2c3"), 1.5)
+	draw_line(draw_hand, center + facing * radius * (0.85 + draw_amount * 0.18), Color("fff1b8"), maxf(1.5, radius * 0.08))
+	if view_mode == "isometric" and world_pos.is_finite():
+		var world_direction := Vector2(action.get("direction", Vector2.UP)).normalized()
+		var ground_start := _world_to_screen(world_pos + world_direction * 12.0)
+		var ground_end := _world_to_screen(world_pos + world_direction * (30.0 + draw_amount * 26.0))
+		draw_line(ground_start, ground_end, Color(0.01, 0.02, 0.025, 0.24), maxf(1.0, world_scale * 1.5))
 	if String(action.get("kind", "")) == "bow_draw":
 		var meter_radius := radius * 1.58
 		var start_angle := -PI * 0.5
@@ -4052,6 +4168,10 @@ func _world_to_screen(world: Vector2) -> Vector2:
 	if view_mode == "isometric": return origin + Vector2((world.x - world.y) * 0.5, (world.x + world.y) * 0.25) * world_scale
 	return origin + world * world_scale
 
+func _project_world_delta(world_delta: Vector2) -> Vector2:
+	if view_mode == "isometric": return Vector2((world_delta.x - world_delta.y) * 0.5, (world_delta.x + world_delta.y) * 0.25) * world_scale
+	return world_delta * world_scale
+
 func _screen_to_world(screen: Vector2) -> Vector2:
 	var origin := _projection_origin()
 	if view_mode == "isometric":
@@ -4119,6 +4239,7 @@ func _screen_delta_to_world_direction(screen_delta: Vector2) -> Vector2:
 
 func _toggle_view() -> void:
 	view_mode = "isometric" if view_mode == "top_down" else "top_down"
+	state.record_survey_view_mode(view_mode, true)
 	selected_action = ""
 	pointer_down = false
 	held_movement = false

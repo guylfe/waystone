@@ -5,6 +5,8 @@ const RunStateScript = preload("res://scripts/core/run_state.gd")
 func _init() -> void:
 	var first = RunStateScript.new(false)
 	first.start_run("warrior", "combat_survey", 424242, "encounter")
+	first.record_survey_view_mode("isometric", false)
+	first.record_survey_view_mode("top_down", true)
 	var second = RunStateScript.new(false)
 	second.start_run("warrior", "combat_survey", 424242, "encounter")
 	assert(first.survey_room_seed == second.survey_room_seed)
@@ -29,6 +31,8 @@ func _init() -> void:
 	first._remove_dead_enemies()
 	assert(first.survey_feedback_pending)
 	assert(String(first.survey_pending_record["outcome"]) == "victory")
+	assert(Array(first.survey_pending_record["view_modes"]) == ["isometric", "top_down"])
+	assert(int(first.survey_pending_record["view_switches"]) == 1)
 	assert(int(first.survey_pending_record["entry_hp"]) == first.player_max_hp)
 	assert(int(Dictionary(first.survey_pending_record["action_usage"]).get("test_ability", 0)) == 1)
 	var ratings := {"difficulty": 3, "fun": 4, "fairness": 5, "tactical_interest": 4, "want_again": 4}
@@ -50,6 +54,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Action usage:" in report)
 	assert("Pacing:" in report and "Recipe:" in report and "Roles:" in report)
+	assert("Presentation version:" in report and "View: isometric + top_down" in report and "View switches: 1" in report)
 
 	var director = RunStateScript.new(false)
 	director.start_run("rogue_acrobat", "combat_survey", 7777333, "encounter")

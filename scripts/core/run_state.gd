@@ -36,8 +36,9 @@ const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
 const SAVE_VERSION := 25
-const GAME_VERSION := "0.1.9"
+const GAME_VERSION := "0.2.0"
 const SURVEY_GENERATOR_VERSION := 3
+const PRESENTATION_VERSION := 1
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -246,6 +247,10 @@ var survey_session: Dictionary = {}
 var survey_last_report: Dictionary = {}
 var survey_action_counts: Dictionary = {}
 var survey_last_damage_source := ""
+var survey_current_view_mode := "isometric"
+var survey_room_view_modes: Array[String] = ["isometric"]
+var survey_view_switches := 0
+var survey_empty_melee_contacts := 0
 
 func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
@@ -347,10 +352,14 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_last_report.clear()
 	survey_action_counts.clear()
 	survey_last_damage_source = ""
+	survey_room_view_modes.assign([survey_current_view_mode])
+	survey_view_switches = 0
+	survey_empty_melee_contacts = 0
 	survey_session = {
 		"format_version": 1,
 		"game_version": GAME_VERSION,
 		"generator_version": SURVEY_GENERATOR_VERSION,
+		"presentation_version": PRESENTATION_VERSION,
 		"run_seed": run_seed,
 		"profile": survey_profile,
 		"loadout": CombatCatalogScript.loadout_name(loadout_id),
@@ -653,6 +662,7 @@ func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
 		_: return [Vector2(610, 460), Vector2(770, 390), Vector2(930, 390), Vector2(1090, 460), Vector2(690, 610), Vector2(1010, 610)]
 
 func _capture_survey_room_entry() -> void:
+	survey_room_view_modes.assign([survey_current_view_mode])
 	survey_room_entry = {
 		"time": simulation_time,
 		"hp": player_hp,
@@ -666,8 +676,18 @@ func _capture_survey_room_entry() -> void:
 		"successful_blocks": successful_blocks,
 		"successful_endures": successful_endures,
 		"action_counts": survey_action_counts.duplicate(true),
+		"view_switches": survey_view_switches,
+		"empty_melee_contacts": survey_empty_melee_contacts,
 	}
 	survey_last_damage_source = ""
+
+func record_survey_view_mode(mode: String, switched: bool) -> void:
+	if mode not in ["isometric", "top_down"]: return
+	var changed_mode := mode != survey_current_view_mode
+	survey_current_view_mode = mode
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not survey_room_view_modes.has(mode): survey_room_view_modes.append(mode)
+	if switched and changed_mode: survey_view_switches += 1
 
 func _survey_action_count_delta() -> Dictionary:
 	var before := Dictionary(survey_room_entry.get("action_counts", {}))
@@ -697,6 +717,9 @@ func _complete_survey_room(outcome: String) -> void:
 		"exit_potions": potions,
 		"death_source": survey_last_damage_source if outcome == "death" else "",
 		"action_usage": _survey_action_count_delta(),
+		"view_modes": survey_room_view_modes.duplicate(),
+		"view_switches": survey_view_switches - int(survey_room_entry.get("view_switches", survey_view_switches)),
+		"empty_melee_contacts": survey_empty_melee_contacts - int(survey_room_entry.get("empty_melee_contacts", survey_empty_melee_contacts)),
 		"combat_time": simulation_time - float(survey_room_entry.get("time", simulation_time)),
 		"damage_dealt": damage_dealt - int(survey_room_entry.get("damage_dealt", damage_dealt)),
 		"damage_received": damage_received_total - int(survey_room_entry.get("damage_received", damage_received_total)),
@@ -2863,6 +2886,7 @@ func _update_player(dt: float) -> void:
 				_set_message("The target is Aimed.")
 	if elapsed + 0.00001 >= float(player_action["duration"]):
 		if kind in ["attack", "sweep", "combo", "art_combo"] and Array(player_action["hit_ids"]).is_empty():
+			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
 			_set_message("Your cut finds only air.")
 			if kind in ["attack", "combo"]: _reset_building_force()
 		elif kind == "block" and not bool(player_action["effect_done"]):
@@ -3003,6 +3027,7 @@ func _update_player_combo(elapsed: float) -> void:
 		player_action["posture_damage"] = float(phase["posture"])
 		if int(player_action.get("phase_index", -1)) != index:
 			if int(player_action.get("phase_index", -1)) >= 0 and Array(player_action.get("hit_ids", [])).is_empty():
+				if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
 				_reset_building_force()
 				if bool(player_action.get("knife_sequence", false)): player_action["knife_contact_chain"] = 0
 			player_action["phase_index"] = index
@@ -5222,6 +5247,10 @@ func _build_save_payload() -> Dictionary:
 		"survey_last_report": survey_last_report.duplicate(true),
 		"survey_action_counts": survey_action_counts.duplicate(true),
 		"survey_last_damage_source": survey_last_damage_source,
+		"survey_current_view_mode": survey_current_view_mode,
+		"survey_room_view_modes": survey_room_view_modes.duplicate(),
+		"survey_view_switches": survey_view_switches,
+		"survey_empty_melee_contacts": survey_empty_melee_contacts,
 		"rng_state": rng.state,
 	}
 
@@ -5457,6 +5486,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		survey_last_report = Dictionary(payload.get("survey_last_report", {})).duplicate(true)
 		survey_action_counts = Dictionary(payload.get("survey_action_counts", {})).duplicate(true)
 		survey_last_damage_source = String(payload.get("survey_last_damage_source", ""))
+		survey_current_view_mode = String(payload.get("survey_current_view_mode", "isometric"))
+		survey_room_view_modes.assign(Array(payload.get("survey_room_view_modes", [survey_current_view_mode])))
+		survey_view_switches = int(payload.get("survey_view_switches", 0))
+		survey_empty_melee_contacts = int(payload.get("survey_empty_melee_contacts", 0))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:

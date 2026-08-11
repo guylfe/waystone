@@ -1,6 +1,15 @@
 # Waystone Prototype
 
-Current prototype version: `0.1.9` (Android version code `109`).
+Current prototype version: `0.2.0` (Android version code `200`).
+
+### v0.2.0: Isometric-first presentation foundation
+
+- Makes isometric the authored presentation baseline while preserving top-down as a mechanically identical diagnostic and accessibility view. Both views still use the same world-space positions, collision, targeting, attack geometry, timing, enemy logic, and seeded encounter generation.
+- Adds reusable procedural poses for committed attacks, movement, evasions, bows, guarding, reactions, and stagger. Actor feet remain locked to their authoritative world-space position while body lean, stride, lift, and facing communicate the action above that contact point.
+- Grounds every current weapon form in its real sampled world-space geometry. Startup, contact, and recovery now share one projected weapon pose; active weapons sit near the floor contact plane, project a restrained contact shadow, and retain optional exact geometry only in hitbox-debug mode.
+- Gives arrows and firebolts visible ground shadows and elevation tethers, strengthens projected wall and gate bases, and locally fades tall terrain that obscures the player or a relevant nearby combatant.
+- Extends Combat Survey report format 4 with presentation version, view usage, mid-room view switches, empty melee contacts, and an `UNCLEAR CONTACT` feedback tag so isometric readability can be compared against top-down without changing encounter composition.
+- Deliberately leaves room geometry, enemy composition, combat balance, attack reach, and final character or biome art unchanged. Those remain separate experiments after this projection and pose foundation is validated.
 
 ### v0.1.9: Composition and pacing director
 

@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 3
+const FORMAT_VERSION := 4
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -48,6 +48,7 @@ static func build_text(session: Dictionary) -> String:
 	lines.append("Game version: %s" % String(session.get("game_version", "unknown")))
 	lines.append("Run seed: %d" % int(session.get("run_seed", 0)))
 	lines.append("Generator version: %d" % int(session.get("generator_version", 1)))
+	lines.append("Presentation version: %d" % int(session.get("presentation_version", 0)))
 	lines.append("Profile: %s" % String(session.get("profile", "encounter")).capitalize())
 	lines.append("Character: %s" % String(session.get("loadout", "unknown")))
 	lines.append("Started: %s" % String(session.get("started_at", "unknown")))
@@ -83,6 +84,10 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Blocks: %d" % int(room.get("successful_blocks", 0)))
 		lines.append("Endures: %d" % int(room.get("successful_endures", 0)))
 		lines.append("Action usage: %s" % _action_usage_text(Dictionary(room.get("action_usage", {}))))
+		var view_modes := PackedStringArray(room.get("view_modes", []))
+		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
+		lines.append("View switches: %d" % int(room.get("view_switches", 0)))
+		lines.append("Empty melee contacts: %d" % int(room.get("empty_melee_contacts", 0)))
 		if String(room.get("outcome", "")) == "death": lines.append("Death source: %s" % String(room.get("death_source", "unknown")))
 		var ratings := Dictionary(room.get("ratings", {}))
 		if bool(room.get("subjective_skipped", false)):
