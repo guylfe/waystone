@@ -1,6 +1,11 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.1` (Android version code `201`).
+Current prototype version: `0.2.2` (Android version code `202`).
+
+### v0.2.2: Contextual held-touch intent
+
+- A stationary touch hold now begins a melee combo only when it started on a plausibly attackable enemy. Holding empty ground or a clearly implausible melee target becomes continuous movement instead of an attack into empty space.
+- Continuous hold movement follows the finger's current world direction as it moves. Ranged characters still recognize distant enemies as valid attack targets, while empty-ground holds remain movement.
 
 ### v0.2.1: Stable locomotion presentation
 

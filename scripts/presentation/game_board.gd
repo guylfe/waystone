@@ -58,6 +58,7 @@ var hold_consumed := false
 var wait_pointer_held := false
 var inspected_enemy_id := -1
 var held_movement := false
+var held_movement_tracks_pointer := false
 var held_direction := Vector2.ZERO
 var queued_movement_after_attack := false
 var queued_attack_exit_direction := Vector2.ZERO
@@ -897,20 +898,27 @@ func _process(delta: float) -> void:
 	if finished_streamed_movement and not streaming_action: stream_accumulator = 0.0
 	if pointer_down and pointer_intent == "" and not held_movement and inspected_enemy_id < 0 and board_rect.has_point(touch_start):
 		hold_elapsed += delta
-		# A stationary hold is an attack commitment. Even a modest intentional drag
-		# claims movement first, so a crowded screen or a bow cannot turn a movement
-		# gesture into a phantom attack after the hold timer expires.
+		# A hold only becomes an attack when it began on a plausibly attackable
+		# enemy. Empty ground and clearly distant melee targets become continuous
+		# movement instead of phantom attacks.
 		if hold_elapsed >= ATTACK_INTENT_DELAY and selected_action == "" and touch_current.distance_to(touch_start) < _touch_move_threshold():
-			var direction := _screen_to_world(touch_current) - state.player_pos
-			if direction.length_squared() < 0.01: direction = state.player_facing
 			var touched_enemy := _enemy_near(touch_start, 54.0)
-			var soft_target_id := int(touched_enemy.get("id", -1)) if not touched_enemy.is_empty() else -1
-			var began := state.begin_bow_draw(direction, soft_target_id) if state.player_uses_ranged_basic_attack() else state.request_combo(direction, false)
-			if began:
-				pointer_intent = "attack"
-				attack_pointer_held = true
-				attack_touch_is_original = true
-				_begin_streamed_action(true)
+			if not touched_enemy.is_empty() and _enemy_touch_should_attack(touched_enemy):
+				var direction := Vector2(touched_enemy["pos"]) - state.player_pos
+				if direction.length_squared() < 0.01: direction = state.player_facing
+				var soft_target_id := int(touched_enemy.get("id", -1))
+				var began := state.begin_bow_draw(direction, soft_target_id) if state.player_uses_ranged_basic_attack() else state.request_combo(direction, false)
+				if began:
+					pointer_intent = "attack"
+					attack_pointer_held = true
+					attack_touch_is_original = true
+					_begin_streamed_action(true)
+			else:
+				pointer_intent = "move"
+				held_movement = true
+				held_movement_tracks_pointer = true
+				held_direction = _pointer_follow_direction(touch_current)
+				if not held_direction.is_zero_approx(): _begin_streamed_move(held_direction)
 	if _update_temporal_tint(delta): needs_redraw = true
 	if _update_area_title(delta): needs_redraw = true
 	if needs_redraw:
@@ -1163,6 +1171,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			attack_pointer_held = true
 			attack_touch_is_original = false
 			held_movement = false
+			held_movement_tracks_pointer = false
 			touch_start = position
 			touch_current = position
 			queue_redraw()
@@ -1173,6 +1182,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	pointer_intent = ""
 	pointer_is_mouse = is_mouse
 	held_movement = false
+	held_movement_tracks_pointer = false
 	attack_pointer_held = false
 	attack_touch_is_original = false
 	queued_movement_after_attack = false
@@ -1262,6 +1272,7 @@ func _pointer_dragged(position: Vector2) -> void:
 		state.set_attack_hold(false)
 		held_direction = _screen_delta_to_world_direction(attack_drag)
 		held_movement = true
+		held_movement_tracks_pointer = false
 		queued_attack_exit_direction = held_direction
 		queued_movement_after_attack = true
 		queue_redraw()
@@ -1275,6 +1286,11 @@ func _pointer_dragged(position: Vector2) -> void:
 		state.set_advance_hold(false)
 		queue_redraw()
 		return
+	if held_movement and held_movement_tracks_pointer:
+		var follow_direction := _pointer_follow_direction(position)
+		if not follow_direction.is_zero_approx(): held_direction = follow_direction
+		queue_redraw()
+		return
 	var drag := position - touch_start
 	var threshold := _touch_move_threshold()
 	if drag.length() < threshold or selected_action != "" or not board_rect.has_point(touch_start):
@@ -1284,6 +1300,7 @@ func _pointer_dragged(position: Vector2) -> void:
 	held_direction = _screen_delta_to_world_direction(drag)
 	if not held_movement:
 		held_movement = true
+		held_movement_tracks_pointer = false
 		if not playing:
 			_begin_streamed_move(held_direction)
 
@@ -1320,6 +1337,7 @@ func _pointer_released(position: Vector2) -> void:
 		return
 	if held_movement:
 		held_movement = false
+		held_movement_tracks_pointer = false
 		held_direction = Vector2.ZERO
 		pointer_intent = ""
 		return
@@ -1520,6 +1538,7 @@ func _notification(what: int) -> void:
 		if state != null: state.set_block_hold(false)
 		pointer_down = false
 		held_movement = false
+		held_movement_tracks_pointer = false
 		if streaming_action and state != null:
 			var guard := 0
 			while String(state.player_action["kind"]) != "idle" and state.player_hp > 0 and guard < 1000:
@@ -1604,6 +1623,11 @@ func _handle_gesture(end_position: Vector2) -> void:
 
 func _touch_move_threshold() -> float:
 	return maxf(TOUCH_MOVE_SLOP_MIN, minf(size.x, size.y) * TOUCH_MOVE_SLOP_SCALE)
+
+func _pointer_follow_direction(screen_position: Vector2) -> Vector2:
+	var direction := _screen_to_world(screen_position) - state.player_pos
+	if direction.length_squared() < 0.01: return Vector2.ZERO
+	return direction.normalized()
 
 func _handle_button(name: String) -> void:
 	match name:
@@ -1708,6 +1732,7 @@ func _restart() -> void:
 	stream_accumulator = 0.0
 	pointer_down = false
 	held_movement = false
+	held_movement_tracks_pointer = false
 	held_direction = Vector2.ZERO
 	waystone_menu_open = false
 	character_sheet_open = false
@@ -1756,6 +1781,7 @@ func _select_loadout(choice: String) -> void:
 	stream_accumulator = 0.0
 	pointer_down = false
 	held_movement = false
+	held_movement_tracks_pointer = false
 	held_direction = Vector2.ZERO
 	timeline.clear()
 	visual = _presentation_snapshot()
@@ -4243,6 +4269,7 @@ func _toggle_view() -> void:
 	selected_action = ""
 	pointer_down = false
 	held_movement = false
+	held_movement_tracks_pointer = false
 	_update_projection()
 	reset_rect.position = board_rect.end - reset_rect.size - Vector2(8.0, board_rect.size.y - reset_rect.size.y - 8.0)
 	view_rect.position = reset_rect.position - Vector2(view_rect.size.x + 8.0, 0.0)
