@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.4` (Android version code `204`).
+Current prototype version: `0.2.5` (Android version code `205`).
+
+### v0.2.5: Recovery versus Stamina combat laboratory
+
+- Combat Survey now independently selects Encounter/Attrition carryover and Recovery/Stamina combat rules.
+- Recovery rules preserve the prior long commitments and cooldowns without spending Stamina.
+- Stamina rules shorten only the player action recovery tails, charge physical attacks and Dodge, and replace forced immobility with a clearly displayed two-world-second exhaustion lock.
+- Exhaustion advances through movement, Wait, or nonphysical actions while enemies remain active; overdraw is still allowed from any positive Stamina.
+- Survey format 7 records the combat rule set, exhaustion exposure, damage received during exhaustion, and how the lock was advanced.
 
 ### v0.2.4: Combat diagnostics and resource clarity
 

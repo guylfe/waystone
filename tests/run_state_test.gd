@@ -167,14 +167,16 @@ func test_continuous_movement() -> void:
 	assert(is_equal_approx(state.simulation_time, frozen_time))
 
 func test_attacks_are_long_commitments() -> void:
-	var state: RunState = RunStateScript.new()
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	state.enemies.clear()
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0))
 	assert(state.simulation_time >= 0.96)
 	assert(state.last_timeline.size() >= 60)
 
 func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
-	var state: RunState = RunStateScript.new()
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	state.enemies.clear()
 	assert(state.request_combo(Vector2.UP, false))
 	assert(String(state.player_action["kind"]) == "combo")
@@ -192,14 +194,16 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	assert(state.is_player_ready() and state.simulation_time >= 3.32)
 
 func test_combo_hold_commits_each_strike() -> void:
-	var single: RunState = RunStateScript.new()
+	var single: RunState = RunStateScript.new(false)
+	single.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	single.enemies.clear()
 	assert(single.request_combo(Vector2.UP, false))
 	single.set_attack_hold(false)
 	while single.advance_streamed_action_tick(): pass
 	assert(single.is_player_ready() and single.simulation_time >= 0.97 and single.simulation_time < 1.05)
 
-	var double: RunState = RunStateScript.new()
+	var double: RunState = RunStateScript.new(false)
+	double.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	double.enemies.clear()
 	assert(double.request_combo(Vector2.UP, false))
 	while float(double.player_action["elapsed"]) < 1.22: double.advance_streamed_action_tick()
@@ -208,7 +212,8 @@ func test_combo_hold_commits_each_strike() -> void:
 	while double.advance_streamed_action_tick(): pass
 	assert(double.is_player_ready() and double.simulation_time >= 2.03 and double.simulation_time < 2.12)
 
-	var full: RunState = RunStateScript.new()
+	var full: RunState = RunStateScript.new(false)
+	full.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	full.enemies.clear()
 	assert(full.request_combo(Vector2.UP, false))
 	while full.advance_streamed_action_tick(): pass
@@ -395,7 +400,7 @@ func test_loadout_identities() -> void:
 
 func test_shared_actor_and_weapon_foundation() -> void:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 717)
+	state.start_run("warrior", "expedition", 717, "encounter", "recovery")
 	var player := state.player_actor()
 	for attribute in CombatCatalogScript.ATTRIBUTE_KEYS:
 		assert(Dictionary(player["attributes"]).has(attribute))
@@ -418,7 +423,7 @@ func test_shared_actor_and_weapon_foundation() -> void:
 
 func test_warrior_weapon_arts() -> void:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 717)
+	state.start_run("warrior", "expedition", 717, "encounter", "recovery")
 	state.walls.clear()
 	state._build_navigation()
 	var left := state._make_enemy("knife", state.player_pos + Vector2(-24, -84), 80)

@@ -103,6 +103,7 @@ var seed_copy_rect := Rect2()
 var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var survey_profile_rects: Dictionary = {}
+var combat_rule_rects: Dictionary = {}
 var archive_button_rect := Rect2()
 var survey_end_rect := Rect2()
 var map_open := false
@@ -119,6 +120,7 @@ var autosave_deferred := false
 var setup_loadout := "warrior"
 var setup_mode := "expedition"
 var setup_survey_profile := "encounter"
+var setup_combat_rules := "stamina"
 var waystone_menu_open := false
 var seed_input: LineEdit
 var setup_seed_error := ""
@@ -175,6 +177,7 @@ func _ready() -> void:
 	setup_loadout = state.loadout_id
 	setup_mode = state.mode_id
 	setup_survey_profile = state.survey_profile
+	setup_combat_rules = state.combat_rules
 	map_view_layer = state.current_layer
 	visual = _presentation_snapshot()
 	_update_area_title(0.0)
@@ -734,6 +737,7 @@ func _layout() -> void:
 	upgrade_rects.clear()
 	progression_rects.clear()
 	survey_profile_rects.clear()
+	combat_rule_rects.clear()
 	var names := ["defense", "skill", "rally", "advance", "adopted"]
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
@@ -785,7 +789,7 @@ func _layout() -> void:
 	var setup_width := minf(size.x * 0.76, 640.0) if portrait else minf(size.x * 0.44, 580.0)
 	var setup_left := (size.x - setup_width) * 0.5 if portrait else size.x - setup_width - 24.0
 	if portrait:
-		var setup_center_y := size.y * 0.57
+		var setup_center_y := size.y * (0.50 if setup_mode == "combat_survey" else 0.57)
 		var option_width := (setup_width - setup_gap * 2.0) / 3.0
 		progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
 		progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
@@ -793,9 +797,11 @@ func _layout() -> void:
 		var profile_width := (setup_width - setup_gap) * 0.5
 		survey_profile_rects["encounter"] = Rect2(setup_left, setup_center_y + 84.0, profile_width, 48.0)
 		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, setup_center_y + 84.0, profile_width, 48.0)
-		seed_input.position = Vector2(setup_left, setup_center_y + 142.0)
+		combat_rule_rects["recovery"] = Rect2(setup_left, setup_center_y + 142.0, profile_width, 48.0)
+		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, setup_center_y + 142.0, profile_width, 48.0)
+		seed_input.position = Vector2(setup_left, setup_center_y + (200.0 if setup_mode == "combat_survey" else 142.0))
 		seed_input.size = Vector2(setup_width, 58.0)
-		start_rect = Rect2(setup_left, setup_center_y + 210.0, setup_width, 72.0)
+		start_rect = Rect2(setup_left, seed_input.position.y + 68.0, setup_width, 72.0)
 	else:
 		var setup_top := 78.0
 		var mode_height := clampf((size.y * 0.48 - setup_gap * 2.0) / 3.0, 50.0, 64.0)
@@ -806,7 +812,9 @@ func _layout() -> void:
 		var profile_width := (setup_width - setup_gap) * 0.5
 		survey_profile_rects["encounter"] = Rect2(setup_left, profile_top, profile_width, 42.0)
 		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, profile_top, profile_width, 42.0)
-		seed_input.position = Vector2(setup_left, profile_top + 50.0)
+		combat_rule_rects["recovery"] = Rect2(setup_left, profile_top + 50.0, profile_width, 42.0)
+		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, profile_top + 50.0, profile_width, 42.0)
+		seed_input.position = Vector2(setup_left, profile_top + (100.0 if setup_mode == "combat_survey" else 50.0))
 		seed_input.size = Vector2(setup_width, 50.0)
 		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, size.y - seed_input.position.y - 68.0))
 	archive_button_rect = Rect2(Vector2(size.x - 174.0, 18.0), Vector2(156.0, 44.0))
@@ -1046,12 +1054,18 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		for mode in progression_rects:
 			if Rect2(progression_rects[mode]).has_point(position):
 				setup_mode = String(mode)
-				queue_redraw()
+				if setup_mode != "combat_survey": setup_combat_rules = "stamina"
+				_layout()
 				return
 		if setup_mode == "combat_survey":
 			for profile in survey_profile_rects:
 				if Rect2(survey_profile_rects[profile]).has_point(position):
 					setup_survey_profile = String(profile)
+					queue_redraw()
+					return
+			for rule in combat_rule_rects:
+				if Rect2(combat_rule_rects[rule]).has_point(position):
+					setup_combat_rules = String(rule)
 					queue_redraw()
 					return
 		if start_rect.has_point(position): _start_run()
@@ -1389,6 +1403,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_TAB:
 				var modes := ["expedition", "campaign_lab", "combat_survey"]
 				setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
+				if setup_mode != "combat_survey": setup_combat_rules = "stamina"
+				_layout()
 			KEY_ENTER: _start_run()
 			_: return
 		queue_redraw()
@@ -1633,18 +1649,19 @@ func _handle_button(name: String) -> void:
 	match name:
 		"potion": _begin_streamed_action(state.request_potion(false))
 		"defense":
-			if _defense_cooldown() <= 0.0001:
+			if _defense_cooldown() <= 0.0001 and not (state.defense_id == "dodge" and state.stamina_actions_locked()):
 				if state.defense_id == "endure": _begin_streamed_action(state.request_endure(state.player_facing, false))
 				else: selected_action = "" if selected_action == "defense" else "defense"
 		"skill":
-			if state.player_equipped_weapon_art != "" and state.skill_cooldown <= 0.0001:
+			if state.player_equipped_weapon_art != "" and state.skill_cooldown <= 0.0001 and not state.stamina_actions_locked():
 				selected_action = "" if selected_action == "skill" else "skill"
 		"rally":
 			selected_action = ""
 			_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
 		"advance":
 			var remaining := state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown
-			if remaining <= 0.0001:
+			var stamina_locked := state.loadout_id == "warrior" and state.stamina_actions_locked()
+			if remaining <= 0.0001 and not stamina_locked:
 				selected_action = "" if selected_action == "advance" else "advance"
 		"adopted":
 			selected_action = ""
@@ -1754,7 +1771,7 @@ func _start_run() -> void:
 		chosen_seed = int(entered_seed)
 	setup_seed_error = ""
 	seed_input.release_focus()
-	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile)
+	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
 	playing = false
@@ -2526,7 +2543,7 @@ func _draw_player() -> void:
 	var foot := _world_to_screen(world_pos)
 	var action: Dictionary = visual.get("player_action", {})
 	var pose_direction := Vector2(action.get("direction", world_facing)).normalized()
-	var pose := IsometricPoseScript.sample(action, pose_direction, state.PLAYER_RADIUS) if view_mode == "isometric" or String(action.get("kind", "")) == "winded" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
+	var pose := IsometricPoseScript.sample(action, pose_direction, state.PLAYER_RADIUS) if view_mode == "isometric" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
 	var pos := _actor_visual_center(world_pos, state.PLAYER_RADIUS) + _project_world_delta(Vector2(pose["world_offset"])) - Vector2(0.0, float(pose["vertical_lift"]) * world_scale)
 	var facing := _screen_direction(world_facing).rotated(float(pose["facing_twist"]))
 	var collision_radius := state.PLAYER_RADIUS * world_scale
@@ -2563,6 +2580,11 @@ func _draw_player() -> void:
 		_draw_sequence_recovery(pos, radius, float(visual.get("weapon_sequence_cooldown", state.weapon_sequence_cooldown)))
 	var phase := _phase(action)
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
+	var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
+	if exhaustion > 0.0001:
+		var lock_ratio := clampf(exhaustion / state.EXHAUSTION_DURATION, 0.0, 1.0)
+		draw_arc(pos, radius * 1.65, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - lock_ratio), 28, Color("83d89a"), maxf(3.0, radius * 0.13))
+		draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.5, -radius * 2.75), "EXHAUSTED", HORIZONTAL_ALIGNMENT_CENTER, radius * 5.0, maxi(10, int(radius * 0.62)), Color("a7ebb6"))
 
 func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> void:
 	var active_index := int(action.get("phase_index", 0))
@@ -2945,9 +2967,19 @@ func _draw_player_health_bar(header_font: int) -> void:
 	var stamina := float(visual.get("player_stamina", state.player_stamina))
 	var stamina_max := maxf(1.0, float(visual.get("player_max_stamina", state.player_max_stamina)))
 	draw_rect(stamina_bar, Color("17311f"))
-	draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * clampf(stamina / stamina_max, 0.0, 1.0), stamina_bar.size.y)), Color("48b866"))
-	draw_rect(stamina_bar, Color("c3ebcc"), false, 2.0)
-	draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), "STAMINA  %d / %d" % [roundi(stamina), roundi(stamina_max)], HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(stamina_height * 0.70)), Color("effff2"))
+	if state.uses_stamina_rules():
+		draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * clampf(stamina / stamina_max, 0.0, 1.0), stamina_bar.size.y)), Color("48b866"))
+		var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
+		if exhaustion > 0.0001:
+			var unlocked := 1.0 - clampf(exhaustion / state.EXHAUSTION_DURATION, 0.0, 1.0)
+			draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * unlocked, stamina_bar.size.y)), Color(0.72, 0.90, 0.70, 0.22))
+		draw_rect(stamina_bar, Color("c3ebcc"), false, 2.0)
+		var stamina_label := "EXHAUSTED  %d / %d" % [roundi(stamina), roundi(stamina_max)] if exhaustion > 0.0001 else "STAMINA  %d / %d" % [roundi(stamina), roundi(stamina_max)]
+		draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), stamina_label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(stamina_height * 0.70)), Color("effff2"))
+	else:
+		draw_rect(stamina_bar, Color("243038"))
+		draw_rect(stamina_bar, Color("718087"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), "RECOVERY RULES  •  STAMINA INACTIVE", HORIZONTAL_ALIGNMENT_CENTER, width, maxi(10, int(stamina_height * 0.64)), Color("aeb9bd"))
 	var posture := float(visual.get("player_posture", state.player_posture))
 	var posture_max := maxf(1.0, float(visual.get("player_posture_max", state.player_posture_max)))
 	var posture_height := clampf(height * 0.48, 9.0, 13.0)
@@ -3244,7 +3276,6 @@ func _phase(action: Dictionary) -> String:
 	if kind == "slam": return "RAISING" if elapsed < float(action.get("startup", 1.0)) else "RECOVERING"
 	if kind == "hit_reaction": return "REELING"
 	if kind == "stagger": return "STAGGERED"
-	if kind == "winded": return "WINDED"
 	if kind == "move": return "MOVING" if bool(action.get("moving", false)) else ""
 	return ""
 
@@ -3807,6 +3838,15 @@ func _draw_setup() -> void:
 			var subtitle := "RESET BETWEEN ROOMS" if String(profile) == "encounter" else "RESOURCES CARRY"
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.54)), Color("9fb2b7"))
+		for rule in combat_rule_rects:
+			var rect := Rect2(combat_rule_rects[rule])
+			var selected := setup_combat_rules == String(rule)
+			draw_rect(rect, Color("17272d"))
+			draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 2.0)
+			var label := "RECOVERY" if String(rule) == "recovery" else "STAMINA"
+			var subtitle := "LONG COMMITMENT • COOLDOWNS" if String(rule) == "recovery" else "SHORT RECOVERY • EXHAUSTION"
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
 	draw_rect(archive_button_rect, Color("10191e"))
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
@@ -4056,14 +4096,14 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "UNLIMITED" if state.has_infinite_potions() else "%d LEFT" % state.potions
 	elif name == "defense":
 		title = state.defense_id.to_upper()
-		available = _defense_cooldown() <= 0.0001
-		subtitle = "FAST" if available and state.defense_id == "dodge" else "MEDIUM" if available else "COOLING"
+		available = _defense_cooldown() <= 0.0001 and not (state.defense_id == "dodge" and state.stamina_actions_locked())
+		subtitle = "EXHAUSTED" if state.defense_id == "dodge" and state.stamina_actions_locked() else "FAST" if available and state.defense_id == "dodge" else "MEDIUM" if available else "COOLING"
 	elif name == "skill":
 		var art := CombatCatalogScript.weapon_art(state.player_equipped_weapon_art)
 		title = String(art.get("label", "ART LOCKED")).to_upper()
-		available = not art.is_empty() and state.skill_cooldown <= 0.0001
+		available = not art.is_empty() and state.skill_cooldown <= 0.0001 and not state.stamina_actions_locked()
 		var art_subtitles := {"prototype_sweeping_cut": "WIDE / MULTI", "prototype_drawing_cut": "NARROW / FORCEFUL", "knife_execution": "UNAWARE / FORCEFUL", "knife_twin_fang": "SIMULTANEOUS / BURST", "bow_piercing_shot": "LINE / PIERCING", "bow_fan_shot": "CONE / THREE ARROWS"}
-		subtitle = String(art_subtitles.get(state.player_equipped_weapon_art, "WEAPON ART")) if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
+		subtitle = "EXHAUSTED" if not art.is_empty() and state.stamina_actions_locked() else String(art_subtitles.get(state.player_equipped_weapon_art, "WEAPON ART")) if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
 	elif name == "rally":
 		if state.loadout_id.begins_with("rogue_"):
 			title = "STEALTH"
@@ -4076,8 +4116,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 			subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
 	elif name == "advance":
 		title = "VAULT" if state.loadout_id == "rogue_acrobat" else "TAKE AIM" if state.loadout_id == "rogue_sharpshooter" else "ADVANCE"
-		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001
-		subtitle = ("EVADE / REPOSITION" if state.loadout_id == "rogue_acrobat" else "SELECT TARGET" if state.loadout_id == "rogue_sharpshooter" else "DRIVE FORWARD") if available else "COOLING"
+		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001 and not (state.loadout_id == "warrior" and state.stamina_actions_locked())
+		subtitle = "EXHAUSTED" if state.loadout_id == "warrior" and state.stamina_actions_locked() else ("EVADE / REPOSITION" if state.loadout_id == "rogue_acrobat" else "SELECT TARGET" if state.loadout_id == "rogue_sharpshooter" else "DRIVE FORWARD") if available else "COOLING"
 	elif name == "adopted":
 		title = "UNDISCOVERED"
 		available = false
@@ -4091,9 +4131,10 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
 	var stealth_without_cooldown := name == "rally" and state.loadout_id.begins_with("rogue_") and state.stealth_status() != "cooldown"
 	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)) and not stealth_without_cooldown:
-		var remaining := _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
+		var stamina_locked := state.stamina_actions_locked() and (name in ["defense", "skill"] or (name == "advance" and state.loadout_id == "warrior"))
+		var remaining := state.player_exhaustion_remaining if stamina_locked else _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
-		var maximum := defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0
+		var maximum := state.EXHAUSTION_DURATION if stamina_locked else defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))

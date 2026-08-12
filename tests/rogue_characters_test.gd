@@ -22,7 +22,7 @@ func _init() -> void:
 
 func fresh(loadout: String) -> RunState:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run(loadout, "expedition", 101010)
+	state.start_run(loadout, "expedition", 101010, "encounter", "recovery")
 	state.enemies.clear()
 	state.walls.clear()
 	state.carried_xp = 9999

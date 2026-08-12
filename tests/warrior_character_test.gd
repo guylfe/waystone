@@ -21,7 +21,7 @@ func _init() -> void:
 
 func fresh_state() -> RunState:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 630063)
+	state.start_run("warrior", "expedition", 630063, "encounter", "recovery")
 	state.enemies.clear()
 	state.walls.clear()
 	state.carried_xp = 999

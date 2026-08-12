@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 6
+const FORMAT_VERSION := 7
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -50,6 +50,7 @@ static func build_text(session: Dictionary) -> String:
 	lines.append("Generator version: %d" % int(session.get("generator_version", 1)))
 	lines.append("Presentation version: %d" % int(session.get("presentation_version", 0)))
 	lines.append("Profile: %s" % String(session.get("profile", "encounter")).capitalize())
+	lines.append("Combat rules: %s" % String(session.get("combat_rules", "stamina")).capitalize())
 	lines.append("Character: %s" % String(session.get("loadout", "unknown")))
 	lines.append("Started: %s" % String(session.get("started_at", "unknown")))
 	lines.append("Ended: %s" % String(session.get("ended_at", "unknown")))
@@ -79,8 +80,10 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Stamina depleted: %.1f" % float(room.get("stamina_depleted", room.get("stamina_spent", 0.0))))
 		lines.append("Stamina overdraw: %.1f" % float(room.get("stamina_overdraw", 0.0)))
 		lines.append("Stamina regenerated: %.1f" % float(room.get("stamina_regenerated", 0.0)))
-		lines.append("Overexertions: %d" % int(room.get("overexertions", 0)))
-		lines.append("Winded time: %.2fs" % float(room.get("winded_time", 0.0)))
+		lines.append("Exhaustion lockouts: %d" % int(room.get("overexertions", 0)))
+		lines.append("Exhausted time: %.2fs" % float(room.get("winded_time", 0.0)))
+		lines.append("Damage received while exhausted: %d" % int(room.get("exhaustion_damage_received", 0)))
+		lines.append("Exhaustion advanced by: movement %.2fs; Wait %.2fs; other %.2fs" % [float(room.get("exhaustion_move_time", 0.0)), float(room.get("exhaustion_wait_time", 0.0)), float(room.get("exhaustion_other_time", 0.0))])
 		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))
