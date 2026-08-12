@@ -76,6 +76,7 @@ func test_combo_presentation_and_sequence_recovery() -> void:
 	assert(int(Dictionary(captured["player_action"])["combo_length"]) == 4)
 	knife.player_action = knife._idle_action()
 	assert(knife.choose_upgrade("knife|knife_twin_fang"))
+	knife.player_stamina = knife.player_max_stamina
 	assert(knife.request_combo(Vector2.RIGHT, false))
 	assert(int(knife.player_action["combo_length"]) == 6)
 	advance_until_ready(knife)

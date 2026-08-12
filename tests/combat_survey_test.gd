@@ -34,6 +34,7 @@ func _init() -> void:
 	assert(Array(first.survey_pending_record["view_modes"]) == ["isometric", "top_down"])
 	assert(int(first.survey_pending_record["view_switches"]) == 1)
 	assert(int(first.survey_pending_record["entry_hp"]) == first.player_max_hp)
+	assert(int(first.survey_pending_record["entry_stamina"]) == int(first.player_max_stamina))
 	assert(int(Dictionary(first.survey_pending_record["action_usage"]).get("test_ability", 0)) == 1)
 	var ratings := {"difficulty": 3, "fun": 4, "fairness": 5, "tactical_interest": 4, "want_again": 4}
 	first.submit_survey_feedback(ratings, ["fair", "good mix"], "Deterministic survey smoke test.")
@@ -41,6 +42,7 @@ func _init() -> void:
 	assert(first.survey_room_number == 2)
 	assert(first.survey_room_seed != first_seed)
 	assert(first.player_hp == first.player_max_hp)
+	assert(is_equal_approx(first.player_stamina, first.player_max_stamina))
 	assert(Array(first.survey_session["rooms"]).size() == 1)
 	first.end_survey_run()
 	assert(first.survey_feedback_pending)
@@ -52,7 +54,9 @@ func _init() -> void:
 	assert("ROOM 1" in report and "ROOM 2" in report)
 	assert("Room seed:" in report and "Tags: fair, good mix" in report)
 	assert("Want a room like this again: 4/5" in report)
-	assert("Health:" in report and "Action usage:" in report)
+	assert("Health:" in report and "Stamina:" in report and "Overexertions:" in report and "Action usage:" in report)
+	assert("Stamina depleted:" in report and "Stamina overdraw:" in report and "Strike diagnostics:" in report)
+	assert("Report format: 6" in report and "Presentation version: 3" in report)
 	assert("Pacing:" in report and "Recipe:" in report and "Roles:" in report)
 	assert("Presentation version:" in report and "View: isometric + top_down" in report and "View switches: 1" in report)
 

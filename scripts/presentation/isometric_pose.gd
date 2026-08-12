@@ -3,7 +3,7 @@ extends RefCounted
 
 # This is presentation data only.  Combat continues to resolve from the
 # authoritative world-space action and AttackGeometry pose.
-const VERSION := 1
+const VERSION := 2
 
 static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> Dictionary:
 	var direction := facing.normalized()
@@ -67,6 +67,13 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 		twist = 0.30 * (1.0 - progress)
 		width_scale = 1.06
 		height_scale = 0.94
+	elif kind == "winded":
+		commitment = 1.0
+		offset = -direction * world_radius * 0.05
+		lift = -world_radius * 0.10
+		width_scale = 1.08
+		height_scale = 0.84
+		twist = -0.08
 
 	return {
 		"world_offset": offset,

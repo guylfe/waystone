@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 4
+const FORMAT_VERSION := 6
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -74,6 +74,14 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Roles: %s" % ", ".join(PackedStringArray(room.get("enemy_roles", []))))
 		lines.append("Build: %s" % String(room.get("build_summary", "unknown")))
 		lines.append("Health: %d/%d -> %d/%d" % [int(room.get("entry_hp", 0)), int(room.get("entry_max_hp", 0)), int(room.get("exit_hp", 0)), int(room.get("entry_max_hp", 0))])
+		lines.append("Stamina: %d/%d -> %d/%d" % [roundi(float(room.get("entry_stamina", 0.0))), roundi(float(room.get("entry_max_stamina", 0.0))), roundi(float(room.get("exit_stamina", 0.0))), roundi(float(room.get("exit_max_stamina", room.get("entry_max_stamina", 0.0))))])
+		lines.append("Stamina spent: %.1f" % float(room.get("stamina_spent", 0.0)))
+		lines.append("Stamina depleted: %.1f" % float(room.get("stamina_depleted", room.get("stamina_spent", 0.0))))
+		lines.append("Stamina overdraw: %.1f" % float(room.get("stamina_overdraw", 0.0)))
+		lines.append("Stamina regenerated: %.1f" % float(room.get("stamina_regenerated", 0.0)))
+		lines.append("Overexertions: %d" % int(room.get("overexertions", 0)))
+		lines.append("Winded time: %.2fs" % float(room.get("winded_time", 0.0)))
+		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))
 		lines.append("Damage dealt: %d" % int(room.get("damage_dealt", 0)))
@@ -88,6 +96,10 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
 		lines.append("View switches: %d" % int(room.get("view_switches", 0)))
 		lines.append("Empty melee contacts: %d" % int(room.get("empty_melee_contacts", 0)))
+		var diagnostics: Array = room.get("strike_diagnostics", [])
+		lines.append("Strike diagnostics: %d" % diagnostics.size())
+		for diagnostic_value in diagnostics:
+			lines.append(_strike_diagnostic_text(Dictionary(diagnostic_value)))
 		if String(room.get("outcome", "")) == "death": lines.append("Death source: %s" % String(room.get("death_source", "unknown")))
 		var ratings := Dictionary(room.get("ratings", {}))
 		if bool(room.get("subjective_skipped", false)):
@@ -116,6 +128,18 @@ static func all_reports_text() -> String:
 static func _rating_text(value: Variant) -> String:
 	var rating := int(value)
 	return "%d/5" % rating if rating > 0 else "not rated"
+
+static func _strike_diagnostic_text(value: Dictionary) -> String:
+	var result := String(value.get("result", "miss")).to_upper()
+	var nearest := String(value.get("closest_enemy", "none nearby"))
+	var clearance := float(value.get("closest_clearance", -1.0))
+	var clearance_text := "n/a" if clearance < -0.5 else "%+.1f" % clearance
+	return "  STRIKE %d  t=%.2fs  %s phase %d [%s]  %s  nearest=%s  forward=%+.1f lateral=%+.1f center=%.1f edge=%.1f clearance=%s reach=%.1f  enemy_action=%s@%.2f  player=(%.1f,%.1f) enemy=(%.1f,%.1f) facing=(%.3f,%.3f) weapon=(%.1f,%.1f)->(%.1f,%.1f)" % [
+		int(value.get("index", 0)), float(value.get("room_time", 0.0)), String(value.get("technique", value.get("technique_id", "Attack"))), int(value.get("phase", 1)), String(value.get("view", "unknown")), result, nearest,
+		float(value.get("forward", 0.0)), float(value.get("lateral", 0.0)), float(value.get("center_distance", 0.0)), float(value.get("edge_distance", 0.0)), clearance_text, float(value.get("reach", 0.0)),
+		String(value.get("enemy_action", "none")), float(value.get("enemy_action_elapsed", 0.0)), float(value.get("player_x", 0.0)), float(value.get("player_y", 0.0)), float(value.get("enemy_x", 0.0)), float(value.get("enemy_y", 0.0)),
+		float(value.get("facing_x", 0.0)), float(value.get("facing_y", 0.0)), float(value.get("weapon_start_x", 0.0)), float(value.get("weapon_start_y", 0.0)), float(value.get("weapon_end_x", 0.0)), float(value.get("weapon_end_y", 0.0)),
+	]
 
 static func _action_usage_text(usage: Dictionary) -> String:
 	if usage.is_empty(): return "none"

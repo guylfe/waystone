@@ -1,6 +1,20 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.2` (Android version code `202`).
+Current prototype version: `0.2.4` (Android version code `204`).
+
+### v0.2.4: Combat diagnostics and resource clarity
+
+- Combat Survey reports now preserve every melee strike's result and closest active-motion approach, including local forward/lateral enemy position and exact world-space weapon endpoints.
+- Health and Stamina are the prominent red/green combat-resource group; Posture and XP are visually separated secondary bars.
+- Rally, Stealth, and Take Aim recover Stamina while their nonphysical commitments advance time.
+- Winded recovery can take damage but is no longer interrupted and restarted by every hit.
+- Bandit and Knife attacks retain fast startup but have a readable neutral recovery window.
+
+### v0.2.3: Stamina combat
+
+- Adds 100-point universal Stamina, per-strike combo costs, draw-scaled Bow costs, movement/Wait regeneration, and forced `WINDED` recovery after overexertion.
+- Revises every Temperament choice so one package improves Health and the other improves Stamina, with save migration for existing choices.
+- Adds Stamina HUD, character-sheet, save, presentation, and Combat Survey reporting support.
 
 ### v0.2.2: Contextual held-touch intent
 

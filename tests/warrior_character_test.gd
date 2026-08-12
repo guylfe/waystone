@@ -13,6 +13,7 @@ func _init() -> void:
 	test_bandit_awareness_and_secret_passage()
 	test_character_sheet_copy_fits_compact_boxes()
 	test_current_save_boundary()
+	test_v25_temperament_migration()
 	test_v21_major_framework_boundary()
 	test_action_layout_separates_context()
 	print("Warrior character, progression, action, save, and sheet tests passed.")
@@ -190,6 +191,34 @@ func test_current_save_boundary() -> void:
 	assert(loaded.loadout_id == "warrior")
 	assert(int(loaded.track_ranks["evasion"]) == 1)
 	assert(String(loaded.player_action["kind"]) == "idle")
+	assert(is_equal_approx(loaded.player_stamina, state.player_stamina))
+	assert(is_equal_approx(loaded.player_max_stamina, state.player_max_stamina))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func test_v25_temperament_migration() -> void:
+	var path := "user://warrior-v25-stamina-migration.save"
+	var state := fresh_state()
+	state.track_choices["steadfast_1"] = "vigilance"
+	state.track_ranks["steadfast"] = 1
+	state.player_attributes["speed"] = int(state.player_attributes["speed"]) + 1
+	state.player_attributes["awareness"] = int(state.player_attributes["awareness"]) + 1
+	assert(state.save_run(path))
+	var reader := FileAccess.open(path, FileAccess.READ)
+	var payload: Dictionary = reader.get_var(true)
+	reader.close()
+	payload["save_version"] = 25
+	payload.erase("player_stamina")
+	payload.erase("player_max_stamina")
+	payload.erase("player_overexertion_pending")
+	var writer := FileAccess.open(path, FileAccess.WRITE)
+	writer.store_var(payload, true)
+	writer.close()
+	var loaded: RunState = RunStateScript.new(false)
+	assert(loaded.load_run(path))
+	assert(int(loaded.player_attributes["speed"]) == 5)
+	assert(int(loaded.player_attributes["awareness"]) == 6)
+	assert(is_equal_approx(loaded.player_max_stamina, 110.0))
+	assert(is_equal_approx(loaded.player_stamina, 110.0))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_v21_major_framework_boundary() -> void:

@@ -313,7 +313,7 @@ func _build_survey_feedback_overlay() -> void:
 	tag_grid.columns = 3
 	tag_grid.add_theme_constant_override("h_separation", 7)
 	tag_grid.add_theme_constant_override("v_separation", 7)
-	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure"]:
+	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure", "stamina meaningful", "stamina frustrating"]:
 		var button := Button.new()
 		button.text = String(tag).to_upper()
 		button.toggle_mode = true
@@ -2526,7 +2526,7 @@ func _draw_player() -> void:
 	var foot := _world_to_screen(world_pos)
 	var action: Dictionary = visual.get("player_action", {})
 	var pose_direction := Vector2(action.get("direction", world_facing)).normalized()
-	var pose := IsometricPoseScript.sample(action, pose_direction, state.PLAYER_RADIUS) if view_mode == "isometric" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
+	var pose := IsometricPoseScript.sample(action, pose_direction, state.PLAYER_RADIUS) if view_mode == "isometric" or String(action.get("kind", "")) == "winded" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
 	var pos := _actor_visual_center(world_pos, state.PLAYER_RADIUS) + _project_world_delta(Vector2(pose["world_offset"])) - Vector2(0.0, float(pose["vertical_lift"]) * world_scale)
 	var facing := _screen_direction(world_facing).rotated(float(pose["facing_twist"]))
 	var collision_radius := state.PLAYER_RADIUS * world_scale
@@ -2926,23 +2926,35 @@ func _draw_player_health_bar(header_font: int) -> void:
 	var hp := int(visual.get("player_hp", state.player_hp))
 	var maximum := maxi(1, int(visual.get("player_max_hp", state.player_max_hp)))
 	var ratio := clampf(float(hp) / float(maximum), 0.0, 1.0)
-	var width := minf(board_rect.size.x * 0.50, 340.0)
-	var height := clampf(board_rect.size.y * 0.016, 15.0, 24.0)
+	var width := minf(board_rect.size.x * 0.58, 400.0)
+	var height := clampf(board_rect.size.y * 0.021, 19.0, 30.0)
 	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 34.0), Vector2(width, height))
-	draw_rect(bar.grow(4.0), Color(0.03, 0.05, 0.06, 0.94))
+	var stamina_height := clampf(height * 0.82, 16.0, 24.0)
+	var stamina_bar := Rect2(bar.position + Vector2(0.0, height + 7.0), Vector2(width, stamina_height))
+	# Health and Stamina are one prominent combat-resource cluster. Posture and XP
+	# are secondary systems and sit below a deliberate visual break.
+	var primary_group := Rect2(bar.position, Vector2(width, height + 7.0 + stamina_height))
+	draw_rect(primary_group.grow(6.0), Color(0.025, 0.035, 0.04, 0.96))
+	draw_line(primary_group.position + Vector2(8.0, -3.0), primary_group.position + Vector2(width - 8.0, -3.0), Color("d8ddd8"), 2.0)
 	draw_rect(bar, Color("35191c"))
-	var health_color := Color("69c86f") if ratio > 0.5 else Color("e2ad4c") if ratio > 0.25 else Color("e55458")
+	var health_color := Color("c9474f") if ratio > 0.25 else Color("ed5b5b")
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * ratio, bar.size.y)), health_color)
-	draw_rect(bar, Color("d8ddd8"), false, 2.0)
+	draw_rect(bar, Color("f0c8c8"), false, 2.0)
 	var label_font := maxi(12, int(height * 0.72))
-	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.77), "HP  %d / %d" % [hp, maximum], HORIZONTAL_ALIGNMENT_CENTER, width, label_font, Color("f4f2e9"))
+	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.77), "HEALTH  %d / %d" % [hp, maximum], HORIZONTAL_ALIGNMENT_CENTER, width, label_font, Color("fff3f3"))
+	var stamina := float(visual.get("player_stamina", state.player_stamina))
+	var stamina_max := maxf(1.0, float(visual.get("player_max_stamina", state.player_max_stamina)))
+	draw_rect(stamina_bar, Color("17311f"))
+	draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * clampf(stamina / stamina_max, 0.0, 1.0), stamina_bar.size.y)), Color("48b866"))
+	draw_rect(stamina_bar, Color("c3ebcc"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), "STAMINA  %d / %d" % [roundi(stamina), roundi(stamina_max)], HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(stamina_height * 0.70)), Color("effff2"))
 	var posture := float(visual.get("player_posture", state.player_posture))
 	var posture_max := maxf(1.0, float(visual.get("player_posture_max", state.player_posture_max)))
-	var posture_height := clampf(height * 0.52, 8.0, 12.0)
-	var posture_bar := Rect2(bar.position + Vector2(0.0, height + 6.0), Vector2(width, posture_height))
+	var posture_height := clampf(height * 0.48, 9.0, 13.0)
+	var posture_bar := Rect2(stamina_bar.position + Vector2(0.0, stamina_height + 13.0), Vector2(width, posture_height))
 	draw_rect(posture_bar, Color("17212b"))
 	draw_rect(Rect2(posture_bar.position, Vector2(posture_bar.size.x * clampf(posture / posture_max, 0.0, 1.0), posture_bar.size.y)), Color("6d9fc5"))
-	draw_rect(posture_bar, Color("cad8df"), false, 1.0)
+	draw_rect(posture_bar, Color("8798a1"), false, 1.0)
 	draw_string(ThemeDB.fallback_font, posture_bar.position + Vector2(0.0, posture_height * 0.82), "POSTURE  %d / %d" % [roundi(posture), roundi(posture_max)], HORIZONTAL_ALIGNMENT_CENTER, width, maxi(8, int(posture_height * 0.72)), Color("edf3f5"))
 
 func _draw_player_progress_bar(header_font: int) -> void:
@@ -2950,11 +2962,12 @@ func _draw_player_progress_bar(header_font: int) -> void:
 	var secured := mini(carried, int(visual.get("secured_xp", state.secured_xp))) if state.mode_id == "campaign_lab" else 0
 	var risk := maxi(0, carried - secured)
 	var target := maxi(1, maxi(state.next_upgrade_cost(), carried))
-	var width := minf(board_rect.size.x * 0.50, 340.0)
-	var health_height := clampf(board_rect.size.y * 0.016, 15.0, 24.0)
-	var posture_height := clampf(health_height * 0.52, 8.0, 12.0)
+	var width := minf(board_rect.size.x * 0.58, 400.0)
+	var health_height := clampf(board_rect.size.y * 0.021, 19.0, 30.0)
+	var posture_height := clampf(health_height * 0.48, 9.0, 13.0)
+	var stamina_height := clampf(health_height * 0.82, 16.0, 24.0)
 	var height := clampf(board_rect.size.y * 0.013, 12.0, 19.0)
-	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 50.0 + health_height + posture_height), Vector2(width, height))
+	var bar := Rect2(Vector2(board_rect.get_center().x - width * 0.5, board_rect.position.y + header_font + 72.0 + health_height + stamina_height + posture_height), Vector2(width, height))
 	draw_rect(bar.grow(3.0), Color(0.03, 0.05, 0.06, 0.94))
 	draw_rect(bar, Color("171d20"))
 	if state.mode_id == "campaign_lab":
@@ -3231,6 +3244,7 @@ func _phase(action: Dictionary) -> String:
 	if kind == "slam": return "RAISING" if elapsed < float(action.get("startup", 1.0)) else "RECOVERING"
 	if kind == "hit_reaction": return "REELING"
 	if kind == "stagger": return "STAGGERED"
+	if kind == "winded": return "WINDED"
 	if kind == "move": return "MOVING" if bool(action.get("moving", false)) else ""
 	return ""
 
@@ -3413,6 +3427,7 @@ func _draw_sheet_stats(rect: Rect2, attributes: Dictionary, font: int) -> void:
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(7.0, heading_font * 1.30), "ATTRIBUTES", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 14.0, heading_font, Color("d7aa58"))
 	var stats := [
 		{"label": "HEALTH", "value": "%d/%d" % [state.player_hp, int(attributes.get("health", 0))]},
+		{"label": "STAMINA", "value": "%d/%d" % [roundi(state.player_stamina), int(attributes.get("stamina", 0))]},
 		{"label": "STRENGTH", "value": str(attributes.get("strength", 0))},
 		{"label": "DEFENSE", "value": str(attributes.get("defense", 0))},
 		{"label": "SPEED", "value": str(attributes.get("speed", 0))},
@@ -3424,7 +3439,8 @@ func _draw_sheet_stats(rect: Rect2, attributes: Dictionary, font: int) -> void:
 		{"label": "FAITH", "value": str(attributes.get("faith", 0))},
 	]
 	var column_width := (rect.size.x - 16.0) * 0.5
-	var line_height := maxf(13.0, (rect.size.y - font * 1.8) / 5.0)
+	var rows := int(ceil(float(stats.size()) / 2.0))
+	var line_height := maxf(11.0, (rect.size.y - font * 1.8) / float(rows))
 	for index in range(stats.size()):
 		var stat: Dictionary = stats[index]
 		var column := index % 2
@@ -3446,7 +3462,7 @@ func _draw_sheet_combat_summary(rect: Rect2, data: Dictionary, font: int) -> voi
 	var weapon_font := _sheet_fit_font_size(weapon_text, rect.size.x * 0.58 - 8.0, font, 6)
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(8.0, weapon_font * 1.22), weapon_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x * 0.58 - 8.0, weapon_font, Color("eef4ef"))
 	var defense := String(data.get("defense", "dodge")).capitalize()
-	var art_text := "ART: %s  ·  %s" % [art_label, defense.to_upper()]
+	var art_text := "ART: %s  ·  %s  ·  STA %d/%d" % [art_label, defense.to_upper(), roundi(float(data.get("current_stamina", 0.0))), roundi(float(data.get("maximum_stamina", 0.0)))]
 	var art_font := _sheet_fit_font_size(art_text, rect.size.x * 0.40 - 8.0, font, 6)
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x * 0.60, art_font * 1.22), art_text, HORIZONTAL_ALIGNMENT_RIGHT, rect.size.x * 0.40 - 8.0, art_font, Color("d7aa58"))
 	if art_id != "" and Array(data["known_arts"]).size() > 1 and state.can_swap_weapon_art():

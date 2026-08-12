@@ -35,10 +35,13 @@ const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-const SAVE_VERSION := 25
-const GAME_VERSION := "0.2.2"
+const STAMINA_REGEN_PER_SECOND := 30.0
+const WINDED_RECOVERY_TARGET := 35.0
+const STAMINA_REGEN_ACTIONS := ["move", "wait", "winded", "rally", "stealth", "take_aim"]
+const SAVE_VERSION := 27
+const GAME_VERSION := "0.2.4"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 1
+const PRESENTATION_VERSION := 3
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -52,6 +55,10 @@ var player_pos := Vector2(800.0, 1900.0)
 var player_facing := Vector2.UP
 var player_hp := PLAYER_MAX_HP
 var player_max_hp := PLAYER_MAX_HP
+var player_stamina := 100.0
+var player_max_stamina := 100.0
+var player_overexertion_pending := false
+var player_winded_recovery := false
 var player_posture := 12.0
 var player_posture_max := 12.0
 var player_posture_recovery_delay := 0.0
@@ -129,6 +136,13 @@ var successful_endures := 0
 var damage_received_total := 0
 var hits_received_total := 0
 var potions_used_total := 0
+var stamina_spent_total := 0.0
+var stamina_depleted_total := 0.0
+var stamina_overdraw_total := 0.0
+var stamina_regenerated_total := 0.0
+var overexertion_count := 0
+var winded_time_total := 0.0
+var stamina_blocked_continuations := 0
 var effects: Array[Dictionary] = []
 var message := "Time is frozen. Choose an action."
 var last_timeline: Array[Dictionary] = []
@@ -251,11 +265,13 @@ var survey_current_view_mode := "isometric"
 var survey_room_view_modes: Array[String] = ["isometric"]
 var survey_view_switches := 0
 var survey_empty_melee_contacts := 0
+var survey_strike_diagnostics: Array[Dictionary] = []
 
 func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
 	_apply_loadout()
 	player_hp = player_max_hp
+	player_stamina = player_max_stamina
 	if auto_start: start_run(loadout_id, mode_id, run_seed)
 
 func build_laboratory() -> void:
@@ -274,6 +290,9 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
 	_apply_loadout()
 	player_hp = player_max_hp
+	player_stamina = player_max_stamina
+	player_overexertion_pending = false
+	player_winded_recovery = false
 	_refresh_player_posture_capacity(true)
 	player_facing = Vector2.UP
 	player_action = _idle_action()
@@ -341,6 +360,13 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	damage_received_total = 0
 	hits_received_total = 0
 	potions_used_total = 0
+	stamina_spent_total = 0.0
+	stamina_depleted_total = 0.0
+	stamina_overdraw_total = 0.0
+	stamina_regenerated_total = 0.0
+	overexertion_count = 0
+	winded_time_total = 0.0
+	stamina_blocked_continuations = 0
 	survey_room_number = 1 if mode_id == ModeRulesScript.COMBAT_SURVEY else 0
 	survey_room_seed = 0
 	survey_feedback_pending = false
@@ -355,8 +381,9 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_room_view_modes.assign([survey_current_view_mode])
 	survey_view_switches = 0
 	survey_empty_melee_contacts = 0
+	survey_strike_diagnostics.clear()
 	survey_session = {
-		"format_version": 1,
+		"format_version": SurveyReportScript.FORMAT_VERSION,
 		"game_version": GAME_VERSION,
 		"generator_version": SURVEY_GENERATOR_VERSION,
 		"presentation_version": PRESENTATION_VERSION,
@@ -424,12 +451,12 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	if mode_id == ModeRulesScript.COMBAT_SURVEY:
 		_capture_survey_room_entry()
 		SurveyReportScript.save_current(survey_session)
-		message = "Combat Survey room 1. Time is frozen; assess the encounter naturally."
+		message = "Combat Survey room 1. Physical attacks spend Stamina; movement and Wait restore it. Reaching zero leaves you WINDED."
 	elif bool(mode_config["waystone_available"]):
 		_capture_anchor_history()
-		message = "The Waystone anchors this moment. Time is frozen."
+		message = "The Waystone anchors this moment. Physical attacks spend Stamina; movement and Wait restore it. Reaching zero leaves you WINDED."
 	else:
-		message = "The expedition begins. Death ends the run."
+		message = "The expedition begins. Physical attacks spend Stamina; movement and Wait restore it. Reaching zero leaves you WINDED."
 	last_timeline.clear()
 	changed.emit()
 	message_changed.emit(message)
@@ -667,6 +694,8 @@ func _capture_survey_room_entry() -> void:
 		"time": simulation_time,
 		"hp": player_hp,
 		"max_hp": player_max_hp,
+		"stamina": player_stamina,
+		"max_stamina": player_max_stamina,
 		"potions": potions,
 		"damage_dealt": damage_dealt,
 		"damage_received": damage_received_total,
@@ -678,6 +707,14 @@ func _capture_survey_room_entry() -> void:
 		"action_counts": survey_action_counts.duplicate(true),
 		"view_switches": survey_view_switches,
 		"empty_melee_contacts": survey_empty_melee_contacts,
+		"stamina_spent": stamina_spent_total,
+		"stamina_depleted": stamina_depleted_total,
+		"stamina_overdraw": stamina_overdraw_total,
+		"stamina_regenerated": stamina_regenerated_total,
+		"overexertions": overexertion_count,
+		"winded_time": winded_time_total,
+		"stamina_blocked_continuations": stamina_blocked_continuations,
+		"strike_diagnostic_count": survey_strike_diagnostics.size(),
 	}
 	survey_last_damage_source = ""
 
@@ -701,11 +738,26 @@ func _survey_build_summary() -> String:
 	var ranks: Array[String] = []
 	for track_id in track_ranks:
 		var rank := int(track_ranks[track_id])
-		if rank > 0: ranks.append("%s %d" % [String(track_id).replace("_", " ").capitalize(), rank])
+		if rank <= 0: continue
+		var selected: Array[String] = []
+		var definition := CombatCatalogScript.character_track(String(track_id))
+		for stage_index in range(mini(rank, Array(definition.get("stages", [])).size())):
+			var stage := CombatCatalogScript.character_stage(String(track_id), stage_index)
+			var stage_id := String(stage.get("id", ""))
+			var choice_id := String(track_choices.get(stage_id, ""))
+			if choice_id.is_empty(): continue
+			for option_value in Array(stage.get("choices", [])):
+				var option := Dictionary(option_value)
+				if String(option.get("id", "")) == choice_id:
+					selected.append(String(option.get("label", choice_id)))
+					break
+		var choice_suffix := " (%s)" % ", ".join(selected) if not selected.is_empty() else ""
+		ranks.append("%s %d%s" % [String(track_id).replace("_", " ").capitalize(), rank, choice_suffix])
 	return "%s; %s; %s" % [CombatCatalogScript.loadout_name(loadout_id), CombatCatalogScript.weapon_frame(player_weapon_frame).get("label", player_weapon_frame), ", ".join(ranks) if not ranks.is_empty() else "base tracks"]
 
 func _complete_survey_room(outcome: String) -> void:
 	if mode_id != ModeRulesScript.COMBAT_SURVEY or survey_feedback_pending or trial_complete: return
+	_survey_finalize_strike_probe("room_ended")
 	survey_pending_record = survey_room_definition.duplicate(true)
 	survey_pending_record.merge({
 		"outcome": outcome,
@@ -713,6 +765,10 @@ func _complete_survey_room(outcome: String) -> void:
 		"entry_hp": int(survey_room_entry.get("hp", player_hp)),
 		"entry_max_hp": int(survey_room_entry.get("max_hp", player_max_hp)),
 		"exit_hp": player_hp,
+		"entry_stamina": float(survey_room_entry.get("stamina", player_stamina)),
+		"entry_max_stamina": float(survey_room_entry.get("max_stamina", player_max_stamina)),
+		"exit_stamina": player_stamina,
+		"exit_max_stamina": player_max_stamina,
 		"entry_potions": int(survey_room_entry.get("potions", potions)),
 		"exit_potions": potions,
 		"death_source": survey_last_damage_source if outcome == "death" else "",
@@ -728,6 +784,14 @@ func _complete_survey_room(outcome: String) -> void:
 		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
 		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
 		"successful_endures": successful_endures - int(survey_room_entry.get("successful_endures", successful_endures)),
+		"stamina_spent": stamina_spent_total - float(survey_room_entry.get("stamina_spent", stamina_spent_total)),
+		"stamina_depleted": stamina_depleted_total - float(survey_room_entry.get("stamina_depleted", stamina_depleted_total)),
+		"stamina_overdraw": stamina_overdraw_total - float(survey_room_entry.get("stamina_overdraw", stamina_overdraw_total)),
+		"stamina_regenerated": stamina_regenerated_total - float(survey_room_entry.get("stamina_regenerated", stamina_regenerated_total)),
+		"overexertions": overexertion_count - int(survey_room_entry.get("overexertions", overexertion_count)),
+		"winded_time": winded_time_total - float(survey_room_entry.get("winded_time", winded_time_total)),
+		"stamina_blocked_continuations": stamina_blocked_continuations - int(survey_room_entry.get("stamina_blocked_continuations", stamina_blocked_continuations)),
+		"strike_diagnostics": survey_strike_diagnostics.slice(int(survey_room_entry.get("strike_diagnostic_count", 0))).duplicate(true),
 		"ratings": {}, "tags": [], "notes": "", "subjective_skipped": false,
 	}, true)
 	survey_feedback_pending = true
@@ -798,6 +862,10 @@ func _load_next_survey_room() -> void:
 		weapon_sequence_cooldown = 0.0
 		player_conditions.clear()
 		player_condition_buildup.clear()
+	player_stamina = player_max_stamina
+	player_overexertion_pending = false
+	player_winded_recovery = false
+	survey_strike_diagnostics.clear()
 	var layout := _generate_survey_layout(survey_room_number)
 	world_size = Vector2(layout["world_size"])
 	geometry_style = String(layout["geometry_style"])
@@ -980,6 +1048,10 @@ func _hydrate_enemy_combat_profile(enemy: Dictionary) -> Dictionary:
 	if not enemy.has("equipped_weapon_art"): enemy["equipped_weapon_art"] = String(profile["equipped_weapon_art"])
 	if not enemy.has("defense_id"): enemy["defense_id"] = String(profile["defense_id"])
 	if not enemy.has("attributes"): enemy["attributes"] = Dictionary(profile["attributes"]).duplicate(true)
+	elif not Dictionary(enemy["attributes"]).has("stamina"):
+		var hydrated_attributes := Dictionary(enemy["attributes"])
+		hydrated_attributes["stamina"] = int(Dictionary(profile["attributes"]).get("stamina", 100))
+		enemy["attributes"] = hydrated_attributes
 	if not enemy.has("properties"): enemy["properties"] = Dictionary(profile["properties"]).duplicate(true)
 	if not enemy.has("revealed_to_player"): enemy["revealed_to_player"] = String(enemy.get("kind", "")) != "bandit"
 	if not enemy.has("revealed_elapsed"): enemy["revealed_elapsed"] = 0.0
@@ -1020,11 +1092,14 @@ func player_actor() -> Dictionary:
 	# attribute profile remains ready for temperament-gated advancement.
 	var attributes := player_attributes.duplicate(true)
 	attributes["health"] = player_max_hp
+	attributes["stamina"] = roundi(player_max_stamina)
 	attributes["speed"] = int(player_attributes.get("speed", 5))
 	var properties := player_properties.duplicate(true)
 	properties["collision_radius"] = PLAYER_RADIUS
 	return {
 		"kind": "player",
+		"current_stamina": player_stamina,
+		"maximum_stamina": player_max_stamina,
 		"weapon_frame": player_weapon_frame,
 		"weapon_art_ids": player_weapon_art_library.duplicate(),
 		"equipped_weapon_art": player_equipped_weapon_art,
@@ -1048,6 +1123,7 @@ func _apply_loadout() -> void:
 	_sync_player_combat_profile()
 	defense_id = String(CombatCatalogScript.loadout_profile(loadout_id).get("defense_id", "dodge"))
 	player_max_hp = int(player_attributes.get("health", PLAYER_MAX_HP))
+	player_max_stamina = float(player_attributes.get("stamina", 100))
 	player_move_speed = 340.0
 	match player_weapon_frame:
 		"knife", "twin_knives":
@@ -1083,6 +1159,65 @@ func _tempo_from_attributes(attributes: Dictionary) -> float:
 
 func _player_personal_tempo() -> float:
 	return _tempo_from_attributes(player_attributes) * (0.85 if float(player_conditions.get("frost", 0.0)) > 0.0 else 1.0)
+
+func _can_commit_physical_action() -> bool:
+	return player_stamina > 0.0001 and not player_overexertion_pending
+
+func _spend_stamina(amount: float) -> bool:
+	if amount <= 0.0: return true
+	if not _can_commit_physical_action(): return false
+	var before := player_stamina
+	player_stamina = maxf(0.0, player_stamina - amount)
+	stamina_spent_total += amount
+	stamina_depleted_total += before - player_stamina
+	stamina_overdraw_total += maxf(0.0, amount - before)
+	if player_stamina <= 0.0001:
+		player_stamina = 0.0
+		player_overexertion_pending = true
+	return true
+
+func _regenerate_stamina(dt: float) -> void:
+	if dt <= 0.0 or player_stamina >= player_max_stamina: return
+	var before := player_stamina
+	player_stamina = minf(player_max_stamina, player_stamina + STAMINA_REGEN_PER_SECOND * dt)
+	stamina_regenerated_total += player_stamina - before
+
+func _begin_winded(count_overexertion: bool = true) -> void:
+	player_overexertion_pending = false
+	player_winded_recovery = true
+	if count_overexertion: overexertion_count += 1
+	var duration := maxf(0.0, (WINDED_RECOVERY_TARGET - player_stamina) / STAMINA_REGEN_PER_SECOND)
+	player_action = _action("winded", duration, Vector2.ZERO)
+	_annotate_player_action("winded")
+	_set_message("Overexerted — you cannot move until your breath returns.")
+
+func _increase_max_stamina(amount: float) -> void:
+	player_max_stamina += amount
+	player_stamina = minf(player_max_stamina, player_stamina + amount)
+	player_attributes["stamina"] = roundi(player_max_stamina)
+
+func _migrate_v25_temperament_to_stamina() -> void:
+	player_max_stamina = 100.0
+	for stage_index in range(1, 5):
+		var steadfast_choice := String(track_choices.get("steadfast_%d" % stage_index, ""))
+		if steadfast_choice == "vigilance":
+			player_attributes["speed"] = maxi(0, int(player_attributes.get("speed", 0)) - 1)
+			player_max_stamina += 10.0
+		var finesse_choice := String(track_choices.get("finesse_%d" % stage_index, ""))
+		if finesse_choice == "fleetness":
+			player_max_hp = maxi(1, player_max_hp - 5)
+			player_hp = mini(player_hp, player_max_hp)
+			player_max_stamina += 10.0
+		elif finesse_choice == "subtlety":
+			player_attributes["awareness"] = maxi(0, int(player_attributes.get("awareness", 0)) - 1)
+			player_max_hp += 5
+			player_hp = mini(player_max_hp, player_hp + 5)
+		var patient_choice := String(track_choices.get("patient_%d" % stage_index, ""))
+		if patient_choice == "observation":
+			player_attributes["stealth"] = maxi(0, int(player_attributes.get("stealth", 0)) - 1)
+			player_max_stamina += 10.0
+	player_attributes["health"] = player_max_hp
+	player_attributes["stamina"] = roundi(player_max_stamina)
 
 func _player_physical_damage(technique_base: int) -> int:
 	return technique_base + int(player_attributes.get("strength", 0))
@@ -1172,7 +1307,7 @@ func request_move_to(target: Vector2, simulate_immediately: bool = true) -> bool
 	return request_move(delta, minf(delta.length(), MOVE_RANGE), simulate_immediately)
 
 func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001:
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or not _can_commit_physical_action():
 		return false
 	if player_weapon_frame == "bow":
 		if not begin_bow_draw(target - player_pos, _enemy_id_near_position(target)): return false
@@ -1185,6 +1320,8 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 		direction = player_facing
 	player_facing = direction.normalized()
 	var definition := _player_basic_attack_definition(player_facing)
+	var basic_cost := 22.0 if player_weapon_frame == "twin_knives" else 24.0 if player_weapon_frame == "knife" else 30.0
+	if not _spend_stamina(basic_cost): return false
 	player_action = _melee_action(float(definition["duration"]), float(definition["startup"]), float(definition["active_end"]), float(definition["reach"]), int(definition["damage_max"]), player_facing, String(definition["technique"]), "attack")
 	player_action["damage_min"] = int(definition["damage_min"])
 	player_action["damage_max"] = int(definition["damage_max"])
@@ -1219,7 +1356,7 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return false
 
 func request_combo(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _can_commit_physical_action(): return false
 	_break_player_combo()
 	_reset_building_force()
 	_reset_building_force_if_unavailable()
@@ -1231,7 +1368,7 @@ func request_combo(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return true
 
 func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
-	if not is_player_ready() or trial_complete or player_weapon_frame != "bow": return false
+	if not is_player_ready() or trial_complete or player_weapon_frame != "bow" or not _can_commit_physical_action(): return false
 	if direction.length_squared() < 0.01: direction = player_facing
 	player_facing = direction.normalized()
 	player_action = _action("bow_draw", 999.0, player_facing)
@@ -1292,6 +1429,9 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	if direction.length_squared() > 0.01: set_bow_aim(direction)
 	var draw_time := float(player_action.get("elapsed", 0.0))
 	var ratio := clampf(draw_time / 0.90, 0.0, 1.0)
+	if not _spend_stamina(lerpf(16.0, 34.0, ratio)):
+		player_action = _idle_action()
+		return false
 	var strength_adjustment := int(player_attributes.get("strength", 4)) - 4
 	# A loose arrow is an emergency release, not a fast melee substitute. Full
 	# draw supplies the Bow's damage and stopping power; quick kiting shots retain
@@ -1323,6 +1463,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	var total := 2.65 * speed_scale
 	var interval := total / float(count)
 	var techniques := ["knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"]
+	var stamina_costs := [22.0, 13.0, 13.0, 13.0, 13.0, 14.0] if twin else [24.0, 20.0, 20.0, 24.0]
 	var phases: Array[Dictionary] = []
 	for index in range(count):
 		var phase_start := interval * float(index)
@@ -1335,7 +1476,9 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 			"damage_max": _player_physical_damage(1 if twin else 2) + (1 if has_track_rank("knife", 2) else 0),
 			"posture": 0.65 if twin else 1.0,
 			"technique": techniques[index % techniques.size()],
+			"stamina_cost": stamina_costs[index],
 		})
+	if not _spend_stamina(float(stamina_costs[0])): return
 	player_action = _action("combo", total, player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = phases.size()
@@ -1353,7 +1496,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	_set_message("The Knife sequence begins. Hold to continue cutting.")
 
 func request_execution(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(34.0): return false
 	player_facing = direction.normalized()
 	var execution_damage := _player_physical_damage(8)
 	player_action = _melee_action(1.10, 0.34, 0.60, 92.0, execution_damage, player_facing, "knife_falling_cut", "sweep")
@@ -1390,7 +1533,7 @@ func _execution_target_id(direction: Vector2) -> int:
 	return best_id
 
 func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(36.0): return false
 	player_facing = direction.normalized()
 	player_action = _action("twin_fang", 0.68, player_facing)
 	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
@@ -1404,7 +1547,7 @@ func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) ->
 	return true
 
 func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(44.0 if piercing else 38.0): return false
 	player_facing = direction.normalized()
 	player_action = _action("bow_art", 1.50 if piercing else 0.90, player_facing)
 	player_action.merge({"startup": 0.54 if piercing else 0.28, "shot_spawned": false, "piercing": piercing}, true)
@@ -1479,6 +1622,7 @@ func _enemy_by_id(enemy_id: int) -> Dictionary:
 	return {}
 
 func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> void:
+	if not _spend_stamina(30.0): return
 	player_facing = direction.normalized()
 	var edge_damage := 1 if has_track_rank("swordsmanship", 3) else 0
 	var edge_posture := 0.5 if has_track_rank("swordsmanship", 3) else 0.0
@@ -1488,9 +1632,9 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	var opener_posture := 2.3 if from_advance and has_track_rank("vanguard", 2) else 1.8
 	player_action = _action("combo", duration, player_facing)
 	player_action["phases"] = [
-		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut"},
-		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut"},
-		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash"},
+		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "stamina_cost": 30.0},
+		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut", "stamina_cost": 26.0},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash", "stamina_cost": 32.0},
 	]
 	player_action["combo_length"] = 3
 	player_action["combo_instance_id"] = _next_combo_instance_id
@@ -1530,7 +1674,7 @@ func resume_combo_hold() -> bool:
 	return true
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(42.0):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -1552,7 +1696,7 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	return true
 
 func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(38.0):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -1630,7 +1774,7 @@ func rally_is_available() -> bool:
 	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and rally_remaining <= 0.0001
 
 func request_advance(direction: Vector2, continue_held: bool = false, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or advance_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	if not is_player_ready() or trial_complete or advance_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(30.0): return false
 	_break_player_combo()
 	_reset_building_force()
 	player_facing = direction.normalized()
@@ -1923,7 +2067,7 @@ func activate_waystone() -> bool:
 	_capture_anchor_history()
 	last_anchor_report = {"xp": xp_gained, "memories": memories_gained, "shortcut": shortcut_gained, "restored": true}
 	_add_effect("anchor", bonfire_pos, xp_gained)
-	var parts: Array[String] = ["health restored", "enemies revived"]
+	var parts: Array[String] = ["health and Stamina restored", "enemies revived"]
 	if xp_gained > 0: parts.append("%d XP integrated" % xp_gained)
 	if memories_gained > 0: parts.append("%d map traces anchored" % memories_gained)
 	if shortcut_gained: parts.append("shortcut remembered")
@@ -2303,6 +2447,9 @@ func _load_current_layer_discovery() -> void:
 
 func _restore_at_waystone() -> void:
 	player_hp = player_max_hp
+	player_stamina = player_max_stamina
+	player_overexertion_pending = false
+	player_winded_recovery = false
 	potions = healing_capacity()
 	dodge_cooldown = 0.0
 	block_cooldown = 0.0
@@ -2443,7 +2590,7 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 				player_attributes["resolve"] = int(player_attributes.get("resolve", 7)) + 1
 				_refresh_player_posture_capacity(false)
 			elif choice_id == "vigilance":
-				player_attributes["speed"] = int(player_attributes.get("speed", 5)) + 1
+				_increase_max_stamina(10.0)
 				player_attributes["awareness"] = int(player_attributes.get("awareness", 5)) + 1
 		"warriors_physique":
 			_increase_max_health(20)
@@ -2463,14 +2610,14 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 		"finesse_1", "finesse_2", "finesse_3", "finesse_4":
 			if choice_id == "fleetness":
 				player_attributes["speed"] = int(player_attributes.get("speed", 7)) + 1
-				_increase_max_health(5)
+				_increase_max_stamina(10.0)
 			elif choice_id == "subtlety":
 				player_attributes["stealth"] = int(player_attributes.get("stealth", 7)) + 1
-				player_attributes["awareness"] = int(player_attributes.get("awareness", 6)) + 1
+				_increase_max_health(5)
 		"patient_1", "patient_2", "patient_3", "patient_4":
 			if choice_id == "observation":
 				player_attributes["awareness"] = int(player_attributes.get("awareness", 8)) + 1
-				player_attributes["stealth"] = int(player_attributes.get("stealth", 7)) + 1
+				_increase_max_stamina(10.0)
 			elif choice_id == "composure":
 				player_attributes["resolve"] = int(player_attributes.get("resolve", 4)) + 1
 				_refresh_player_posture_capacity(false)
@@ -2518,9 +2665,12 @@ func character_sheet_data() -> Dictionary:
 		tracks.append({"id": track_id, "label": definition["label"], "description": definition["description"], "rank": rank, "stages": stages, "next_stage": next_track_stage(track_id)})
 	var sheet_attributes := player_attributes.duplicate(true)
 	sheet_attributes["health"] = player_max_hp
+	sheet_attributes["stamina"] = roundi(player_max_stamina)
 	return {
 		"name": CombatCatalogScript.loadout_name(loadout_id),
 		"attributes": sheet_attributes,
+		"current_stamina": player_stamina,
+		"maximum_stamina": player_max_stamina,
 		"equipment": equipment_slots.duplicate(true),
 		"healing_charges": potions,
 		"healing_capacity": healing_capacity(),
@@ -2686,10 +2836,14 @@ func _tick(dt: float) -> void:
 			_finish_rally(true)
 			_set_message("Rally fades. Its recovery begins.")
 	strength_remaining = maxf(0.0, strength_remaining - dt)
+	var player_action_kind := String(player_action.get("kind", "idle"))
+	if player_action_kind in STAMINA_REGEN_ACTIONS:
+		_regenerate_stamina(dt)
+		if player_action_kind == "winded": winded_time_total += dt
 	_build_enemy_spatial_index()
 	_update_effects(dt)
 	_update_conditions(dt)
-	_update_player(player_dt)
+	_update_player(dt if player_action_kind == "winded" else player_dt)
 	_update_exploration()
 	_try_recover_xp()
 	_update_enemies(dt, _simulation_tick_index % 2 == 0)
@@ -2885,6 +3039,7 @@ func _update_player(dt: float) -> void:
 				aimed_remaining = 6.0
 				_set_message("The target is Aimed.")
 	if elapsed + 0.00001 >= float(player_action["duration"]):
+		if kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("complete")
 		if kind in ["attack", "sweep", "combo", "art_combo"] and Array(player_action["hit_ids"]).is_empty():
 			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
 			_set_message("Your cut finds only air.")
@@ -2902,12 +3057,18 @@ func _update_player(dt: float) -> void:
 			_set_message("The full sequence leaves your knives recovering.")
 		_break_player_combo()
 		player_action = _idle_action()
+		if completed_kind == "winded": player_winded_recovery = false
 		if completed_kind in ["stagger", "hit_reaction"]:
 			_player_reaction_completed_this_tick = true
 			if player_posture <= 0.0001:
 				player_posture = player_posture_max
 		if rally_end_after_action: _finish_rally(true)
-		if continue_advance:
+		if player_winded_recovery:
+			_begin_winded(false)
+		elif player_overexertion_pending:
+			if continue_advance: stamina_blocked_continuations += 1
+			_begin_winded()
+		elif continue_advance:
 			_begin_sword_combo(completed_direction, true, true)
 
 func _move_player_advance(origin: Vector2, delta: Vector2, pass_mass: float) -> Vector2:
@@ -3008,7 +3169,15 @@ func _update_player_combo(elapsed: float) -> void:
 		if not bool(player_action.get("continue_held", false)):
 			player_action["duration"] = float(Dictionary(phases[committed_phase])["end"])
 			return
+		if not _can_commit_physical_action():
+			stamina_blocked_continuations += 1
+			player_action["duration"] = float(Dictionary(phases[committed_phase])["end"])
+			return
 		committed_phase += 1
+		if not _spend_stamina(float(Dictionary(phases[committed_phase]).get("stamina_cost", 0.0))):
+			stamina_blocked_continuations += 1
+			player_action["duration"] = float(Dictionary(phases[committed_phase - 1])["end"])
+			return
 		player_action["committed_phase"] = committed_phase
 		if player_weapon_frame == "sword" and has_track_rank("swordsmanship", 2): _follow_the_opening(committed_phase)
 		_set_message("The sequence flows into strike %d." % (committed_phase + 1))
@@ -3026,6 +3195,7 @@ func _update_player_combo(elapsed: float) -> void:
 		player_action["damage_max"] = int(phase["damage_max"])
 		player_action["posture_damage"] = float(phase["posture"])
 		if int(player_action.get("phase_index", -1)) != index:
+			if int(player_action.get("phase_index", -1)) >= 0: _survey_finalize_strike_probe("phase_complete")
 			if int(player_action.get("phase_index", -1)) >= 0 and Array(player_action.get("hit_ids", [])).is_empty():
 				if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
 				_reset_building_force()
@@ -3098,6 +3268,7 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		sampled_action["technique_id"] = technique_id
 		sampled_action["elapsed"] = elapsed
 		var sample := AttackGeometryScript.pose(sampled_action, player_pos, player_facing, _nearby_walls(player_pos, float(player_action.get("reach", 104.0)) + 70.0))
+		_survey_update_strike_probe(sample, elapsed)
 		var first_contact: Dictionary = {}
 		for enemy in _nearby_enemies(player_pos, float(player_action.get("reach", 104.0)) + 100.0):
 			if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
@@ -3136,6 +3307,7 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		var hit_ids: Array = player_action["hit_ids"]
 		hit_ids.append(int(enemy_id))
 		player_action["hit_ids"] = hit_ids
+		_survey_mark_strike_resolution(enemy, "hit")
 	for pending in pending_awareness:
 		_register_enemy_hit_awareness(Dictionary(pending["enemy"]), Dictionary(pending["result"]), player_action)
 	if contacts_by_id.is_empty(): _set_message("Twin Fang closes on empty air.")
@@ -3156,11 +3328,89 @@ func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
 	result["step"] = 0
 	return result
 
+func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY or not bool(sample.get("active", false)): return
+	var technique_id := String(sample.get("technique_id", player_action.get("technique_id", "attack")))
+	var phase_index := int(player_action.get("phase_index", 0))
+	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
+	if probe.is_empty() or String(probe.get("technique_id", "")) != technique_id or int(probe.get("phase_index", -999)) != phase_index:
+		if not probe.is_empty(): _survey_finalize_strike_probe("phase_changed")
+		probe = {
+			"index": survey_strike_diagnostics.size() + 1,
+			"room_time": simulation_time - float(survey_room_entry.get("time", simulation_time)),
+			"action": String(player_action.get("ability_id", player_action.get("kind", "attack"))),
+			"phase_index": phase_index,
+			"phase": phase_index + 1,
+			"technique_id": technique_id,
+			"technique": AttackGeometryScript.label(technique_id),
+			"reach": float(player_action.get("reach", player_attack_reach)),
+			"view": survey_current_view_mode,
+			"result": "miss",
+			"targets": [],
+			"closest_clearance": INF,
+		}
+	var direction := player_facing.normalized() if player_facing.length_squared() > 0.001 else Vector2.UP
+	var side := direction.rotated(PI * 0.5)
+	for enemy in _nearby_enemies(player_pos, float(player_action.get("reach", player_attack_reach)) + 260.0):
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
+		var enemy_pos := Vector2(enemy["pos"])
+		var clearance := AttackGeometryScript.clearance_to_circle(sample, enemy_pos, float(enemy.get("radius", ENEMY_RADIUS)))
+		if clearance >= float(probe.get("closest_clearance", INF)): continue
+		var relative := enemy_pos - player_pos
+		var enemy_action := Dictionary(enemy.get("action", {}))
+		probe.merge({
+			"closest_clearance": clearance,
+			"closest_enemy_id": int(enemy.get("id", -1)),
+			"closest_enemy": String(enemy.get("kind", "unknown")),
+			"center_distance": relative.length(),
+			"edge_distance": maxf(0.0, relative.length() - float(enemy.get("radius", ENEMY_RADIUS)) - PLAYER_RADIUS),
+			"forward": relative.dot(direction),
+			"lateral": relative.dot(side),
+			"player_x": player_pos.x,
+			"player_y": player_pos.y,
+			"enemy_x": enemy_pos.x,
+			"enemy_y": enemy_pos.y,
+			"facing_x": direction.x,
+			"facing_y": direction.y,
+			"enemy_action": String(enemy_action.get("kind", "idle")),
+			"enemy_action_elapsed": float(enemy_action.get("elapsed", 0.0)),
+			"sample_elapsed": elapsed,
+			"shape": String(sample.get("shape", "unknown")),
+			"weapon_start_x": float(Vector2(sample.get("weapon_start", player_pos)).x),
+			"weapon_start_y": float(Vector2(sample.get("weapon_start", player_pos)).y),
+			"weapon_end_x": float(Vector2(sample.get("weapon_end", player_pos)).x),
+			"weapon_end_y": float(Vector2(sample.get("weapon_end", player_pos)).y),
+		}, true)
+	player_action["survey_strike_probe"] = probe
+
+func _survey_mark_strike_resolution(enemy: Dictionary, result: String) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
+	if probe.is_empty(): return
+	var targets: Array = probe.get("targets", [])
+	var label := "%s#%d" % [String(enemy.get("kind", "enemy")), int(enemy.get("id", -1))]
+	if not targets.has(label): targets.append(label)
+	probe["targets"] = targets
+	if result == "hit" or String(probe.get("result", "miss")) == "miss": probe["result"] = result
+	player_action["survey_strike_probe"] = probe
+
+func _survey_finalize_strike_probe(end_reason: String) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
+	if probe.is_empty(): return
+	probe["end_reason"] = end_reason
+	if not probe.has("closest_enemy"):
+		probe["closest_enemy"] = "none nearby"
+		probe["closest_clearance"] = -1.0
+	survey_strike_diagnostics.append(probe.duplicate(true))
+	player_action.erase("survey_strike_probe")
+
 func _resolve_player_attack_tick(elapsed: float) -> void:
 	var is_sweep := String(player_action["kind"]) == "sweep"
 	var sampled_action := player_action.duplicate()
 	var action_reach := float(player_action.get("reach", player_attack_reach))
 	var sample: Dictionary = AttackGeometryScript.pose(sampled_action, player_pos, player_facing, _nearby_walls(player_pos, action_reach + 90.0))
+	_survey_update_strike_probe(sample, elapsed)
 	var hit_ids: Array = player_action["hit_ids"]
 	var contacts: Array[Dictionary] = []
 	var pending_awareness: Array[Dictionary] = []
@@ -3186,9 +3436,11 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 		hit_ids.append(int(enemy["id"]))
 		var hit_point := Vector2(contact["point"])
 		if _enemy_evades_attack(enemy):
+			_survey_mark_strike_resolution(enemy, "evaded")
 			_add_effect("dodge", Vector2(enemy["pos"]))
 			_set_message("The bandit slips through the attack.")
 		elif _enemy_blocks_attack(enemy):
+			_survey_mark_strike_resolution(enemy, "blocked")
 			_apply_posture_damage(enemy, 2.0 if is_sweep else 0.5)
 			_add_effect("block", hit_point)
 			_set_message("The shield catches your weapon.")
@@ -3718,7 +3970,10 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["speed"] = 390.0
 			enemy["dodge_cooldown"] = 2.00
 		elif distance <= 112.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(0.86, 0.26, 0.45, 82.0, 1, direction, "quick_cut")
+			# The cut remains quick, but its recovery creates a real neutral window.
+			# Fast identity comes from startup and footwork, not a full cycle that can
+			# repeatedly beat the player's sword back to readiness.
+			enemy["action"] = _melee_action(1.12, 0.26, 0.45, 82.0, 1, direction, "quick_cut")
 		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance < 155.0:
 			var evade_direction := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.45).normalized()
 			enemy["action"] = _action("evade", 0.38, evade_direction)
@@ -3732,7 +3987,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "knife":
 		if distance <= 108.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(0.88, 0.28, 0.46, 80.0, 1, direction, "quick_cut")
+			enemy["action"] = _melee_action(1.08, 0.28, 0.46, 80.0, 1, direction, "quick_cut")
 		else:
 			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.32)
 	elif enemy_kind == "polearm":
@@ -4307,6 +4562,12 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	if player_hp <= 0:
 		_begin_death()
 		return
+	# Winded is already the consequence of overexertion. Hits remain fully
+	# dangerous, including posture damage and death, but they cannot replace and
+	# restart the same forced recovery state over and over.
+	if interrupted_kind == "winded":
+		_set_message("The %s strikes while you are winded." % source_name)
+		return
 	# Additional hits remain dangerous while the player is reeling, but they do
 	# not restart or lengthen the reaction. Because time freezes as soon as this
 	# original commitment ends, the player is guaranteed another decision
@@ -4326,6 +4587,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	if interrupted_kind == "rally" and not bool(interrupted_action.get("rally_started", false)):
 		rally_cooldown = 3.0
 	if interrupted_kind == "combo": set_attack_hold(false)
+	if interrupted_kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("interrupted")
 	_reset_building_force()
 	_break_player_combo()
 	player_action = _action("stagger" if posture_broken else "hit_reaction", 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage)), Vector2.ZERO)
@@ -4965,6 +5227,8 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"player_facing": player_facing,
 		"player_hp": player_hp,
 		"player_max_hp": player_max_hp,
+		"player_stamina": player_stamina,
+		"player_max_stamina": player_max_stamina,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
 		"loadout_id": loadout_id,
@@ -5015,6 +5279,13 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"damage_received_total": damage_received_total,
 		"hits_received_total": hits_received_total,
 		"potions_used_total": potions_used_total,
+		"stamina_spent_total": stamina_spent_total,
+		"stamina_depleted_total": stamina_depleted_total,
+		"stamina_overdraw_total": stamina_overdraw_total,
+		"stamina_regenerated_total": stamina_regenerated_total,
+		"overexertion_count": overexertion_count,
+		"winded_time_total": winded_time_total,
+		"stamina_blocked_continuations": stamina_blocked_continuations,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -5140,6 +5411,10 @@ func _build_save_payload() -> Dictionary:
 		"player_facing": player_facing,
 		"player_hp": player_hp,
 		"player_max_hp": player_max_hp,
+		"player_stamina": player_stamina,
+		"player_max_stamina": player_max_stamina,
+		"player_overexertion_pending": player_overexertion_pending,
+		"player_winded_recovery": player_winded_recovery,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
 		"player_posture_recovery_delay": player_posture_recovery_delay,
@@ -5210,6 +5485,11 @@ func _build_save_payload() -> Dictionary:
 		"damage_received_total": damage_received_total,
 		"hits_received_total": hits_received_total,
 		"potions_used_total": potions_used_total,
+		"stamina_spent_total": stamina_spent_total,
+		"stamina_regenerated_total": stamina_regenerated_total,
+		"overexertion_count": overexertion_count,
+		"winded_time_total": winded_time_total,
+		"stamina_blocked_continuations": stamina_blocked_continuations,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -5251,6 +5531,7 @@ func _build_save_payload() -> Dictionary:
 		"survey_room_view_modes": survey_room_view_modes.duplicate(),
 		"survey_view_switches": survey_view_switches,
 		"survey_empty_melee_contacts": survey_empty_melee_contacts,
+		"survey_strike_diagnostics": survey_strike_diagnostics.duplicate(true),
 		"rng_state": rng.state,
 	}
 
@@ -5266,7 +5547,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, 24, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, 24, 25, 26, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -5310,6 +5591,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_facing = Vector2(payload.get("player_facing", Vector2.UP))
 	player_hp = int(payload.get("player_hp", player_max_hp))
 	player_max_hp = int(payload.get("player_max_hp", player_max_hp))
+	player_stamina = float(payload.get("player_stamina", player_max_stamina))
+	player_max_stamina = float(payload.get("player_max_stamina", player_max_stamina))
+	player_overexertion_pending = bool(payload.get("player_overexertion_pending", false))
+	player_winded_recovery = bool(payload.get("player_winded_recovery", false))
 	player_posture = float(payload.get("player_posture", player_posture))
 	player_posture_max = float(payload.get("player_posture_max", player_posture_max))
 	player_posture_recovery_delay = float(payload.get("player_posture_recovery_delay", 0.0))
@@ -5343,9 +5628,16 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		track_property_ranks = Dictionary(payload.get("track_property_ranks", {})).duplicate(true)
 	track_ranks = Dictionary(payload.get("track_ranks", _empty_character_track_ranks())).duplicate(true)
 	track_choices = Dictionary(payload.get("track_choices", {})).duplicate(true)
+	if save_version == 25:
+		_migrate_v25_temperament_to_stamina()
+		player_stamina = player_max_stamina
+		player_overexertion_pending = false
+		player_winded_recovery = false
 	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
 	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
 	player_action = _idle_action()
+	player_overexertion_pending = false
+	player_winded_recovery = false
 	# v13 introduced a new semantic world grammar and changed Campaign area IDs.
 	# Older dynamic actors are regenerated so they cannot survive off-floor in the
 	# rewritten geography; learned progression and run statistics remain intact.
@@ -5468,6 +5760,13 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	damage_received_total = int(payload.get("damage_received_total", 0))
 	hits_received_total = int(payload.get("hits_received_total", 0))
 	potions_used_total = int(payload.get("potions_used_total", 0))
+	stamina_spent_total = float(payload.get("stamina_spent_total", 0.0))
+	stamina_depleted_total = float(payload.get("stamina_depleted_total", stamina_spent_total))
+	stamina_overdraw_total = float(payload.get("stamina_overdraw_total", 0.0))
+	stamina_regenerated_total = float(payload.get("stamina_regenerated_total", 0.0))
+	overexertion_count = int(payload.get("overexertion_count", 0))
+	winded_time_total = float(payload.get("winded_time_total", 0.0))
+	stamina_blocked_continuations = int(payload.get("stamina_blocked_continuations", 0))
 	perfect_dodges = int(payload.get("perfect_dodges", 0))
 	counter_hits = int(payload.get("counter_hits", 0))
 	successful_blocks = int(payload.get("successful_blocks", 0))
@@ -5490,6 +5789,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		survey_room_view_modes.assign(Array(payload.get("survey_room_view_modes", [survey_current_view_mode])))
 		survey_view_switches = int(payload.get("survey_view_switches", 0))
 		survey_empty_melee_contacts = int(payload.get("survey_empty_melee_contacts", 0))
+		survey_strike_diagnostics.assign(Array(payload.get("survey_strike_diagnostics", [])))
 	simulation_time = float(payload.get("time", 0.0))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:

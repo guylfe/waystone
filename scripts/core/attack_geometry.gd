@@ -85,9 +85,15 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 
 static func hits_circle(sample: Dictionary, center: Vector2, target_radius: float) -> bool:
 	if not bool(sample.get("active", false)): return false
+	return clearance_to_circle(sample, center, target_radius) <= 0.0
+
+static func clearance_to_circle(sample: Dictionary, center: Vector2, target_radius: float) -> float:
+	# Signed world-space distance between the sampled attack and a target body.
+	# Negative values are overlap. Survey diagnostics use the same calculation as
+	# combat so a reported near miss cannot disagree with the actual hit test.
 	if String(sample.get("shape", "")) == "circle":
-		return Vector2(sample["center"]).distance_to(center) <= float(sample["radius"]) + target_radius
-	return _segment_distance_to_point(Vector2(sample["start"]), Vector2(sample["end"]), center) <= float(sample["radius"]) + target_radius
+		return Vector2(sample["center"]).distance_to(center) - float(sample["radius"]) - target_radius
+	return _segment_distance_to_point(Vector2(sample["start"]), Vector2(sample["end"]), center) - float(sample["radius"]) - target_radius
 
 static func contact_point(sample: Dictionary, center: Vector2) -> Vector2:
 	if String(sample.get("shape", "")) == "circle":
