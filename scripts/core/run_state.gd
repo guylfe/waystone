@@ -35,14 +35,15 @@ const ENEMY_STEER_INTERVAL := 0.14
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-const STAMINA_REGEN_PER_SECOND := 30.0
+const STAMINA_REGEN_PER_SECOND := 60.0
+const STAMINA_REGEN_DELAY := 1.0
 const EXHAUSTION_DURATION := 2.0
 const DODGE_STAMINA_COST := 18.0
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
-const SAVE_VERSION := 28
-const GAME_VERSION := "0.2.5"
+const SAVE_VERSION := 29
+const GAME_VERSION := "0.2.6"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 4
+const PRESENTATION_VERSION := 5
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -60,6 +61,7 @@ var player_stamina := 100.0
 var player_max_stamina := 100.0
 var player_overexertion_pending := false
 var player_exhaustion_remaining := 0.0
+var player_stamina_regen_delay := 0.0
 var player_posture := 12.0
 var player_posture_max := 12.0
 var player_posture_recovery_delay := 0.0
@@ -141,6 +143,8 @@ var stamina_spent_total := 0.0
 var stamina_depleted_total := 0.0
 var stamina_overdraw_total := 0.0
 var stamina_regenerated_total := 0.0
+var stamina_regen_delay_time_total := 0.0
+var stamina_regen_active_time_total := 0.0
 var overexertion_count := 0
 var winded_time_total := 0.0
 var stamina_blocked_continuations := 0
@@ -303,6 +307,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	player_stamina = player_max_stamina
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
+	player_stamina_regen_delay = 0.0
 	_refresh_player_posture_capacity(true)
 	player_facing = Vector2.UP
 	player_action = _idle_action()
@@ -374,6 +379,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	stamina_depleted_total = 0.0
 	stamina_overdraw_total = 0.0
 	stamina_regenerated_total = 0.0
+	stamina_regen_delay_time_total = 0.0
+	stamina_regen_active_time_total = 0.0
 	overexertion_count = 0
 	winded_time_total = 0.0
 	stamina_blocked_continuations = 0
@@ -726,6 +733,8 @@ func _capture_survey_room_entry() -> void:
 		"stamina_depleted": stamina_depleted_total,
 		"stamina_overdraw": stamina_overdraw_total,
 		"stamina_regenerated": stamina_regenerated_total,
+		"stamina_regen_delay_time": stamina_regen_delay_time_total,
+		"stamina_regen_active_time": stamina_regen_active_time_total,
 		"overexertions": overexertion_count,
 		"winded_time": winded_time_total,
 		"stamina_blocked_continuations": stamina_blocked_continuations,
@@ -807,6 +816,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"stamina_depleted": stamina_depleted_total - float(survey_room_entry.get("stamina_depleted", stamina_depleted_total)),
 		"stamina_overdraw": stamina_overdraw_total - float(survey_room_entry.get("stamina_overdraw", stamina_overdraw_total)),
 		"stamina_regenerated": stamina_regenerated_total - float(survey_room_entry.get("stamina_regenerated", stamina_regenerated_total)),
+		"stamina_regen_delay_time": stamina_regen_delay_time_total - float(survey_room_entry.get("stamina_regen_delay_time", stamina_regen_delay_time_total)),
+		"stamina_regen_active_time": stamina_regen_active_time_total - float(survey_room_entry.get("stamina_regen_active_time", stamina_regen_active_time_total)),
 		"overexertions": overexertion_count - int(survey_room_entry.get("overexertions", overexertion_count)),
 		"winded_time": winded_time_total - float(survey_room_entry.get("winded_time", winded_time_total)),
 		"stamina_blocked_continuations": stamina_blocked_continuations - int(survey_room_entry.get("stamina_blocked_continuations", stamina_blocked_continuations)),
@@ -888,6 +899,7 @@ func _load_next_survey_room() -> void:
 	player_stamina = player_max_stamina
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
+	player_stamina_regen_delay = 0.0
 	survey_strike_diagnostics.clear()
 	var layout := _generate_survey_layout(survey_room_number)
 	world_size = Vector2(layout["world_size"])
@@ -1021,6 +1033,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"heard_sound_sequence": 0,
 		"pounce_cooldown": 0.0,
 		"dodge_cooldown": 0.0,
+		"neutral_cooldown": 0.0,
+		"shot_cooldown": 0.22 * float(_next_enemy_id % 3) if kind == "archer" else 0.0,
 		"weapon_frame": String(combat_profile["weapon_frame"]),
 		"weapon_art_ids": Array(combat_profile["weapon_arts"]).duplicate(),
 		"equipped_weapon_art": String(combat_profile["equipped_weapon_art"]),
@@ -1147,12 +1161,12 @@ func _apply_loadout() -> void:
 	defense_id = String(CombatCatalogScript.loadout_profile(loadout_id).get("defense_id", "dodge"))
 	player_max_hp = int(player_attributes.get("health", PLAYER_MAX_HP))
 	player_max_stamina = float(player_attributes.get("stamina", 100))
-	player_move_speed = 340.0
+	player_move_speed = 300.0
 	match player_weapon_frame:
 		"knife", "twin_knives":
-			player_attack_duration = 0.62
+			player_attack_duration = 0.70
 			player_attack_startup = 0.16
-			player_attack_active_end = 0.32
+			player_attack_active_end = 0.27
 			player_damage_min = 6
 			player_damage_max = 6
 			player_attack_technique = "knife_cut_in"
@@ -1168,9 +1182,9 @@ func _apply_loadout() -> void:
 			player_attack_reach = 250.0
 			player_attack_posture = 0.0
 		_:
-			player_attack_duration = 0.98
+			player_attack_duration = 1.06
 			player_attack_startup = 0.30
-			player_attack_active_end = 0.52
+			player_attack_active_end = 0.41
 			player_damage_min = 10
 			player_damage_max = 10
 			player_attack_technique = "diagonal_cut"
@@ -1192,7 +1206,7 @@ func stamina_actions_locked() -> bool:
 func _combat_rules_intro() -> String:
 	if not uses_stamina_rules():
 		return "Recovery rules: physical actions use their full commitment and cooldowns; Stamina is inactive."
-	return "Stamina rules: physical actions and Dodge spend Stamina with shorter recovery. Emptying it locks them for two world-seconds."
+	return "Stamina rules: physical actions and Dodge spend Stamina with shorter recovery. Regeneration begins after one world-second without spending it; emptying it locks those actions for two world-seconds."
 
 func _can_commit_physical_action() -> bool:
 	return not uses_stamina_rules() or not stamina_actions_locked()
@@ -1206,16 +1220,25 @@ func _spend_stamina(amount: float) -> bool:
 	stamina_spent_total += amount
 	stamina_depleted_total += before - player_stamina
 	stamina_overdraw_total += maxf(0.0, amount - before)
+	player_stamina_regen_delay = STAMINA_REGEN_DELAY
 	if player_stamina <= 0.0001:
 		player_stamina = 0.0
 		player_overexertion_pending = true
 	return true
 
 func _regenerate_stamina(dt: float) -> void:
-	if not uses_stamina_rules() or player_overexertion_pending or dt <= 0.0 or player_stamina >= player_max_stamina: return
+	if not uses_stamina_rules() or player_overexertion_pending or dt <= 0.0: return
+	var active_dt := dt
+	if player_stamina_regen_delay > 0.0:
+		var delayed := minf(player_stamina_regen_delay, active_dt)
+		player_stamina_regen_delay -= delayed
+		stamina_regen_delay_time_total += delayed
+		active_dt -= delayed
+	if active_dt <= 0.0 or player_stamina >= player_max_stamina: return
 	var before := player_stamina
-	player_stamina = minf(player_max_stamina, player_stamina + STAMINA_REGEN_PER_SECOND * dt)
+	player_stamina = minf(player_max_stamina, player_stamina + STAMINA_REGEN_PER_SECOND * active_dt)
 	stamina_regenerated_total += player_stamina - before
+	stamina_regen_active_time_total += active_dt
 
 func _begin_exhaustion() -> void:
 	if not uses_stamina_rules(): return
@@ -1526,7 +1549,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 		var phase_start := interval * float(index)
 		phases.append({
 			"startup": phase_start + interval * (0.18 if twin else 0.16),
-			"active_end": phase_start + interval * (0.48 if twin else 0.46),
+			"active_end": phase_start + interval * (0.34 if twin else 0.32),
 			"end": phase_start + interval,
 			"reach": 72.0 if twin else 74.0,
 			"damage_min": _player_physical_damage(1 if twin else 2) + (1 if has_track_rank("knife", 2) else 0),
@@ -1558,7 +1581,7 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(30.0): return false
 	player_facing = direction.normalized()
 	var execution_damage := _player_physical_damage(8)
-	player_action = _melee_action(1.10, 0.34, 0.60, 92.0, execution_damage, player_facing, "knife_falling_cut", "sweep")
+	player_action = _melee_action(1.16, 0.34, 0.45, 92.0, execution_damage, player_facing, "knife_falling_cut", "sweep")
 	player_action["damage_min"] = execution_damage
 	player_action["damage_max"] = execution_damage
 	player_action["posture_damage"] = 3.0
@@ -1746,7 +1769,7 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	var extended := has_track_rank("swordsmanship", 4)
 	var flowing := has_track_rank("swordsmanship", 5)
 	var edge := has_track_rank("swordsmanship", 3)
-	player_action = _melee_action(1.21 if flowing else 1.32, 0.44, 0.84, 178.0 if extended else 158.0, 15, player_facing, "broad_sweep", "sweep")
+	player_action = _melee_action(1.29 if flowing else 1.42, 0.44, 0.57, 178.0 if extended else 158.0, 15, player_facing, "broad_sweep", "sweep")
 	player_action["posture_damage"] = 5.0 + (0.5 if edge else 0.0)
 	player_action["damage_min"] = 15 + (1 if edge else 0)
 	player_action["damage_max"] = int(player_action["damage_min"])
@@ -1768,7 +1791,7 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	var extended := has_track_rank("swordsmanship", 4)
 	var flowing := has_track_rank("swordsmanship", 5)
 	var edge := has_track_rank("swordsmanship", 3)
-	player_action = _melee_action(1.08 if flowing else 1.18, 0.29, 0.56, 196.0 if extended else 176.0, 20, player_facing, "driving_cut", "sweep")
+	player_action = _melee_action(1.15 if flowing else 1.25, 0.29, 0.40, 196.0 if extended else 176.0, 20, player_facing, "driving_cut", "sweep")
 	player_action["posture_damage"] = 3.0 + (0.5 if edge else 0.0)
 	player_action["damage_min"] = 20 + (1 if edge else 0)
 	player_action["damage_max"] = int(player_action["damage_min"])
@@ -2515,6 +2538,7 @@ func _restore_at_waystone() -> void:
 	player_stamina = player_max_stamina
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
+	player_stamina_regen_delay = 0.0
 	potions = healing_capacity()
 	dodge_cooldown = 0.0
 	block_cooldown = 0.0
@@ -3388,12 +3412,12 @@ func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
 	# commitment and cannot be resumed after time freezes.
 	if player_weapon_frame != "sword":
 		return {"step": 0, "duration": player_attack_duration, "startup": player_attack_startup, "active_end": player_attack_active_end, "reach": player_attack_reach, "damage_min": player_damage_min, "damage_max": player_damage_max, "posture": player_attack_posture, "technique": player_attack_technique}
-	var result := {"duration": 0.98, "startup": 0.30, "active_end": 0.52, "reach": 104.0, "damage_min": 10, "damage_max": 10, "posture": 1.8, "technique": "opening_cut"}
+	var result := {"duration": 1.06, "startup": 0.30, "active_end": 0.41, "reach": 104.0, "damage_min": 10, "damage_max": 10, "posture": 1.8, "technique": "opening_cut"}
 	if has_track_rank("swordsmanship", 3):
 		result["damage_min"] = int(result["damage_min"]) + 1
 		result["damage_max"] = int(result["damage_min"])
 		result["posture"] = float(result["posture"]) + 0.5
-	if has_track_rank("swordsmanship", 5): result["duration"] = 0.90
+	if has_track_rank("swordsmanship", 5): result["duration"] = 0.97
 	result["step"] = 0
 	return result
 
@@ -3417,7 +3441,14 @@ func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
 			"result": "miss",
 			"targets": [],
 			"closest_clearance": INF,
+			"shape": String(sample.get("shape", "unknown")),
 		}
+		if String(sample.get("shape", "")) == "sector":
+			probe.merge({"inner_radius": float(sample.get("inner_radius", 0.0)), "outer_radius": float(sample.get("outer_radius", 0.0)), "arc_degrees": rad_to_deg(float(sample.get("end_angle", 0.0)) - float(sample.get("start_angle", 0.0)))}, true)
+		elif String(sample.get("shape", "")) == "segment":
+			probe.merge({"footprint_length": Vector2(sample.get("start", player_pos)).distance_to(Vector2(sample.get("end", player_pos))), "footprint_radius": float(sample.get("radius", 0.0))}, true)
+		elif String(sample.get("shape", "")) == "circle":
+			probe["footprint_radius"] = float(sample.get("radius", 0.0))
 	var direction := player_facing.normalized() if player_facing.length_squared() > 0.001 else Vector2.UP
 	var side := direction.rotated(PI * 0.5)
 	for enemy in _nearby_enemies(player_pos, float(player_action.get("reach", player_attack_reach)) + 260.0):
@@ -3445,6 +3476,8 @@ func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
 			"enemy_action_elapsed": float(enemy_action.get("elapsed", 0.0)),
 			"sample_elapsed": elapsed,
 			"shape": String(sample.get("shape", "unknown")),
+			"geometry_overlap": clearance <= 0.0,
+			"occluded": AttackGeometryScript.is_occluded(sample, enemy_pos),
 			"weapon_start_x": float(Vector2(sample.get("weapon_start", player_pos)).x),
 			"weapon_start_y": float(Vector2(sample.get("weapon_start", player_pos)).y),
 			"weapon_end_x": float(Vector2(sample.get("weapon_end", player_pos)).x),
@@ -3460,7 +3493,8 @@ func _survey_mark_strike_resolution(enemy: Dictionary, result: String) -> void:
 	var label := "%s#%d" % [String(enemy.get("kind", "enemy")), int(enemy.get("id", -1))]
 	if not targets.has(label): targets.append(label)
 	probe["targets"] = targets
-	if result == "hit" or String(probe.get("result", "miss")) == "miss": probe["result"] = result
+	var priority := {"miss": 0, "evaded": 1, "blocked": 2, "hit": 3, "interrupted": 4}
+	if int(priority.get(result, 0)) >= int(priority.get(String(probe.get("result", "miss")), 0)): probe["result"] = result
 	player_action["survey_strike_probe"] = probe
 
 func _survey_finalize_strike_probe(end_reason: String) -> void:
@@ -3471,6 +3505,7 @@ func _survey_finalize_strike_probe(end_reason: String) -> void:
 	if not probe.has("closest_enemy"):
 		probe["closest_enemy"] = "none nearby"
 		probe["closest_clearance"] = -1.0
+	probe["visual_overlap_collision_failure"] = String(probe.get("result", "miss")) == "miss" and bool(probe.get("geometry_overlap", false)) and not bool(probe.get("occluded", false))
 	survey_strike_diagnostics.append(probe.duplicate(true))
 	player_action.erase("survey_strike_probe")
 
@@ -3546,6 +3581,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 				player_action["building_force_registered"] = true
 				_register_building_force_hit()
 			_set_message("The %s connects." % AttackGeometryScript.label(String(player_action.get("technique_id", "diagonal_cut"))).to_lower())
+			_survey_mark_strike_resolution(enemy, "interrupted" if reaction_applied else "hit")
 		if not contact_result.is_empty():
 			pending_awareness.append({"enemy": enemy, "result": contact_result})
 			_handle_player_contact_aftermath(enemy, contact_result)
@@ -3773,7 +3809,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# produce a trade. Startup and recovery are interruptible; the hound's pounce
 	# is the deliberate exception and can be knocked out of any phase.
 	var in_active_contact := action_before.has("startup") and action_before.has("active_end") and elapsed >= float(action_before["startup"]) and elapsed <= float(action_before["active_end"])
-	if in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind != "hound":
+	if in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind not in ["hound", "bandit"]:
 		return false
 	var duration: float = float({
 		"knife": 0.64,
@@ -3893,6 +3929,10 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
 		var dodge_cooldown := float(enemy.get("dodge_cooldown", 0.0))
 		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
+		var neutral_cooldown := float(enemy.get("neutral_cooldown", 0.0))
+		if neutral_cooldown > 0.0: enemy["neutral_cooldown"] = maxf(0.0, neutral_cooldown - enemy_dt)
+		var shot_cooldown := float(enemy.get("shot_cooldown", 0.0))
+		if shot_cooldown > 0.0: enemy["shot_cooldown"] = maxf(0.0, shot_cooldown - enemy_dt)
 		var recovery_delay := float(enemy.get("posture_recovery_delay", 0.0))
 		if recovery_delay > 0.0:
 			recovery_delay = maxf(0.0, recovery_delay - enemy_dt)
@@ -3992,6 +4032,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			_spawn_fire_circle(enemy)
 		if elapsed + 0.00001 >= float(action["duration"]):
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
+			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
+				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
 			enemy["action"] = _idle_action()
 		_update_enemy_bucket_membership(enemy)
 		enemies[index] = enemy
@@ -4021,7 +4063,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	enemy["facing"] = direction
 	var enemy_kind := String(enemy["kind"])
 	if enemy_kind == "bandit" and (not bool(enemy.get("revealed_to_player", false)) or float(enemy.get("revealed_elapsed", 0.0)) < 0.35):
-		enemy["action"] = _enemy_move_action(enemy, player_pos, 0.24)
+		enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.24)
 		return
 	if enemy_kind == "boar":
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.52, 0.96):
@@ -4031,10 +4073,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["pounce_cooldown"] = 2.40
 		elif distance < 115.0:
 			enemy["action"] = _action("move", 0.38, -direction)
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
+		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.48)
 	elif enemy_kind == "bandit":
-		if float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance >= 112.0 and distance <= 245.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.10, 0.40, 0.62, 84.0, 1, direction, "quick_cut", "dodge_strike")
+		if float(enemy.get("neutral_cooldown", 0.0)) > 0.0:
+			var neutral_side := direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5)
+			enemy["action"] = _enemy_move_action(enemy, Vector2(enemy["pos"]) + (neutral_side - direction * 0.25).normalized() * 95.0, minf(0.24, float(enemy["neutral_cooldown"])))
+		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance >= 112.0 and distance <= 245.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _melee_action(1.18, 0.42, 0.53, 84.0, 1, direction, "quick_cut", "dodge_strike")
 			enemy["action"]["dodge_end"] = 0.30
 			enemy["action"]["speed"] = 390.0
 			enemy["dodge_cooldown"] = 2.00
@@ -4042,23 +4087,23 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# The cut remains quick, but its recovery creates a real neutral window.
 			# Fast identity comes from startup and footwork, not a full cycle that can
 			# repeatedly beat the player's sword back to readiness.
-			enemy["action"] = _melee_action(1.12, 0.26, 0.45, 82.0, 1, direction, "quick_cut")
+			enemy["action"] = _melee_action(1.22, 0.36, 0.47, 82.0, 1, direction, "quick_cut")
 		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance < 155.0:
 			var evade_direction := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.45).normalized()
 			enemy["action"] = _action("evade", 0.38, evade_direction)
 			enemy["action"]["speed_multiplier"] = 1.55
 			enemy["dodge_cooldown"] = 1.45
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.32)
+		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.32)
 	elif enemy_kind == "blade":
 		if distance <= 132.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.45, 0.52, 0.82, 112.0, 2, direction, "diagonal_cut")
+			enemy["action"] = _melee_action(1.50, 0.52, 0.65, 112.0, 2, direction, "diagonal_cut")
 		else:
-			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
+			enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.48)
 	elif enemy_kind == "knife":
 		if distance <= 108.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.08, 0.28, 0.46, 80.0, 1, direction, "quick_cut")
+			enemy["action"] = _melee_action(1.15, 0.32, 0.43, 80.0, 1, direction, "quick_cut")
 		else:
-			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.32)
+			enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.32)
 	elif enemy_kind == "polearm":
 		if distance <= 112.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# The spear's shaft answers a player who simply walks through the point.
@@ -4080,7 +4125,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.58).normalized()
 			enemy["action"] = _action("evade", 0.32, retreat)
 			enemy["action"]["speed_multiplier"] = 1.48
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.34)
+		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.34)
 	elif enemy_kind == "brute":
 		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction, "forward_smash")
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.78)
@@ -4109,9 +4154,10 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var fire_target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 210.0 if distance < 480.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
 	elif enemy_kind == "archer":
-		if distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos) and _archer_has_clear_lane(enemy):
+		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos) and _archer_has_clear_lane(enemy):
 			enemy["action"] = _action("shoot", 1.62, direction)
 			enemy["action"]["startup"] = 0.68
+			enemy["shot_cooldown"] = 1.05 + 0.22 * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "knight":
@@ -4252,15 +4298,29 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"boar": 185.0, "bandit": 225.0, "knife": 230.0, "blade": 175.0, "polearm": 95.0, "archer": 142.0, "shield": 120.0, "hound": 255.0, "brute": 82.0, "knight": 68.0, "hexer": 125.0, "ice_caster": 122.0, "fire_caster": 132.0, "captain": 180.0, "warden": 105.0, "werewolf": 218.0}.get(kind, 135.0))
+	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "hexer": 155.0, "ice_caster": 150.0, "fire_caster": 160.0, "captain": 235.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
 	if kind != "captain" and _captain_near(enemy): speed *= 1.14
 	return speed
 
 func _archer_support_target(enemy: Dictionary, direction_to_player: Vector2, distance: float) -> Vector2:
 	var side := direction_to_player.rotated(PI * 0.5)
-	var desired := player_pos - direction_to_player * 470.0 + side * (105.0 if int(enemy["id"]) % 2 == 0 else -105.0)
-	if distance < 215.0: desired = Vector2(enemy["pos"]) - direction_to_player * 260.0 + side * 90.0
+	var lateral_spacing := 185.0 + 35.0 * float(int(enemy["id"]) % 3)
+	var desired := player_pos - direction_to_player * 470.0 + side * (lateral_spacing if int(enemy["id"]) % 2 == 0 else -lateral_spacing)
+	if distance < 235.0: desired = Vector2(enemy["pos"]) - direction_to_player * 280.0 + side * (130.0 if int(enemy["id"]) % 2 == 0 else -130.0)
 	return desired
+
+func _pursuit_target(enemy: Dictionary) -> Vector2:
+	var target := player_pos
+	if String(player_action.get("kind", "idle")) == "move":
+		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
+		var lead := 80.0 if String(enemy.get("kind", "")) in ["hound", "bandit", "knife"] else 45.0
+		target += motion * lead
+	var kind := String(enemy.get("kind", ""))
+	if kind in ["bandit", "knife", "hound"]:
+		var to_player := Vector2(enemy["pos"]).direction_to(player_pos)
+		var side := to_player.rotated(PI * 0.5)
+		target += side * (42.0 if int(enemy["id"]) % 2 == 0 else -42.0)
+	return target
 
 func _captain_near(subject: Dictionary) -> bool:
 	if _enemy_spatial_cache_dirty: _build_enemy_spatial_index()
@@ -4288,7 +4348,7 @@ func _werewolf_pounce_combo(direction: Vector2) -> Dictionary:
 
 func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 	var action: Dictionary = enemy["action"]
-	var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]), Vector2(enemy["facing"]), _nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 220.0)) + 90.0))
+	var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]), Vector2(action.get("direction", enemy["facing"])), _nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 220.0)) + 90.0))
 	if AttackGeometryScript.hits_circle(sample, player_pos, PLAYER_RADIUS):
 		enemy["action"]["hit_done"] = true
 		var contact := AttackGeometryScript.contact_point(sample, player_pos)
@@ -4330,7 +4390,11 @@ func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 			_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 2)), String(enemy["kind"]), Vector2.ZERO, contact)
 
 func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2, technique_id: String = "diagonal_cut", action_kind: String = "melee") -> Dictionary:
-	var result := _action(action_kind, _shorten_recovery(duration, active_end), direction)
+	# Stamina shortens player commitments only. Before v0.2.6 this helper also
+	# shortened every enemy attack whenever the run used Stamina rules, which made
+	# bandits and other fast enemies re-enter attacks before their authored recovery.
+	var profiled_duration := _shorten_recovery(duration, active_end) if action_kind in ["attack", "sweep"] else duration
+	var result := _action(action_kind, profiled_duration, direction)
 	result["startup"] = startup
 	result["active_end"] = active_end
 	result["reach"] = reach
@@ -5294,6 +5358,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"player_stamina": player_stamina,
 		"player_max_stamina": player_max_stamina,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
+		"player_stamina_regen_delay": player_stamina_regen_delay,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -5485,6 +5550,7 @@ func _build_save_payload() -> Dictionary:
 		"player_max_stamina": player_max_stamina,
 		"player_overexertion_pending": player_overexertion_pending,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
+		"player_stamina_regen_delay": player_stamina_regen_delay,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -5557,7 +5623,11 @@ func _build_save_payload() -> Dictionary:
 		"hits_received_total": hits_received_total,
 		"potions_used_total": potions_used_total,
 		"stamina_spent_total": stamina_spent_total,
+		"stamina_depleted_total": stamina_depleted_total,
+		"stamina_overdraw_total": stamina_overdraw_total,
 		"stamina_regenerated_total": stamina_regenerated_total,
+		"stamina_regen_delay_time_total": stamina_regen_delay_time_total,
+		"stamina_regen_active_time_total": stamina_regen_active_time_total,
 		"overexertion_count": overexertion_count,
 		"winded_time_total": winded_time_total,
 		"stamina_blocked_continuations": stamina_blocked_continuations,
@@ -5622,7 +5692,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, 24, 25, 26, 27, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -5670,6 +5740,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_max_stamina = float(payload.get("player_max_stamina", player_max_stamina))
 	player_overexertion_pending = bool(payload.get("player_overexertion_pending", false))
 	player_exhaustion_remaining = float(payload.get("player_exhaustion_remaining", 0.0))
+	player_stamina_regen_delay = float(payload.get("player_stamina_regen_delay", 0.0))
 	player_posture = float(payload.get("player_posture", player_posture))
 	player_posture_max = float(payload.get("player_posture_max", player_posture_max))
 	player_posture_recovery_delay = float(payload.get("player_posture_recovery_delay", 0.0))
@@ -5710,11 +5781,13 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if save_version < SAVE_VERSION: player_stamina = player_max_stamina
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
+	player_stamina_regen_delay = 0.0
 	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
 	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
 	player_action = _idle_action()
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
+	player_stamina_regen_delay = 0.0
 	# v13 introduced a new semantic world grammar and changed Campaign area IDs.
 	# Older dynamic actors are regenerated so they cannot survive off-floor in the
 	# rewritten geography; learned progression and run statistics remain intact.
@@ -5841,6 +5914,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	stamina_depleted_total = float(payload.get("stamina_depleted_total", stamina_spent_total))
 	stamina_overdraw_total = float(payload.get("stamina_overdraw_total", 0.0))
 	stamina_regenerated_total = float(payload.get("stamina_regenerated_total", 0.0))
+	stamina_regen_delay_time_total = float(payload.get("stamina_regen_delay_time_total", 0.0))
+	stamina_regen_active_time_total = float(payload.get("stamina_regen_active_time_total", 0.0))
 	overexertion_count = int(payload.get("overexertion_count", 0))
 	winded_time_total = float(payload.get("winded_time_total", 0.0))
 	stamina_blocked_continuations = int(payload.get("stamina_blocked_continuations", 0))

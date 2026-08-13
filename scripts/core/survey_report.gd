@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 7
+const FORMAT_VERSION := 8
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -80,6 +80,8 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Stamina depleted: %.1f" % float(room.get("stamina_depleted", room.get("stamina_spent", 0.0))))
 		lines.append("Stamina overdraw: %.1f" % float(room.get("stamina_overdraw", 0.0)))
 		lines.append("Stamina regenerated: %.1f" % float(room.get("stamina_regenerated", 0.0)))
+		lines.append("Stamina regeneration delay: %.2fs" % float(room.get("stamina_regen_delay_time", 0.0)))
+		lines.append("Active Stamina regeneration: %.2fs" % float(room.get("stamina_regen_active_time", 0.0)))
 		lines.append("Exhaustion lockouts: %d" % int(room.get("overexertions", 0)))
 		lines.append("Exhausted time: %.2fs" % float(room.get("winded_time", 0.0)))
 		lines.append("Damage received while exhausted: %d" % int(room.get("exhaustion_damage_received", 0)))
@@ -110,7 +112,6 @@ static func build_text(session: Dictionary) -> String:
 		else:
 			lines.append("Difficulty: %s" % _rating_text(ratings.get("difficulty", 0)))
 			lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))
-			lines.append("Fairness: %s" % _rating_text(ratings.get("fairness", 0)))
 			lines.append("Tactical interest: %s" % _rating_text(ratings.get("tactical_interest", 0)))
 			lines.append("Want a room like this again: %s" % _rating_text(ratings.get("want_again", ratings.get("expedition_fit", 0))))
 		var tags := PackedStringArray(room.get("tags", []))
@@ -133,13 +134,18 @@ static func _rating_text(value: Variant) -> String:
 	return "%d/5" % rating if rating > 0 else "not rated"
 
 static func _strike_diagnostic_text(value: Dictionary) -> String:
-	var result := String(value.get("result", "miss")).to_upper()
+	var raw_result := String(value.get("result", "miss"))
+	var result := "TRUE MISS" if raw_result == "miss" else raw_result.to_upper()
 	var nearest := String(value.get("closest_enemy", "none nearby"))
+	var targets := PackedStringArray(value.get("targets", []))
+	var target_text := ",".join(targets) if not targets.is_empty() else "none"
 	var clearance := float(value.get("closest_clearance", -1.0))
-	var clearance_text := "n/a" if clearance < -0.5 else "%+.1f" % clearance
-	return "  STRIKE %d  t=%.2fs  %s phase %d [%s]  %s  nearest=%s  forward=%+.1f lateral=%+.1f center=%.1f edge=%.1f clearance=%s reach=%.1f  enemy_action=%s@%.2f  player=(%.1f,%.1f) enemy=(%.1f,%.1f) facing=(%.3f,%.3f) weapon=(%.1f,%.1f)->(%.1f,%.1f)" % [
-		int(value.get("index", 0)), float(value.get("room_time", 0.0)), String(value.get("technique", value.get("technique_id", "Attack"))), int(value.get("phase", 1)), String(value.get("view", "unknown")), result, nearest,
-		float(value.get("forward", 0.0)), float(value.get("lateral", 0.0)), float(value.get("center_distance", 0.0)), float(value.get("edge_distance", 0.0)), clearance_text, float(value.get("reach", 0.0)),
+	var clearance_text := "n/a" if nearest == "none nearby" else "%+.1f" % clearance
+	var shape := String(value.get("shape", "unknown"))
+	var dimensions := "inner=%.1f outer=%.1f arc=%.1fdeg" % [float(value.get("inner_radius", 0.0)), float(value.get("outer_radius", 0.0)), float(value.get("arc_degrees", 0.0))] if shape == "sector" else "length=%.1f radius=%.1f" % [float(value.get("footprint_length", 0.0)), float(value.get("footprint_radius", 0.0))]
+	return "  STRIKE %d  t=%.2fs  %s phase %d [%s]  %s targets=%s  footprint=%s(%s) nearest=%s  forward=%+.1f lateral=%+.1f center=%.1f edge=%.1f clearance=%s overlap=%s occluded=%s collision_failure=%s  enemy_action=%s@%.2f  player=(%.1f,%.1f) enemy=(%.1f,%.1f) facing=(%.3f,%.3f) weapon=(%.1f,%.1f)->(%.1f,%.1f)" % [
+		int(value.get("index", 0)), float(value.get("room_time", 0.0)), String(value.get("technique", value.get("technique_id", "Attack"))), int(value.get("phase", 1)), String(value.get("view", "unknown")), result, target_text, shape, dimensions, nearest,
+		float(value.get("forward", 0.0)), float(value.get("lateral", 0.0)), float(value.get("center_distance", 0.0)), float(value.get("edge_distance", 0.0)), clearance_text, str(bool(value.get("geometry_overlap", false))), str(bool(value.get("occluded", false))), str(bool(value.get("visual_overlap_collision_failure", false))),
 		String(value.get("enemy_action", "none")), float(value.get("enemy_action_elapsed", 0.0)), float(value.get("player_x", 0.0)), float(value.get("player_y", 0.0)), float(value.get("enemy_x", 0.0)), float(value.get("enemy_y", 0.0)),
 		float(value.get("facing_x", 0.0)), float(value.get("facing_y", 0.0)), float(value.get("weapon_start_x", 0.0)), float(value.get("weapon_start_y", 0.0)), float(value.get("weapon_end_x", 0.0)), float(value.get("weapon_end_y", 0.0)),
 	]

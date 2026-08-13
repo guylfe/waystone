@@ -279,7 +279,6 @@ func _build_survey_feedback_overlay() -> void:
 	var questions := {
 		"difficulty": "Difficulty",
 		"fun": "Fun",
-		"fairness": "Fairness",
 		"tactical_interest": "Tactical interest",
 		"want_again": "Want a room like this again?",
 	}
@@ -341,7 +340,7 @@ func _build_survey_feedback_overlay() -> void:
 	survey_notes.focus_entered.connect(_survey_notes_focus_entered)
 	content.add_child(survey_notes)
 	survey_submit_button = Button.new()
-	survey_submit_button.text = "ANSWER ALL FIVE RATINGS"
+	survey_submit_button.text = "ANSWER ALL FOUR RATINGS"
 	survey_submit_button.disabled = true
 	survey_submit_button.custom_minimum_size = Vector2(0, 64)
 	survey_submit_button.add_theme_font_size_override("font_size", 20)
@@ -402,15 +401,15 @@ func _survey_rating_pressed(question_id: String, rating: int) -> void:
 		var rating_button: Button = buttons[index]
 		rating_button.set_pressed_no_signal(index + 1 == rating)
 	if survey_submit_button != null:
-		survey_submit_button.disabled = survey_feedback_ratings.size() < 5
-		survey_submit_button.text = "SUBMIT ROOM & CONTINUE" if not survey_submit_button.disabled else "ANSWER ALL FIVE RATINGS"
+		survey_submit_button.disabled = survey_feedback_ratings.size() < 4
+		survey_submit_button.text = "SUBMIT ROOM & CONTINUE" if not survey_submit_button.disabled else "ANSWER ALL FOUR RATINGS"
 
 func _survey_tag_toggled(enabled: bool, tag: String) -> void:
 	if enabled and not survey_feedback_tags.has(tag): survey_feedback_tags.append(tag)
 	elif not enabled: survey_feedback_tags.erase(tag)
 
 func _submit_survey_feedback() -> void:
-	if survey_feedback_ratings.size() < 5: return
+	if survey_feedback_ratings.size() < 4: return
 	var notes := survey_notes.text if survey_notes != null else ""
 	state.submit_survey_feedback(survey_feedback_ratings, survey_feedback_tags, notes)
 	visual = _presentation_snapshot()
@@ -2773,6 +2772,8 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 	var sample: Dictionary = AttackGeometryScript.pose(action, world_pos, facing, state.walls)
 	var technique := String(sample.get("technique_id", "diagonal_cut"))
 	var active := bool(sample.get("active", false))
+	if String(sample.get("shape", "")) == "sector":
+		_draw_attack_sector(sample, action, player_weapon)
 	if view_mode == "isometric":
 		if String(sample.get("shape", "")) == "segment":
 			var ground_body := _project_world_capsule(Vector2(sample["start"]), Vector2(sample["end"]), float(sample.get("radius", 5.0)))
@@ -2819,6 +2820,51 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 	elif technique in ["heavy_chop", "heavy_cleave"]:
 		draw_line(weapon_end - screen_direction * maxf(12.0, world_scale * 20.0), weapon_end, color.lightened(0.16), width * 1.8)
 	if active: draw_circle(weapon_end, maxf(2.0, width * 0.55), Color(color, 0.75))
+
+func _draw_attack_sector(sample: Dictionary, action: Dictionary, player_weapon: bool) -> void:
+	var effect_alpha := float(sample.get("effect_alpha", 0.0))
+	var startup := maxf(0.001, float(action.get("startup", 0.35)))
+	var elapsed := float(action.get("elapsed", 0.0))
+	var telegraph := 0.0
+	if not player_weapon and elapsed < startup:
+		telegraph = clampf((elapsed / startup - 0.48) / 0.52, 0.0, 1.0)
+	if effect_alpha <= 0.001 and telegraph <= 0.001 and not debug_hitboxes: return
+	var origin := Vector2(sample["origin"])
+	var direction := Vector2(sample.get("direction", Vector2.UP)).normalized()
+	var start_angle := float(sample["start_angle"])
+	var end_angle := float(sample["end_angle"])
+	var inner := float(sample["inner_radius"])
+	var outer := float(sample["outer_radius"])
+	var steps := maxi(5, ceili(24.0 * absf(end_angle - start_angle) / TAU))
+	var fill_color := Color("ffe09a") if player_weapon else Color("ef765f")
+	var alpha := 0.24 * effect_alpha if player_weapon else maxf(0.10 * telegraph, 0.20 * effect_alpha)
+	var outline_alpha := maxf(0.40 * effect_alpha, 0.28 * telegraph)
+	var outer_line := PackedVector2Array()
+	var inner_line := PackedVector2Array()
+	for index in range(steps):
+		var a0 := lerpf(start_angle, end_angle, float(index) / float(steps))
+		var a1 := lerpf(start_angle, end_angle, float(index + 1) / float(steps))
+		var p0 := origin + direction.rotated(a0) * inner
+		var p1 := origin + direction.rotated(a0) * outer
+		var p2 := origin + direction.rotated(a1) * outer
+		var p3 := origin + direction.rotated(a1) * inner
+		draw_colored_polygon(PackedVector2Array([_world_to_screen(p0), _world_to_screen(p1), _world_to_screen(p2), _world_to_screen(p3)]), Color(fill_color, alpha))
+	for index in range(steps + 1):
+		var angle := lerpf(start_angle, end_angle, float(index) / float(steps))
+		outer_line.append(_world_to_screen(origin + direction.rotated(angle) * outer))
+		inner_line.append(_world_to_screen(origin + direction.rotated(angle) * inner))
+	draw_polyline(outer_line, Color(fill_color.lightened(0.20), outline_alpha * 1.45), maxf(2.5, world_scale * 4.2))
+	draw_polyline(inner_line, Color(fill_color, outline_alpha * 0.58), maxf(1.2, world_scale * 1.5))
+	if telegraph > 0.001:
+		draw_line(inner_line[0], outer_line[0], Color(fill_color, outline_alpha * 0.55), maxf(1.2, world_scale * 1.5))
+		draw_line(inner_line[-1], outer_line[-1], Color(fill_color, outline_alpha * 0.55), maxf(1.2, world_scale * 1.5))
+	if debug_hitboxes:
+		var outline := outer_line.duplicate()
+		for index in range(steps, -1, -1):
+			var angle := lerpf(start_angle, end_angle, float(index) / float(steps))
+			outline.append(_world_to_screen(origin + direction.rotated(angle) * inner))
+		outline.append(outline[0])
+		draw_polyline(outline, Color("ff4fd8"), maxf(2.0, world_scale * 1.8))
 
 func _draw_interrupted_weapon(world_pos: Vector2, reaction: Dictionary, player_weapon: bool) -> void:
 	var interrupted: Dictionary = Dictionary(reaction.get("interrupted_action", {}))
@@ -2970,9 +3016,6 @@ func _draw_player_health_bar(header_font: int) -> void:
 	if state.uses_stamina_rules():
 		draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * clampf(stamina / stamina_max, 0.0, 1.0), stamina_bar.size.y)), Color("48b866"))
 		var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
-		if exhaustion > 0.0001:
-			var unlocked := 1.0 - clampf(exhaustion / state.EXHAUSTION_DURATION, 0.0, 1.0)
-			draw_rect(Rect2(stamina_bar.position, Vector2(stamina_bar.size.x * unlocked, stamina_bar.size.y)), Color(0.72, 0.90, 0.70, 0.22))
 		draw_rect(stamina_bar, Color("c3ebcc"), false, 2.0)
 		var stamina_label := "EXHAUSTED  %d / %d" % [roundi(stamina), roundi(stamina_max)] if exhaustion > 0.0001 else "STAMINA  %d / %d" % [roundi(stamina), roundi(stamina_max)]
 		draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), stamina_label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(stamina_height * 0.70)), Color("effff2"))

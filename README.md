@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.5` (Android version code `205`).
+Current prototype version: `0.2.6` (Android version code `206`).
+
+### v0.2.6: Authored attack footprints and combat cadence
+
+- Slash collision now resolves one deterministic annular-sector footprint at impact instead of tracing the displayed weapon segment; thrusts remain narrow capsules. The same ground geometry drives top-down and isometric play.
+- Player strikes deliver a fast contact pulse followed by a readable non-damaging recovery, while enemy attacks retain their authored recovery and commit their facing when the wind-up begins.
+- Stamina waits one world-second after the last stamina-spending commitment before regenerating rapidly at 60 per world-second. Exhaustion retains its two-second physical-action lockout.
+- Pursuers intercept movement more deliberately, fast enemies can contest ordinary retreat, bandits receive real neutral time, and groups of archers spread and stagger their shots.
+- Combat Survey report format 8 removes the low-value Fairness rating, records regeneration cadence, and reports authoritative footprint contacts, targets, occlusion, and true misses.
 
 ### v0.2.5: Recovery versus Stamina combat laboratory
 

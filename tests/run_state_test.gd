@@ -487,8 +487,9 @@ func test_attack_geometry_boundaries() -> void:
 	assert(not AttackGeometryScript.hits_circle(thrust_pose, origin + Vector2(150, 30), 6.0))
 	var cut := {"technique_id": "quick_cut", "elapsed": 0.60, "startup": 0.4, "active_end": 0.8, "duration": 1.2, "reach": 92.0}
 	var cut_pose: Dictionary = AttackGeometryScript.pose(cut, origin, Vector2.RIGHT)
-	var blade_mid := Vector2(cut_pose["start"]).lerp(Vector2(cut_pose["end"]), 0.8)
-	assert(AttackGeometryScript.hits_circle(cut_pose, blade_mid, 4.0))
+	var footprint_mid := origin + Vector2.RIGHT * 68.0
+	assert(String(cut_pose["shape"]) == "sector")
+	assert(AttackGeometryScript.hits_circle(cut_pose, footprint_mid, 4.0))
 	assert(not AttackGeometryScript.hits_circle(cut_pose, origin + Vector2.LEFT * 75.0, 4.0))
 
 func test_player_melee_hits_every_crossed_enemy() -> void:
@@ -636,8 +637,8 @@ func test_active_weapon_contact_can_still_trade() -> void:
 	var active_cut := state._melee_action(0.86, 0.26, 0.45, 94.0, 1, Vector2.LEFT, "quick_cut")
 	active_cut["elapsed"] = 0.34
 	bandit["action"] = active_cut
-	assert(not state._apply_enemy_hit_reaction(bandit, 1.8, "alerted", active_cut))
-	assert(String(Dictionary(bandit["action"])["kind"]) == "melee")
+	assert(state._apply_enemy_hit_reaction(bandit, 1.8, "alerted", active_cut))
+	assert(String(Dictionary(bandit["action"])["kind"]) == "hit_reaction")
 
 func test_hit_reaction_preserves_contact_and_interrupted_pose() -> void:
 	var state: RunState = RunStateScript.new()

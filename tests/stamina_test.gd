@@ -75,14 +75,16 @@ func test_exhaustion_uses_fixed_world_time() -> void:
 	assert(state.request_wait(1.0, false))
 	advance_until_ready(state)
 	assert(absf(state.player_exhaustion_remaining - 1.0) <= 0.02)
-	assert(absf(state.player_stamina - 30.0) <= 0.3)
+	assert(state.player_stamina <= 0.6)
 	assert(state.request_move(Vector2.RIGHT, state.MOVE_RANGE, false))
 	advance_until_ready(state)
 	assert(state.player_exhaustion_remaining < 1.0)
 	assert(state.request_wait(1.2, false))
 	advance_until_ready(state)
 	assert(is_equal_approx(state.player_exhaustion_remaining, 0.0))
-	assert(state.player_stamina >= 60.0)
+	assert(state.player_stamina >= 59.0)
+	assert(state.stamina_regen_delay_time_total >= 0.99)
+	assert(state.stamina_regen_active_time_total >= 0.99)
 
 func test_dodge_cost_and_utility_regeneration() -> void:
 	var stamina := fresh_state()
@@ -92,6 +94,9 @@ func test_dodge_cost_and_utility_regeneration() -> void:
 	assert(is_equal_approx(stamina.dodge_cooldown, 0.0))
 	stamina.player_stamina = 50.0
 	assert(stamina.request_rally(false))
+	advance_until_ready(stamina)
+	assert(is_equal_approx(stamina.player_stamina, 50.0))
+	assert(stamina.request_wait(1.1, false))
 	advance_until_ready(stamina)
 	assert(stamina.player_stamina > 50.0)
 	var recovery := fresh_state("warrior", "recovery")
