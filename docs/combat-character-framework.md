@@ -362,7 +362,7 @@ Dodge combines quick directional movement with a brief true i-frame window.
 - Physical displacement should be fast enough to escape attack geometry without relying exclusively on i-frames.
 - I-frames permit committed close-range evasions through attacks rather than forcing every Dodge away from contact.
 - A clean evade occurs only when hostile attack geometry actually crosses the actor during the i-frame window.
-- Dodge has a cooldown.
+- Recovery rules use the established Dodge cooldown. Stamina rules instead pay a Dodge Stamina cost and express the commitment through a brief vulnerable recovery.
 - Weapon encumbrance may alter recovery and exceptional travel properties, but does not normally alter i-frame proportion.
 
 Potential authored forms include a shorter, quicker Sidestep and a longer Roll with greater recovery. Both must be improvements over an intentionally modest default Dodge.
@@ -862,15 +862,15 @@ Ceaseless Cuts is the culmination rather than a routine Art refinement. Single K
 
 ### 14.5 Dodge
 
-Rogue · Acrobat begins with the already authored three-purchase Dodge track. Acrobat does not replace or rewrite it.
+Rogue · Acrobat begins with the already authored three-purchase Dodge track. Acrobat does not replace or rewrite it. Recovery and Stamina profiles deliberately retain distinct timing economies for A/B testing.
 
 | Purchase | Minimum level | Upgrade |
 |---:|---:|---|
-| I | 2 | **Practised Footwork:** basic Dodge recovery falls from 0.66 to 0.60 authored seconds and cooldown from 4.0 to 3.6 personal-time seconds. |
+| I | 2 | **Practised Footwork:** improves the baseline Dodge. Under Recovery rules, recovery falls from 0.66 to 0.60 authored seconds and cooldown from 4.0 to 3.6 personal-time seconds. Under Stamina rules, travel increases from 150 to 168 units, i-frames from 0.24 to 0.30 seconds, and vulnerable recovery falls from 0.24 to 0.20 seconds. |
 | II | 5 | **Evasive Form:** permanently choose Sidestep or Long Roll. |
 | III | 9 | **Perfect Form:** clean Sidestep primes Counterstep; clean Long Roll restores 2 seconds of Dodge cooldown. |
 
-Sidestep covers the basic 168-unit distance more quickly with a 2.8-second cooldown. Long Roll covers approximately 231 units with a 3.6-second cooldown. Perfect Form responds only to the corresponding Dodge action; it does not trigger from ordinary movement or Vault.
+Under Recovery rules, Sidestep covers the basic 168-unit distance more quickly with a 2.8-second cooldown, while Long Roll covers approximately 231 units with a 3.6-second cooldown. Under Stamina rules, both cost 18 Stamina: Sidestep retains 168-unit travel and a 0.30-second i-frame window while reducing vulnerable recovery to 0.12 seconds; Long Roll travels 231 units with 0.35 seconds of i-frames and 0.20 seconds of vulnerable recovery. Perfect Form responds only to the corresponding Dodge action; it does not trigger from ordinary movement or Vault.
 
 ### 14.6 Finesse Temperament
 

@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.6` (Android version code `206`).
+Current prototype version: `0.2.7` (Android version code `207`).
+
+### v0.2.7: Stamina commitment experiment
+
+- Stamina rules now reward completing the Sword sequence: its three contacts escalate in health and posture damage while retaining the existing per-phase Stamina costs.
+- A short attack-only readiness floor prevents opening-strike spam after a melee sequence without immobilizing movement, Defense, abilities, or items. Recovery rules retain their prior attack cadence unchanged.
+- Stamina mode gains a compact direct Attack control, with `F` as its desktop counterpart. Enemy taps still attack, terrain taps and immediate drags still move, and the control visibly reports attack readiness and exhaustion.
+- Stamina Dodge now has an intentionally modest baseline with strictly improving Practised Footwork, Sidestep, and Long Roll profiles. Recovery mode retains its existing Dodge timings and cooldowns for A/B comparison.
+- Combat Survey report format 9 records attack-readiness pressure, deliberate Attack-control use, Dodge-form use, and exposure during vulnerable Dodge recovery.
 
 ### v0.2.6: Authored attack footprints and combat cadence
 

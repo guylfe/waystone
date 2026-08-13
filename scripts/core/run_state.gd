@@ -39,11 +39,12 @@ const STAMINA_REGEN_PER_SECOND := 60.0
 const STAMINA_REGEN_DELAY := 1.0
 const EXHAUSTION_DURATION := 2.0
 const DODGE_STAMINA_COST := 18.0
+const STAMINA_ATTACK_READINESS_FLOOR := 0.45
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
-const SAVE_VERSION := 29
-const GAME_VERSION := "0.2.6"
+const SAVE_VERSION := 30
+const GAME_VERSION := "0.2.7"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 5
+const PRESENTATION_VERSION := 6
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -62,6 +63,7 @@ var player_max_stamina := 100.0
 var player_overexertion_pending := false
 var player_exhaustion_remaining := 0.0
 var player_stamina_regen_delay := 0.0
+var player_attack_readiness_remaining := 0.0
 var player_posture := 12.0
 var player_posture_max := 12.0
 var player_posture_recovery_delay := 0.0
@@ -152,6 +154,12 @@ var exhaustion_damage_received_total := 0
 var exhaustion_move_time_total := 0.0
 var exhaustion_wait_time_total := 0.0
 var exhaustion_other_time_total := 0.0
+var attack_readiness_blocked_attempts_total := 0
+var attack_readiness_active_time_total := 0.0
+var direct_attack_uses_total := 0
+var dodge_style_uses_total: Dictionary = {}
+var dodge_vulnerable_time_total := 0.0
+var dodge_recovery_damage_total := 0
 var effects: Array[Dictionary] = []
 var message := "Time is frozen. Choose an action."
 var last_timeline: Array[Dictionary] = []
@@ -308,6 +316,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_stamina_regen_delay = 0.0
+	player_attack_readiness_remaining = 0.0
 	_refresh_player_posture_capacity(true)
 	player_facing = Vector2.UP
 	player_action = _idle_action()
@@ -388,6 +397,12 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_move_time_total = 0.0
 	exhaustion_wait_time_total = 0.0
 	exhaustion_other_time_total = 0.0
+	attack_readiness_blocked_attempts_total = 0
+	attack_readiness_active_time_total = 0.0
+	direct_attack_uses_total = 0
+	dodge_style_uses_total.clear()
+	dodge_vulnerable_time_total = 0.0
+	dodge_recovery_damage_total = 0
 	survey_room_number = 1 if mode_id == ModeRulesScript.COMBAT_SURVEY else 0
 	survey_room_seed = 0
 	survey_feedback_pending = false
@@ -742,6 +757,12 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_move_time": exhaustion_move_time_total,
 		"exhaustion_wait_time": exhaustion_wait_time_total,
 		"exhaustion_other_time": exhaustion_other_time_total,
+		"attack_readiness_blocked_attempts": attack_readiness_blocked_attempts_total,
+		"attack_readiness_active_time": attack_readiness_active_time_total,
+		"direct_attack_uses": direct_attack_uses_total,
+		"dodge_style_uses": dodge_style_uses_total.duplicate(true),
+		"dodge_vulnerable_time": dodge_vulnerable_time_total,
+		"dodge_recovery_damage": dodge_recovery_damage_total,
 		"strike_diagnostic_count": survey_strike_diagnostics.size(),
 	}
 	survey_last_damage_source = ""
@@ -760,6 +781,14 @@ func _survey_action_count_delta() -> Dictionary:
 	for action_id in survey_action_counts:
 		var count := int(survey_action_counts[action_id]) - int(before.get(action_id, 0))
 		if count > 0: result[action_id] = count
+	return result
+
+func _survey_dodge_style_delta() -> Dictionary:
+	var before := Dictionary(survey_room_entry.get("dodge_style_uses", {}))
+	var result: Dictionary = {}
+	for style_id in dodge_style_uses_total:
+		var count := int(dodge_style_uses_total[style_id]) - int(before.get(style_id, 0))
+		if count > 0: result[style_id] = count
 	return result
 
 func _survey_build_summary() -> String:
@@ -825,6 +854,12 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_move_time": exhaustion_move_time_total - float(survey_room_entry.get("exhaustion_move_time", exhaustion_move_time_total)),
 		"exhaustion_wait_time": exhaustion_wait_time_total - float(survey_room_entry.get("exhaustion_wait_time", exhaustion_wait_time_total)),
 		"exhaustion_other_time": exhaustion_other_time_total - float(survey_room_entry.get("exhaustion_other_time", exhaustion_other_time_total)),
+		"attack_readiness_blocked_attempts": attack_readiness_blocked_attempts_total - int(survey_room_entry.get("attack_readiness_blocked_attempts", attack_readiness_blocked_attempts_total)),
+		"attack_readiness_active_time": attack_readiness_active_time_total - float(survey_room_entry.get("attack_readiness_active_time", attack_readiness_active_time_total)),
+		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
+		"dodge_style_uses": _survey_dodge_style_delta(),
+		"dodge_vulnerable_time": dodge_vulnerable_time_total - float(survey_room_entry.get("dodge_vulnerable_time", dodge_vulnerable_time_total)),
+		"dodge_recovery_damage": dodge_recovery_damage_total - int(survey_room_entry.get("dodge_recovery_damage", dodge_recovery_damage_total)),
 		"strike_diagnostics": survey_strike_diagnostics.slice(int(survey_room_entry.get("strike_diagnostic_count", 0))).duplicate(true),
 		"ratings": {}, "tags": [], "notes": "", "subjective_skipped": false,
 	}, true)
@@ -900,6 +935,7 @@ func _load_next_survey_room() -> void:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_stamina_regen_delay = 0.0
+	player_attack_readiness_remaining = 0.0
 	survey_strike_diagnostics.clear()
 	var layout := _generate_survey_layout(survey_room_number)
 	world_size = Vector2(layout["world_size"])
@@ -1203,6 +1239,29 @@ func uses_stamina_rules() -> bool:
 func stamina_actions_locked() -> bool:
 	return uses_stamina_rules() and (player_stamina <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0001)
 
+func melee_attack_readiness_locked() -> bool:
+	return uses_stamina_rules() and player_weapon_frame != "bow" and player_attack_readiness_remaining > 0.0001
+
+func basic_attack_lock_remaining() -> float:
+	if not uses_stamina_rules() or player_weapon_frame == "bow": return 0.0
+	return maxf(0.0, player_attack_readiness_remaining)
+
+func basic_attack_is_available() -> bool:
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or not _can_commit_physical_action(): return false
+	return not melee_attack_readiness_locked()
+
+func _can_start_basic_attack() -> bool:
+	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or not _can_commit_physical_action(): return false
+	if melee_attack_readiness_locked():
+		attack_readiness_blocked_attempts_total += 1
+		_set_message("Your weapon is not ready for another sequence.")
+		return false
+	return true
+
+func _arm_stamina_attack_readiness(time_until_active_end: float) -> void:
+	if not uses_stamina_rules() or player_weapon_frame == "bow": return
+	player_attack_readiness_remaining = maxf(player_attack_readiness_remaining, maxf(0.0, time_until_active_end) + STAMINA_ATTACK_READINESS_FLOOR)
+
 func _combat_rules_intro() -> String:
 	if not uses_stamina_rules():
 		return "Recovery rules: physical actions use their full commitment and cooldowns; Stamina is inactive."
@@ -1386,8 +1445,7 @@ func request_move_to(target: Vector2, simulate_immediately: bool = true) -> bool
 	return request_move(delta, minf(delta.length(), MOVE_RANGE), simulate_immediately)
 
 func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or not _can_commit_physical_action():
-		return false
+	if not _can_start_basic_attack(): return false
 	if player_weapon_frame == "bow":
 		if not begin_bow_draw(target - player_pos, _enemy_id_near_position(target)): return false
 		release_bow_attack(target - player_pos)
@@ -1408,6 +1466,7 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 	player_action["combo_step"] = int(definition["step"])
 	player_action["building_force_registered"] = false
 	player_action["building_force_bonus"] = _building_force_bonus()
+	_arm_stamina_attack_readiness(float(definition["active_end"]))
 	_apply_counterstep_to_action(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("basic_attack_%d" % (int(definition["step"]) + 1))
@@ -1435,7 +1494,7 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return false
 
 func request_combo(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or weapon_sequence_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _can_commit_physical_action(): return false
+	if direction.length_squared() < 0.01 or not _can_start_basic_attack(): return false
 	_break_player_combo()
 	_reset_building_force()
 	_reset_building_force_if_unavailable()
@@ -1444,6 +1503,14 @@ func request_combo(direction: Vector2, simulate_immediately: bool = true) -> boo
 	else: _begin_sword_combo(direction, true, false)
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
+	return true
+
+func request_direct_attack(direction: Vector2, simulate_immediately: bool = true) -> bool:
+	if direction.length_squared() < 0.01: direction = player_facing
+	var began := begin_bow_draw(direction) if player_weapon_frame == "bow" else request_combo(direction, false)
+	if not began: return false
+	direct_attack_uses_total += 1
+	if simulate_immediately and player_weapon_frame != "bow": _simulate_until_ready()
 	return true
 
 func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
@@ -1572,6 +1639,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	player_action["knife_sequence"] = true
 	player_action["knife_contact_chain"] = 0
 	player_action["building_force_registered"] = false
+	_arm_stamina_attack_readiness(float(Dictionary(phases[0])["active_end"]))
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_sequence")
 	_emit_sound(player_pos, 260.0)
@@ -1714,10 +1782,14 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	var duration := 3.08 if flowing else 3.34
 	var opener_startup := 0.24 if from_advance and has_track_rank("vanguard", 2) else 0.30
 	var opener_posture := 2.3 if from_advance and has_track_rank("vanguard", 2) else 1.8
+	var second_damage := 13 if uses_stamina_rules() else 10
+	var finisher_damage := 17 if uses_stamina_rules() else 15
+	var second_posture := 2.8 if uses_stamina_rules() else 2.2
+	var finisher_posture := 4.5 if uses_stamina_rules() else 3.8
 	var phases: Array[Dictionary] = [
 		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "stamina_cost": 18.0},
-		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": 2.2 + edge_posture, "technique": "reverse_cut", "stamina_cost": 16.0},
-		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": 15 + edge_damage, "damage_max": 15 + edge_damage, "posture": 3.8 + edge_posture, "technique": "turning_slash", "stamina_cost": 22.0},
+		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": second_damage + edge_damage, "damage_max": second_damage + edge_damage, "posture": second_posture + edge_posture, "technique": "reverse_cut", "stamina_cost": 16.0},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "stamina_cost": 22.0},
 	]
 	phases = _profile_combo_phases(phases, 0.60)
 	duration = float(phases[-1]["end"])
@@ -1734,6 +1806,7 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	player_action["committed_phase"] = 0
 	player_action["building_force_registered"] = false
 	player_action["building_force_bonus"] = _building_force_bonus()
+	_arm_stamina_attack_readiness(float(Dictionary(phases[0])["active_end"]))
 	_apply_counterstep_to_combo(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("sword_combo")
@@ -1818,25 +1891,60 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	var evade_end := 0.38
 	var speed := DODGE_SPEED
 	var cooldown := 3.6 if has_track_rank("evasion", 1) else DODGE_COOLDOWN
-	if style == "sidestep":
-		duration = 0.48
-		move_start = 0.06
-		move_end = 0.30
-		evade_start = 0.06
-		evade_end = 0.36
-		speed = 700.0
-		cooldown = 2.8
-	elif style == "long_roll":
-		duration = 0.58
-		move_start = 0.05
-		move_end = 0.40
-		evade_start = move_start
-		evade_end = move_end
-		speed = 660.0
-		cooldown = 3.6
-	duration = _shorten_recovery(duration, move_end, 0.55)
+	if uses_stamina_rules():
+		# Stamina Dodge has no long cooldown. Every learned form strictly improves
+		# the modest but dependable basic Dodge, then specializes either recovery
+		# or protected displacement without hiding a higher Stamina cost.
+		if style == "sidestep":
+			duration = 0.47
+			move_start = 0.05
+			move_end = 0.29
+			evade_start = 0.05
+			evade_end = 0.35
+			speed = 700.0
+		elif style == "long_roll":
+			duration = 0.60
+			move_start = 0.05
+			move_end = 0.40
+			evade_start = 0.05
+			evade_end = 0.40
+			speed = 660.0
+		elif has_track_rank("evasion", 1):
+			duration = 0.56
+			move_start = 0.06
+			move_end = 0.36
+			evade_start = 0.06
+			evade_end = 0.36
+			speed = 560.0
+		else:
+			duration = 0.56
+			move_start = 0.08
+			move_end = 0.32
+			evade_start = 0.08
+			evade_end = 0.32
+			speed = 625.0
+	else:
+		# Recovery remains the untouched comparison profile.
+		if style == "sidestep":
+			duration = 0.48
+			move_start = 0.06
+			move_end = 0.30
+			evade_start = 0.06
+			evade_end = 0.36
+			speed = 700.0
+			cooldown = 2.8
+		elif style == "long_roll":
+			duration = 0.58
+			move_start = 0.05
+			move_end = 0.40
+			evade_start = move_start
+			evade_end = move_end
+			speed = 660.0
+			cooldown = 3.6
 	player_action = _action("dodge", duration, player_facing)
-	player_action.merge({"speed": speed, "move_start": move_start, "move_end": move_end, "evade_start": evade_start, "evade_end": evade_end, "dodge_style": style, "clean_dodge_triggered": false}, true)
+	var reported_style := style if not style.is_empty() else "practised" if has_track_rank("evasion", 1) else "basic"
+	player_action.merge({"speed": speed, "move_start": move_start, "move_end": move_end, "evade_start": evade_start, "evade_end": evade_end, "vulnerable_recovery_start": evade_end, "dodge_style": reported_style, "clean_dodge_triggered": false}, true)
+	dodge_style_uses_total[reported_style] = int(dodge_style_uses_total.get(reported_style, 0)) + 1
 	_annotate_player_action("defense_dodge")
 	dodge_cooldown = 0.0 if uses_stamina_rules() else cooldown
 	_emit_sound(player_pos, 270.0)
@@ -2539,6 +2647,7 @@ func _restore_at_waystone() -> void:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_stamina_regen_delay = 0.0
+	player_attack_readiness_remaining = 0.0
 	potions = healing_capacity()
 	dodge_cooldown = 0.0
 	block_cooldown = 0.0
@@ -2905,6 +3014,11 @@ func _tick(dt: float) -> void:
 	main_ability_cooldown = maxf(0.0, main_ability_cooldown - player_dt)
 	subclass_ability_cooldown = maxf(0.0, subclass_ability_cooldown - player_dt)
 	weapon_sequence_cooldown = maxf(0.0, weapon_sequence_cooldown - player_dt)
+	if uses_stamina_rules() and player_attack_readiness_remaining > 0.0001:
+		attack_readiness_active_time_total += dt
+		player_attack_readiness_remaining = maxf(0.0, player_attack_readiness_remaining - player_dt)
+	elif not uses_stamina_rules():
+		player_attack_readiness_remaining = 0.0
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
 	turnabout_remaining = maxf(0.0, turnabout_remaining - dt)
 	assassination_window_remaining = maxf(0.0, assassination_window_remaining - dt)
@@ -3054,6 +3168,11 @@ func _update_player(dt: float) -> void:
 		"dodge":
 			if elapsed >= float(player_action.get("move_start", 0.08)) and elapsed <= float(player_action.get("move_end", 0.38)):
 				player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
+			if uses_stamina_rules():
+				var vulnerable_start := float(player_action.get("vulnerable_recovery_start", player_action.get("evade_end", 0.38)))
+				var previous_elapsed := elapsed - dt
+				var vulnerable_overlap := maxf(0.0, minf(elapsed, float(player_action["duration"])) - maxf(previous_elapsed, vulnerable_start))
+				dodge_vulnerable_time_total += vulnerable_overlap
 		"attack":
 			if elapsed >= float(player_action["startup"]) and elapsed <= float(player_action["active_end"]):
 				if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
@@ -3272,6 +3391,7 @@ func _update_player_combo(elapsed: float) -> void:
 			player_action["duration"] = float(Dictionary(phases[committed_phase - 1])["end"])
 			return
 		player_action["committed_phase"] = committed_phase
+		_arm_stamina_attack_readiness(float(Dictionary(phases[committed_phase])["active_end"]) - elapsed)
 		if player_weapon_frame == "sword" and has_track_rank("swordsmanship", 2): _follow_the_opening(committed_phase)
 		_set_message("The sequence flows into strike %d." % (committed_phase + 1))
 	for index in range(phases.size()):
@@ -4686,6 +4806,8 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	survey_last_damage_source = source_name
 	player_hp = maxi(0, player_hp - damage_received)
 	damage_received_total += damage_received
+	if uses_stamina_rules() and interrupted_kind == "dodge" and float(interrupted_action.get("elapsed", 0.0)) > float(interrupted_action.get("evade_end", 0.0)):
+		dodge_recovery_damage_total += damage_received
 	if player_exhaustion_remaining > 0.0001: exhaustion_damage_received_total += damage_received
 	hits_received_total += 1
 	player_posture = maxf(0.0, player_posture - posture_damage)
@@ -5359,6 +5481,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"player_max_stamina": player_max_stamina,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
 		"player_stamina_regen_delay": player_stamina_regen_delay,
+		"player_attack_readiness_remaining": player_attack_readiness_remaining,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -5381,6 +5504,12 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"main_ability_cooldown": main_ability_cooldown,
 		"subclass_ability_cooldown": subclass_ability_cooldown,
 		"weapon_sequence_cooldown": weapon_sequence_cooldown,
+		"attack_readiness_blocked_attempts_total": attack_readiness_blocked_attempts_total,
+		"attack_readiness_active_time_total": attack_readiness_active_time_total,
+		"direct_attack_uses_total": direct_attack_uses_total,
+		"dodge_style_uses_total": dodge_style_uses_total.duplicate(true),
+		"dodge_vulnerable_time_total": dodge_vulnerable_time_total,
+		"dodge_recovery_damage_total": dodge_recovery_damage_total,
 		"stealth_remaining": stealth_remaining,
 		"turnabout_remaining": turnabout_remaining,
 		"aimed_enemy_id": aimed_enemy_id,
@@ -5551,6 +5680,7 @@ func _build_save_payload() -> Dictionary:
 		"player_overexertion_pending": player_overexertion_pending,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
 		"player_stamina_regen_delay": player_stamina_regen_delay,
+		"player_attack_readiness_remaining": player_attack_readiness_remaining,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -5588,6 +5718,12 @@ func _build_save_payload() -> Dictionary:
 		"main_ability_cooldown": main_ability_cooldown,
 		"subclass_ability_cooldown": subclass_ability_cooldown,
 		"weapon_sequence_cooldown": weapon_sequence_cooldown,
+		"attack_readiness_blocked_attempts_total": attack_readiness_blocked_attempts_total,
+		"attack_readiness_active_time_total": attack_readiness_active_time_total,
+		"direct_attack_uses_total": direct_attack_uses_total,
+		"dodge_style_uses_total": dodge_style_uses_total.duplicate(true),
+		"dodge_vulnerable_time_total": dodge_vulnerable_time_total,
+		"dodge_recovery_damage_total": dodge_recovery_damage_total,
 		"stealth_remaining": stealth_remaining,
 		"stealth_cooldown_pending": stealth_cooldown_pending,
 		"assassination_window_remaining": assassination_window_remaining,
@@ -5692,7 +5828,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, 29, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -5741,6 +5877,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_overexertion_pending = bool(payload.get("player_overexertion_pending", false))
 	player_exhaustion_remaining = float(payload.get("player_exhaustion_remaining", 0.0))
 	player_stamina_regen_delay = float(payload.get("player_stamina_regen_delay", 0.0))
+	player_attack_readiness_remaining = float(payload.get("player_attack_readiness_remaining", 0.0))
 	player_posture = float(payload.get("player_posture", player_posture))
 	player_posture_max = float(payload.get("player_posture_max", player_posture_max))
 	player_posture_recovery_delay = float(payload.get("player_posture_recovery_delay", 0.0))
@@ -5782,6 +5919,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_stamina_regen_delay = 0.0
+	if save_version < SAVE_VERSION: player_attack_readiness_remaining = 0.0
 	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
 	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
 	player_action = _idle_action()
@@ -5923,6 +6061,12 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_move_time_total = float(payload.get("exhaustion_move_time_total", 0.0))
 	exhaustion_wait_time_total = float(payload.get("exhaustion_wait_time_total", 0.0))
 	exhaustion_other_time_total = float(payload.get("exhaustion_other_time_total", 0.0))
+	attack_readiness_blocked_attempts_total = int(payload.get("attack_readiness_blocked_attempts_total", 0))
+	attack_readiness_active_time_total = float(payload.get("attack_readiness_active_time_total", 0.0))
+	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))
+	dodge_style_uses_total = Dictionary(payload.get("dodge_style_uses_total", {})).duplicate(true)
+	dodge_vulnerable_time_total = float(payload.get("dodge_vulnerable_time_total", 0.0))
+	dodge_recovery_damage_total = int(payload.get("dodge_recovery_damage_total", 0))
 	perfect_dodges = int(payload.get("perfect_dodges", 0))
 	counter_hits = int(payload.get("counter_hits", 0))
 	successful_blocks = int(payload.get("successful_blocks", 0))

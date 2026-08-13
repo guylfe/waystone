@@ -65,6 +65,7 @@ var queued_attack_exit_direction := Vector2.ZERO
 var pointer_is_mouse := false
 var attack_pointer_held := false
 var attack_touch_is_original := false
+var attack_button_pointer_held := false
 var attack_key_held := false
 var advance_pointer_held := false
 var defense_pointer_held := false
@@ -80,6 +81,7 @@ var selected_action := ""
 var buttons: Dictionary = {}
 var consumable_rects: Dictionary = {}
 var interaction_rect := Rect2()
+var attack_rect := Rect2()
 var loadout_rects: Dictionary = {}
 var upgrade_rects: Dictionary = {}
 var reset_rect := Rect2()
@@ -775,6 +777,9 @@ func _layout() -> void:
 			buttons[names[i]] = Rect2(left, action_top + gap + i * (height + gap), size.x - left - gap, height)
 		var upgrade_height := (action_bottom - action_top - gap * 4.0) / 3.0
 		for i in range(3): upgrade_rects[i] = Rect2(left, action_top + gap + i * (upgrade_height + gap), size.x - left - gap, upgrade_height)
+	var attack_size := clampf(minf(size.x, size.y) * 0.092, 66.0, 92.0)
+	var attack_bottom_lift := 34.0 if portrait else 48.0
+	attack_rect = Rect2(Vector2(board_rect.end.x - attack_size - 14.0, board_rect.end.y - attack_size - attack_bottom_lift), Vector2(attack_size, attack_size))
 	var reset_size := Vector2(clampf(size.x * 0.13, 68.0, 104.0), clampf(size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
@@ -1177,6 +1182,9 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if waystone_menu_open:
 		_handle_waystone_menu_press(position)
 		return
+	if state.uses_stamina_rules() and attack_rect.has_point(position):
+		_press_direct_attack(position, is_mouse)
+		return
 	if playing:
 		if board_rect.has_point(position) and state.resume_combo_hold():
 			pointer_down = true
@@ -1225,6 +1233,45 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		_begin_streamed_action(state.request_block(guard_direction, false))
 		return
 
+func _press_direct_attack(position: Vector2, is_mouse: bool) -> void:
+	selected_action = ""
+	if playing:
+		if state.resume_combo_hold():
+			pointer_down = true
+			pointer_is_mouse = is_mouse
+			pointer_intent = "attack_button"
+			attack_pointer_held = true
+			attack_touch_is_original = false
+			attack_button_pointer_held = true
+			touch_start = position
+			touch_current = position
+			queue_redraw()
+		return
+	if state.player_hp <= 0: return
+	pointer_down = true
+	pointer_is_mouse = is_mouse
+	pointer_intent = "attack_button"
+	attack_pointer_held = true
+	attack_touch_is_original = true
+	attack_button_pointer_held = true
+	held_movement = false
+	held_movement_tracks_pointer = false
+	queued_movement_after_attack = false
+	hold_elapsed = 0.0
+	hold_consumed = false
+	inspected_enemy_id = -1
+	touch_start = position
+	touch_current = position
+	if not state.request_direct_attack(state.player_facing, false):
+		pointer_down = false
+		attack_pointer_held = false
+		attack_touch_is_original = false
+		attack_button_pointer_held = false
+		pointer_intent = ""
+		queue_redraw()
+		return
+	_begin_streamed_action(true)
+
 func _handle_sheet_detail_press(position: Vector2) -> void:
 	var kind := String(sheet_detail.get("kind", ""))
 	if kind == "track_choice":
@@ -1267,6 +1314,10 @@ func _pointer_dragged(position: Vector2) -> void:
 	if not pointer_down:
 		return
 	touch_current = position
+	if attack_button_pointer_held:
+		# The dedicated button is a deliberate facing-direction attack. Finger
+		# drift never turns it into world movement or retargets a Bow draw.
+		return
 	if attack_pointer_held:
 		if state.player_uses_ranged_basic_attack() and String(state.player_action.get("kind", "")) == "bow_draw":
 			state.set_bow_aim(_screen_to_world(position) - state.player_pos)
@@ -1335,9 +1386,11 @@ func _pointer_released(position: Vector2) -> void:
 		queue_redraw()
 		return
 	if attack_pointer_held:
+		var released_direct_button := attack_button_pointer_held
 		attack_pointer_held = false
 		attack_touch_is_original = false
-		if String(state.player_action.get("kind", "")) == "bow_draw": state.release_bow_attack(_screen_to_world(position) - state.player_pos)
+		attack_button_pointer_held = false
+		if String(state.player_action.get("kind", "")) == "bow_draw": state.release_bow_attack(state.player_facing if released_direct_button else _screen_to_world(position) - state.player_pos)
 		else: state.set_attack_hold(false)
 		pointer_intent = ""
 		queue_redraw()
@@ -1371,7 +1424,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if not _can_repeat_primary_action(): return
 			var attack_direction := _desktop_held_direction()
 			if attack_direction.is_zero_approx(): attack_direction = state.player_facing
-			var began := state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false)
+			var began := state.request_direct_attack(attack_direction, false) if state.uses_stamina_rules() else state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false)
 			if began:
 				attack_key_held = true
 				_begin_streamed_action(true)
@@ -1545,6 +1598,7 @@ func _notification(what: int) -> void:
 		desktop_movement_keys.clear()
 		attack_key_held = false
 		attack_pointer_held = false
+		attack_button_pointer_held = false
 		advance_pointer_held = false
 		defense_pointer_held = false
 		wait_pointer_held = false
@@ -3328,6 +3382,7 @@ func _draw_hud() -> void:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
 		_draw_button("wait", interaction_rect)
+		if state.uses_stamina_rules(): _draw_attack_button()
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
 	if state.mode_id == "combat_survey":
@@ -3353,6 +3408,45 @@ func _draw_hud() -> void:
 	if state.has_pending_pickup():
 		var prompt := "BELT FULL — TAP A SLOT TO REPLACE  •  CONTEXT TO LEAVE"
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.position.y + font * 2.7), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("f0c66b"))
+
+func _draw_attack_button() -> void:
+	if attack_rect.size == Vector2.ZERO: return
+	var center := attack_rect.get_center()
+	var radius := attack_rect.size.x * 0.5
+	var action_kind := String(state.player_action.get("kind", "idle"))
+	var attacking := action_kind in ["attack", "combo", "bow_draw", "bow_release"]
+	var exhausted := state.stamina_actions_locked()
+	var readiness := state.basic_attack_lock_remaining()
+	var available := state.basic_attack_is_available()
+	var accent := Color("e88a55")
+	var border := accent if available or attacking else Color("566268")
+	draw_circle(center, radius, Color(0.045, 0.07, 0.08, 0.92))
+	draw_arc(center, radius - 2.0, 0.0, TAU, 48, border, 4.0 if attacking or attack_button_pointer_held else 2.5)
+	if attack_button_pointer_held:
+		draw_circle(center, radius * 0.82, Color(accent, 0.18))
+	if readiness > 0.0001 and not attacking:
+		var ready_ratio := 1.0 - clampf(readiness / state.STAMINA_ATTACK_READINESS_FLOOR, 0.0, 1.0)
+		draw_arc(center, radius - 7.0, -PI * 0.5, -PI * 0.5 + TAU * ready_ratio, 36, accent, 5.0)
+	var title := "ATTACK"
+	var subtitle := "HOLD: COMBO"
+	if exhausted:
+		title = "EXHAUSTED"
+		subtitle = "PHYSICAL LOCK"
+	elif readiness > 0.0001 and not attacking:
+		title = "RESET"
+		subtitle = "%.2fs" % readiness
+	elif attacking:
+		title = "ATTACKING"
+		subtitle = "HOLD TO FLOW" if action_kind == "combo" else "RELEASE TO FIRE" if action_kind == "bow_draw" else "COMMITTED"
+	elif not available:
+		title = "BUSY"
+		subtitle = "COMMITTED"
+	var title_font := maxi(10, int(radius * 0.27))
+	var text_color := Color("f4eee3") if available or attacking else Color("778388")
+	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, -2.0), title, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, title_font, text_color)
+	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.31), subtitle, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.55)), border)
+	if desktop_controls:
+		draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.63), "[F]", HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.52)), Color("8d989c"))
 
 func _draw_reset_button() -> void:
 	draw_rect(reset_rect, Color(0.06, 0.09, 0.11, 0.86))

@@ -127,8 +127,8 @@ const CHARACTER_TRACKS := {
 		"stages": [
 			{"id": "practised_footwork", "label": "Practised Footwork", "gate": 2, "description": "Basic Dodge recovery falls from 0.66 to 0.60 seconds and cooldown from 4.0 to 3.6."},
 			{"id": "evasion_style", "label": "Evasive Form", "gate": 5, "description": "Permanently specialize your Dodge for this run.", "choices": [
-				{"id": "sidestep", "label": "Sidestep", "description": "Cover the same 168-unit distance faster, with a 2.8-second cooldown."},
-				{"id": "long_roll", "label": "Long Roll", "description": "Commit to a longer 231-unit escape with a 3.6-second cooldown."},
+				{"id": "sidestep", "label": "Sidestep", "description": "Cover the practised Dodge distance faster and regain control sooner."},
+				{"id": "long_roll", "label": "Long Roll", "description": "Cover 231 units with a longer protected window and dependable recovery."},
 			]},
 			{"id": "evasion_mastery", "label": "Perfect Form", "gate": 9, "description": "A clean Sidestep primes Counterstep; a clean Long Roll restores 2 seconds of Dodge cooldown."},
 		],

@@ -8,6 +8,9 @@ func _init() -> void:
 	test_overdraw_starts_exhaustion_after_recovery()
 	test_exhaustion_uses_fixed_world_time()
 	test_dodge_cost_and_utility_regeneration()
+	test_stamina_only_attack_readiness_and_combo_reward()
+	test_stamina_dodge_forms_improve_the_basic_dodge()
+	test_direct_attack_is_deliberate_and_profile_scoped()
 	test_temperament_packages()
 	test_enemies_share_stamina_attribute_without_spending_it()
 	print("Recovery/Stamina profiles, overdraw, exhaustion, and regeneration: PASS")
@@ -104,6 +107,85 @@ func test_dodge_cost_and_utility_regeneration() -> void:
 	advance_until_ready(recovery)
 	assert(is_equal_approx(recovery.player_stamina, 100.0))
 	assert(recovery.dodge_cooldown > 0.0)
+
+func test_stamina_only_attack_readiness_and_combo_reward() -> void:
+	var recovery := fresh_state("warrior", "recovery")
+	assert(recovery.request_combo(Vector2.RIGHT, false))
+	var recovery_phases: Array = recovery.player_action["phases"]
+	assert(int(Dictionary(recovery_phases[1])["damage_min"]) == 10)
+	assert(int(Dictionary(recovery_phases[2])["damage_min"]) == 15)
+	assert(is_equal_approx(float(Dictionary(recovery_phases[1])["posture"]), 2.2))
+	recovery.set_attack_hold(false)
+	advance_until_ready(recovery)
+	assert(is_equal_approx(recovery.basic_attack_lock_remaining(), 0.0))
+	assert(recovery.request_combo(Vector2.RIGHT, false))
+
+	var stamina := fresh_state()
+	assert(stamina.request_combo(Vector2.RIGHT, false))
+	var stamina_phases: Array = stamina.player_action["phases"]
+	assert(int(Dictionary(stamina_phases[0])["damage_min"]) == 10)
+	assert(int(Dictionary(stamina_phases[1])["damage_min"]) == 13)
+	assert(int(Dictionary(stamina_phases[2])["damage_min"]) == 17)
+	assert(is_equal_approx(float(Dictionary(stamina_phases[1])["posture"]), 2.8))
+	assert(is_equal_approx(float(Dictionary(stamina_phases[2])["posture"]), 4.5))
+	stamina.set_attack_hold(false)
+	advance_until_ready(stamina)
+	assert(stamina.basic_attack_lock_remaining() > 0.12 and stamina.basic_attack_lock_remaining() < 0.22)
+	assert(not stamina.request_combo(Vector2.RIGHT, false))
+	assert(stamina.attack_readiness_blocked_attempts_total == 1)
+	assert(stamina.request_wait(0.20, false))
+	advance_until_ready(stamina)
+	assert(is_equal_approx(stamina.basic_attack_lock_remaining(), 0.0))
+	assert(stamina.request_combo(Vector2.RIGHT, false))
+
+func test_stamina_dodge_forms_improve_the_basic_dodge() -> void:
+	var basic := fresh_state()
+	assert(basic.request_dodge(Vector2.RIGHT, false))
+	var basic_action := basic.player_action
+	assert(is_equal_approx((float(basic_action["move_end"]) - float(basic_action["move_start"])) * float(basic_action["speed"]), 150.0))
+	assert(is_equal_approx(float(basic_action["evade_end"]) - float(basic_action["evade_start"]), 0.24))
+	assert(is_equal_approx(float(basic_action["duration"]) - float(basic_action["evade_end"]), 0.24))
+
+	var practised := fresh_state()
+	practised.track_ranks["evasion"] = 1
+	assert(practised.request_dodge(Vector2.RIGHT, false))
+	var practised_action := practised.player_action
+	assert(is_equal_approx((float(practised_action["move_end"]) - float(practised_action["move_start"])) * float(practised_action["speed"]), 168.0))
+	assert(is_equal_approx(float(practised_action["evade_end"]) - float(practised_action["evade_start"]), 0.30))
+	assert(is_equal_approx(float(practised_action["duration"]) - float(practised_action["evade_end"]), 0.20))
+
+	var sidestep := fresh_state()
+	sidestep.track_ranks["evasion"] = 2
+	sidestep.track_choices["evasion_style"] = "sidestep"
+	assert(sidestep.request_dodge(Vector2.RIGHT, false))
+	var sidestep_action := sidestep.player_action
+	assert(is_equal_approx((float(sidestep_action["move_end"]) - float(sidestep_action["move_start"])) * float(sidestep_action["speed"]), 168.0))
+	assert(is_equal_approx(float(sidestep_action["evade_end"]) - float(sidestep_action["evade_start"]), 0.30))
+	assert(is_equal_approx(float(sidestep_action["duration"]) - float(sidestep_action["evade_end"]), 0.12))
+
+	var long_roll := fresh_state()
+	long_roll.track_ranks["evasion"] = 2
+	long_roll.track_choices["evasion_style"] = "long_roll"
+	assert(long_roll.request_dodge(Vector2.RIGHT, false))
+	var roll_action := long_roll.player_action
+	assert(is_equal_approx((float(roll_action["move_end"]) - float(roll_action["move_start"])) * float(roll_action["speed"]), 231.0))
+	assert(is_equal_approx(float(roll_action["evade_end"]) - float(roll_action["evade_start"]), 0.35))
+	assert(is_equal_approx(float(roll_action["duration"]) - float(roll_action["evade_end"]), 0.20))
+
+	var recovery := fresh_state("warrior", "recovery")
+	assert(recovery.request_dodge(Vector2.RIGHT, false))
+	assert(is_equal_approx(float(recovery.player_action["duration"]), 0.66))
+	assert(is_equal_approx(recovery.dodge_cooldown, recovery.DODGE_COOLDOWN))
+
+func test_direct_attack_is_deliberate_and_profile_scoped() -> void:
+	var stamina := fresh_state()
+	assert(stamina.request_direct_attack(Vector2.LEFT, false))
+	assert(stamina.direct_attack_uses_total == 1)
+	assert(String(stamina.player_action["kind"]) == "combo")
+	assert(Vector2(stamina.player_action["direction"]).dot(Vector2.LEFT) > 0.99)
+	var recovery := fresh_state("warrior", "recovery")
+	assert(recovery.request_combo(Vector2.LEFT, false))
+	assert(recovery.direct_attack_uses_total == 0)
 
 func test_temperament_packages() -> void:
 	var steadfast := fresh_state()
