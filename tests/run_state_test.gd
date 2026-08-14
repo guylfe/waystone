@@ -72,6 +72,7 @@ func _init() -> void:
 	test_long_landmarks_are_ground_materials()
 	test_presentation_frames_reuse_storage()
 	test_desktop_landscape_layout()
+	test_mobile_safe_area_layout()
 	test_close_camera_tracks_player()
 	test_camera_culls_offscreen_world()
 	test_lightweight_timeline_snapshots()
@@ -1301,6 +1302,27 @@ func test_desktop_landscape_layout() -> void:
 	assert(not board.buttons.has("attack") and not board.buttons.has("wait") and board.buttons.size() == 5)
 	assert(board.interaction_rect.size.y >= 44.0)
 	assert(board.interaction_rect.end.y < Rect2(board.consumable_rects["healing"]).position.y)
+	board.free()
+
+func test_mobile_safe_area_layout() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new()
+	board.visual = board.state.snapshot()
+	board.desktop_controls = false
+	board.size = Vector2(720, 1394)
+	board.layout_safe_area_override = Rect2(0, 89, 720, 1263)
+	board._create_seed_input()
+	board._layout()
+	assert(board.safe_layout_rect == board.layout_safe_area_override)
+	assert(board.board_rect.position.y == 89.0)
+	assert(board.board_rect.end.y < board.layout_safe_area_override.end.y)
+	assert(board.loadout_rects["warrior"].position.y > board.board_rect.end.y)
+	assert(board.layout_safe_area_override.encloses(board.loadout_rects["warrior"]))
+	assert(board.layout_safe_area_override.encloses(board.interaction_rect))
+	for rect in board.buttons.values(): assert(board.layout_safe_area_override.encloses(Rect2(rect)))
+	for rect in board.consumable_rects.values(): assert(board.layout_safe_area_override.encloses(Rect2(rect)))
+	assert(board.sheet_panel_rect.position.y >= board.layout_safe_area_override.position.y)
+	assert(board.sheet_panel_rect.end.y <= board.layout_safe_area_override.end.y)
 	board.free()
 
 func test_close_camera_tracks_player() -> void:

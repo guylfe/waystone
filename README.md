@@ -1,6 +1,11 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.8` (Android version code `208`).
+Current prototype version: `0.2.9` (Android version code `209`).
+
+### v0.2.9: Display-safe HUD
+
+- Uses Android's reported safe display area for the board, combat HUD, action controls, setup screen, sheets, survey overlays, and full map so camera cutouts and system insets cannot cover health or interactive controls.
+- Keeps the background edge-to-edge while deriving the active gameplay aspect ratio from the unobscured region.
 
 ### v0.2.8: Melee pressure correction
 

@@ -73,6 +73,8 @@ var desktop_movement_keys: Dictionary = {}
 var board_rect := Rect2()
 var world_scale := 1.0
 var board_area := Rect2()
+var safe_layout_rect := Rect2()
+var layout_safe_area_override := Rect2()
 var iso_origin := Vector2.ZERO
 var view_mode := "isometric"
 var debug_hitboxes := false
@@ -729,8 +731,11 @@ func _set_survey_export_status(text: String, succeeded: bool) -> void:
 	queue_redraw()
 
 func _layout() -> void:
-	var portrait := size.y >= size.x
-	board_area = Rect2(0, 0, size.x, size.y * 0.735) if portrait else Rect2(0, 0, size.x * 0.74, size.y)
+	safe_layout_rect = _display_safe_layout_rect()
+	var layout_size := safe_layout_rect.size
+	var layout_origin := safe_layout_rect.position
+	var portrait := layout_size.y >= layout_size.x
+	board_area = Rect2(layout_origin, Vector2(layout_size.x, layout_size.y * 0.735)) if portrait else Rect2(layout_origin, Vector2(layout_size.x * 0.74, layout_size.y))
 	_update_projection()
 	buttons.clear()
 	consumable_rects.clear()
@@ -743,57 +748,57 @@ func _layout() -> void:
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
 	if portrait:
-		var hud_top := size.y * 0.745
-		var gap := size.x * 0.025
-		var tab_height := clampf(size.y * 0.038, 38.0, 58.0)
-		loadout_rects["warrior"] = Rect2(gap, hud_top, size.x - gap * 2.0, tab_height)
-		var wait_height := clampf(size.y * 0.045, 44.0, 66.0)
-		interaction_rect = Rect2(gap, hud_top + tab_height + gap * 0.45, size.x - gap * 2.0, wait_height)
+		var hud_top := layout_origin.y + layout_size.y * 0.745
+		var gap := layout_size.x * 0.025
+		var tab_height := clampf(layout_size.y * 0.038, 38.0, 58.0)
+		loadout_rects["warrior"] = Rect2(layout_origin.x + gap, hud_top, layout_size.x - gap * 2.0, tab_height)
+		var wait_height := clampf(layout_size.y * 0.045, 44.0, 66.0)
+		interaction_rect = Rect2(layout_origin.x + gap, hud_top + tab_height + gap * 0.45, layout_size.x - gap * 2.0, wait_height)
 		var belt_top := interaction_rect.end.y + gap * 0.45
-		var belt_height := clampf(size.y * 0.075, 50.0, 82.0)
-		var belt_width := (size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
-		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
+		var belt_height := clampf(layout_size.y * 0.075, 50.0, 82.0)
+		var belt_width := (layout_size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
+		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(layout_origin.x + gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var top := belt_top + belt_height + gap * 0.55
-		var width := (size.x - gap * float(names.size() + 1)) / float(names.size())
+		var width := (layout_size.x - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
-			buttons[names[i]] = Rect2(gap + i * (width + gap), top, width, size.y - top - gap)
-		var upgrade_width := (size.x - gap * 4.0) / 3.0
-		for i in range(3): upgrade_rects[i] = Rect2(gap + i * (upgrade_width + gap), top, upgrade_width, size.y - top - gap)
+			buttons[names[i]] = Rect2(layout_origin.x + gap + i * (width + gap), top, width, safe_layout_rect.end.y - top - gap)
+		var upgrade_width := (layout_size.x - gap * 4.0) / 3.0
+		for i in range(3): upgrade_rects[i] = Rect2(layout_origin.x + gap + i * (upgrade_width + gap), top, upgrade_width, safe_layout_rect.end.y - top - gap)
 	else:
-		var left := size.x * 0.755
-		var gap := size.y * 0.025
-		var tab_height := (size.y * 0.22 - gap * 2.0)
-		loadout_rects["warrior"] = Rect2(left, gap, size.x - left - gap, tab_height)
-		var wait_height := clampf(size.y * 0.075, 44.0, 66.0)
-		interaction_rect = Rect2(left, Rect2(loadout_rects["warrior"]).end.y + gap, size.x - left - gap, wait_height)
+		var left := layout_origin.x + layout_size.x * 0.755
+		var gap := layout_size.y * 0.025
+		var tab_height := (layout_size.y * 0.22 - gap * 2.0)
+		loadout_rects["warrior"] = Rect2(left, layout_origin.y + gap, safe_layout_rect.end.x - left - gap, tab_height)
+		var wait_height := clampf(layout_size.y * 0.075, 44.0, 66.0)
+		interaction_rect = Rect2(left, Rect2(loadout_rects["warrior"]).end.y + gap, safe_layout_rect.end.x - left - gap, wait_height)
 		var belt_top := interaction_rect.end.y + gap
-		var belt_height := clampf(size.y * 0.075, 44.0, 64.0)
-		var belt_width := (size.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
+		var belt_height := clampf(layout_size.y * 0.075, 44.0, 64.0)
+		var belt_width := (safe_layout_rect.end.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(left + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var action_top := belt_top + belt_height + gap
-		var action_bottom := size.y - gap
+		var action_bottom := safe_layout_rect.end.y - gap
 		var height := (action_bottom - action_top - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
-			buttons[names[i]] = Rect2(left, action_top + gap + i * (height + gap), size.x - left - gap, height)
+			buttons[names[i]] = Rect2(left, action_top + gap + i * (height + gap), safe_layout_rect.end.x - left - gap, height)
 		var upgrade_height := (action_bottom - action_top - gap * 4.0) / 3.0
-		for i in range(3): upgrade_rects[i] = Rect2(left, action_top + gap + i * (upgrade_height + gap), size.x - left - gap, upgrade_height)
-	var attack_size := clampf(minf(size.x, size.y) * 0.092, 66.0, 92.0)
+		for i in range(3): upgrade_rects[i] = Rect2(left, action_top + gap + i * (upgrade_height + gap), safe_layout_rect.end.x - left - gap, upgrade_height)
+	var attack_size := clampf(minf(layout_size.x, layout_size.y) * 0.092, 66.0, 92.0)
 	var attack_bottom_lift := 34.0 if portrait else 48.0
 	attack_rect = Rect2(Vector2(board_rect.end.x - attack_size - 14.0, board_rect.end.y - attack_size - attack_bottom_lift), Vector2(attack_size, attack_size))
-	var reset_size := Vector2(clampf(size.x * 0.13, 68.0, 104.0), clampf(size.y * 0.035, 36.0, 52.0))
+	var reset_size := Vector2(clampf(layout_size.x * 0.13, 68.0, 104.0), clampf(layout_size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	sheet_button_rect = Rect2(map_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	survey_end_rect = Rect2(sheet_button_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
-	var sheet_size := Vector2(minf(size.x - 30.0, 1080.0), minf(size.y - 34.0, 790.0))
-	sheet_panel_rect = Rect2((size - sheet_size) * 0.5, sheet_size)
+	var sheet_size := Vector2(minf(layout_size.x - 30.0, 1080.0), minf(layout_size.y - 34.0, 790.0))
+	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
-	var setup_gap := clampf(minf(size.x, size.y) * 0.018, 8.0, 20.0)
-	var setup_width := minf(size.x * 0.76, 640.0) if portrait else minf(size.x * 0.44, 580.0)
-	var setup_left := (size.x - setup_width) * 0.5 if portrait else size.x - setup_width - 24.0
+	var setup_gap := clampf(minf(layout_size.x, layout_size.y) * 0.018, 8.0, 20.0)
+	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.44, 580.0)
+	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5 if portrait else safe_layout_rect.end.x - setup_width - 24.0
 	if portrait:
-		var setup_center_y := size.y * (0.50 if setup_mode == "combat_survey" else 0.57)
+		var setup_center_y := layout_origin.y + layout_size.y * (0.50 if setup_mode == "combat_survey" else 0.57)
 		var option_width := (setup_width - setup_gap * 2.0) / 3.0
 		progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
 		progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
@@ -807,8 +812,8 @@ func _layout() -> void:
 		seed_input.size = Vector2(setup_width, 58.0)
 		start_rect = Rect2(setup_left, seed_input.position.y + 68.0, setup_width, 72.0)
 	else:
-		var setup_top := 78.0
-		var mode_height := clampf((size.y * 0.48 - setup_gap * 2.0) / 3.0, 50.0, 64.0)
+		var setup_top := layout_origin.y + 78.0
+		var mode_height := clampf((layout_size.y * 0.48 - setup_gap * 2.0) / 3.0, 50.0, 64.0)
 		for index in range(3):
 			var mode_id: String = ["expedition", "campaign_lab", "combat_survey"][index]
 			progression_rects[mode_id] = Rect2(setup_left, setup_top + float(index) * (mode_height + setup_gap), setup_width, mode_height)
@@ -820,14 +825,29 @@ func _layout() -> void:
 		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, profile_top + 50.0, profile_width, 42.0)
 		seed_input.position = Vector2(setup_left, profile_top + (100.0 if setup_mode == "combat_survey" else 50.0))
 		seed_input.size = Vector2(setup_width, 50.0)
-		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, size.y - seed_input.position.y - 68.0))
-	archive_button_rect = Rect2(Vector2(size.x - 174.0, 18.0), Vector2(156.0, 44.0))
+		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, safe_layout_rect.end.y - seed_input.position.y - 68.0))
+	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
-		survey_overlay.position = Vector2(maxf(12.0, size.x * 0.04), maxf(12.0, size.y * 0.035))
-		survey_overlay.size = Vector2(size.x - survey_overlay.position.x * 2.0, size.y - survey_overlay.position.y * 2.0)
+		var overlay_margin := Vector2(maxf(12.0, layout_size.x * 0.04), maxf(12.0, layout_size.y * 0.035))
+		survey_overlay.position = layout_origin + overlay_margin
+		survey_overlay.size = layout_size - overlay_margin * 2.0
 	map_mode_rect = _map_action_rect(1)
 	seed_copy_rect = _map_action_rect(2)
 	queue_redraw()
+
+func _display_safe_layout_rect() -> Rect2:
+	var viewport_rect := Rect2(Vector2.ZERO, size)
+	if layout_safe_area_override.size.x > 0.0 and layout_safe_area_override.size.y > 0.0:
+		return layout_safe_area_override.intersection(viewport_rect)
+	if not OS.has_feature("mobile") or DisplayServer.get_name() == "headless": return viewport_rect
+	var screen_size := Vector2(DisplayServer.screen_get_size())
+	var safe_pixels := Rect2(DisplayServer.get_display_safe_area())
+	if screen_size.x <= 0.0 or screen_size.y <= 0.0 or safe_pixels.size.x <= 0.0 or safe_pixels.size.y <= 0.0:
+		return viewport_rect
+	var viewport_per_screen := Vector2(size.x / screen_size.x, size.y / screen_size.y)
+	var safe_rect := Rect2(safe_pixels.position * viewport_per_screen, safe_pixels.size * viewport_per_screen)
+	var clipped := safe_rect.intersection(viewport_rect)
+	return clipped if clipped.size.x > 0.0 and clipped.size.y > 0.0 else viewport_rect
 
 func _update_projection() -> void:
 	var base_scale := clampf(maxf(board_area.size.x / CAMERA_WORLD_WIDTH, board_area.size.y / CAMERA_WORLD_HEIGHT), 0.9, 2.0)
@@ -3941,15 +3961,16 @@ func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, mark + Vector2(-32, -30), "%d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 64, maxi(10, int(13 * world_scale)), Color("e9f4b1"))
 
 func _draw_setup() -> void:
-	var portrait := size.y >= size.x
-	var title_font := maxi(28, int(minf(size.x, size.y) * 0.055))
+	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
+	var portrait := layout.size.y >= layout.size.x
+	var title_font := maxi(28, int(minf(layout.size.x, layout.size.y) * 0.055))
 	var body_font := maxi(14, int(title_font * 0.44))
-	var heading_x := 0.0 if portrait else 24.0
-	var heading_width := size.x if portrait else minf(size.x * 0.42, 520.0)
-	draw_string(ThemeDB.fallback_font, Vector2(heading_x, size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
-	draw_string(ThemeDB.fallback_font, Vector2(heading_x, size.y * (0.23 if portrait else 0.17)), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
+	var heading_x := layout.position.x if portrait else layout.position.x + 24.0
+	var heading_width := layout.size.x if portrait else minf(layout.size.x * 0.42, 520.0)
+	draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
+	draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.23 if portrait else 0.17)), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
 	if desktop_controls and portrait:
-		draw_string(ThemeDB.fallback_font, Vector2(0, size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
+		draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
 	for choice in CombatCatalogScript.loadout_ids():
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
@@ -4000,14 +4021,15 @@ func _draw_survey_end_button() -> void:
 	draw_string(ThemeDB.fallback_font, survey_end_rect.position + Vector2(0, survey_end_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, survey_end_rect.size.x, maxi(8, int(survey_end_rect.size.y * 0.26)), Color("f0d2cf"))
 
 func _setup_class_rect(choice: String) -> Rect2:
-	var portrait := size.y >= size.x
-	var total_width := minf(size.x * 0.84, 760.0) if portrait else minf(size.x * 0.42, 520.0)
+	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
+	var portrait := layout.size.y >= layout.size.x
+	var total_width := minf(layout.size.x * 0.84, 760.0) if portrait else minf(layout.size.x * 0.42, 520.0)
 	var choices := CombatCatalogScript.loadout_ids()
 	var index := maxi(0, choices.find(choice))
 	var gap := 10.0
-	var height := clampf(size.y * 0.052, 48.0, 66.0)
-	var left := (size.x - total_width) * 0.5 if portrait else 24.0
-	var top := size.y * 0.305 if portrait else 110.0
+	var height := clampf(layout.size.y * 0.052, 48.0, 66.0)
+	var left := layout.position.x + (layout.size.x - total_width) * 0.5 if portrait else layout.position.x + 24.0
+	var top := layout.position.y + layout.size.y * 0.305 if portrait else layout.position.y + 110.0
 	return Rect2(Vector2(left, top + float(index) * (height + gap)), Vector2(total_width, height))
 
 func _upgrade_leave_rect() -> Rect2:
@@ -4104,14 +4126,16 @@ func _draw_map() -> void:
 		_draw_map_layer_controls()
 
 func _map_panel_rect() -> Rect2:
-	return board_rect.grow(-18.0) if state.map_presentation == "overlay" else Rect2(Vector2(14, 14), size - Vector2(28, 28))
+	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
+	return board_rect.grow(-18.0) if state.map_presentation == "overlay" else layout.grow(-14.0)
 
 func _map_close_rect() -> Rect2:
 	var rect := _map_panel_rect()
 	return Rect2(rect.position + Vector2(rect.size.x - 132.0, 12.0), Vector2(120.0, 46.0))
 
 func _map_action_rect(row: int) -> Rect2:
-	var rect := Rect2(Vector2(14, 14), size - Vector2(28, 28))
+	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
+	var rect := layout.grow(-14.0)
 	return Rect2(rect.position + Vector2(rect.size.x - 132.0, 12.0 + row * 56.0), Vector2(120.0, 46.0))
 
 func _draw_map_action(rect: Rect2, label: String) -> void:
