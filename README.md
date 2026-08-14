@@ -1,6 +1,13 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.7` (Android version code `207`).
+Current prototype version: `0.2.8` (Android version code `208`).
+
+### v0.2.8: Melee pressure correction
+
+- Reduced the Warrior's ordinary movement speed from 300 to 260 so walking no longer provides a universal disengage from most melee enemies.
+- Restored Sweeping Cut's 4.2-world-second Weapon Art cooldown under Stamina rules while preserving its 34-Stamina cost and broad crowd-control identity.
+- Made Bandits, Knives, and Hounds pursue separated interception lanes ahead of player movement, with earlier crowd separation to reduce enemy bunching.
+- Left Dodge profiles unchanged so the next survey can measure whether stronger melee pressure makes defensive commitment necessary.
 
 ### v0.2.7: Stamina commitment experiment
 

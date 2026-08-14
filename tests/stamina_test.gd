@@ -9,6 +9,7 @@ func _init() -> void:
 	test_exhaustion_uses_fixed_world_time()
 	test_dodge_cost_and_utility_regeneration()
 	test_stamina_only_attack_readiness_and_combo_reward()
+	test_warrior_speed_and_sweeping_cut_cooldown()
 	test_stamina_dodge_forms_improve_the_basic_dodge()
 	test_direct_attack_is_deliberate_and_profile_scoped()
 	test_temperament_packages()
@@ -137,6 +138,26 @@ func test_stamina_only_attack_readiness_and_combo_reward() -> void:
 	advance_until_ready(stamina)
 	assert(is_equal_approx(stamina.basic_attack_lock_remaining(), 0.0))
 	assert(stamina.request_combo(Vector2.RIGHT, false))
+
+func test_warrior_speed_and_sweeping_cut_cooldown() -> void:
+	var stamina := fresh_state()
+	assert(is_equal_approx(stamina.player_move_speed, 260.0))
+	stamina.player_weapon_art_library.assign(["prototype_sweeping_cut"])
+	stamina.player_equipped_weapon_art = "prototype_sweeping_cut"
+	assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
+	assert(is_equal_approx(stamina.skill_cooldown, stamina.SWEEP_COOLDOWN))
+	advance_until_ready(stamina)
+	assert(stamina.skill_cooldown > 0.0)
+	assert(not stamina.request_sweeping_cut(Vector2.RIGHT, false))
+
+	var recovery := fresh_state("warrior", "recovery")
+	recovery.player_weapon_art_library.assign(["prototype_sweeping_cut"])
+	recovery.player_equipped_weapon_art = "prototype_sweeping_cut"
+	assert(recovery.request_sweeping_cut(Vector2.RIGHT, false))
+	assert(is_equal_approx(recovery.skill_cooldown, recovery.SWEEP_COOLDOWN))
+
+	var rogue := fresh_state("rogue_acrobat")
+	assert(is_equal_approx(rogue.player_move_speed, rogue.MOVE_SPEED))
 
 func test_stamina_dodge_forms_improve_the_basic_dodge() -> void:
 	var basic := fresh_state()

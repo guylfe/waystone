@@ -49,6 +49,7 @@ func _init() -> void:
 	test_enemy_facing_and_moving_follow_real_displacement()
 	test_blocked_enemy_stops_claiming_movement_and_replans()
 	test_crowded_enemy_steers_around_another_actor()
+	test_flankers_reserve_interception_lanes()
 	test_isometric_is_default()
 	test_isometric_projection_round_trip()
 	test_projected_combat_footprints_match_each_view()
@@ -160,7 +161,7 @@ func test_continuous_movement() -> void:
 	assert(state.player_pos.distance_to(origin) > 28.0)
 	assert(state.player_pos.distance_to(origin) < 38.0)
 	assert(not is_equal_approx(state.player_pos.x, round(state.player_pos.x)))
-	assert(state.simulation_time > 0.09 and state.simulation_time < 0.13)
+	assert(state.simulation_time > 0.12 and state.simulation_time < 0.15)
 	assert(state.last_timeline.size() >= 6)
 	assert(state.is_player_ready())
 	var frozen_time := state.simulation_time
@@ -804,6 +805,24 @@ func test_crowded_enemy_steers_around_another_actor() -> void:
 	assert(motion.length() > 1.0)
 	assert(absf(motion.y) > 0.5)
 	assert(Vector2(mover["facing"]).dot(Vector2(mover["last_motion"]).normalized()) > 0.99)
+
+func test_flankers_reserve_interception_lanes() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 717, "encounter", "stamina")
+	state.player_pos = Vector2(600, 600)
+	state.player_facing = Vector2.RIGHT
+	state.player_action = state._action("move", 0.2, Vector2.RIGHT)
+	var left := state._make_enemy("bandit", Vector2(400, 520), 7)
+	var right := state._make_enemy("knife", Vector2(400, 680), 7)
+	left["id"] = 4
+	right["id"] = 5
+	var left_target := state._pursuit_target(left)
+	var right_target := state._pursuit_target(right)
+	assert(left_target.x >= state.player_pos.x + 119.0)
+	assert(right_target.x >= state.player_pos.x + 119.0)
+	assert(left_target.y < state.player_pos.y)
+	assert(right_target.y > state.player_pos.y)
+	assert(absf(left_target.y - right_target.y) >= 160.0)
 
 func test_isometric_projection_round_trip() -> void:
 	var board = GameBoardScript.new()

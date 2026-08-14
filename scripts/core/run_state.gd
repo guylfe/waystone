@@ -16,7 +16,8 @@ const FRAME_DT := 1.0 / 60.0
 const PLAYER_RADIUS := 30.0
 const ENEMY_RADIUS := 28.0
 const PLAYER_MAX_HP := 100
-const MOVE_SPEED := 320.0
+const MOVE_SPEED := 300.0
+const WARRIOR_MOVE_SPEED := 260.0
 const MOVE_RANGE := 34.0
 const DODGE_SPEED := 560.0
 const DODGE_COOLDOWN := 4.0
@@ -42,7 +43,7 @@ const DODGE_STAMINA_COST := 18.0
 const STAMINA_ATTACK_READINESS_FLOOR := 0.45
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
 const SAVE_VERSION := 30
-const GAME_VERSION := "0.2.7"
+const GAME_VERSION := "0.2.8"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 6
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1197,7 +1198,11 @@ func _apply_loadout() -> void:
 	defense_id = String(CombatCatalogScript.loadout_profile(loadout_id).get("defense_id", "dodge"))
 	player_max_hp = int(player_attributes.get("health", PLAYER_MAX_HP))
 	player_max_stamina = float(player_attributes.get("stamina", 100))
-	player_move_speed = 300.0
+	# The armoured Warrior should not be able to reset melee pressure through
+	# ordinary walking. Faster loadouts retain their existing traversal speed;
+	# the Warrior instead depends on deliberate defensive movement when flankers
+	# close the distance.
+	player_move_speed = WARRIOR_MOVE_SPEED if loadout_id == "warrior" else MOVE_SPEED
 	match player_weapon_frame:
 		"knife", "twin_knives":
 			player_attack_duration = 0.70
@@ -1834,7 +1839,7 @@ func resume_combo_hold() -> bool:
 	return true
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(34.0):
+	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(34.0):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -1848,7 +1853,10 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	player_action["damage_max"] = int(player_action["damage_min"])
 	_apply_action_poise(player_action)
 	_annotate_player_action(player_equipped_weapon_art if player_equipped_weapon_art != "" else "prototype_sweeping_cut")
-	skill_cooldown = 0.0 if uses_stamina_rules() else SWEEP_COOLDOWN * _skill_cooldown_multiplier
+	# Sweeping Cut is crowd control, not a replacement basic attack. Its Stamina
+	# cost limits burst length while the shared art cooldown prevents repeatedly
+	# sweeping a grouped melee formation every time control returns.
+	skill_cooldown = SWEEP_COOLDOWN * _skill_cooldown_multiplier
 	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
 	if simulate_immediately: _simulate_until_ready()
@@ -4431,15 +4439,23 @@ func _archer_support_target(enemy: Dictionary, direction_to_player: Vector2, dis
 
 func _pursuit_target(enemy: Dictionary) -> Vector2:
 	var target := player_pos
+	var kind := String(enemy.get("kind", ""))
 	if String(player_action.get("kind", "idle")) == "move":
 		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
-		var lead := 80.0 if String(enemy.get("kind", "")) in ["hound", "bandit", "knife"] else 45.0
+		var lead := 120.0 if kind in ["hound", "bandit", "knife"] else 45.0
 		target += motion * lead
-	var kind := String(enemy.get("kind", ""))
 	if kind in ["bandit", "knife", "hound"]:
-		var to_player := Vector2(enemy["pos"]).direction_to(player_pos)
-		var side := to_player.rotated(PI * 0.5)
-		target += side * (42.0 if int(enemy["id"]) % 2 == 0 else -42.0)
+		# Flankers reserve distinct lanes around the player's projected route. This
+		# makes them intercept lateral movement instead of joining a single trailing
+		# column that the player can herd into one broad sweep.
+		var route := Vector2(player_action.get("direction", player_facing)).normalized()
+		if String(player_action.get("kind", "idle")) != "move":
+			route = Vector2(enemy["pos"]).direction_to(player_pos)
+		if route.length_squared() < 0.001: route = player_facing.normalized()
+		var lane_pattern := [-1.0, 1.0, -0.45, 0.45]
+		var lane_index := absi(int(enemy["id"])) % lane_pattern.size()
+		var lane_spacing := 96.0 if kind == "hound" else 84.0
+		target += route.rotated(PI * 0.5) * float(lane_pattern[lane_index]) * lane_spacing
 	return target
 
 func _captain_near(subject: Dictionary) -> bool:
@@ -5173,7 +5189,9 @@ func _crowd_separation_direction(enemy: Dictionary, nearby: Array[Dictionary] = 
 		if not _enemy_on_current_layer(other) or int(other["id"]) == int(enemy["id"]) or int(other.get("hp", 0)) <= 0: continue
 		var offset := origin - Vector2(other["pos"])
 		var distance := offset.length()
-		var comfort := radius + float(other["radius"]) + 26.0
+		# Begin separating before bodies physically bunch together. The larger
+		# comfort band preserves several attack lanes and denies effortless herding.
+		var comfort := radius + float(other["radius"]) + 44.0
 		if distance >= comfort: continue
 		var away := offset / distance if distance > 0.001 else Vector2.RIGHT.rotated(float(int(enemy["id"]) % 8) * PI * 0.25)
 		pressure += away * (comfort - distance) / comfort
@@ -5882,6 +5900,9 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_posture_max = float(payload.get("player_posture_max", player_posture_max))
 	player_posture_recovery_delay = float(payload.get("player_posture_recovery_delay", 0.0))
 	player_move_speed = float(payload.get("player_move_speed", player_move_speed))
+	# Movement speed is a loadout rule rather than earned run state. Apply the
+	# corrected Warrior relationship to existing saves as well as fresh runs.
+	if loadout_id == "warrior": player_move_speed = WARRIOR_MOVE_SPEED
 	player_attack_duration = float(payload.get("player_attack_duration", player_attack_duration))
 	player_attack_startup = float(payload.get("player_attack_startup", player_attack_startup))
 	player_attack_active_end = float(payload.get("player_attack_active_end", player_attack_active_end))
