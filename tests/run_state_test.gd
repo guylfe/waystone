@@ -189,12 +189,14 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	assert(String(Dictionary(phases[2])["technique"]) == "turning_slash")
 	assert(float(Dictionary(phases[2])["reach"]) > float(Dictionary(phases[1])["reach"]))
 	assert(float(Dictionary(phases[2])["reach"]) == 158.0)
-	assert(float(Dictionary(phases[2])["startup"]) - float(Dictionary(phases[1])["end"]) >= 0.37)
+	assert(float(Dictionary(phases[0])["link"]) < float(Dictionary(phases[0])["end"]))
+	assert(float(Dictionary(phases[1])["startup"]) >= float(Dictionary(phases[0])["link"]))
+	assert(float(Dictionary(phases[1])["startup"]) < float(Dictionary(phases[0])["end"]))
 	assert(String(AttackGeometryScript.technique("turning_slash")["motion"]) == "arc")
 	while float(state.player_action["elapsed"]) < 2.40: state.advance_streamed_action_tick()
 	assert(String(state.player_action["kind"]) == "combo")
 	while state.advance_streamed_action_tick(): pass
-	assert(state.is_player_ready() and state.simulation_time >= 3.32)
+	assert(state.is_player_ready() and state.simulation_time >= 2.45 and state.simulation_time < 2.55)
 
 func test_combo_hold_commits_each_strike() -> void:
 	var single: RunState = RunStateScript.new(false)
@@ -202,6 +204,9 @@ func test_combo_hold_commits_each_strike() -> void:
 	single.enemies.clear()
 	assert(single.request_combo(Vector2.UP, false))
 	single.set_attack_hold(false)
+	while float(single.player_action["elapsed"]) < 0.70: single.advance_streamed_action_tick()
+	assert(bool(single.player_action.get("terminal_recovery_locked", false)))
+	assert(not single.resume_combo_hold())
 	while single.advance_streamed_action_tick(): pass
 	assert(single.is_player_ready() and single.simulation_time >= 0.97 and single.simulation_time < 1.05)
 
@@ -209,18 +214,18 @@ func test_combo_hold_commits_each_strike() -> void:
 	double.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	double.enemies.clear()
 	assert(double.request_combo(Vector2.UP, false))
-	while float(double.player_action["elapsed"]) < 1.22: double.advance_streamed_action_tick()
+	while float(double.player_action["elapsed"]) < 0.90: double.advance_streamed_action_tick()
 	assert(int(double.player_action.get("committed_phase", -1)) == 1)
 	double.set_attack_hold(false)
 	while double.advance_streamed_action_tick(): pass
-	assert(double.is_player_ready() and double.simulation_time >= 2.03 and double.simulation_time < 2.12)
+	assert(double.is_player_ready() and double.simulation_time >= 1.68 and double.simulation_time < 1.74)
 
 	var full: RunState = RunStateScript.new(false)
 	full.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	full.enemies.clear()
 	assert(full.request_combo(Vector2.UP, false))
 	while full.advance_streamed_action_tick(): pass
-	assert(full.is_player_ready() and full.simulation_time >= 3.32)
+	assert(full.is_player_ready() and full.simulation_time >= 2.45 and full.simulation_time < 2.55)
 
 func test_combo_retouch_resumes_the_held_chain() -> void:
 	var retouched: RunState = RunStateScript.new()
@@ -229,13 +234,13 @@ func test_combo_retouch_resumes_the_held_chain() -> void:
 	retouched.set_attack_hold(false)
 	while float(retouched.player_action["elapsed"]) < 0.44: retouched.advance_streamed_action_tick()
 	assert(retouched.resume_combo_hold())
-	while float(retouched.player_action["elapsed"]) < 1.22: retouched.advance_streamed_action_tick()
+	while float(retouched.player_action["elapsed"]) < 0.90: retouched.advance_streamed_action_tick()
 	assert(int(retouched.player_action.get("committed_phase", -1)) == 1)
 	retouched.set_attack_hold(false)
-	while float(retouched.player_action["elapsed"]) < 1.92: retouched.advance_streamed_action_tick()
+	while float(retouched.player_action["elapsed"]) < 1.10: retouched.advance_streamed_action_tick()
 	assert(retouched.resume_combo_hold())
 	while retouched.advance_streamed_action_tick(): pass
-	assert(retouched.is_player_ready() and retouched.simulation_time >= 3.32)
+	assert(retouched.is_player_ready() and retouched.simulation_time >= 2.45 and retouched.simulation_time < 2.55)
 
 func test_attack_swipe_queues_movement() -> void:
 	var board = GameBoardScript.new()

@@ -1577,12 +1577,20 @@ func _commit_mouse_primary(preserve_stream_time: bool = false) -> void:
 	if not _can_repeat_primary_action() or not board_rect.has_point(touch_current): return
 	var enemy := _enemy_near(touch_current, 54.0)
 	if not enemy.is_empty() and _enemy_touch_should_attack(enemy):
-		_begin_streamed_action(state.request_attack(Vector2(enemy["pos"]), false), preserve_stream_time)
+		_begin_streamed_action(_request_primary_attack(enemy), preserve_stream_time)
 		return
 	var target := Vector2(enemy["pos"]) if not enemy.is_empty() else _screen_to_world(touch_current)
 	var delta := target - state.player_pos
 	if delta.length() < 8.0: return
 	_begin_streamed_move(delta, minf(delta.length(), state.MOVE_RANGE), preserve_stream_time)
+
+func _request_primary_attack(enemy: Dictionary) -> bool:
+	var target := Vector2(enemy["pos"])
+	if state.player_uses_ranged_basic_attack():
+		return state.request_attack(target, false)
+	var direction := target - state.player_pos
+	if direction.length_squared() < 0.01: direction = state.player_facing
+	return state.request_combo(direction, false)
 
 func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	# This is deliberately an intent heuristic, not a second hit test. A player may
@@ -1677,7 +1685,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 		else:
 			var enemy := _enemy_near(end_position, 62.0)
 			if enemy.is_empty(): _begin_streamed_move(_screen_delta_to_world_direction(drag))
-			elif _enemy_touch_should_attack(enemy): _begin_streamed_action(state.request_attack(Vector2(enemy["pos"]), false))
+			elif _enemy_touch_should_attack(enemy): _begin_streamed_action(_request_primary_attack(enemy))
 			else: _begin_streamed_move(_screen_delta_to_world_direction(drag))
 		return
 	var enemy := _enemy_near(end_position, 54.0)
@@ -1691,7 +1699,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 		elif selected_action == "" and not _enemy_touch_should_attack(enemy):
 			var move_delta := Vector2(enemy["pos"]) - state.player_pos
 			_begin_streamed_move(move_delta, minf(move_delta.length(), state.MOVE_RANGE))
-		else: _begin_streamed_action(state.request_attack(Vector2(enemy["pos"]), false))
+		else: _begin_streamed_action(_request_primary_attack(enemy))
 	elif selected_action == "defense":
 		selected_action = ""
 		var direction := _screen_to_world(end_position) - state.player_pos
@@ -3342,6 +3350,9 @@ func _phase(action: Dictionary) -> String:
 	if kind == "take_aim": return "STUDYING"
 	if kind == "twin_fang": return "TWIN FANG" if elapsed < float(action.get("active_end", 0.29)) else "RECOVERING"
 	if kind in ["combo", "art_combo"]:
+		if bool(action.get("terminal_recovery_locked", false)): return "RECOVERING"
+		if elapsed < float(action.get("startup", 0.0)): return "WINDING UP"
+		if elapsed > float(action.get("active_end", 0.0)): return "FOLLOWING THROUGH"
 		return "COMBO %d" % (int(action.get("phase_index", 0)) + 1)
 	if kind == "rally":
 		return "RALLYING" if elapsed < float(action.get("effect_start", 0.18)) else "STANDING FIRM"
@@ -3435,26 +3446,23 @@ func _draw_attack_button() -> void:
 	var radius := attack_rect.size.x * 0.5
 	var action_kind := String(state.player_action.get("kind", "idle"))
 	var attacking := action_kind in ["attack", "combo", "bow_draw", "bow_release"]
+	var terminal_recovery := action_kind == "combo" and bool(state.player_action.get("terminal_recovery_locked", false))
 	var exhausted := state.stamina_actions_locked()
-	var readiness := state.basic_attack_lock_remaining()
 	var available := state.basic_attack_is_available()
 	var accent := Color("e88a55")
-	var border := accent if available or attacking else Color("566268")
+	var border := Color("a67558") if terminal_recovery else accent if available or attacking else Color("566268")
 	draw_circle(center, radius, Color(0.045, 0.07, 0.08, 0.92))
 	draw_arc(center, radius - 2.0, 0.0, TAU, 48, border, 4.0 if attacking or attack_button_pointer_held else 2.5)
 	if attack_button_pointer_held:
 		draw_circle(center, radius * 0.82, Color(accent, 0.18))
-	if readiness > 0.0001 and not attacking:
-		var ready_ratio := 1.0 - clampf(readiness / state.STAMINA_ATTACK_READINESS_FLOOR, 0.0, 1.0)
-		draw_arc(center, radius - 7.0, -PI * 0.5, -PI * 0.5 + TAU * ready_ratio, 36, accent, 5.0)
 	var title := "ATTACK"
 	var subtitle := "HOLD: COMBO"
 	if exhausted:
 		title = "EXHAUSTED"
 		subtitle = "PHYSICAL LOCK"
-	elif readiness > 0.0001 and not attacking:
-		title = "RESET"
-		subtitle = "%.2fs" % readiness
+	elif terminal_recovery:
+		title = "RECOVERING"
+		subtitle = "SEQUENCE ENDED"
 	elif attacking:
 		title = "ATTACKING"
 		subtitle = "HOLD TO FLOW" if action_kind == "combo" else "RELEASE TO FIRE" if action_kind == "bow_draw" else "COMMITTED"
@@ -4002,7 +4010,7 @@ func _draw_setup() -> void:
 			draw_rect(rect, Color("17272d"))
 			draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 2.0)
 			var label := "RECOVERY" if String(rule) == "recovery" else "STAMINA"
-			var subtitle := "LONG COMMITMENT • COOLDOWNS" if String(rule) == "recovery" else "SHORT RECOVERY • EXHAUSTION"
+			var subtitle := "ABILITY COOLDOWNS • NO STAMINA" if String(rule) == "recovery" else "ACTION STAMINA • EXHAUSTION"
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
 	draw_rect(archive_button_rect, Color("10191e"))

@@ -8,7 +8,7 @@ func _init() -> void:
 	test_overdraw_starts_exhaustion_after_recovery()
 	test_exhaustion_uses_fixed_world_time()
 	test_dodge_cost_and_utility_regeneration()
-	test_stamina_only_attack_readiness_and_combo_reward()
+	test_shared_terminal_recovery_and_stamina_combo_reward()
 	test_warrior_speed_and_sweeping_cut_cooldown()
 	test_stamina_dodge_forms_improve_the_basic_dodge()
 	test_direct_attack_is_deliberate_and_profile_scoped()
@@ -109,17 +109,13 @@ func test_dodge_cost_and_utility_regeneration() -> void:
 	assert(is_equal_approx(recovery.player_stamina, 100.0))
 	assert(recovery.dodge_cooldown > 0.0)
 
-func test_stamina_only_attack_readiness_and_combo_reward() -> void:
+func test_shared_terminal_recovery_and_stamina_combo_reward() -> void:
 	var recovery := fresh_state("warrior", "recovery")
 	assert(recovery.request_combo(Vector2.RIGHT, false))
 	var recovery_phases: Array = recovery.player_action["phases"]
 	assert(int(Dictionary(recovery_phases[1])["damage_min"]) == 10)
 	assert(int(Dictionary(recovery_phases[2])["damage_min"]) == 15)
 	assert(is_equal_approx(float(Dictionary(recovery_phases[1])["posture"]), 2.2))
-	recovery.set_attack_hold(false)
-	advance_until_ready(recovery)
-	assert(is_equal_approx(recovery.basic_attack_lock_remaining(), 0.0))
-	assert(recovery.request_combo(Vector2.RIGHT, false))
 
 	var stamina := fresh_state()
 	assert(stamina.request_combo(Vector2.RIGHT, false))
@@ -129,14 +125,27 @@ func test_stamina_only_attack_readiness_and_combo_reward() -> void:
 	assert(int(Dictionary(stamina_phases[2])["damage_min"]) == 17)
 	assert(is_equal_approx(float(Dictionary(stamina_phases[1])["posture"]), 2.8))
 	assert(is_equal_approx(float(Dictionary(stamina_phases[2])["posture"]), 4.5))
+	for index in range(recovery_phases.size()):
+		var recovery_phase := Dictionary(recovery_phases[index])
+		var stamina_phase := Dictionary(stamina_phases[index])
+		assert(is_equal_approx(float(recovery_phase["startup"]), float(stamina_phase["startup"])))
+		assert(is_equal_approx(float(recovery_phase["active_end"]), float(stamina_phase["active_end"])))
+		assert(is_equal_approx(float(recovery_phase["link"]), float(stamina_phase["link"])))
+		assert(is_equal_approx(float(recovery_phase["end"]), float(stamina_phase["end"])))
+		assert(float(recovery_phase["link"]) < float(recovery_phase["end"]))
+	assert(float(Dictionary(recovery_phases[1])["startup"]) < float(Dictionary(recovery_phases[0])["end"]))
+
+	recovery.set_attack_hold(false)
+	advance_until_ready(recovery)
+	assert(recovery.terminal_combo_recoveries_total == 1)
+	assert(recovery.terminal_combo_recovery_time_total > 0.20)
+	assert(recovery.request_combo(Vector2.RIGHT, false))
+
 	stamina.set_attack_hold(false)
 	advance_until_ready(stamina)
-	assert(stamina.basic_attack_lock_remaining() > 0.12 and stamina.basic_attack_lock_remaining() < 0.22)
-	assert(not stamina.request_combo(Vector2.RIGHT, false))
-	assert(stamina.attack_readiness_blocked_attempts_total == 1)
-	assert(stamina.request_wait(0.20, false))
-	advance_until_ready(stamina)
 	assert(is_equal_approx(stamina.basic_attack_lock_remaining(), 0.0))
+	assert(stamina.terminal_combo_recoveries_total == 1)
+	assert(stamina.terminal_combo_recovery_time_total > 0.20)
 	assert(stamina.request_combo(Vector2.RIGHT, false))
 
 func test_warrior_speed_and_sweeping_cut_cooldown() -> void:

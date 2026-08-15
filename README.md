@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.9` (Android version code `209`).
+Current prototype version: `0.2.10` (Android version code `210`).
+
+### v0.2.10: Shared attack commitment
+
+- Gives Sword and Knife sequences weapon-authored link points: holding or renewing Attack before the link flows directly into the next wind-up and skips the remaining terminal recovery.
+- Locks a sequence into its visible terminal recovery when no continuation is present at the link; touching Attack after recovery begins cannot reopen the combo.
+- Applies the same weapon timing to Recovery and Stamina rules while preserving their actual A/B distinction: ability cooldowns versus Stamina, regeneration, and exhaustion.
+- Removes the separate Stamina-only basic-attack readiness timer and its reset meter. Sweeping Cut retains its shared 4.2-world-second anti-spam cooldown.
+- Combat Survey report format 10 replaces attack-readiness telemetry with terminal-combo recovery count and exposure time.
 
 ### v0.2.9: Display-safe HUD
 

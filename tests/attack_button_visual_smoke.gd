@@ -15,6 +15,16 @@ func _initialize() -> void:
 	await process_frame
 	_capture("res://builds/stamina-attack-button.png")
 	assert(board.board_rect.encloses(board.attack_rect))
+	assert(board.state.request_combo(Vector2.RIGHT, false))
+	board.state.set_attack_hold(false)
+	while float(board.state.player_action.get("elapsed", 0.0)) < 0.70:
+		board.state.advance_streamed_action_tick()
+	assert(bool(board.state.player_action.get("terminal_recovery_locked", false)))
+	board.visual = board.state.snapshot(true)
+	board.queue_redraw()
+	await process_frame
+	await process_frame
+	_capture("res://builds/stamina-terminal-recovery.png")
 	board.state.start_run("warrior", "expedition", 270207, "encounter", "recovery")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)

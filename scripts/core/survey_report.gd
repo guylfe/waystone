@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 9
+const FORMAT_VERSION := 10
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -87,8 +87,8 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Damage received while exhausted: %d" % int(room.get("exhaustion_damage_received", 0)))
 		lines.append("Exhaustion advanced by: movement %.2fs; Wait %.2fs; other %.2fs" % [float(room.get("exhaustion_move_time", 0.0)), float(room.get("exhaustion_wait_time", 0.0)), float(room.get("exhaustion_other_time", 0.0))])
 		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
-		lines.append("Attack readiness blocked attempts: %d" % int(room.get("attack_readiness_blocked_attempts", 0)))
-		lines.append("Attack readiness active time: %.2fs" % float(room.get("attack_readiness_active_time", 0.0)))
+		lines.append("Terminal combo recoveries: %d" % int(room.get("terminal_combo_recoveries", 0)))
+		lines.append("Terminal combo recovery time: %.2fs" % float(room.get("terminal_combo_recovery_time", 0.0)))
 		lines.append("Direct attack button/key uses: %d" % int(room.get("direct_attack_uses", 0)))
 		lines.append("Dodge forms used: %s" % _action_usage_text(Dictionary(room.get("dodge_style_uses", {}))))
 		lines.append("Vulnerable Dodge recovery: %.2fs; damage received: %d" % [float(room.get("dodge_vulnerable_time", 0.0)), int(room.get("dodge_recovery_damage", 0))])
