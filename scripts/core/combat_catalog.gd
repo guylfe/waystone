@@ -303,8 +303,10 @@ const ARCHETYPES := {
 # own maximum reach, stands still through its startup, and cannot hit a moving
 # target at any plausible speed.
 #
-# Neither is authored directly. Each is derived from `f`: the fraction of this
-# attack's telegraph during which walking still saves you. Author `f`, recompute,
+# Neither is authored directly. Each is derived from `f_rad`: the fraction of this
+# attack's telegraph during which walking still saves you. It is carried in the
+# data so survey telemetry can compare authored intent against what players
+# actually achieve, rather than the intent living only in a design document. Author `f`, recompute,
 # and never hand-edit the distance -- that severs the number from its meaning and
 # returns the system to untraceable feel-tuning. See attack-capture-design.md.
 #
@@ -314,31 +316,31 @@ const ARCHETYPES := {
 # that plant rule does not apply to them and travel runs to contact.
 const MELEE_ATTACK_PLANS := {
 	"blade": [
-		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "advance_distance": 58.0, "advance_end": 0.31, "damage": 2},
+		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "f_rad": 0.50, "advance_distance": 58.0, "advance_end": 0.31, "damage": 2},
 	],
 	"knife": [
-		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "advance_distance": 44.0, "advance_end": 0.19, "damage": 1},
+		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "f_rad": 0.45, "advance_distance": 44.0, "advance_end": 0.19, "damage": 1},
 	],
 	"bandit": [
-		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "advance_distance": 51.0, "advance_end": 0.22, "damage": 1},
+		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "f_rad": 0.45, "advance_distance": 51.0, "advance_end": 0.22, "damage": 1},
 	],
 	"shield": [
-		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 1.65, "startup": 0.62, "active_end": 0.92, "reach": 122.0, "advance_distance": 32.0, "advance_end": 0.37, "damage": 2},
+		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 1.65, "startup": 0.62, "active_end": 0.92, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.37, "damage": 2},
 	],
 	"brute": [
-		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
+		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
 	],
 	"polearm": [
-		{"technique": "thrust", "distance": 218.0, "weight": 1.0, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "advance_distance": 229.0, "advance_end": 1.35, "damage": 3},
-		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "advance_distance": 19.0, "advance_end": 0.32, "damage": 2},
+		{"technique": "thrust", "distance": 218.0, "weight": 1.0, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "f_rad": 0.35, "advance_distance": 229.0, "advance_end": 1.35, "damage": 3},
+		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 2},
 	],
 	"captain": [
-		{"technique": "thrust", "distance": 172.0, "weight": 1.0, "duration": 1.26, "startup": 0.44, "active_end": 0.72, "reach": 142.0, "advance_distance": 131.0, "advance_end": 0.72, "damage": 2},
-		{"technique": "quick_cut", "distance": 102.0, "weight": 1.0, "duration": 1.02, "startup": 0.30, "active_end": 0.55, "reach": 106.0, "advance_distance": 13.0, "advance_end": 0.18, "damage": 2},
+		{"technique": "thrust", "distance": 172.0, "weight": 1.0, "duration": 1.26, "startup": 0.44, "active_end": 0.72, "reach": 142.0, "f_rad": 0.40, "advance_distance": 131.0, "advance_end": 0.72, "damage": 2},
+		{"technique": "quick_cut", "distance": 102.0, "weight": 1.0, "duration": 1.02, "startup": 0.30, "active_end": 0.55, "reach": 106.0, "f_rad": 0.40, "advance_distance": 13.0, "advance_end": 0.18, "damage": 2},
 	],
 	"knight": [
-		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "advance_distance": 234.0, "advance_end": 1.46, "damage": 4},
-		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "advance_distance": 87.0, "advance_end": 0.65, "damage": 4},
+		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "f_rad": 0.45, "advance_distance": 234.0, "advance_end": 1.46, "damage": 4},
+		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "f_rad": 0.55, "advance_distance": 87.0, "advance_end": 0.65, "damage": 4},
 	],
 }
 

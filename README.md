@@ -1,6 +1,13 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.13` (Android version code `213`).
+Current prototype version: `0.2.14` (Android version code `214`).
+
+### v0.2.14: Capture telemetry
+
+- Combat Survey report format 12 records one entry per hostile melee attack: what the player did about it, when they did it as a fraction of the attack's wind-up, how near the attack came, and how it resolved. Attack capture assumes each attack's authored walk-safe fraction is honoured in play, and until now nothing checked that against evidence.
+- Reports now carry a per-attack comparison of authored intent against what players actually achieved, plus a walk-only escape rate — how often ordinary movement alone was enough. Those two numbers are what `f` should be tuned from.
+- A flinch is not a response: hit reactions and staggers no longer count as the player's answer to an attack, so someone who never chose anything is not scored as reacting instantly.
+- Clean evades are now counted by source, and Turnabout is counted when primed and when consumed. Ordinary movement stopped earning clean-evade credit in `0.2.13`, so these say whether Dodge and Vault still raise the event often enough for the Acrobat's capstone to be worth its rank rather than leaving that to assumption.
 
 ### v0.2.13: Attack capture
 

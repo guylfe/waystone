@@ -69,7 +69,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # resources disagreeing about whether being hit is a chance to recover.
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.13"
+const GAME_VERSION := "0.2.14"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -178,6 +178,18 @@ var hits_received_total := 0
 # not safety, and only the first number shows the price being paid for it.
 var protected_damage_total := 0
 var interruptions_prevented_total := 0
+# Capture telemetry. One record per hostile melee attack that resolves, so the
+# authored walk-safe fraction can be checked against what players actually
+# achieve instead of being trusted from theory. `f_observed` is the direct
+# measurement of the timing curve attack capture exists to create.
+var survey_attack_records: Array = []
+# Clean evasion by source. Ordinary movement no longer earns credit, so these
+# answer whether Dodge and Vault still raise the event often enough for the
+# Acrobat's Turnabout to remain worth its rank.
+var clean_evade_dodge_total := 0
+var clean_evade_vault_total := 0
+var turnabout_primed_total := 0
+var turnabout_consumed_total := 0
 var potions_used_total := 0
 var stamina_spent_total := 0.0
 var stamina_depleted_total := 0.0
@@ -423,6 +435,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	hits_received_total = 0
 	protected_damage_total = 0
 	interruptions_prevented_total = 0
+	survey_attack_records.clear()
+	clean_evade_dodge_total = 0
+	clean_evade_vault_total = 0
+	turnabout_primed_total = 0
+	turnabout_consumed_total = 0
 	potions_used_total = 0
 	stamina_spent_total = 0.0
 	stamina_depleted_total = 0.0
@@ -767,6 +784,9 @@ func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
 
 func _capture_survey_room_entry() -> void:
 	survey_room_view_modes.assign([survey_current_view_mode])
+	# Attack records are per room. The aggregate is computed when the room closes,
+	# so carrying the previous room's attacks in would blend two encounters.
+	survey_attack_records.clear()
 	survey_room_entry = {
 		"time": simulation_time,
 		"hp": player_hp,
@@ -779,6 +799,10 @@ func _capture_survey_room_entry() -> void:
 		"hits_received": hits_received_total,
 		"protected_damage": protected_damage_total,
 		"interruptions_prevented": interruptions_prevented_total,
+		"clean_evade_dodge": clean_evade_dodge_total,
+		"clean_evade_vault": clean_evade_vault_total,
+		"turnabout_primed": turnabout_primed_total,
+		"turnabout_consumed": turnabout_consumed_total,
 		"potions_used": potions_used_total,
 		"perfect_dodges": perfect_dodges,
 		"successful_blocks": successful_blocks,
@@ -881,6 +905,11 @@ func _complete_survey_room(outcome: String) -> void:
 		"hits_received": hits_received_total - int(survey_room_entry.get("hits_received", hits_received_total)),
 		"protected_damage": protected_damage_total - int(survey_room_entry.get("protected_damage", protected_damage_total)),
 		"interruptions_prevented": interruptions_prevented_total - int(survey_room_entry.get("interruptions_prevented", interruptions_prevented_total)),
+		"clean_evade_dodge": clean_evade_dodge_total - int(survey_room_entry.get("clean_evade_dodge", clean_evade_dodge_total)),
+		"clean_evade_vault": clean_evade_vault_total - int(survey_room_entry.get("clean_evade_vault", clean_evade_vault_total)),
+		"turnabout_primed": turnabout_primed_total - int(survey_room_entry.get("turnabout_primed", turnabout_primed_total)),
+		"turnabout_consumed": turnabout_consumed_total - int(survey_room_entry.get("turnabout_consumed", turnabout_consumed_total)),
+		"capture": _survey_capture_summary(),
 		"potions_used": potions_used_total - int(survey_room_entry.get("potions_used", potions_used_total)),
 		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
 		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
@@ -3807,6 +3836,7 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	if turnabout_remaining > 0.0 and source_ability in ["basic_attack", "sword_combo", "knife_sequence"]:
 		explicit_bonus += 8
 		posture_damage += 3.0
+		turnabout_consumed_total += 1
 		turnabout_remaining = 0.0
 	var attributes := Dictionary(enemy.get("attributes", {}))
 	var properties := Dictionary(enemy.get("properties", {}))
@@ -4224,6 +4254,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), step, float(enemy["radius"]), int(enemy["id"]))
 				enemy["is_moving"] = true
 				enemy["last_motion"] = step
+			_observe_capture(enemy, action, elapsed)
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]):
 				_resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
@@ -4257,6 +4288,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			action["effect_done"] = true
 			_spawn_fire_circle(enemy)
 		if elapsed + 0.00001 >= float(action["duration"]):
+			if kind == "melee": _finalise_capture_record(enemy, action)
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
 			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
 				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
@@ -4483,6 +4515,99 @@ func _melee_intent(enemy: Dictionary, gap: float) -> Dictionary:
 	enemy["intended_strike_distance"] = float(chosen["distance"])
 	return chosen
 
+# Records what actually happened to one hostile attack. Gated on Combat Survey:
+# these are report instruments, and sampling attack geometry every active frame
+# is not worth the cost in ordinary play.
+func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	var record: Dictionary = action.get("capture_record", {})
+	if record.is_empty(): return
+	if float(record["gap"]) < 0.0:
+		record["gap"] = Vector2(enemy["pos"]).distance_to(player_pos)
+	# The response is the player's first commitment after this attack became
+	# readable. Bucketing it as a fraction of startup is the only measurement that
+	# separates "walking is overpowered" from "the player read the attack well".
+	if float(record["response_at"]) < 0.0:
+		var player_kind := String(player_action.get("kind", "idle"))
+		var started := float(player_action.get("started_at", -1.0))
+		# A flinch is not a decision. Counting hit_reaction or stagger as the response
+		# would score a player who never chose anything as reacting instantly.
+		if player_kind not in ["idle", "hit_reaction", "stagger"] and started >= float(record["committed_at"]):
+			record["response_at"] = maxf(0.0, started - float(record["committed_at"]))
+			record["response"] = player_kind
+	# How near the attack came during its damaging window. This is what tunes `f`:
+	# a miss by two units and a miss by ninety are different design problems.
+	if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
+		var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]),
+			Vector2(action.get("direction", enemy["facing"])),
+			_nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 220.0)) + 90.0))
+		record["closest"] = minf(float(record["closest"]), AttackGeometryScript.clearance_to_circle(sample, player_pos, PLAYER_RADIUS))
+	action["capture_record"] = record
+
+func _finalise_capture_record(enemy: Dictionary, action: Dictionary) -> void:
+	var record: Dictionary = action.get("capture_record", {})
+	if record.is_empty(): return
+	action.erase("capture_record")
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if String(record.get("resolution", "")).is_empty(): record["resolution"] = "miss"
+	record["enemy"] = String(enemy.get("kind", "unknown"))
+	record["arena"] = String(survey_room_definition.get("arena", "unknown"))
+	var startup := maxf(0.001, float(action.get("startup", 0.30)))
+	# -1 means the player never committed anything while the attack ran.
+	record["f_observed"] = (float(record["response_at"]) / startup) if float(record["response_at"]) >= 0.0 else -1.0
+	if is_inf(float(record["closest"])): record["closest"] = 9999.0
+	survey_attack_records.append(record)
+
+# Collapses this room's attack records into the numbers that answer whether
+# capture is working: how often walking alone was enough, and how the achieved
+# walk-safe fraction compares with the authored intent.
+func _survey_capture_summary() -> Dictionary:
+	var per_attack := {}
+	var resolved := 0
+	var walk_escapes := 0
+	var walk_attempts := 0
+	for record_value in survey_attack_records:
+		var record := Dictionary(record_value)
+		resolved += 1
+		var label := "%s %s" % [record.get("enemy", "?"), record.get("technique", "?")]
+		if not per_attack.has(label):
+			per_attack[label] = {"n": 0, "contact": 0, "evaded": 0, "miss": 0, "authored_f": float(record.get("authored_f", 0.0)), "f_sum": 0.0, "f_n": 0, "closest_sum": 0.0}
+		var bucket: Dictionary = per_attack[label]
+		bucket["n"] = int(bucket["n"]) + 1
+		var resolution := String(record.get("resolution", "miss"))
+		bucket[resolution] = int(bucket.get(resolution, 0)) + 1
+		bucket["closest_sum"] = float(bucket["closest_sum"]) + float(record.get("closest", 0.0))
+		var observed := float(record.get("f_observed", -1.0))
+		if observed >= 0.0:
+			bucket["f_sum"] = float(bucket["f_sum"]) + observed
+			bucket["f_n"] = int(bucket["f_n"]) + 1
+		# Walking alone means the only response committed was ordinary movement.
+		if String(record.get("response", "")) == "move":
+			walk_attempts += 1
+			if resolution == "miss": walk_escapes += 1
+	var rows := []
+	for label in per_attack.keys():
+		var bucket: Dictionary = per_attack[label]
+		var count := maxi(1, int(bucket["n"]))
+		rows.append({
+			"attack": label,
+			"n": int(bucket["n"]),
+			"contact": int(bucket.get("contact", 0)),
+			"evaded": int(bucket.get("evaded", 0)),
+			"miss": int(bucket.get("miss", 0)),
+			"authored_f": float(bucket["authored_f"]),
+			"observed_f": (float(bucket["f_sum"]) / float(maxi(1, int(bucket["f_n"])))) if int(bucket["f_n"]) > 0 else -1.0,
+			"closest": float(bucket["closest_sum"]) / float(count),
+		})
+	rows.sort_custom(func(a, b): return String(a["attack"]) < String(b["attack"]))
+	return {
+		"resolved": resolved,
+		"walk_only_attempts": walk_attempts,
+		"walk_only_escapes": walk_escapes,
+		"walk_only_escape_rate": (float(walk_escapes) / float(walk_attempts)) if walk_attempts > 0 else -1.0,
+		"attacks": rows,
+	}
+
 func _clear_melee_intent(enemy: Dictionary) -> void:
 	enemy["intended_attack"] = ""
 	enemy["intended_strike_distance"] = 0.0
@@ -4495,6 +4620,16 @@ func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
 	# built outside a plan keeps its current standing-still behaviour.
 	action["advance_distance"] = float(option.get("advance_distance", 0.0))
 	action["advance_end"] = float(option.get("advance_end", 0.0))
+	action["capture_record"] = {
+		"technique": String(option["technique"]),
+		"authored_f": float(option.get("f_rad", 0.0)),
+		"committed_at": simulation_time,
+		"gap": -1.0,
+		"response_at": -1.0,
+		"response": "",
+		"closest": INF,
+		"resolution": "",
+	}
 	return action
 
 func _approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
@@ -4658,6 +4793,12 @@ func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 	var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]), Vector2(action.get("direction", enemy["facing"])), _nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 220.0)) + 90.0))
 	if AttackGeometryScript.hits_circle(sample, player_pos, PLAYER_RADIUS):
 		enemy["action"]["hit_done"] = true
+		var contact_record: Dictionary = Dictionary(enemy["action"]).get("capture_record", {})
+		if not contact_record.is_empty():
+			# "contact" covers landed, blocked and endured; the report already counts
+			# blocks and endures separately. Only an i-frame evade is distinct here,
+			# because it is the outcome capture is meant to make necessary.
+			contact_record["resolution"] = "evaded" if _is_evasive() else "contact"
 		var contact := AttackGeometryScript.contact_point(sample, player_pos)
 		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]), Vector2.ZERO, contact)
 
@@ -5065,7 +5206,10 @@ func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 				_set_message("The %s crosses only empty space." % source_name)
 		else:
 			_set_message("The %s misses your evasive movement." % source_name)
+		if String(player_action.get("kind", "")) == "vault": clean_evade_vault_total += 1
+		else: clean_evade_dodge_total += 1
 		if has_track_rank("acrobat", 3):
+			turnabout_primed_total += 1
 			turnabout_remaining = 4.0
 			_set_message("CLEAN EVADE — Turnabout empowers your next basic attack.")
 	_add_effect("evade", impact)
