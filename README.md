@@ -1,6 +1,15 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.11` (Android version code `211`).
+Current prototype version: `0.2.12` (Android version code `212`).
+
+### v0.2.12: Deliberate strike commitment
+
+- Melee enemies now choose which attack they intend **before** approaching, then walk to that attack's own strike distance and commit there. Previously an enemy fired whichever branch its current gap happened to satisfy, and only re-decided when its move action ended -- a Blade covers 110 units inside one, so it committed anywhere across a 70-unit band. The same attack was forgiving, harsh, or unavoidable depending on where that landed.
+- Measured across 100 seeded approaches per enemy, the commit gap spread falls from `47.5-78.2` units to `0.2-8.0`, centred on each attack's authored distance.
+- Attack selection is probabilistic so the next move cannot be read from geometry, but weighted by how well each option suits the current gap: an enemy leans long when long is warranted and short when short is warranted. A Knight met at range favours its thrust; one whose space is already taken favours its cleave.
+- Polearm's shaft cut and Knight's heavy cleave now actually occur on approach. Branch ordering tested the shorter attack first while an approaching enemy crossed the longer threshold first, so both were previously unreachable unless the player walked into them -- `0/100` before, `28%` and `34%` of commitments after.
+- An enemy abandons its plan if the player closes well inside it, rather than backing away to honour a stale intent.
+- Enemy melee attack timing, geometry and strike distances move into `combat_catalog.gd` as authored plans, so enemy profiles own approach and attack selection rather than those emerging from branch ordering.
 
 ### v0.2.11: Trustworthy input and post-hit agency
 

@@ -281,6 +281,57 @@ const ARCHETYPES := {
 	"werewolf": {"weapon_frame": "natural", "weapon_arts": ["natural_pounce", "natural_flurry"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 10, "speed": 7, "stealth": 4, "awareness": 8, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.45}},
 }
 
+# Melee attack plans. Each entry is one complete committed option: the technique,
+# its authored timing and geometry, and `distance` -- the gap the enemy wants to be
+# at when it commits. An enemy selects one of these *before* approaching and then
+# walks to that distance, rather than firing whichever branch its current gap
+# happens to satisfy.
+#
+# This is what makes the walk-safe fraction `f` a controlled quantity. Attacks
+# previously committed anywhere across a ~70-unit band, because an enemy only
+# re-decides when its move action ends and a Blade covers 110 units in one. The
+# same attack was forgiving, harsh, or unavoidable depending on where that landed.
+#
+# Selection is probabilistic so the next move cannot be read from geometry alone,
+# but weighted by how well each option's distance matches the current gap: an enemy
+# leans long when long is warranted and short when short is warranted. `weight` is
+# a role bias on top of that, and is the intended tuning knob.
+const MELEE_ATTACK_PLANS := {
+	"blade": [
+		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "damage": 2},
+	],
+	"knife": [
+		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "damage": 1},
+	],
+	"bandit": [
+		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "damage": 1},
+	],
+	"shield": [
+		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 1.65, "startup": 0.62, "active_end": 0.92, "reach": 122.0, "damage": 2},
+	],
+	"brute": [
+		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "damage": 4},
+	],
+	"polearm": [
+		{"technique": "thrust", "distance": 218.0, "weight": 1.0, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "damage": 3},
+		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "damage": 2},
+	],
+	"captain": [
+		{"technique": "thrust", "distance": 172.0, "weight": 1.0, "duration": 1.26, "startup": 0.44, "active_end": 0.72, "reach": 142.0, "damage": 2},
+		{"technique": "quick_cut", "distance": 102.0, "weight": 1.0, "duration": 1.02, "startup": 0.30, "active_end": 0.55, "reach": 106.0, "damage": 2},
+	],
+	"knight": [
+		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "damage": 4},
+		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "damage": 4},
+	],
+}
+
+static func melee_attack_plan(kind: String) -> Array:
+	return Array(MELEE_ATTACK_PLANS.get(kind, [])).duplicate(true)
+
+static func has_melee_attack_plan(kind: String) -> bool:
+	return MELEE_ATTACK_PLANS.has(kind)
+
 static func weapon_frame(id: String) -> Dictionary:
 	return Dictionary(WEAPON_FRAMES.get(id, WEAPON_FRAMES["unarmed"])).duplicate(true)
 

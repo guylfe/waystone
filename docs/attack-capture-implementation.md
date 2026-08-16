@@ -179,30 +179,64 @@ Boar and Werewolf use `charge` / `pounce_combo`, which already translate; leave 
 
 ---
 
-## 6. Commit distance
+## 6. Commit distance — RESOLVED, implemented in `0.2.12`
 
-`f` is only a controlled quantity if `g₀` — the gap at commitment — is controlled. It currently is not. Attacks fire on the first evaluation inside a threshold, and with `ENEMY_STEER_INTERVAL` at `0.14s` a Blade closing at 230 u/s can commit anywhere across a **32-unit spread**. The same attack will feel forgiving or brutal depending on where the steering tick landed.
+`f` is only a controlled quantity if `g0` -- the gap at commitment -- is controlled. It was not.
 
-### Attack selection must precede approach
+### What was actually wrong
 
-An earlier revision of this section said "add `preferred_strike_distance` per attack and make the approach target it," which is circular: the approach has to choose a target distance before it knows which attack it will use, and three enemies have two melee attacks at different ranges — Polearm (112 / 218), Captain (102 / 172), Knight (185 / 252). The branches are ordered shortest-first, so the near attack wins whenever the enemy is inside its threshold. Target the Polearm's 112 and the thrust only ever fires opportunistically while closing; target 218 and the enemy never closes at all.
+An earlier revision of this section attributed a **32-unit** spread to `ENEMY_STEER_INTERVAL` (`0.14s`). Both the cause and the size were wrong. The steer interval only refreshes *direction*. Enemies re-decide when their move action **ends**, and those run `0.24-0.78s` -- a Blade at 230 u/s covers 110 units inside one. Measured across 100 seeded approaches per enemy, before the change:
 
-Resolve it by making selection explicit and prior:
+| Enemy · attack | `g0` range | spread |
+|---|---|---|
+| blade · diagonal cut | 59.1 - 128.8 | **69.7** |
+| polearm · thrust | 138.5 - 216.6 | **78.2** |
+| captain · thrust | 107.6 - 158.6 | 51.0 |
+| knight · thrust | 203.9 - 251.4 | 47.5 |
+| shield · diagonal cut | 65.4 - 113.3 | 47.9 |
+| brute · forward smash | 88.4 - 150.2 | 61.8 |
 
-1. **Select an intended attack** when the enemy has no current action and the player is a valid target — weighted by role, range band, cooldowns and context. Store it on the enemy.
-2. **Approach that attack's `preferred_strike_distance`**, not the player's position. `_enemy_move_action(enemy, _pursuit_target(enemy), ...)` should target a point at that distance along the vector from player to enemy.
-3. **Commit when inside a tight band**, roughly `preferred ± 12`, rather than on first entry to a broad threshold.
-4. **Re-select** only on material change — the intended attack coming off or going on cooldown, the player leaving the band substantially, losing line of sight, or the enemy being interrupted.
+Fed into the capture equation with the authored `f_rad = 0.50`, a Blade's walk-safe window ranged from **0.47 at the far end to negative at the near end** -- meaning the same attack was sometimes unavoidable no matter how early the player reacted. That is `f` as noise, which §9 names as the failure mode that degrades the framework into hand-tuned numbers with extra steps.
 
-For the thirteen single-melee-attack enemies this is a no-op. For the three with a choice it makes the decision deliberate and readable: a Polearm visibly settles at thrust range and commits, or visibly closes to reverse-cut range. That is better behaviour than the current reactive threshold crossing, independently of capture.
+Two attacks also **never fired on approach at all**: polearm reverse cut 0/100 and knight heavy cleave 0/100. The branches test the shorter attack first, but an approaching enemy crosses the longer threshold first and commits there. They were reachable only when the player closed into the enemy.
 
-This also satisfies the handoff's §7.4 principle that enemy profiles own approach and attack selection, rather than those emerging from branch ordering.
+### The resolution
 
-A cheaper partial fallback exists — shortening the steer interval inside ~1.5× strike distance narrows the spread without restructuring approach — but it does not resolve the two-attack ambiguity at all, and leaves `f` uncontrolled for exactly the long-range attacks whose values are least certain. Prefer the selection-first version.
+Selection is explicit and prior to approach:
 
-Set each attack's `preferred_strike_distance` to its current trigger threshold as a starting point, so §5's derived values remain valid.
+1. **Select an intended attack** from the enemy's authored plan (`CombatCatalogScript.MELEE_ATTACK_PLANS`) and store it on the enemy. Selection is probabilistic, so the next move cannot be read from geometry, but **weighted by how well each option's distance matches the current gap** -- an enemy leans long when long is warranted and short when short is warranted. `weight` is a per-option role bias and is the intended tuning knob.
+2. **Approach a ring at that attack's distance** around the lane-adjusted `_pursuit_target()`, not the player's body, so lead and flanker lanes survive.
+3. **Truncate the approach at the intended distance itself**, so the enemy re-decides there rather than overshooting by a whole move action. This is the mechanism that makes the band tight; selection only decides what it is tight around. Without it, selection alone changes nothing.
+4. **Commit inside a small tolerance** (`STRIKE_COMMIT_BAND`, `4.0`). The band is tolerance, not a target -- a wide one lets an enemy whose move ends mid-band commit early and reintroduces the spread.
+5. **Abandon intent** when it is spent, when the enemy is interrupted, or when the player closes more than `STRIKE_INTENT_ABANDON_MARGIN` (`60`) inside it, so an enemy whose space is taken re-picks instead of backing away to honour a stale plan.
 
-**Resolve this before starting Milestone C.** §9 names uncontrolled `g₀` as the failure mode that degrades the whole framework into hand-tuned numbers with extra steps; this is that failure mode's most likely entry point.
+Measured after, same harness:
+
+| Enemy · attack | `g0` range | spread | share |
+|---|---|---|---|
+| blade · diagonal cut | 128.6 - 135.9 | 7.3 | 100% |
+| knife · quick cut | 104.9 - 109.8 | 4.8 | 100% |
+| bandit · quick cut | 107.9 - 115.9 | 8.0 | 100% |
+| shield · diagonal cut | 117.9 - 119.9 | 2.1 | 100% |
+| brute · forward smash | 153.6 - 157.5 | 3.9 | 100% |
+| polearm · thrust | 216.6 - 216.9 | 0.2 | 72% |
+| polearm · reverse cut | 110.8 - 113.2 | 2.5 | **28%** |
+| captain · thrust | 168.5 - 171.9 | 3.4 | 63% |
+| captain · quick cut | 98.6 - 102.2 | 3.7 | 37% |
+| knight · thrust | 251.0 - 252.8 | 1.7 | 66% |
+| knight · heavy cleave | 184.2 - 185.0 | 0.8 | **34%** |
+
+Every attack now commits within a few units of the distance §5 assumes, and both previously unreachable attacks occur. §5's derived values stand as written.
+
+This satisfies the handoff's §7.4 principle that enemy profiles own approach and attack selection, rather than those emerging from branch ordering.
+
+### What this deliberately trades
+
+Approaches are more predictable than the ragged pre-change timing, which removed some incidental variety. That variety was timing noise rather than decision-relevant choice, and the framework requires `f` controlled. Deliberate variety is bought back through the selection weights and, later, the probabilistic action selection that `docs/design-foundations.md` §15 still lists as open.
+
+Hound, Boar, Werewolf and Warden are untouched: they use `charge` / `pounce_combo` or already choose probabilistically at a single distance. Bandit keeps its concealment, dodge-strike and neutral branches; only its ordinary cut is intent-driven.
+
+Locked by `tests/strike_commitment_test.gd`.
 
 ---
 

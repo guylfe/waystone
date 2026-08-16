@@ -494,15 +494,29 @@ func test_signature_attack_roster() -> void:
 	assert(state.player_attack_technique == "diagonal_cut" and state.player_weapon_frame == "sword")
 	assert(String(state._player_basic_attack_definition(Vector2.UP)["technique"]) == "opening_cut")
 	state.walls.clear()
-	var expected := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "captain": "thrust"}
-	var distances := {"bandit": 70.0, "knife": 80.0, "blade": 110.0, "polearm": 190.0, "brute": 140.0, "captain": 120.0}
-	for kind in expected:
-		var enemy := state._make_enemy(String(kind), state.player_pos + Vector2.UP * float(distances[kind]), state._enemy_base_hp(String(kind)))
-		if String(kind) == "bandit":
+	# Attack selection is deliberately probabilistic and range-weighted, so a kind
+	# with two options does not always produce the same technique at a given gap.
+	# What must hold is that whatever it commits comes from its own authored plan.
+	# Each enemy is placed at its plan's shortest strike distance, where every
+	# option is inside its commit band, so a commitment always happens.
+	for kind in ["bandit", "knife", "blade", "polearm", "brute", "captain", "knight", "shield"]:
+		var plan: Array = CombatCatalogScript.melee_attack_plan(kind)
+		assert(not plan.is_empty())
+		var techniques: Array[String] = []
+		var nearest := INF
+		for option_value in plan:
+			var option := Dictionary(option_value)
+			techniques.append(String(option["technique"]))
+			nearest = minf(nearest, float(option["distance"]))
+		var enemy := state._make_enemy(kind, state.player_pos + Vector2.UP * nearest, state._enemy_base_hp(kind))
+		if kind == "bandit":
 			enemy["revealed_to_player"] = true
 			enemy["revealed_elapsed"] = 0.35
+			enemy["dodge_cooldown"] = 1.0
 		state._choose_enemy_action(enemy)
-		assert(String(Dictionary(enemy["action"]).get("technique_id", "")) == String(expected[kind]))
+		var committed := Dictionary(enemy["action"])
+		assert(String(committed.get("kind", "")) == "melee")
+		assert(String(committed.get("technique_id", "")) in techniques)
 
 func test_attack_geometry_boundaries() -> void:
 	var origin := Vector2(500, 500)

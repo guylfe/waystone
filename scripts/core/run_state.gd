@@ -33,6 +33,25 @@ const ACTIVE_ENEMY_RADIUS := 1750.0
 const POSTURE_BREAK_OPENING_SECONDS := 0.72
 const ENEMY_MOVE_EPSILON := 0.05
 const ENEMY_STEER_INTERVAL := 0.14
+# Tolerance around the intended strike distance within which an enemy commits.
+# Approach moves are truncated at the intended distance itself so the enemy
+# re-decides there rather than overshooting by a whole move action -- up to 110
+# units for a Blade, which is what made the commit gap a ~70-unit lottery.
+#
+# Kept small deliberately. It is tolerance, not a target: a wide band lets an
+# enemy whose move happens to end mid-band commit early, which reintroduces the
+# spread the truncation just removed. An enemy that re-decides outside it simply
+# approaches again, which reads as settling into range.
+const STRIKE_COMMIT_BAND := 4.0
+# Softness of range-weighted attack selection, in world units. An option whose
+# preferred distance is this far from the current gap gets half the weight of a
+# perfectly matched one. Larger values make selection more random and less
+# situational; smaller values make it more predictable.
+const STRIKE_SELECTION_SOFTNESS := 90.0
+# An intent is abandoned if the gap closes this far inside it, so an enemy whose
+# space is taken re-picks something suited to the range it is actually at instead
+# of retreating to honour a stale plan.
+const STRIKE_INTENT_ABANDON_MARGIN := 60.0
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
@@ -47,7 +66,7 @@ const DODGE_STAMINA_COST := 18.0
 const POST_HIT_PROTECTION_TAIL := 0.35
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.11"
+const GAME_VERSION := "0.2.12"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -3913,6 +3932,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	enemy["action"] = _action("stagger", stagger_duration, Vector2.ZERO)
+	_clear_melee_intent(enemy)
 	enemy["action"].merge({
 		"reaction_contact": contact_point,
 		"reaction_direction": reaction_direction,
@@ -3990,6 +4010,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	var reaction_strength := 1.18 if high_impact else 1.0
 	if action_kind == "charge": reaction_strength += 0.16
 	enemy["action"] = _action("hit_reaction", duration, Vector2.ZERO)
+	_clear_melee_intent(enemy)
 	enemy["action"].merge({
 		"reaction_contact": contact_point,
 		"reaction_direction": reaction_direction,
@@ -4137,6 +4158,19 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if update_locomotion:
 				var speed := _enemy_move_speed(enemy) * float(action.get("speed_multiplier", 1.0))
 				_advance_enemy_locomotion(enemy, action, speed * enemy_dt * 2.0, enemy_dt * 2.0)
+			# End an approach the moment it reaches its intended strike distance, so
+			# the next decision happens here rather than up to a whole move action
+			# later. A Blade covers 110 units inside one 0.48s move, which is what
+			# turned the commit gap into a ~70-unit lottery and made the authored
+			# walk-safe fraction meaningless. Mirrors the stall-abort truncation below.
+			# Truncate at the intended distance itself, not at the edge of the commit
+			# band. The band is tolerance for a slight overshoot, not a target: aiming
+			# at its edge would put every commitment a band-width further out than the
+			# authored capture values assume.
+			if kind == "move":
+				var intended_distance := float(enemy.get("intended_strike_distance", 0.0))
+				if intended_distance > 0.0 and Vector2(enemy["pos"]).distance_to(player_pos) <= intended_distance:
+					action["duration"] = minf(float(action["duration"]), float(action["elapsed"]))
 		elif kind == "dodge_strike":
 			if update_locomotion and elapsed <= float(action.get("dodge_end", 0.30)):
 				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * float(action.get("speed", 390.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
@@ -4236,39 +4270,49 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["dodge_end"] = 0.30
 			enemy["action"]["speed"] = 390.0
 			enemy["dodge_cooldown"] = 2.00
-		elif distance <= 112.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		elif distance <= float(_melee_intent(enemy, distance)["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# The cut remains quick, but its recovery creates a real neutral window.
 			# Fast identity comes from startup and footwork, not a full cycle that can
-			# repeatedly beat the player's sword back to readiness.
-			enemy["action"] = _melee_action(1.22, 0.36, 0.47, 82.0, 1, direction, "quick_cut")
+			# repeatedly beat the player sword back to readiness.
+			enemy["action"] = _intent_melee_action(_melee_intent(enemy, distance), direction)
+			_clear_melee_intent(enemy)
 		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance < 155.0:
 			var evade_direction := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.45).normalized()
 			enemy["action"] = _action("evade", 0.38, evade_direction)
 			enemy["action"]["speed_multiplier"] = 1.55
 			enemy["dodge_cooldown"] = 1.45
-		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.32)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(_melee_intent(enemy, distance)["distance"])), 0.32)
 	elif enemy_kind == "blade":
-		if distance <= 132.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.50, 0.52, 0.65, 112.0, 2, direction, "diagonal_cut")
+		var blade_intent := _melee_intent(enemy, distance)
+		if distance <= float(blade_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(blade_intent, direction)
+			_clear_melee_intent(enemy)
 		else:
-			enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.48)
+			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(blade_intent["distance"])), 0.48)
 	elif enemy_kind == "knife":
-		if distance <= 108.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.15, 0.32, 0.43, 80.0, 1, direction, "quick_cut")
+		var knife_intent := _melee_intent(enemy, distance)
+		if distance <= float(knife_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(knife_intent, direction)
+			_clear_melee_intent(enemy)
 		else:
-			enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.32)
+			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(knife_intent["distance"])), 0.32)
 	elif enemy_kind == "polearm":
-		if distance <= 112.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			# The spear's shaft answers a player who simply walks through the point.
-			# Its main identity remains the long, direction-locked thrust.
-			enemy["action"] = _melee_action(1.62, 0.54, 0.88, 126.0, 2, direction, "reverse_cut")
-		elif distance <= 218.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(2.25, 0.90, 1.35, 218.0, 3, direction, "thrust")
+		# The shaft cut answers a player who walks through the point; the long thrust
+		# remains the spear identity. Which one it commits to is now chosen before the
+		# approach rather than falling out of branch order, so both actually occur
+		# instead of the thrust always winning by being tested at the greater distance.
+		var polearm_intent := _melee_intent(enemy, distance)
+		if distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(polearm_intent, direction)
+			_clear_melee_intent(enemy)
 		else:
-			enemy["action"] = _enemy_move_action(enemy, player_pos, 0.70)
+			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(polearm_intent["distance"])), 0.70)
 	elif enemy_kind == "shield":
-		if distance <= 120.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.65, 0.62, 0.92, 122.0, 2, direction)
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.58)
+		var shield_intent := _melee_intent(enemy, distance)
+		if distance <= float(shield_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(shield_intent, direction)
+			_clear_melee_intent(enemy)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
 	elif enemy_kind == "hound":
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 440.0, 0.30, 0.68):
 			enemy["action"] = _charge_action(1.18, 0.30, 0.68, 440.0, 2, direction)
@@ -4280,12 +4324,17 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["speed_multiplier"] = 1.48
 		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.34)
 	elif enemy_kind == "brute":
-		if distance <= 155.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(2.55, 1.02, 1.52, 158.0, 4, direction, "forward_smash")
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.78)
+		var brute_intent := _melee_intent(enemy, distance)
+		if distance <= float(brute_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(brute_intent, direction)
+			_clear_melee_intent(enemy)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(brute_intent["distance"])), 0.78)
 	elif enemy_kind == "captain":
-		if distance <= 102.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.02, 0.30, 0.55, 106.0, 2, direction, "quick_cut")
-		elif distance <= 172.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos): enemy["action"] = _melee_action(1.26, 0.44, 0.72, 142.0, 2, direction, "thrust")
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.44)
+		var captain_intent := _melee_intent(enemy, distance)
+		if distance <= float(captain_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(captain_intent, direction)
+			_clear_melee_intent(enemy)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(captain_intent["distance"])), 0.44)
 	elif enemy_kind == "ice_caster":
 		if distance <= 310.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("ice_cone", 2.42, direction)
@@ -4314,11 +4363,11 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "knight":
-		if distance <= 185.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(2.78, 1.08, 1.66, 194.0, 4, direction, "heavy_cleave")
-		elif distance <= 252.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(2.54, 0.94, 1.46, 248.0, 4, direction, "thrust")
-		else: enemy["action"] = _enemy_move_action(enemy, _heavy_intercept_target(enemy), 0.72)
+		var knight_intent := _melee_intent(enemy, distance)
+		if distance <= float(knight_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(knight_intent, direction)
+			_clear_melee_intent(enemy)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(knight_intent["distance"])), 0.72)
 	elif enemy_kind == "hexer":
 		if distance <= 620.0 and distance >= 150.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("hex", 1.98, direction)
@@ -4360,6 +4409,58 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			var move_target := player_pos if distance > 520.0 else Vector2(enemy["pos"]) - direction * 240.0
 			enemy["action"] = _enemy_move_action(enemy, move_target, 0.56)
+
+func _melee_intent(enemy: Dictionary, gap: float) -> Dictionary:
+	# An enemy carries its chosen attack across the whole approach so it walks to a
+	# stable distance instead of re-rolling every decision and oscillating. The
+	# intent is dropped when it is spent, when the enemy is interrupted, or when the
+	# player closes far enough inside it that honouring it would mean backing away.
+	var plan := CombatCatalogScript.melee_attack_plan(String(enemy["kind"]))
+	if plan.is_empty(): return {}
+	var current := String(enemy.get("intended_attack", ""))
+	if not current.is_empty():
+		for option_value in plan:
+			var option := Dictionary(option_value)
+			if String(option["technique"]) != current: continue
+			if gap >= float(option["distance"]) - STRIKE_INTENT_ABANDON_MARGIN: return option
+			break
+	var weights: Array[float] = []
+	var total := 0.0
+	for option_value in plan:
+		var option := Dictionary(option_value)
+		# Range affinity: 1.0 at a perfect match, halving every softness unit away.
+		var offset := absf(gap - float(option["distance"])) / STRIKE_SELECTION_SOFTNESS
+		var weight := maxf(0.0001, float(option.get("weight", 1.0))) / (1.0 + offset * offset)
+		weights.append(weight)
+		total += weight
+	var roll := rng.randf() * total
+	var chosen := Dictionary(plan[plan.size() - 1])
+	for index in plan.size():
+		roll -= weights[index]
+		if roll <= 0.0:
+			chosen = Dictionary(plan[index])
+			break
+	enemy["intended_attack"] = String(chosen["technique"])
+	enemy["intended_strike_distance"] = float(chosen["distance"])
+	return chosen
+
+func _clear_melee_intent(enemy: Dictionary) -> void:
+	enemy["intended_attack"] = ""
+	enemy["intended_strike_distance"] = 0.0
+
+func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
+	return _melee_action(float(option["duration"]), float(option["startup"]), float(option["active_end"]),
+		float(option["reach"]), int(option["damage"]), direction, String(option["technique"]))
+
+func _approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
+	# Walk to a ring at the intended strike distance around the pursuit anchor
+	# rather than into the player's body. The anchor keeps the existing lead and
+	# lane behaviour, so flankers still reserve separate approach corridors.
+	var anchor := _pursuit_target(enemy)
+	var outward := Vector2(enemy["pos"]) - anchor
+	if outward.length_squared() < 0.001: outward = Vector2(enemy["pos"]) - player_pos
+	if outward.length_squared() < 0.001: outward = Vector2.RIGHT
+	return anchor + outward.normalized() * strike_distance
 
 func _enemy_move_action(enemy: Dictionary, target: Vector2, duration: float) -> Dictionary:
 	var result := _action("move", duration, _navigation_direction(enemy, target))
@@ -4660,6 +4761,7 @@ func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
 		var reaction_direction := (Vector2(enemy["pos"]) - origin).normalized()
 		if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(player_action.get("direction", player_facing)).normalized()
 		enemy["action"] = _action("hit_reaction", 0.28, Vector2.ZERO)
+		_clear_melee_intent(enemy)
 		enemy["action"].merge({
 			"reaction_contact": Vector2(enemy["pos"]),
 			"reaction_direction": reaction_direction,
