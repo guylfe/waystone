@@ -20,7 +20,16 @@ The same update reworks the Wait button (§10), which today has the same defect 
 
 Milestone A, then Milestone B, then this. Neither is in the source as of `0.2.10`.
 
-**A — per-input combo authorisation.** First because it is cheaper, touches disjoint code, and phantom strikes corrupt the action counts everything downstream is measured against. Note `run_state_test.gd:262` actively asserts the broken behaviour — `continue_held` persists and is re-read at every link without being consumed (`run_state.gd:3377`). That test encodes the defect and must be rewritten, not preserved.
+**A — combo continuation must follow live input.** First because it is cheaper, touches disjoint code, and phantom strikes corrupt the action counts everything downstream is measured against.
+
+The link sampling at `run_state.gd:3377` — re-reading `continue_held` at every link without consuming it — **is the intended grammar** and must be preserved. A held input continues the sequence for as long as it is genuinely held, so one hold may yield one, two or three Sword strikes by duration alone.
+
+The defect is the seed. `request_combo()` (`run_state.gd:1487`) calls `_begin_sword_combo(direction, true, false)` / `_begin_knife_combo(direction, true)` with `held` hardcoded `true`, so every sequence begins authorised whether or not anything is held. Two traps around it:
+
+- `request_combo`'s second parameter is `simulate_immediately`, **not** `held`. The `state.request_combo(direction, false)` calls throughout `game_board.gd` read as "not held" and are nothing of the kind.
+- The quick-tap path (`_handle_gesture` → `_request_primary_attack`, `game_board.gd:1688` and `:1702`) runs inside `_pointer_released`. It never sets `attack_pointer_held`, so no release handler ever clears the flag and a single tap commits the full sequence. This is the most likely origin of the reported phantom combos.
+
+`run_state_test.gd:262` passes only because of that unconditional seeding, not because it tests a held input. Rewrite it against live-input intent rather than preserving it.
 
 **B — post-hit hyperarmor.** Second, and non-negotiable before capture. This change makes enemy melee connect for the first time; without a guaranteed response window after being hit, the first playtest will read as unfair stunlock and the natural but wrong conclusion will be that the capture values are too high.
 

@@ -118,7 +118,7 @@ Implemented foundations include:
 - reproducible Combat Survey generation, per-room feedback, internal archives, clipboard/share support, and Android text export;
 - substantial headless regression coverage plus visual smoke tests.
 
-Current `0.2.10` attack behavior is not the target behavior. Sword and Knife phases have authored link points during recovery, but the implementation carries a persistent `continue_held` state. Its tests explicitly expect one held input to commit multiple later strikes. That behavior matches the changelog but contradicts the latest playtest decision below and is the likely source of phantom combos.
+Current `0.2.10` attack behavior is close to the target behavior but not identical to it. Sword and Knife phases have authored link points during recovery, and the implementation samples `continue_held` at each link rather than consuming it — which is the intended grammar described in §5.3. The defect is narrower: `request_combo()` seeds that state `true` unconditionally, so a sequence continues even when no input is live. A quick enemy tap consequently commits the whole sequence, because the tap path runs inside pointer release and never clears the flag. That is the source of the phantom combos.
 
 Current Warrior movement speed is `260` world units per second versus a general player baseline of `300`. Current baseline Dodge speed is `560`. Sweeping Cut currently costs `34` stamina, uses a `158`-unit broad `160°` sector before upgrades, and starts a shared `4.2`-world-second skill cooldown. Those values describe the broken baseline; they are not protected balance targets.
 
@@ -159,13 +159,16 @@ Exact cost and timing require playtesting. A cost in roughly the low-to-mid 50s 
 
 The desired input grammar has already been conceptually solved and should be restored directly:
 
-- the initial qualifying touch/press authorizes the first strike;
-- each **new** qualifying touch/press within the generous continuation window authorizes exactly one additional strike;
-- a touch held beyond the existing minimum hold threshold may count as that one continuation decision;
-- the authorization is consumed by the next strike; remaining held must not authorize the rest of the combo;
-- a continuation made before the phase's link point skips the unused terminal recovery and flows into the next wind-up;
-- if no continuation is authorized at the link, terminal recovery locks in and later input cannot reopen that combo;
-- running out of Stamina may prevent the next continuation, but an already authorized and paid-for strike completes normally.
+- the initial qualifying touch/press commits the first strike;
+- at each authored link point the sequence **samples whether a qualifying input is still live**; if it is, the combo flows into the next wind-up and skips the unused terminal recovery;
+- releasing ends the sequence after the current strike completes;
+- a single sustained hold may therefore produce one, two, or all three Sword strikes — and up to six with Twin Knives — depending purely on how long it is held. This is continuation by duration, not by repeated input;
+- a renewed touch before the link restores a live input and resumes the sequence;
+- the sampled state must reflect *actual* live input. A sequence begun by an input that is not held — a quick tap, a released key — must not sample as held;
+- if no live input is present at the link, terminal recovery locks in and later input cannot reopen that combo;
+- running out of Stamina may prevent the next continuation, but an already committed and paid-for strike completes normally.
+
+This is deliberately not a consumed one-shot authorization. Requiring a fresh press per strike would make the sequence an input-dexterity exercise, which §12 rules out; sampling a held input at generous authored link points keeps the decision continuous and forgiving while still ending the moment the player stops asking for it.
 
 This preserves deliberate combos without creating a dexterity game or automatically completing a sequence. Do not invent a narrow late-cancel window or a universal delayed-strike mechanic. The previously discussed optional slightly delayed Sword strike was explicitly dropped because its benefit did not justify the execution burden.
 
@@ -200,7 +203,7 @@ These rules apply across Recovery and Stamina modes unless explicitly stated oth
 6. **No committed-stride replacement.** Do not turn ordinary movement into a sequence of quasi-Dodges, engagement slow fields, or turn restrictions unless the simpler model later proves insufficient. Ordinary movement stays free, continuously steerable, and stamina-regenerating.
 7. **No ordinary-movement perfect-dodge reward.** Clean-evasion benefits belong to authored defensive techniques such as Dodge or Vault.
 8. **Sweeping Cut is rebuilt, not cosmetically nerfed.** It becomes the expensive immediate finisher described above.
-9. **One input authorizes one combo continuation.** Persistent held state may not auto-complete a sequence.
+9. **Continuation is sampled at the link, never banked.** A genuinely live input continues a sequence for as long as it is held; an input that has ended, or was never held at all, must not continue it. Held state may complete a sequence — that is the intended grammar — but only while the player is actually still holding.
 10. **A hit must leave actionable control.** Post-hit non-interruption protection extends beyond recovery just enough to permit a response.
 
 The Warrior · Vanguard has Dodge in its Defense slot. `Blocks: 0` and `Endures: 0` in its survey reports are generic-schema fields, not evidence that the player ignored available defensive buttons.
@@ -246,8 +249,9 @@ The earlier `165–180` player-speed band is withdrawn as a starting hypothesis.
 Every combat change should have small deterministic tests before a long survey:
 
 - one tap produces exactly one Sword strike;
-- one additional tap/qualified hold produces exactly one additional strike;
-- held input cannot authorize an entire combo;
+- a hold released between two links produces exactly the strikes its live window covered;
+- an input that was never held cannot continue a sequence;
+- a sustained hold completes the sequence, and releasing stops it within one strike;
 - a continuation before the link skips recovery, while input after terminal lock cannot reopen it;
 - a hit reaction ends with a protected response opportunity;
 - additional hits during protection damage but do not interrupt or refresh protection;
@@ -268,9 +272,9 @@ This is the current dependency order, not a promise of release numbers or dates.
 
 ### Milestone A — Restore trustworthy player input
 
-Implement per-touch/per-press combo authorization, remove persistent held auto-continuation, and add touch plus keyboard regression coverage.
+Make combo continuation faithfully reflect live input. The link-point sampling in `_update_player_combo` is already the intended grammar and should be preserved; the work is removing the unconditional seeding in `request_combo()` that grants continuation to every sequence regardless of input, ensuring every input path clears the state on release, and adding touch plus keyboard regression coverage.
 
-**Exit criteria:** Repeated single taps never produce phantom later phases; every continuation in telemetry can be traced to a distinct qualifying input; combo links still feel generous rather than timing-sensitive.
+**Exit criteria:** A quick tap produces exactly one strike; a sustained hold produces as many strikes as its live window covers links, and stops within one strike of release; no continuation ever occurs without a live input behind it; combo links still feel generous rather than timing-sensitive.
 
 ### Milestone B — Guarantee post-hit agency
 

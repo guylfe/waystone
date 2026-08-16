@@ -180,7 +180,7 @@ Ordered by dependency, not by size. Each phase should be independently testable.
 3. Remove `_try_clean_evade_from_movement()` (guardrail #7 — ordinary movement should not earn clean-evade credit, and it is about to earn it constantly).
 4. Drop `"hit_reaction"` and `"stagger"` from `STAMINA_REGEN_ACTIONS`, matching posture's existing behaviour at `run_state.gd:3024`.
 5. Reset `player_stamina_regen_delay` when the player takes damage.
-6. Milestone A (per-input combo authorisation) — independent of everything here, cheap, and it must land before any telemetry is trusted, since phantom strikes corrupt action counts.
+6. Milestone A (combo continuation follows live input) — independent of everything here, cheap, and it must land before any telemetry is trusted, since phantom strikes corrupt action counts.
 
 ### Phase 1 — Post-hit agency *(Milestone B, unchanged)*
 

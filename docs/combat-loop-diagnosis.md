@@ -187,7 +187,7 @@ With Job B fixed, a Dodge worth using, and retreat that costs something, the rig
 
 ### Unchanged from the current plan
 
-Milestone A (combo input authorisation) and Milestone B (post-hit hyperarmor) should proceed as written and first. A is a straightforward regression fix. B is correct as specified and independently justified: even after everything above, guaranteeing one actionable decision after being hit is a fairness floor, not a balance lever. Also worth clearing while you are in this code: `_try_clean_evade_from_movement()` grants clean-evade credit for ordinary movement, which guardrail #7 already says should be removed.
+Milestone A (combo continuation follows live input) and Milestone B (post-hit hyperarmor) should proceed as written and first. A is a straightforward regression fix — narrower than it first appeared, since the link-point sampling is already the intended grammar and only the unconditional seeding is wrong. B is correct as specified and independently justified: even after everything above, guaranteeing one actionable decision after being hit is a fairness floor, not a balance lever. Also worth clearing while you are in this code: `_try_clean_evade_from_movement()` grants clean-evade credit for ordinary movement, which guardrail #7 already says should be removed.
 
 ---
 

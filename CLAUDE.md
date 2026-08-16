@@ -22,7 +22,7 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 The combat loop, and nothing else. More enemies, classes, biomes, campaign content or encounter density all wait until moving, attacking, defending and surviving pressure are satisfying in a small room.
 
-Milestone order is fixed by dependency: **A** (per-input combo authorisation) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation). A and B are absent from the source as of `0.2.10`.
+Milestone order is fixed by dependency: **A** (combo continuation follows live input) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation). A and B are absent from the source as of `0.2.10`.
 
 ---
 
@@ -56,7 +56,8 @@ If the Fold is not connected, still build and commit, and say the install was sk
 
 ## Traps
 
-- **Current behaviour is not automatically intended behaviour.** A passing regression can faithfully preserve the wrong prototype direction. Review test intent against the latest design decision before preserving it — `run_state_test.gd:262` currently asserts a known combo defect.
+- **Current behaviour is not automatically intended behaviour.** A passing regression can faithfully preserve the wrong prototype direction. Review test intent against the latest design decision before preserving it — `run_state_test.gd:262` passes only because every combo is seeded as held, not because it exercises a held input.
+- **A green suite is not a passing suite.** Test files `assert()` inside functions called from `_init()`, then `print(...)` and `quit(0)` unconditionally. A failed assertion prints `SCRIPT ERROR`, aborts only that function, and still exits `0`. Grep the output for `Assertion failed` — do not trust the exit code. `run_state_test.gd:602` fails as of `0.2.10`.
 - **Choose the combat rule profile explicitly in tests.** A `RunState` instantiated without setup defaults to Recovery. Pass `"recovery"` or `"stamina"` so a passing test means what its name claims.
 - **Enemy locomotion runs on alternate ticks.** `_update_enemies(dt, _simulation_tick_index % 2 == 0)` means anything gated on `update_locomotion` needs a `× 2.0` step to hit its authored speed. `dodge_strike` is missing it and travels at half speed.
 - **No content-first escape.** More enemies or rooms multiply a weak loop rather than repair it.

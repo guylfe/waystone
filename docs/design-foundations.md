@@ -77,6 +77,16 @@ The most important borrowing is a diagnosis rather than a mechanic. CQ2 runs bec
 
 **Refused:** CQ2's combat mathematics. Waystone's contact is deterministic, so hit rolls and to-hit probability have nothing to attach to. Only the run grammar transfers, not the resolution model. Also refused: the complexity level of *Pixel Dungeon* — sprawling skill trees, inventory management, hunger, durability, crafting. Simple to pick up, hard to master.
 
+**What CQ2's combat actually does well.** Its combat is turn-based and arithmetically simple, which makes it easy to assume nothing transfers. What transfers is its *economy*, and most of it is already load-bearing in Waystone:
+
+- **Speed is action economy, not damage.** A faster CQ2 actor gets more actions per unit time rather than hitting harder. This is the direct ancestor of Waystone's personal tempo, and the reason Speed accelerates voluntary actions but deliberately does not shorten involuntary states like hit reactions or condition durations.
+- **A tiny action vocabulary.** Move, potion, skill, wait. Four verbs; the depth is in *when*, not in how many exist. Waystone's action row is the same shape, and any proposal that adds a fifth standing verb should have to justify itself against this.
+- **Talents transform rather than accumulate.** A CQ2 talent replaces or reshapes a skill you already have instead of adding another button. This is why Waystone's tracks develop a complete starting loop rather than assembling one, and why "starting characters must already possess a complete play loop" is a rule.
+- **Class identity is legible from the first encounter**, before any choice has been made.
+- **Limited capacity forces genuine tradeoffs.** Few slots, few consumables, no inventory screen — every acquisition displaces something. Waystone's belt exists for this reason, and it is why a full inventory system keeps being refused.
+- **XP, loot and consumables have distinct roles** and are not interchangeable currencies. When one starts substituting for another, decisions collapse.
+- **Push your luck.** Continue and risk what you are carrying, or bank it. Expedition having no Waystones is what preserves that tension; adding checkpoints to it would quietly remove the mode's point.
+
 ### 3.2 Dark Souls — commitment and place
 
 **Taken:** committed actions with real recovery; spacing as the core spatial skill; weapon identity expressed through moveset rather than stat inflation; checkpoints with consequences (Waystones); dangerous outward journeys that reconnect; far-side shortcuts; a world stable enough to become a memory machine; the tension between spending resources on offense and holding them for defense.
@@ -117,6 +127,7 @@ Established by decompiling the APK and reading its data tables (`plot.txt`, `plo
 - Difficulty is a **waveform** — pressure, relief, disruption, climax — not a monotonic ramp.
 - Its endless "Tower" mode is 20-floor tiers in five 4-floor blocks, each ending in a boss, with three enemy families roughly mapping to the three acts.
 - 169 Steam achievements, distinguishing functional unlocks from commemorative ones.
+- **Exits and routes are discovered, not signposted.** CQ2 does not draw a main path through a floor; you find the way down. An early Waystone Expedition build did signpost its route and it was removed for exactly this reason — legibility of *threats* is required, legibility of *where to go* is not.
 
 The conclusion that matters: **CQ2's richness comes from its encounter grammar, not from map size or enemy count.** This is the model for Waystone's own encounter work, and it is why more content is not the answer to a flat run.
 
@@ -208,7 +219,15 @@ One simulation, one content set, three journeys. Enemies, weapons, classes, trac
 
 Expedition's healing model is Bloodborne-shaped and Campaign's is Dark Souls-shaped, but they are **one implementation**: "a Waystone restores your anchored pouch to capacity." Expedition simply has no Waystones. That is the pattern to reach for generally — express a mode difference as an absent feature rather than a parallel system.
 
-A fourth mode, **Combat Survey**, is a developer instrument rather than a shipping mode: a deterministic, seeded, room-by-room laboratory with per-room ratings and telemetry export. From roughly v0.1.2 onward it has been the arbiter of combat decisions, and combat changes are expected to cite it.
+### Combat Survey — the instrument
+
+A fourth mode, **Combat Survey**, is a developer instrument rather than a shipping mode: a deterministic, seeded, room-by-room laboratory with per-room ratings and telemetry export. From roughly v0.1.2 onward it has been the arbiter of combat decisions, and combat changes are expected to cite it rather than intuition.
+
+Its purpose is **attribution**. The same seed produces the same rooms across characters and combat-rule profiles, so a change can be isolated from the encounter it was measured in. Two resource profiles isolate different questions: **Encounter** refreshes health, stamina, potions and readiness between rooms, so it measures encounter quality alone; **Attrition** carries health, potions and build progression through the run, so it measures fatigue and resource pressure across a sequence.
+
+`WAYSTONE_MIGRATION_HANDOFF.md` §9 carries the operational detail — report format, per-room flow, export, and how to read a report. Two points from it are worth repeating because they are the ones most easily forgotten: **a victory is not evidence of fun**, and **high resource spending is not evidence of pressure** if the player still has a free way to be safe. Sample sizes are in §2 above.
+
+**Its blind spot is the whole point of the tool.** Survey rooms are isolated arenas. A change optimised purely against them will drift Waystone toward a series of disconnected combat chambers — closer to Hades than to a continuous CQ2-style route — because the Survey cannot see approach, scouting, accidental escalation, or the cost of arriving at a fight already damaged. The discipline is: validate combinations in the Survey, then **re-embed them in a large continuous Expedition slice** before believing the result. A number that looks right in a room and wrong in a route is the route's verdict, not the room's.
 
 ---
 
