@@ -4173,7 +4173,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					action["duration"] = minf(float(action["duration"]), float(action["elapsed"]))
 		elif kind == "dodge_strike":
 			if update_locomotion and elapsed <= float(action.get("dodge_end", 0.30)):
-				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * float(action.get("speed", 390.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
+				# Locomotion runs on alternate simulation ticks, so the step is doubled to
+				# keep the authored world speed correct -- see this loop's caller. Without
+				# it the Bandit closed ~59 units instead of the ~117 its 390 x 0.30 implies,
+				# i.e. every dodge-strike travelled at exactly half its authored speed.
+				# `charge` and `pounce_combo` are not gated on this flag and were correct.
+				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * float(action.get("speed", 390.0)) * enemy_dt * 2.0, float(enemy["radius"]), int(enemy["id"]))
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]): _resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "claw_combo":
 			_resolve_enemy_combo_tick(enemy, elapsed)
