@@ -1,0 +1,72 @@
+# Waystone — working instructions
+
+Standing context for any coding session in this repo. Keep it short; the detail lives in the documents it points to.
+
+---
+
+## Read in this order
+
+1. **`docs/design-foundations.md`** — why the design is what it is. Lineage from Cardinal Quest 2, Dark Souls and Hades, what is deliberately *refused* from each, the frozen-time and determinism commitments, and a record of rejected directions. Read before making design decisions, not before making code changes.
+2. **`WAYSTONE_MIGRATION_HANDOFF.md`** — operational context: implementation baseline, file map, survey format, build and install procedure. Written originally as a partial brief between conversations, so treat it as operational rather than as a complete design record. It has been reconciled against the documents below, but assume it is thinner than it looks.
+3. **`docs/combat-loop-diagnosis.md`**, **`docs/attack-capture-design.md`**, **`docs/attack-capture-implementation.md`** — the current work. Authoritative on combat-loop matters where they overlap the handoff.
+4. **`docs/combat-character-framework.md`** — detailed combat and character rules.
+5. **`docs/design-brief.md`**, **`docs/expedition-encounter-redesign.md`** — slice promise and the deferred encounter plan.
+
+`README.md` carries implemented-version history and the current version number. It is long; read it last.
+
+**On a first session, or after a long gap, read all of the above before starting work** — and report any contradictions or stale claims you find between them. They were written at different times, by different hands, and some describe superseded behaviour. Surfacing the drift is part of the orientation, not a distraction from it. On a returning session, read what the task actually touches.
+
+---
+
+## Current priority
+
+The combat loop, and nothing else. More enemies, classes, biomes, campaign content or encounter density all wait until moving, attacking, defending and surviving pressure are satisfying in a small room.
+
+Milestone order is fixed by dependency: **A** (per-input combo authorisation) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation). A and B are absent from the source as of `0.2.10`.
+
+---
+
+## Finishing a code change
+
+Building, committing and installing are part of finishing a change, not separate steps to be requested afterwards:
+
+1. run the relevant tests in `tests/` covering the changed system;
+2. keep version metadata in sync across `README.md` and `export_presets.cfg`, including Android `versionCode`;
+3. build **both** platforms — `build-all.ps1`, not a single target, so Windows and Android never drift;
+4. commit to GitHub;
+5. install to the Pixel Fold if it is connected, and verify the installed package version on-device rather than trusting a successful export.
+
+If the Fold is not connected, still build and commit, and say the install was skipped for that reason.
+
+---
+
+## Working agreements
+
+**Do not write code until it is approved.** Design discussion is never authorization to change source. Present a plan, wait for a decision. This rule exists because it was violated before and cost real money.
+
+**Challenge rather than agree.** Push back on proposals that conflict with the design pillars — including mine. Say when an idea is provisional, implemented, rejected, or unresolved. Agreement that isn't earned is worse than useless here.
+
+**Verify documents against code.** Any document in this repo can be stale or wrong, including the ones above. When a document and the source disagree, the source is the fact — investigate rather than silently picking whichever is easier. Several errors in the attack-capture spec were found exactly this way.
+
+**Explain the gist in plain language first, then the technical detail.** Keep the equations, tables, file references and derived numbers — the depth is wanted. Just don't make the idea something I have to reverse-engineer out of it.
+
+**Preserve uncommitted work.** A dirty worktree is mine. Inspect it; never reset, discard or overwrite.
+
+---
+
+## Traps
+
+- **Current behaviour is not automatically intended behaviour.** A passing regression can faithfully preserve the wrong prototype direction. Review test intent against the latest design decision before preserving it — `run_state_test.gd:262` currently asserts a known combo defect.
+- **Choose the combat rule profile explicitly in tests.** A `RunState` instantiated without setup defaults to Recovery. Pass `"recovery"` or `"stamina"` so a passing test means what its name claims.
+- **Enemy locomotion runs on alternate ticks.** `_update_enemies(dt, _simulation_tick_index % 2 == 0)` means anything gated on `update_locomotion` needs a `× 2.0` step to hit its authored speed. `dodge_strike` is missing it and travels at half speed.
+- **No content-first escape.** More enemies or rooms multiply a weak loop rather than repair it.
+- **No health-only difficulty, no invisible combat math, no input-dexterity creep.** Difficulty comes from action selection, composition, terrain, partial information and resources.
+- **Local checkout only.** Do not assume an older OneDrive tree is authoritative, and do not move the source into a synchronized cloud folder to reach tools.
+
+---
+
+## Verification
+
+Headless tests establish simulation behaviour, not visual truth. Validate contact, recovery animation, safe areas and readability in a real Windows renderer and on the Pixel Fold, which needs both orientations and its reported safe display area.
+
+Use the next survey as a falsification test for a change, not as a demonstration that it must have worked.
