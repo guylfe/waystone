@@ -335,3 +335,5 @@ Run `run-prototype.ps1`, or open `project.godot` with Godot 4.x and run the proj
 Run `build-android.ps1` to produce `builds/android/waystone-debug.apk`. The configured project-local toolchain targets arm64 Android devices, including the 2023 Pixel Fold.
 
 Run `build-windows.ps1` to produce the self-contained x64 build at `builds/windows/Waystone.exe`, or `run-windows.ps1` to build it when missing and launch it. `build-all.ps1` exports both platforms for tandem milestone checks. The Windows build script extracts only the required x64 files from the existing ignored Godot export-template archive.
+
+Run `run-tests.ps1` for the headless suite, optionally naming individual tests (`run-tests.ps1 combo_continuation_test`) or passing `-All`. Test files call `quit(0)` unconditionally, so a failed assertion still exits `0`; the runner scans each run's output for assertion failures and script errors and is the only reliable pass/fail signal. Render-dependent smoke tests are excluded by default because they capture real frames and cannot pass headless — run those against a real renderer.

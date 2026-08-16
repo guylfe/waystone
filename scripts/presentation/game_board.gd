@@ -939,7 +939,9 @@ func _process(delta: float) -> void:
 				var direction := Vector2(touched_enemy["pos"]) - state.player_pos
 				if direction.length_squared() < 0.01: direction = state.player_facing
 				var soft_target_id := int(touched_enemy.get("id", -1))
-				var began := state.begin_bow_draw(direction, soft_target_id) if state.player_uses_ranged_basic_attack() else state.request_combo(direction, false)
+				# The hold threshold has been crossed and the finger is still down,
+				# so this sequence begins with a genuinely live input.
+				var began := state.begin_bow_draw(direction, soft_target_id) if state.player_uses_ranged_basic_attack() else state.request_combo(direction, false, true)
 				if began:
 					pointer_intent = "attack"
 					attack_pointer_held = true
@@ -1282,7 +1284,7 @@ func _press_direct_attack(position: Vector2, is_mouse: bool) -> void:
 	inspected_enemy_id = -1
 	touch_start = position
 	touch_current = position
-	if not state.request_direct_attack(state.player_facing, false):
+	if not state.request_direct_attack(state.player_facing, false, true):
 		pointer_down = false
 		attack_pointer_held = false
 		attack_touch_is_original = false
@@ -1444,7 +1446,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if not _can_repeat_primary_action(): return
 			var attack_direction := _desktop_held_direction()
 			if attack_direction.is_zero_approx(): attack_direction = state.player_facing
-			var began := state.request_direct_attack(attack_direction, false) if state.uses_stamina_rules() else state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false)
+			# The attack key is down and stays down until its release event, so the
+			# sequence begins live and continues for as long as the key is held.
+			var began := state.request_direct_attack(attack_direction, false, true) if state.uses_stamina_rules() else state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false, true)
 			if began:
 				attack_key_held = true
 				_begin_streamed_action(true)
@@ -1577,20 +1581,24 @@ func _commit_mouse_primary(preserve_stream_time: bool = false) -> void:
 	if not _can_repeat_primary_action() or not board_rect.has_point(touch_current): return
 	var enemy := _enemy_near(touch_current, 54.0)
 	if not enemy.is_empty() and _enemy_touch_should_attack(enemy):
-		_begin_streamed_action(_request_primary_attack(enemy), preserve_stream_time)
+		# Reached only while the mouse button is still down, so the input is live.
+		_begin_streamed_action(_request_primary_attack(enemy, true), preserve_stream_time)
 		return
 	var target := Vector2(enemy["pos"]) if not enemy.is_empty() else _screen_to_world(touch_current)
 	var delta := target - state.player_pos
 	if delta.length() < 8.0: return
 	_begin_streamed_move(delta, minf(delta.length(), state.MOVE_RANGE), preserve_stream_time)
 
-func _request_primary_attack(enemy: Dictionary) -> bool:
+# `held` must be supplied by the caller rather than assumed. The held-mouse repeat
+# path arrives here with the button still down, while the tap path runs from inside
+# _pointer_released and has no live input behind it at all.
+func _request_primary_attack(enemy: Dictionary, held: bool = false) -> bool:
 	var target := Vector2(enemy["pos"])
 	if state.player_uses_ranged_basic_attack():
 		return state.request_attack(target, false)
 	var direction := target - state.player_pos
 	if direction.length_squared() < 0.01: direction = state.player_facing
-	return state.request_combo(direction, false)
+	return state.request_combo(direction, false, held)
 
 func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	# This is deliberately an intent heuristic, not a second hit test. A player may

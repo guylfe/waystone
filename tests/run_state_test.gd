@@ -181,7 +181,9 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	state.enemies.clear()
-	assert(state.request_combo(Vector2.UP, false))
+	# Held throughout so all three phases are actually reached and their authored
+	# geometry can be compared.
+	assert(state.request_combo(Vector2.UP, false, true))
 	assert(String(state.player_action["kind"]) == "combo")
 	var phases: Array = state.player_action["phases"]
 	assert(String(Dictionary(phases[0])["technique"]) == "opening_cut")
@@ -193,18 +195,28 @@ func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	assert(float(Dictionary(phases[1])["startup"]) >= float(Dictionary(phases[0])["link"]))
 	assert(float(Dictionary(phases[1])["startup"]) < float(Dictionary(phases[0])["end"]))
 	assert(String(AttackGeometryScript.technique("turning_slash")["motion"]) == "arc")
-	while float(state.player_action["elapsed"]) < 2.40: state.advance_streamed_action_tick()
+	assert(advance_until_elapsed(state, 2.40))
 	assert(String(state.player_action["kind"]) == "combo")
 	while state.advance_streamed_action_tick(): pass
 	assert(state.is_player_ready() and state.simulation_time >= 2.45 and state.simulation_time < 2.55)
 
+# Bounded equivalent of `while elapsed < target: advance()`. An action that ends
+# before `target` resets its elapsed clock, so the naive loop spins forever the
+# moment timing shifts. This fails the caller's assertion instead of hanging.
+func advance_until_elapsed(state: RunState, target: float) -> bool:
+	while float(state.player_action.get("elapsed", 0.0)) < target:
+		if not state.advance_streamed_action_tick(): return false
+	return true
+
 func test_combo_hold_commits_each_strike() -> void:
+	# Continuation is sampled at each authored link, so the number of strikes a
+	# sequence commits is decided by how long the input stays live.
 	var single: RunState = RunStateScript.new(false)
 	single.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	single.enemies.clear()
 	assert(single.request_combo(Vector2.UP, false))
 	single.set_attack_hold(false)
-	while float(single.player_action["elapsed"]) < 0.70: single.advance_streamed_action_tick()
+	assert(advance_until_elapsed(single, 0.70))
 	assert(bool(single.player_action.get("terminal_recovery_locked", false)))
 	assert(not single.resume_combo_hold())
 	while single.advance_streamed_action_tick(): pass
@@ -213,8 +225,8 @@ func test_combo_hold_commits_each_strike() -> void:
 	var double: RunState = RunStateScript.new(false)
 	double.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	double.enemies.clear()
-	assert(double.request_combo(Vector2.UP, false))
-	while float(double.player_action["elapsed"]) < 0.90: double.advance_streamed_action_tick()
+	assert(double.request_combo(Vector2.UP, false, true))
+	assert(advance_until_elapsed(double, 0.90))
 	assert(int(double.player_action.get("committed_phase", -1)) == 1)
 	double.set_attack_hold(false)
 	while double.advance_streamed_action_tick(): pass
@@ -223,21 +235,23 @@ func test_combo_hold_commits_each_strike() -> void:
 	var full: RunState = RunStateScript.new(false)
 	full.start_run("warrior", "expedition", 739391, "encounter", "recovery")
 	full.enemies.clear()
-	assert(full.request_combo(Vector2.UP, false))
+	assert(full.request_combo(Vector2.UP, false, true))
 	while full.advance_streamed_action_tick(): pass
 	assert(full.is_player_ready() and full.simulation_time >= 2.45 and full.simulation_time < 2.55)
 
 func test_combo_retouch_resumes_the_held_chain() -> void:
 	var retouched: RunState = RunStateScript.new()
 	retouched.enemies.clear()
+	# Begins from a tap, with no live input, then renews the touch before each
+	# link. Each renewal restores a live input for the sample at that link.
 	assert(retouched.request_combo(Vector2.UP, false))
 	retouched.set_attack_hold(false)
-	while float(retouched.player_action["elapsed"]) < 0.44: retouched.advance_streamed_action_tick()
+	assert(advance_until_elapsed(retouched, 0.44))
 	assert(retouched.resume_combo_hold())
-	while float(retouched.player_action["elapsed"]) < 0.90: retouched.advance_streamed_action_tick()
+	assert(advance_until_elapsed(retouched, 0.90))
 	assert(int(retouched.player_action.get("committed_phase", -1)) == 1)
 	retouched.set_attack_hold(false)
-	while float(retouched.player_action["elapsed"]) < 1.10: retouched.advance_streamed_action_tick()
+	assert(advance_until_elapsed(retouched, 1.10))
 	assert(retouched.resume_combo_hold())
 	while retouched.advance_streamed_action_tick(): pass
 	assert(retouched.is_player_ready() and retouched.simulation_time >= 2.45 and retouched.simulation_time < 2.55)
@@ -264,7 +278,10 @@ func test_original_attack_swipe_keeps_combo_held() -> void:
 	board.state = RunStateScript.new()
 	board.board_rect = Rect2(Vector2.ZERO, Vector2(800.0, 600.0))
 	board.size = Vector2(800.0, 600.0)
-	assert(board.state.request_combo(Vector2.UP, false))
+	# Started from a live hold, exactly as the board's hold path does. Previously
+	# this passed because every combo was seeded held regardless of input; the
+	# intent under test is that finger drift does not cancel an ongoing attack.
+	assert(board.state.request_combo(Vector2.UP, false, true))
 	board.playing = true
 	board.pointer_down = true
 	board.attack_pointer_held = true

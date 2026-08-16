@@ -77,7 +77,9 @@ func test_combo_presentation_and_sequence_recovery() -> void:
 	knife.player_action = knife._idle_action()
 	assert(knife.choose_upgrade("knife|knife_twin_fang"))
 	knife.player_stamina = knife.player_max_stamina
-	assert(knife.request_combo(Vector2.RIGHT, false))
+	# Held throughout: the sequence-completion cooldown only arms when all six
+	# cuts are actually committed, and continuation is sampled at each link.
+	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	assert(int(knife.player_action["combo_length"]) == 6)
 	advance_until_ready(knife)
 	assert(knife.weapon_sequence_cooldown > 0.95)

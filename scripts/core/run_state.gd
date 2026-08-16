@@ -1484,21 +1484,25 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 	changed.emit()
 	return false
 
-func request_combo(direction: Vector2, simulate_immediately: bool = true) -> bool:
+# `held` states whether a qualifying input is genuinely live at commitment. It is
+# sampled again at every authored link point, so a sustained hold continues the
+# sequence for as long as it lasts while a tap commits exactly one strike. It must
+# never be assumed: an action begun from a released input has no continuation.
+func request_combo(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
 	if direction.length_squared() < 0.01 or not _can_start_basic_attack(): return false
 	_break_player_combo()
 	_reset_building_force()
 	_reset_building_force_if_unavailable()
-	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, true)
+	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held)
 	elif player_weapon_frame == "bow": return false
-	else: _begin_sword_combo(direction, true, false)
+	else: _begin_sword_combo(direction, held, false)
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
 
-func request_direct_attack(direction: Vector2, simulate_immediately: bool = true) -> bool:
+func request_direct_attack(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
 	if direction.length_squared() < 0.01: direction = player_facing
-	var began := begin_bow_draw(direction) if player_weapon_frame == "bow" else request_combo(direction, false)
+	var began := begin_bow_draw(direction) if player_weapon_frame == "bow" else request_combo(direction, false, held)
 	if not began: return false
 	direct_attack_uses_total += 1
 	if simulate_immediately and player_weapon_frame != "bow": _simulate_until_ready()

@@ -44,17 +44,21 @@ func test_parallel_rule_sets() -> void:
 	assert(float(stamina.player_action["duration"]) < recovery_duration)
 
 func test_new_combo_costs() -> void:
+	# These are whole-sequence costs, so each combo is started from a live input
+	# and held throughout. Continuation is sampled at every link point: without a
+	# held input the sequence stops after its opening strike and only that strike
+	# is paid for. See WAYSTONE_MIGRATION_HANDOFF.md section 5.3.
 	var sword := fresh_state()
-	assert(sword.request_combo(Vector2.RIGHT, false))
+	assert(sword.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(sword)
 	assert(is_equal_approx(sword.player_stamina, 44.0))
 	var knife := fresh_state("rogue_acrobat")
-	assert(knife.request_combo(Vector2.RIGHT, false))
+	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(knife)
 	assert(is_equal_approx(knife.player_stamina, 46.0))
 	var twin := fresh_state("rogue_acrobat")
 	twin.player_weapon_frame = "twin_knives"
-	assert(twin.request_combo(Vector2.RIGHT, false))
+	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
 	assert(is_equal_approx(twin.player_stamina, 40.0))
 

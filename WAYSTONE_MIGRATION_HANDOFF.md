@@ -168,7 +168,7 @@ The desired input grammar has already been conceptually solved and should be res
 - if no live input is present at the link, terminal recovery locks in and later input cannot reopen that combo;
 - running out of Stamina may prevent the next continuation, but an already committed and paid-for strike completes normally.
 
-This is deliberately not a consumed one-shot authorization. Requiring a fresh press per strike would make the sequence an input-dexterity exercise, which §12 rules out; sampling a held input at generous authored link points keeps the decision continuous and forgiving while still ending the moment the player stops asking for it.
+This is deliberately not a consumed one-shot authorization. **Hold duration is a legitimate input dimension**, not a dexterity test: the link points are generously spaced, so lifting a finger between swings is a comfortable decision rather than a reaction check. The §12 guardrail forbids *reflex* demands — narrow cancel windows, pinpoint release timing — not timing as such. Requiring a fresh press per strike would trade a continuous, comfortable grammar for a repetitive one and buy no tactical depth for it.
 
 This preserves deliberate combos without creating a dexterity game or automatically completing a sequence. Do not invent a narrow late-cancel window or a universal delayed-strike mechanic. The previously discussed optional slightly delayed Sword strike was explicitly dropped because its benefit did not justify the execution burden.
 
@@ -477,7 +477,7 @@ Installation is a deployment step after implementation and verification, not evi
 - **No content-first escape:** More enemies or rooms will multiply a weak loop rather than repair it.
 - **No health-only difficulty:** Difficulty should use action selection, compositions, terrain, partial information, resources, elite properties, and rule changes.
 - **No invisible combat math:** Do not hide an apparent physical hit behind a random miss chance.
-- **No input dexterity creep:** Generous continuation decisions are compatible with commitment; narrow cancel timing is not the present goal.
+- **No input dexterity creep:** Generous continuation decisions are compatible with commitment; narrow cancel timing is not the present goal. This forbids *reflex and pinpoint accuracy*, not timing as such. Hold duration is a legitimate input dimension wherever the windows are generous enough that releasing between commitments is comfortable — that is a decision, not a reaction check.
 - **No universal button assumptions:** A character equips one Defense. Generic telemetry fields do not mean every character can Dodge, Block, and Endure simultaneously.
 - **No attack/non-attack cooldown conflation:** Physical attacks use authored commitment/recovery and, in Stamina mode, resource cost. Authored non-attack abilities may still use cooldowns.
 - **No mode-topology conflation:** Expedition is a forward run; Campaign is a persistent interconnected graph around Waystones and shortcuts.
