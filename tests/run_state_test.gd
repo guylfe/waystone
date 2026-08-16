@@ -1037,7 +1037,17 @@ func test_held_wait_repeats_until_release() -> void:
 	board._pointer_pressed(wait_point)
 	assert(board.wait_pointer_held and board.pointer_down)
 	for _frame in range(24): board._process(0.10)
-	assert(board.state.simulation_time > start_time + 0.75)
+	# Assert the unit count, not a floor. The old assertion was "more than 0.75s
+	# elapsed", which still passes at 0.131s units while no longer testing that
+	# holding chains whole units at movement's granularity.
+	var unit: float = board.state.wait_unit_duration()
+	var elapsed: float = board.state.simulation_time - start_time
+	var units: float = roundf(elapsed / unit)
+	assert(units >= 4.0)
+	# Each unit resolves on the fixed step, so it can overshoot its authored length
+	# by up to one tick. The point is that the total is whole units of movement
+	# granularity, not that it lands on an exact float multiple.
+	assert(absf(elapsed - units * unit) <= units * board.state.SIM_DT + 0.001)
 	board._pointer_released(wait_point)
 	assert(not board.wait_pointer_held and not board.pointer_down)
 	for _frame in range(16): board._process(0.10)

@@ -56,6 +56,8 @@ $HeadlessSuite = @(
     'combo_continuation_test',
     'post_hit_agency_test',
     'strike_commitment_test',
+    'attack_capture_test',
+    'wait_granularity_test',
     'stamina_test',
     'warrior_character_test',
     'rogue_characters_test',

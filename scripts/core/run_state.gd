@@ -64,9 +64,12 @@ const DODGE_STAMINA_COST := 18.0
 # one deliberate action -- a Dodge's i-frames open at 0.08 -- and deliberately too
 # short to cover an offensive sequence. Provisional; see the handoff section 5.4.
 const POST_HIT_PROTECTION_TAIL := 0.35
-const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
+# "hit_reaction" and "stagger" are deliberately absent. Player posture recovery
+# already excludes them, so stamina regenerating through a flinch had the two
+# resources disagreeing about whether being hit is a chance to recover.
+const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.12"
+const GAME_VERSION := "0.2.13"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2244,13 +2247,25 @@ func _begin_repack_action(text: String, simulate_immediately: bool) -> bool:
 	else: _streamed_action_cpu_usec = 0
 	return true
 
-func request_wait(duration: float = 0.50, simulate_immediately: bool = true) -> bool:
+# One unit of waiting is exactly one movement step. Derived rather than fixed, so
+# waiting in place is never coarser than pacing in place: at a hardcoded 0.5s a
+# player who wanted to spend a little time was better off walking back and forth,
+# which made the action built for spending time the worst way to spend it. It also
+# survives retuning -- if combat movement speed is revisited, a step lengthens and
+# Wait tracks it automatically instead of silently drifting finer.
+func wait_unit_duration() -> float:
+	return MOVE_RANGE / maxf(1.0, player_move_speed)
+
+func request_wait(duration: float = -1.0, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete:
 		return false
 	if interaction_label() != "WAIT": return request_context_action()
 	_break_player_combo()
 	_reset_building_force()
-	player_action = _action("wait", clampf(duration, 0.1, 1.0), Vector2.ZERO)
+	if duration < 0.0: duration = wait_unit_duration()
+	# The clamp floor sits below any real loadout's step so the derivation, not the
+	# clamp, decides the value.
+	player_action = _action("wait", clampf(duration, 0.05, 1.0), Vector2.ZERO)
 	_set_message("You deliberately surrender time.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
@@ -4190,8 +4205,27 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					action["pounce_hit"] = true
 					_resolve_incoming_hit(int(enemy["id"]), int(action.get("pounce_damage", 3)), String(enemy["kind"]))
 			_resolve_enemy_combo_tick(enemy, elapsed)
-		elif kind == "melee" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]):
-			_resolve_enemy_melee_tick(enemy, elapsed)
+		elif kind == "melee":
+			# Attack capture. The attacker advances along the vector it committed to,
+			# which is what lets an attack reach a player who read the telegraph late.
+			# Without it melee triggers at its own maximum reach and then stands still
+			# through startup, so walking away works no matter when you start.
+			#
+			# The direction is deliberately not recomputed: the lunge travels the
+			# committed line and does not steer, so an early read still escapes it and
+			# the attack stays a commitment rather than a homing move.
+			var advance_end := float(action.get("advance_end", 0.0))
+			if update_locomotion and advance_end > 0.0 and elapsed <= advance_end:
+				# Locomotion runs on alternate ticks, so the step is doubled to keep the
+				# authored world distance correct. Omitting this is the half-speed trap
+				# that dodge_strike sat in for several versions.
+				var advance_speed := float(action.get("advance_distance", 0.0)) / advance_end
+				var step := Vector2(action["direction"]) * advance_speed * enemy_dt * 2.0
+				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), step, float(enemy["radius"]), int(enemy["id"]))
+				enemy["is_moving"] = true
+				enemy["last_motion"] = step
+			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]):
+				_resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 			var charge_origin := Vector2(enemy["pos"])
 			enemy["pos"] = _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
@@ -4454,8 +4488,14 @@ func _clear_melee_intent(enemy: Dictionary) -> void:
 	enemy["intended_strike_distance"] = 0.0
 
 func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
-	return _melee_action(float(option["duration"]), float(option["startup"]), float(option["active_end"]),
+	var action := _melee_action(float(option["duration"]), float(option["startup"]), float(option["active_end"]),
 		float(option["reach"]), int(option["damage"]), direction, String(option["technique"]))
+	# Forward travel is carried on the action so the melee branch can apply it
+	# without consulting the catalogue every tick. Defaults of zero mean any attack
+	# built outside a plan keeps its current standing-still behaviour.
+	action["advance_distance"] = float(option.get("advance_distance", 0.0))
+	action["advance_end"] = float(option.get("advance_end", 0.0))
+	return action
 
 func _approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
 	# Walk to a ring at the intended strike distance around the pursuit anchor
@@ -4620,21 +4660,6 @@ func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 		enemy["action"]["hit_done"] = true
 		var contact := AttackGeometryScript.contact_point(sample, player_pos)
 		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]), Vector2.ZERO, contact)
-	else:
-		_try_clean_evade_from_movement(enemy, sample)
-
-func _try_clean_evade_from_movement(enemy: Dictionary, sample: Dictionary) -> void:
-	if not bool(sample.get("active", false)) or String(player_action.get("kind", "")) != "move": return
-	var enemy_action := Dictionary(enemy.get("action", {}))
-	if bool(enemy_action.get("clean_evade_player_fired", false)): return
-	if float(player_action.get("started_at", 0.0)) <= float(enemy_action.get("started_at", -1.0)): return
-	var origin := Vector2(player_action.get("move_origin", player_pos))
-	var midpoint := origin.lerp(player_pos, 0.5)
-	var near_recent_trail := AttackGeometryScript.hits_circle(sample, origin, PLAYER_RADIUS + 18.0) or AttackGeometryScript.hits_circle(sample, midpoint, PLAYER_RADIUS + 18.0)
-	if not near_recent_trail: return
-	enemy_action["clean_evade_player_fired"] = true
-	enemy["action"] = enemy_action
-	_trigger_clean_dodge(player_pos, String(enemy.get("kind", "attack")))
 
 func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 	var action: Dictionary = enemy["action"]
@@ -4962,6 +4987,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	hits_received_total += 1
 	player_posture = maxf(0.0, player_posture - posture_damage)
 	player_posture_recovery_delay = 1.15
+	player_stamina_regen_delay = maxf(player_stamina_regen_delay, STAMINA_REGEN_DELAY)
 	_add_effect("hurt", impact, damage_received)
 	_break_stealth_for_hostile_action()
 	_apply_source_condition_to_player(source_name)

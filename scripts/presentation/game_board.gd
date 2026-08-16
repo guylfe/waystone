@@ -917,7 +917,17 @@ func _process(delta: float) -> void:
 			needs_redraw = true
 	if not playing and _can_repeat_primary_action():
 		if wait_pointer_held and pointer_down:
-			_begin_streamed_action(state.request_wait(0.50, false), finished_streamed_movement)
+			# Holding chains one movement step at a time, each a discrete commitment,
+			# exactly as held movement does. Deliberately unassisted: Wait is movement
+			# without the repositioning and carries movement's risks too, so there is no
+			# auto-break on danger. A guardrail here alone would make standing still
+			# safer than repositioning, which inverts the risk relationship.
+			if state.interaction_label() != "WAIT":
+				# The button became REST or TAKE mid-chain. End the chain rather than
+				# firing a context action the player never asked for.
+				wait_pointer_held = false
+			else:
+				_begin_streamed_action(state.request_wait(-1.0, false), finished_streamed_movement)
 		elif queued_movement_after_attack:
 			queued_movement_after_attack = false
 			_begin_streamed_move(queued_attack_exit_direction, state.MOVE_RANGE, finished_streamed_movement)
@@ -1237,7 +1247,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if interaction_rect.has_point(position) and state.interaction_label() == "WAIT":
 		pointer_intent = "wait"
 		wait_pointer_held = true
-		_begin_streamed_action(state.request_wait(0.50, false))
+		_begin_streamed_action(state.request_wait(-1.0, false))
 		return
 	if selected_action == "advance" and board_rect.has_point(position):
 		if state.loadout_id == "rogue_sharpshooter": return
@@ -1895,7 +1905,7 @@ func _select_loadout(choice: String) -> void:
 
 func _advance_or_wait() -> void:
 	var interaction := state.interaction_label()
-	if interaction == "WAIT": _begin_streamed_action(state.request_wait(0.50, false))
+	if interaction == "WAIT": _begin_streamed_action(state.request_wait(-1.0, false))
 	else:
 		state.request_context_action()
 		if interaction == "REST": waystone_menu_open = state.can_learn_at_waystone()

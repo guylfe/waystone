@@ -1,6 +1,17 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.12` (Android version code `212`).
+Current prototype version: `0.2.13` (Android version code `213`).
+
+### v0.2.13: Attack capture
+
+- Enemy melee attacks now travel forward as they swing. Previously an attack triggered at roughly its own maximum reach and then stood still through its entire wind-up, so it could not hit a player walking away at any plausible speed -- and reacting on the first frame of a telegraph produced the same result as reacting on the last.
+- Walking is still a real defensive tool. What changed is that its effectiveness now depends on *when* it starts: reading a telegraph early escapes, reacting late does not, and Dodge covers the band between. The Warrior's movement speed is untouched.
+- Each attack authors one number -- the fraction of its wind-up during which walking still saves you -- and its forward travel is derived from that, so tuning is a statement of intent rather than a physics constant.
+- Attacks travel the line they committed to and do not steer, so an early read still escapes and each one stays a commitment rather than a homing move. Arcs plant before their damaging window; thrusts and the smash carry through, because their geometry is still extending while the attack is live.
+- Wait now costs one movement step rather than a flat half second, derived from `MOVE_RANGE / player_move_speed` so waiting in place is never coarser than pacing in place. Holding chains units, each a discrete commitment. It is deliberately unassisted -- Wait is movement without the repositioning and carries movement's risks too, which only becomes a real decision now that standing still is dangerous.
+- Ordinary movement no longer earns clean-evade credit; that reward belongs to authored defensive techniques. Dodge and Vault i-frames still raise the event, so the Acrobat's Turnabout keeps working.
+- Being hit no longer regenerates Stamina, and taking damage now interrupts Stamina recovery, so sustained pressure suppresses it without touching the regeneration rate or the walking rule.
+- Expect the first survey after this to feel too hard. That is the correct direction of error.
 
 ### v0.2.12: Deliberate strike commitment
 

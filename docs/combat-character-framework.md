@@ -952,6 +952,15 @@ Turnabout triggers once per empowered attack, not once per Knife contact. Acroba
 
 ### 14.11 Universal clean evasion
 
+> **Superseded in `0.2.13`, in part.** Source 2 below -- clean-evade credit for
+> ordinary movement -- was removed with attack capture. `docs/design-foundations.md`
+> lists it among rejected directions and the handoff carries it as guardrail 7:
+> evasion rewards belong to authored defensive techniques. It was also about to
+> fire constantly, since capture makes attacks pass close to a retreating player
+> by design. Source 1 (genuine i-frames) is unchanged, so Dodge and Vault both
+> still raise the event and Acrobat's Turnabout in 14.10 keeps two of its three
+> trigger sources. The rest of this section stands.
+
 A clean evade can occur through:
 
 1. hostile attack geometry crossing the actor during genuine i-frames; or
