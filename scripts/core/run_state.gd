@@ -40,9 +40,14 @@ const STAMINA_REGEN_PER_SECOND := 60.0
 const STAMINA_REGEN_DELAY := 1.0
 const EXHAUSTION_DURATION := 2.0
 const DODGE_STAMINA_COST := 18.0
+# World-time tail past return of control during which a fresh hit still damages
+# the player but cannot interrupt the response they chose. Long enough to commit
+# one deliberate action -- a Dodge's i-frames open at 0.08 -- and deliberately too
+# short to cover an offensive sequence. Provisional; see the handoff section 5.4.
+const POST_HIT_PROTECTION_TAIL := 0.35
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure", "hit_reaction", "stagger"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.10"
+const GAME_VERSION := "0.2.11"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -106,6 +111,11 @@ var stealth_remaining := 0.0
 var stealth_cooldown_pending := false
 var assassination_window_remaining := 0.0
 var turnabout_remaining := 0.0
+# Counts down in world time from the moment a hit reaction begins, through the
+# reaction and on past return of control. It is armed once per reaction and never
+# refreshed by the hits it protects against, so standing in a crowd cannot make
+# the player progressively harder to interrupt.
+var player_hit_protection_remaining := 0.0
 var aimed_enemy_id := -1
 var aimed_remaining := 0.0
 var bow_followup_ready := false
@@ -139,6 +149,13 @@ var successful_blocks := 0
 var successful_endures := 0
 var damage_received_total := 0
 var hits_received_total := 0
+# Milestone B telemetry. `protected_damage_total` is damage taken while post-hit
+# protection was active; `interruptions_prevented_total` counts hits that would
+# have replaced the player's action with a fresh reaction and did not. The handoff
+# section 5.4 asks for these to be distinguishable -- protection guarantees agency,
+# not safety, and only the first number shows the price being paid for it.
+var protected_damage_total := 0
+var interruptions_prevented_total := 0
 var potions_used_total := 0
 var stamina_spent_total := 0.0
 var stamina_depleted_total := 0.0
@@ -331,6 +348,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	stealth_cooldown_pending = false
 	assassination_window_remaining = 0.0
 	turnabout_remaining = 0.0
+	player_hit_protection_remaining = 0.0
 	aimed_enemy_id = -1
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
@@ -381,6 +399,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	successful_endures = 0
 	damage_received_total = 0
 	hits_received_total = 0
+	protected_damage_total = 0
+	interruptions_prevented_total = 0
 	potions_used_total = 0
 	stamina_spent_total = 0.0
 	stamina_depleted_total = 0.0
@@ -735,6 +755,8 @@ func _capture_survey_room_entry() -> void:
 		"damage_dealt": damage_dealt,
 		"damage_received": damage_received_total,
 		"hits_received": hits_received_total,
+		"protected_damage": protected_damage_total,
+		"interruptions_prevented": interruptions_prevented_total,
 		"potions_used": potions_used_total,
 		"perfect_dodges": perfect_dodges,
 		"successful_blocks": successful_blocks,
@@ -835,6 +857,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"damage_dealt": damage_dealt - int(survey_room_entry.get("damage_dealt", damage_dealt)),
 		"damage_received": damage_received_total - int(survey_room_entry.get("damage_received", damage_received_total)),
 		"hits_received": hits_received_total - int(survey_room_entry.get("hits_received", hits_received_total)),
+		"protected_damage": protected_damage_total - int(survey_room_entry.get("protected_damage", protected_damage_total)),
+		"interruptions_prevented": interruptions_prevented_total - int(survey_room_entry.get("interruptions_prevented", interruptions_prevented_total)),
 		"potions_used": potions_used_total - int(survey_room_entry.get("potions_used", potions_used_total)),
 		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
 		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
@@ -2660,6 +2684,7 @@ func _restore_at_waystone() -> void:
 	stealth_cooldown_pending = false
 	assassination_window_remaining = 0.0
 	turnabout_remaining = 0.0
+	player_hit_protection_remaining = 0.0
 	aimed_enemy_id = -1
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
@@ -3015,6 +3040,10 @@ func _tick(dt: float) -> void:
 	weapon_sequence_cooldown = maxf(0.0, weapon_sequence_cooldown - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
 	turnabout_remaining = maxf(0.0, turnabout_remaining - dt)
+	# World time, matching hit reactions themselves. Personal tempo must not buy a
+	# slow character a longer guarantee than a fast one, and frozen time does not
+	# burn it -- the player may deliberate as long as they like before spending it.
+	player_hit_protection_remaining = maxf(0.0, player_hit_protection_remaining - dt)
 	assassination_window_remaining = maxf(0.0, assassination_window_remaining - dt)
 	aimed_remaining = maxf(0.0, aimed_remaining - dt)
 	if aimed_remaining <= 0.0: aimed_enemy_id = -1
@@ -4815,9 +4844,11 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	var interrupted_kind := String(player_action.get("kind", "idle"))
 	var interrupted_action := player_action.duplicate(true)
 	var damage_received := mitigated_damage
+	var was_protected := player_hit_protection_remaining > 0.0
 	survey_last_damage_source = source_name
 	player_hp = maxi(0, player_hp - damage_received)
 	damage_received_total += damage_received
+	if was_protected: protected_damage_total += damage_received
 	if uses_stamina_rules() and interrupted_kind == "dodge" and float(interrupted_action.get("elapsed", 0.0)) > float(interrupted_action.get("evade_end", 0.0)):
 		dodge_recovery_damage_total += damage_received
 	if player_exhaustion_remaining > 0.0001: exhaustion_damage_received_total += damage_received
@@ -4834,8 +4865,20 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	# not restart or lengthen the reaction. Because time freezes as soon as this
 	# original commitment ends, the player is guaranteed another decision
 	# instead of being held in an indefinite stagger chain by a crowd.
-	if interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick:
-		_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
+	#
+	# The protection window extends that guarantee past return of control, so the
+	# response the player actually chose gets to happen. Without the tail, control
+	# returns and a second attacker can take it away again before the new action
+	# reaches its first meaningful frame -- which is the "stunlock" the surveys
+	# report. Damage and posture above are already applied: this guarantees agency,
+	# not safety, and a lethal hit still kills through it.
+	if interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick or was_protected:
+		interruptions_prevented_total += 1
+		if was_protected and interrupted_kind not in ["hit_reaction", "stagger"]:
+			_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
+			_set_message("The %s lands, but cannot take your answer away." % source_name)
+		else:
+			_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
 		return
 	var posture_broken := player_posture <= 0.0001
 	var guard_remaining := float(player_action.get("guard_remaining", 0.0))
@@ -4852,7 +4895,14 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	if interrupted_kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("interrupted")
 	_reset_building_force()
 	_break_player_combo()
-	player_action = _action("stagger" if posture_broken else "hit_reaction", 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage)), Vector2.ZERO)
+	var reaction_duration := 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage))
+	# Reaching this line means no protection was active -- the guard above returns
+	# otherwise -- so arming unconditionally is non-refreshing by construction.
+	# Action time advances on personal tempo, so convert to world seconds before
+	# adding the tail; otherwise a fast character's reaction would end sooner in
+	# world time and silently earn a longer guarantee than a slow one.
+	player_hit_protection_remaining = reaction_duration / maxf(0.01, _player_personal_tempo()) + POST_HIT_PROTECTION_TAIL
+	player_action = _action("stagger" if posture_broken else "hit_reaction", reaction_duration, Vector2.ZERO)
 	player_action.merge({
 		"reaction_contact": impact,
 		"reaction_direction": (player_pos - impact).normalized(),
@@ -5525,6 +5575,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"dodge_recovery_damage_total": dodge_recovery_damage_total,
 		"stealth_remaining": stealth_remaining,
 		"turnabout_remaining": turnabout_remaining,
+		"player_hit_protection_remaining": player_hit_protection_remaining,
 		"aimed_enemy_id": aimed_enemy_id,
 		"aimed_remaining": aimed_remaining,
 		"player_condition_buildup": player_condition_buildup.duplicate(true),
@@ -5551,6 +5602,8 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"damage_dealt": damage_dealt,
 		"damage_received_total": damage_received_total,
 		"hits_received_total": hits_received_total,
+		"protected_damage_total": protected_damage_total,
+		"interruptions_prevented_total": interruptions_prevented_total,
 		"potions_used_total": potions_used_total,
 		"stamina_spent_total": stamina_spent_total,
 		"stamina_depleted_total": stamina_depleted_total,
@@ -5740,6 +5793,7 @@ func _build_save_payload() -> Dictionary:
 		"stealth_cooldown_pending": stealth_cooldown_pending,
 		"assassination_window_remaining": assassination_window_remaining,
 		"turnabout_remaining": turnabout_remaining,
+		"player_hit_protection_remaining": player_hit_protection_remaining,
 		"aimed_enemy_id": aimed_enemy_id,
 		"aimed_remaining": aimed_remaining,
 		"player_condition_buildup": player_condition_buildup.duplicate(true),
@@ -5769,6 +5823,8 @@ func _build_save_payload() -> Dictionary:
 		"damage_dealt": damage_dealt,
 		"damage_received_total": damage_received_total,
 		"hits_received_total": hits_received_total,
+		"protected_damage_total": protected_damage_total,
+		"interruptions_prevented_total": interruptions_prevented_total,
 		"potions_used_total": potions_used_total,
 		"stamina_spent_total": stamina_spent_total,
 		"stamina_depleted_total": stamina_depleted_total,
@@ -5960,6 +6016,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	stealth_cooldown_pending = bool(payload.get("stealth_cooldown_pending", false))
 	assassination_window_remaining = float(payload.get("assassination_window_remaining", 0.0))
 	turnabout_remaining = float(payload.get("turnabout_remaining", 0.0))
+	player_hit_protection_remaining = float(payload.get("player_hit_protection_remaining", 0.0))
 	aimed_enemy_id = int(payload.get("aimed_enemy_id", -1))
 	aimed_remaining = float(payload.get("aimed_remaining", 0.0))
 	player_condition_buildup = Dictionary(payload.get("player_condition_buildup", {})).duplicate(true)
@@ -6060,6 +6117,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	damage_dealt = int(payload.get("damage_dealt", 0))
 	damage_received_total = int(payload.get("damage_received_total", 0))
 	hits_received_total = int(payload.get("hits_received_total", 0))
+	protected_damage_total = int(payload.get("protected_damage_total", 0))
+	interruptions_prevented_total = int(payload.get("interruptions_prevented_total", 0))
 	potions_used_total = int(payload.get("potions_used_total", 0))
 	stamina_spent_total = float(payload.get("stamina_spent_total", 0.0))
 	stamina_depleted_total = float(payload.get("stamina_depleted_total", stamina_spent_total))

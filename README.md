@@ -1,6 +1,13 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.10` (Android version code `210`).
+Current prototype version: `0.2.11` (Android version code `211`).
+
+### v0.2.11: Trustworthy input and post-hit agency
+
+- Combo continuation now follows live input. Continuation is sampled at each authored link point rather than granted at commitment, so a sustained hold commits as many strikes as its live window covers and a tap commits exactly one. Previously every sequence began authorised regardless of input, and a quick tap on an enemy — which resolves after the finger is already up — committed the entire combo.
+- Taking a direct hit now starts a short non-refreshing protection window covering the hit reaction and `0.35` world seconds past return of control. Further hits still deal full health and posture damage and can still kill, but cannot replace the response the player chose. This guarantees agency, not safety: the protection does not extend when the hits it protects against land, so standing in a crowd cannot make the player progressively harder to interrupt.
+- Combat Survey report format 11 records interruptions prevented and damage taken under post-hit protection separately, so the price of the guarantee stays visible.
+- Adds `run-tests.ps1`. Test files call `quit(0)` unconditionally, so a failed assertion inside a test function still exits `0`, while a failed assertion directly inside `_init()` aborts before that `quit` and hangs the process instead of reporting. The runner scans output for assertion failures and applies a per-file timeout, and is the only reliable pass/fail signal.
 
 ### v0.2.10: Shared attack commitment
 

@@ -27,9 +27,12 @@
     .\run-tests.ps1 -All
 #>
 param(
-    [Parameter(ValueFromRemainingArguments = $true)]
+    # Position 0 is claimed explicitly. Without it the int parameter below becomes
+    # the first positional one and a test name binds to it as a timeout.
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]] $Tests,
-    [switch] $All
+    [switch] $All,
+    [int] $TimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +54,7 @@ New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-
 $HeadlessSuite = @(
     'run_state_test',
     'combo_continuation_test',
+    'post_hit_agency_test',
     'stamina_test',
     'warrior_character_test',
     'rogue_characters_test',
@@ -78,13 +82,36 @@ foreach ($name in $Selected) {
         continue
     }
 
-    $output = & $Godot --headless --path $ProjectRoot --script "tests/$name.gd" 2>&1 | Out-String
-    $code = $LASTEXITCODE
+    # Run under a timeout. Test files that assert directly inside _init() abort
+    # before reaching their own quit(0) when an assertion fails, so the process
+    # never exits -- a failure presents as an indefinite hang rather than a
+    # failure. Without this the runner would block forever on a red test.
+    $job = Start-Job -ScriptBlock {
+        param($godot, $root, $file)
+        & $godot --headless --path $root --script $file 2>&1 | Out-String
+    } -ArgumentList $Godot, $ProjectRoot, "tests/$name.gd"
+
+    if (Wait-Job $job -Timeout $TimeoutSeconds) {
+        $output = (Receive-Job $job) -join "`n"
+        $code = 0
+        $timedOut = $false
+    } else {
+        Stop-Job $job
+        $output = ''
+        $code = -1
+        $timedOut = $true
+        Get-Process Godot_v4.7-stable_win64 -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
+    Remove-Job $job -Force
+
     $problems = ([regex]::Matches($output, 'Assertion failed|SCRIPT ERROR')).Count
-    $ok = ($problems -eq 0) -and ($code -eq 0)
+    $ok = (-not $timedOut) -and ($problems -eq 0)
 
     if ($ok) {
         Write-Host ("{0,-34} PASS" -f $name) -ForegroundColor Green
+    } elseif ($timedOut) {
+        $Failed += $name
+        Write-Host ("{0,-34} HANG  no exit within {1}s -- likely a failed assert inside _init()" -f $name, $TimeoutSeconds) -ForegroundColor Red
     } else {
         $Failed += $name
         Write-Host ("{0,-34} FAIL  exit={1} problems={2}" -f $name, $code, $problems) -ForegroundColor Red

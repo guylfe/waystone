@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 10
+const FORMAT_VERSION := 11
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -97,6 +97,7 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Damage dealt: %d" % int(room.get("damage_dealt", 0)))
 		lines.append("Damage received: %d" % int(room.get("damage_received", 0)))
 		lines.append("Hits received: %d" % int(room.get("hits_received", 0)))
+		lines.append("Interruptions prevented: %d; damage taken under post-hit protection: %d" % [int(room.get("interruptions_prevented", 0)), int(room.get("protected_damage", 0))])
 		lines.append("Potions used: %d" % int(room.get("potions_used", 0)))
 		lines.append("Perfect dodges: %d" % int(room.get("perfect_dodges", 0)))
 		lines.append("Blocks: %d" % int(room.get("successful_blocks", 0)))
