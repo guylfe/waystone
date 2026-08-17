@@ -9,7 +9,7 @@ func _init() -> void:
 	test_exhaustion_uses_fixed_world_time()
 	test_dodge_cost_and_utility_regeneration()
 	test_shared_terminal_recovery_and_stamina_combo_reward()
-	test_warrior_speed_and_sweeping_cut_cooldown()
+	test_warrior_speed_and_sweeping_cut_budgeting()
 	test_stamina_dodge_forms_improve_the_basic_dodge()
 	test_direct_attack_is_deliberate_and_profile_scoped()
 	test_temperament_packages()
@@ -152,16 +152,24 @@ func test_shared_terminal_recovery_and_stamina_combo_reward() -> void:
 	assert(stamina.terminal_combo_recovery_time_total > 0.20)
 	assert(stamina.request_combo(Vector2.RIGHT, false))
 
-func test_warrior_speed_and_sweeping_cut_cooldown() -> void:
+func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
+	# Sweeping Cut lost its attack cooldown under Stamina rules when it was rebuilt
+	# as the combo's finisher. It is now governed the way every other physical
+	# attack is -- commitment, recovery and cost -- so this asserts the cost does
+	# the limiting rather than a timer. Recovery rules keep their own budgeting,
+	# which is the profiles' actual difference.
 	var stamina := fresh_state()
 	assert(is_equal_approx(stamina.player_move_speed, 260.0))
 	stamina.player_weapon_art_library.assign(["prototype_sweeping_cut"])
 	stamina.player_equipped_weapon_art = "prototype_sweeping_cut"
+	var before := stamina.player_stamina
 	assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
-	assert(is_equal_approx(stamina.skill_cooldown, stamina.SWEEP_COOLDOWN))
+	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
+	assert(is_equal_approx(before - stamina.player_stamina, stamina.SWEEPING_CUT_STAMINA))
 	advance_until_ready(stamina)
-	assert(stamina.skill_cooldown > 0.0)
-	assert(not stamina.request_sweeping_cut(Vector2.RIGHT, false))
+	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
+	# A second sweep is reachable only by overdrawing, which empties the bar.
+	assert(stamina.player_stamina < stamina.SWEEPING_CUT_STAMINA)
 
 	var recovery := fresh_state("warrior", "recovery")
 	recovery.player_weapon_art_library.assign(["prototype_sweeping_cut"])

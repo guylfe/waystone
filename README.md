@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.14` (Android version code `214`).
+Current prototype version: `0.2.15` (Android version code `215`).
+
+### v0.2.15: Sweeping Cut is the finisher, arriving early
+
+- Sweeping Cut is now the Sword combo's third strike, available immediately, at the combo's full price. It had become a strictly better version of the strike it was meant to mirror: a `160` degree arc against the turning slash's `117`, at the same reach, in 23% of the combo's time for 61% of its Stamina — so building the sequence for its own finisher was never the correct play.
+- It now shares the finisher's geometry, damage and posture, and costs `56` Stamina: exactly what the three combo strikes cost together. What you buy is the *time* you skip, and you pay the full price for it.
+- Its terminal recovery is served in full under both rule profiles. Stamina rules previously shortened it, so the commitment the player could see was not the one they paid; physical timing is shared and only the resource model differs.
+- The anti-spam cooldown is gone under Stamina rules, matching Drawing Cut. It is governed the way every other physical attack is — commitment, recovery and cost. Recovery rules keep their own budgeting. A second sweep is still reachable by overdraw, and empties the bar into an exhaustion lockout.
+- `Long Reach` still grants its authored `+20` reach to the chosen Sword Art. Even fully upgraded, the rebuilt footprint is smaller than the old base sweep.
 
 ### v0.2.14: Capture telemetry
 

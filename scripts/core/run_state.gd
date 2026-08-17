@@ -69,7 +69,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # resources disagreeing about whether being hit is a chance to recover.
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.14"
+const GAME_VERSION := "0.2.15"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1905,8 +1905,18 @@ func resume_combo_hold() -> bool:
 	_set_message("Your grip returns. The sequence continues.")
 	return true
 
+# Sweeping Cut is the Sword combo's third strike, available immediately, at the
+# combo's full price. It is not a wider, cheaper, faster version of that finisher,
+# which is what it had become: a 160-degree arc for 34 Stamina in 23% of the
+# combo's time, so building the sequence for its own finisher was never correct.
+#
+# Now it shares the finisher's geometry, damage and posture, costs exactly what
+# the whole combo costs, and serves its complete terminal recovery in both rule
+# profiles. What you buy is the *time* you skip, and you pay the full price for it.
+const SWEEPING_CUT_STAMINA := 56.0
+
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or skill_cooldown > 0.0001 or direction.length_squared() < 0.01 or not _spend_stamina(34.0):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -1914,16 +1924,27 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	var extended := has_track_rank("swordsmanship", 4)
 	var flowing := has_track_rank("swordsmanship", 5)
 	var edge := has_track_rank("swordsmanship", 3)
-	player_action = _melee_action(1.29 if flowing else 1.42, 0.44, 0.57, 178.0 if extended else 158.0, 15, player_facing, "broad_sweep", "sweep")
-	player_action["posture_damage"] = 5.0 + (0.5 if edge else 0.0)
-	player_action["damage_min"] = 15 + (1 if edge else 0)
+	# Deliberately identical to the combo's turning slash, including how the two
+	# rule profiles differ, so this reads as that strike arriving early rather than
+	# as a separate and better attack.
+	var finisher_damage := 17 if uses_stamina_rules() else 15
+	var finisher_posture := 4.5 if uses_stamina_rules() else 3.8
+	var full_duration := 1.29 if flowing else 1.42
+	player_action = _melee_action(full_duration, 0.44, 0.57, 178.0 if extended else 158.0, finisher_damage, player_facing, "turning_slash", "sweep")
+	# `_melee_action` shortens recovery for "sweep" under Stamina rules, which is
+	# right for Knife Execution and Drawing Cut but not here: physical commitment is
+	# shared across profiles and only the resource model differs. Restore the full
+	# authored recovery so the terminal window is actually visible.
+	player_action["duration"] = full_duration
+	player_action["posture_damage"] = finisher_posture + (0.5 if edge else 0.0)
+	player_action["damage_min"] = finisher_damage + (1 if edge else 0)
 	player_action["damage_max"] = int(player_action["damage_min"])
 	_apply_action_poise(player_action)
 	_annotate_player_action(player_equipped_weapon_art if player_equipped_weapon_art != "" else "prototype_sweeping_cut")
-	# Sweeping Cut is crowd control, not a replacement basic attack. Its Stamina
-	# cost limits burst length while the shared art cooldown prevents repeatedly
-	# sweeping a grouped melee formation every time control returns.
-	skill_cooldown = SWEEP_COOLDOWN * _skill_cooldown_multiplier
+	# No attack cooldown under Stamina: commitment, recovery and cost govern it, as
+	# they govern every other physical attack. Recovery rules keep their own
+	# budgeting, which is the modes' actual difference. Matches Drawing Cut.
+	skill_cooldown = 0.0 if uses_stamina_rules() else SWEEP_COOLDOWN * _skill_cooldown_multiplier
 	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
 	if simulate_immediately: _simulate_until_ready()
