@@ -88,6 +88,8 @@ Independent of the above, basic Dodge is a bad action on pure numbers. From `req
 
 Basic Dodge is **3% faster than walking**, costs 18 stamina, surrenders 3.4 decision points, and leaves you vulnerable for *more* total world-time per use than a walk step does. Walking dominates it on every axis except the i-frames, and i-frames are worthless when nothing can hit you anyway (see §1).
 
+> **Resolved in 0.2.17, partly.** The basic Dodge's numbers are unchanged — walking still matches it — because the fix belongs to §1 and §4, not to the Dodge itself. What changed is that walking is no longer unconditionally available: exhaustion drops it to 117 u/s, below the capture escape threshold of every fast enemy, and the Dodge is the only physical action that survives the lockout. The comparison in this table now only holds while you have breath.
+
 Worth noting: the upgraded forms are fine. Sidestep is 168u in 0.47s (357 u/s) and Long Roll 231u in 0.60s (385 u/s) — genuinely better than walking. **It is specifically the starting Dodge that is broken**, which means a player forms the judgement "Dodge does nothing" in the first minutes of their first run and has no reason to revisit it after upgrading. The survey observation that Dodge stays unused *even after Long Roll is unlocked* is consistent with a learned judgement, not an ongoing numerical one.
 
 ---
@@ -116,6 +118,8 @@ The handoff's proposed rebuild — make it an immediate version of strike 3 at ~
 So the loop is not merely "retreat is safe", it is "retreat is profitable": you spend stamina attacking and recover all of it by doing the thing that is already the strongest defensive option. Dodge's 18-point cost is 0.3 seconds of walking.
 
 This is the reason exhaustion never produces danger in telemetry. It is not that the numbers are too generous in isolation — 60/s on a 100 bar is close to Dark Souls' ~45/s on a ~100 bar. It is that in Souls you rarely get 2.7 uninterrupted seconds, and here you always do, because of §1.
+
+> **Resolved in 0.2.17.** Regeneration dropped to 28/s and became continuous — spending no longer arms a delay, so the bar refills while repositioning rather than pausing and snapping back. A full bar is now 3.6 seconds of walking rather than 2.67, and costs were halved so the burst that empties it is larger. The decisive change is not the arithmetic but the punishment: emptying the bar slows walking to 45%, so "retreat is profitable" stops being true exactly when you have overspent. Retreat is still stamina-positive; it is no longer free.
 
 Note this also means the four findings compound in a specific order. §1 makes retreat safe → safe retreat makes stamina free → free stamina makes Dodge's cost irrelevant → and since walking already matches Dodge's displacement (§2), Dodge has no remaining purpose. Fixing §4 or §2 alone changes nothing while §1 holds.
 

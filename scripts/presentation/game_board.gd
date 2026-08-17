@@ -1756,7 +1756,7 @@ func _handle_button(name: String) -> void:
 	match name:
 		"potion": _begin_streamed_action(state.request_potion(false))
 		"defense":
-			if _defense_cooldown() <= 0.0001 and not (state.defense_id == "dodge" and state.stamina_actions_locked()):
+			if _defense_cooldown() <= 0.0001:
 				if state.defense_id == "endure": _begin_streamed_action(state.request_endure(state.player_facing, false))
 				else: selected_action = "" if selected_action == "defense" else "defense"
 		"skill":
@@ -4291,8 +4291,8 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "UNLIMITED" if state.has_infinite_potions() else "%d LEFT" % state.potions
 	elif name == "defense":
 		title = state.defense_id.to_upper()
-		available = _defense_cooldown() <= 0.0001 and not (state.defense_id == "dodge" and state.stamina_actions_locked())
-		subtitle = "EXHAUSTED" if state.defense_id == "dodge" and state.stamina_actions_locked() else "FAST" if available and state.defense_id == "dodge" else "MEDIUM" if available else "COOLING"
+		available = _defense_cooldown() <= 0.0001
+		subtitle = "DESPERATE" if state.defense_id == "dodge" and state.stamina_actions_locked() else "FAST" if available and state.defense_id == "dodge" else "MEDIUM" if available else "COOLING"
 	elif name == "skill":
 		var art := CombatCatalogScript.weapon_art(state.player_equipped_weapon_art)
 		title = String(art.get("label", "ART LOCKED")).to_upper()
@@ -4326,7 +4326,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
 	var stealth_without_cooldown := name == "rally" and state.loadout_id.begins_with("rogue_") and state.stealth_status() != "cooldown"
 	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)) and not stealth_without_cooldown:
-		var stamina_locked := state.stamina_actions_locked() and (name in ["defense", "skill"] or (name == "advance" and state.loadout_id == "warrior"))
+		var stamina_locked := state.stamina_actions_locked() and (name == "skill" or (name == "advance" and state.loadout_id == "warrior"))
 		var remaining := state.player_exhaustion_remaining if stamina_locked else _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
 		var maximum := state.EXHAUSTION_DURATION if stamina_locked else defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0

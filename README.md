@@ -1,6 +1,17 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.16` (Android version code `216`).
+Current prototype version: `0.2.17` (Android version code `217`).
+
+### v0.2.17: Stamina breathes, and exhaustion has teeth
+
+Stamina was a bookkeeping layer rather than a pressure system: it cost a lot, paused, then snapped back, and running out was safer than average play (0.47 damage per second while exhausted against 0.59 overall). Exhaustion was a rest. This rebuilds the resource around continuous recovery and a punishment that lands in the legs.
+
+- **Every cost is halved.** `STAMINA_COST_SCALE` scales the authored numbers at the point of spending, so the relationships stay readable in source: the sword combo still totals 56 raw and Sweeping Cut still equals it exactly. In play a full combo costs 28, a Dodge 9, and a full bar carries three sweeps with the fourth overdrawing.
+- **Regeneration is continuous.** Spending no longer arms a delay. The rate drops from 60/s to 28/s and simply runs, so the bar refills while you reposition instead of holding still and then snapping back. Only a hit suppresses it, and only for 0.5s.
+- **Exhaustion slows you to 45% of walking speed** — 117 u/s against a base of 260. That is below the capture escape threshold of every fast enemy (Knife 144, Bandit 142, Blade 131) and above the slow ones (Shield 103, Brute 91), so overdrawing loses you the fights footwork was carrying and does not strand you in a room of Brutes. Its duration drops from 2.0s to 1.2s to compensate.
+- **Attacks stay locked while exhausted; the Dodge does not.** Milestone B's floor — a hit must always leave one executable response — outranks the lockout. The desperate Dodge travels 90 units instead of 150, carries 0.16s of i-frames instead of 0.24s, and runs 0.75s instead of 0.56s. It clears one envelope and never a second.
+- **Its cost is debt, not Stamina.** Taking it empties the bar and restarts the exhaustion clock at the same flat duration every time. Chaining is self-limiting without escalation: at 117 u/s only the dodged attack misses, so a chain resolves in damage rather than stalling.
+- **Survey report format 13** adds desperate Dodge counts with the longest chain, and relabels exhaustion damage to name the slow.
 
 ### v0.2.16: A chosen Defense owns the next tap
 

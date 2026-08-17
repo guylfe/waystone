@@ -55,10 +55,30 @@ const STRIKE_INTENT_ABANDON_MARGIN := 60.0
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-const STAMINA_REGEN_PER_SECOND := 60.0
-const STAMINA_REGEN_DELAY := 1.0
-const EXHAUSTION_DURATION := 2.0
+# Stamina is the burst budget, not the fight gate -- recovery is the primary
+# limiter. Costs are authored at their original relative shape and scaled here,
+# so the relationships stay legible (Sweeping Cut still equals the sword combo's
+# full price) and the global price level is one number to retune.
+const STAMINA_COST_SCALE := 0.5
+# Slower than the old 60/s, but continuous: spending no longer arms a delay, so
+# the bar refills while you reposition rather than pausing then snapping back.
+const STAMINA_REGEN_PER_SECOND := 28.0
+# Only a hit suppresses regeneration now, and only briefly.
+const STAMINA_REGEN_DELAY := 0.5
+const EXHAUSTION_DURATION := 1.2
+# Exhaustion's teeth. 45% of a 260 u/s walk is 117 u/s, below the capture escape
+# threshold of every fast enemy (Knife 144, Bandit 142, Blade 131) and above the
+# slow ones (Shield 103, Brute 91) -- so being winded loses you the fights where
+# footwork was carrying you, without stranding you in a room of Brutes.
+const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
+# The desperate Dodge: reachable while exhausted, because a hit must always leave
+# one executable response. 90 units of travel clears a Blade's envelope (68) and
+# little else, the i-frame window is two thirds of a real Dodge's, and the tail is
+# longer. Taking it re-empties the bar and restarts the exhaustion clock at the
+# same flat duration -- the cost compounds by repetition, not by escalation.
+const EXHAUSTED_DODGE_SPEED := 450.0
+const EXHAUSTED_DODGE_DURATION := 0.75
 # World-time tail past return of control during which a fresh hit still damages
 # the player but cannot interrupt the response they chose. Long enough to commit
 # one deliberate action -- a Dodge's i-frames open at 0.08 -- and deliberately too
@@ -68,8 +88,8 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # already excludes them, so stamina regenerating through a flinch had the two
 # resources disagreeing about whether being hit is a chance to recover.
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
-const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.16"
+const SAVE_VERSION := 32
+const GAME_VERSION := "0.2.17"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -204,6 +224,9 @@ var exhaustion_damage_received_total := 0
 var exhaustion_move_time_total := 0.0
 var exhaustion_wait_time_total := 0.0
 var exhaustion_other_time_total := 0.0
+var exhausted_dodge_total := 0
+var exhausted_dodge_chain := 0
+var exhausted_dodge_max_chain := 0
 var terminal_combo_recoveries_total := 0
 var terminal_combo_recovery_time_total := 0.0
 var direct_attack_uses_total := 0
@@ -454,6 +477,9 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_move_time_total = 0.0
 	exhaustion_wait_time_total = 0.0
 	exhaustion_other_time_total = 0.0
+	exhausted_dodge_total = 0
+	exhausted_dodge_chain = 0
+	exhausted_dodge_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	terminal_combo_recovery_time_total = 0.0
 	direct_attack_uses_total = 0
@@ -823,6 +849,8 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_move_time": exhaustion_move_time_total,
 		"exhaustion_wait_time": exhaustion_wait_time_total,
 		"exhaustion_other_time": exhaustion_other_time_total,
+		"exhausted_dodges": exhausted_dodge_total,
+		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total,
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total,
 		"direct_attack_uses": direct_attack_uses_total,
@@ -927,6 +955,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_move_time": exhaustion_move_time_total - float(survey_room_entry.get("exhaustion_move_time", exhaustion_move_time_total)),
 		"exhaustion_wait_time": exhaustion_wait_time_total - float(survey_room_entry.get("exhaustion_wait_time", exhaustion_wait_time_total)),
 		"exhaustion_other_time": exhaustion_other_time_total - float(survey_room_entry.get("exhaustion_other_time", exhaustion_other_time_total)),
+		"exhausted_dodges": exhausted_dodge_total - int(survey_room_entry.get("exhausted_dodges", exhausted_dodge_total)),
+		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
@@ -1327,21 +1357,39 @@ func _can_start_basic_attack() -> bool:
 func _combat_rules_intro() -> String:
 	if not uses_stamina_rules():
 		return "Recovery rules: abilities and defensive techniques use cooldowns; Stamina is inactive. Weapon commitment is shared with Stamina rules."
-	return "Stamina rules: physical actions and Dodge spend Stamina. Regeneration begins after one world-second without spending it; emptying it locks those actions for two world-seconds."
+	return "Stamina rules: physical actions and Dodge spend Stamina, and it regenerates continuously — only a hit interrupts it. Emptying it exhausts you: attacks lock and you move at less than half speed until your breath returns. A Dodge is still available while exhausted, but it empties the bar again and restarts the clock."
 
 func _can_commit_physical_action() -> bool:
 	return not uses_stamina_rules() or not stamina_actions_locked()
 
-func _spend_stamina(amount: float) -> bool:
+func player_is_exhausted() -> bool:
+	return uses_stamina_rules() and player_exhaustion_remaining > 0.0001
+
+# Every consumer of walking speed goes through this, so exhaustion slows stepping,
+# the Wait unit derived from a step, and the streamed-move duration together.
+func current_move_speed() -> float:
+	return player_move_speed * (EXHAUSTED_MOVE_SCALE if player_is_exhausted() else 1.0)
+
+# Dodge is the one physical action exhaustion does not take away. The UI asks this
+# rather than stamina_actions_locked() so the button stays live while winded.
+func dodge_is_available() -> bool:
+	return is_player_ready() and not trial_complete and (uses_stamina_rules() or dodge_cooldown <= 0.0001)
+
+func stamina_cost(amount: float) -> float:
+	return amount * STAMINA_COST_SCALE
+
+func _spend_stamina(raw_amount: float) -> bool:
 	if not uses_stamina_rules(): return true
-	if amount <= 0.0: return true
+	if raw_amount <= 0.0: return true
 	if not _can_commit_physical_action(): return false
+	var amount := stamina_cost(raw_amount)
 	var before := player_stamina
 	player_stamina = maxf(0.0, player_stamina - amount)
 	stamina_spent_total += amount
 	stamina_depleted_total += before - player_stamina
 	stamina_overdraw_total += maxf(0.0, amount - before)
-	player_stamina_regen_delay = STAMINA_REGEN_DELAY
+	# Spending no longer arms the regeneration delay. Only being hit does, so
+	# recovery reads as continuous breathing rather than a hold-then-snap refill.
 	if player_stamina <= 0.0001:
 		player_stamina = 0.0
 		player_overexertion_pending = true
@@ -1366,7 +1414,7 @@ func _begin_exhaustion() -> void:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = EXHAUSTION_DURATION
 	overexertion_count += 1
-	_set_message("EXHAUSTED — physical actions are locked for two world-seconds. Move, Wait, or use a non-physical action.")
+	_set_message("EXHAUSTED — attacks are locked and your footwork is slow. Dodge still answers, but it costs you the recovery.")
 
 func _shorten_recovery(duration: float, active_end: float, factor: float = 0.60) -> float:
 	if not uses_stamina_rules(): return duration
@@ -1484,9 +1532,10 @@ func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bo
 	var travel := clampf(distance, 4.0, MOVE_RANGE)
 	var normalized := direction.normalized()
 	player_facing = normalized
-	player_action = _action("move", travel / player_move_speed, normalized)
+	var speed := current_move_speed()
+	player_action = _action("move", travel / speed, normalized)
 	player_action["distance"] = travel
-	player_action["speed"] = player_move_speed
+	player_action["speed"] = speed
 	player_action["move_origin"] = player_pos
 	_emit_sound(player_pos, 130.0)
 	_set_message("You commit to a step.")
@@ -1974,7 +2023,13 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	return true
 
 func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (dodge_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(DODGE_STAMINA_COST):
+	if not is_player_ready() or trial_complete or (dodge_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01:
+		return false
+	# Exhaustion locks every physical action except this one. Milestone B's floor --
+	# a hit must always leave one executable response -- outranks the lockout, so
+	# the Dodge stays reachable and pays in debt instead of Stamina.
+	var desperate := uses_stamina_rules() and not _can_commit_physical_action()
+	if not desperate and not _spend_stamina(DODGE_STAMINA_COST):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -2037,14 +2092,36 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 			evade_end = move_end
 			speed = 660.0
 			cooldown = 3.6
+	if desperate:
+		# 90 units of travel over 0.20s, i-frames covering 0.16s of it, and the
+		# remaining 0.51s spent exposed. It clears one envelope, never a second.
+		duration = EXHAUSTED_DODGE_DURATION
+		move_start = 0.08
+		move_end = 0.28
+		evade_start = 0.08
+		evade_end = 0.24
+		speed = EXHAUSTED_DODGE_SPEED
 	player_action = _action("dodge", duration, player_facing)
-	var reported_style := style if not style.is_empty() else "practised" if has_track_rank("evasion", 1) else "basic"
+	var reported_style := "desperate" if desperate else style if not style.is_empty() else "practised" if has_track_rank("evasion", 1) else "basic"
 	player_action.merge({"speed": speed, "move_start": move_start, "move_end": move_end, "evade_start": evade_start, "evade_end": evade_end, "vulnerable_recovery_start": evade_end, "dodge_style": reported_style, "clean_dodge_triggered": false}, true)
 	dodge_style_uses_total[reported_style] = int(dodge_style_uses_total.get(reported_style, 0)) + 1
 	_annotate_player_action("defense_dodge")
 	dodge_cooldown = 0.0 if uses_stamina_rules() else cooldown
 	_emit_sound(player_pos, 270.0)
-	_set_message("You commit to a dodge.")
+	if desperate:
+		# Flat debt: the bar empties and the clock restarts at the same duration
+		# every time. Chaining is already self-limiting -- at 117 u/s only the
+		# dodged attack misses, so a chain resolves in damage rather than stalling.
+		player_stamina = 0.0
+		player_overexertion_pending = false
+		player_stamina_regen_delay = 0.0
+		player_exhaustion_remaining = EXHAUSTION_DURATION
+		exhausted_dodge_total += 1
+		exhausted_dodge_chain += 1
+		exhausted_dodge_max_chain = maxi(exhausted_dodge_max_chain, exhausted_dodge_chain)
+		_set_message("You throw yourself clear on nothing but nerve. Your breath is gone again.")
+	else:
+		_set_message("You commit to a dodge.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
@@ -2304,7 +2381,10 @@ func _begin_repack_action(text: String, simulate_immediately: bool) -> bool:
 # survives retuning -- if combat movement speed is revisited, a step lengthens and
 # Wait tracks it automatically instead of silently drifting finer.
 func wait_unit_duration() -> float:
-	return MOVE_RANGE / maxf(1.0, player_move_speed)
+	# One movement step's worth of world time. It tracks the *current* walk speed,
+	# so waiting while exhausted is as coarse as stepping while exhausted and the
+	# two never disagree about what "a beat" costs.
+	return MOVE_RANGE / maxf(1.0, current_move_speed())
 
 func request_wait(duration: float = -1.0, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete:
@@ -3156,7 +3236,8 @@ func _tick(dt: float) -> void:
 		elif player_action_kind == "wait": exhaustion_wait_time_total += dt
 		else: exhaustion_other_time_total += dt
 		if player_exhaustion_remaining <= 0.0001:
-			_set_message("Your breath steadies. Physical actions are ready.")
+			exhausted_dodge_chain = 0
+			_set_message("Your breath steadies. Your footing and your attacks return.")
 	_build_enemy_spatial_index()
 	_update_effects(dt)
 	_update_conditions(dt)
@@ -5914,6 +5995,8 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"exhaustion_move_time_total": exhaustion_move_time_total,
 		"exhaustion_wait_time_total": exhaustion_wait_time_total,
 		"exhaustion_other_time_total": exhaustion_other_time_total,
+		"exhausted_dodge_total": exhausted_dodge_total,
+		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6137,6 +6220,8 @@ func _build_save_payload() -> Dictionary:
 		"exhaustion_move_time_total": exhaustion_move_time_total,
 		"exhaustion_wait_time_total": exhaustion_wait_time_total,
 		"exhaustion_other_time_total": exhaustion_other_time_total,
+		"exhausted_dodge_total": exhausted_dodge_total,
+		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6194,7 +6279,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, SAVE_VERSION]: return false
+	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -6431,6 +6516,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_move_time_total = float(payload.get("exhaustion_move_time_total", 0.0))
 	exhaustion_wait_time_total = float(payload.get("exhaustion_wait_time_total", 0.0))
 	exhaustion_other_time_total = float(payload.get("exhaustion_other_time_total", 0.0))
+	exhausted_dodge_total = int(payload.get("exhausted_dodge_total", 0))
+	exhausted_dodge_max_chain = int(payload.get("exhausted_dodge_max_chain", 0))
 	terminal_combo_recoveries_total = int(payload.get("terminal_combo_recoveries_total", 0))
 	terminal_combo_recovery_time_total = float(payload.get("terminal_combo_recovery_time_total", 0.0))
 	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))

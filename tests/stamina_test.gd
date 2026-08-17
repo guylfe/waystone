@@ -12,6 +12,8 @@ func _init() -> void:
 	test_warrior_speed_and_sweeping_cut_budgeting()
 	test_stamina_dodge_forms_improve_the_basic_dodge()
 	test_direct_attack_is_deliberate_and_profile_scoped()
+	test_exhaustion_slows_movement()
+	test_desperate_dodge_is_the_only_exhausted_action()
 	test_temperament_packages()
 	test_enemies_share_stamina_attribute_without_spending_it()
 	print("Recovery/Stamina profiles, overdraw, exhaustion, and regeneration: PASS")
@@ -40,7 +42,7 @@ func test_parallel_rule_sets() -> void:
 	assert(not recovery.stamina_actions_locked())
 	var stamina := fresh_state()
 	assert(stamina.request_attack(stamina.player_pos + Vector2.RIGHT * 100.0, false))
-	assert(is_equal_approx(stamina.player_stamina, 82.0))
+	assert(is_equal_approx(stamina.player_stamina, 91.0))
 	assert(float(stamina.player_action["duration"]) < recovery_duration)
 
 func test_new_combo_costs() -> void:
@@ -51,20 +53,20 @@ func test_new_combo_costs() -> void:
 	var sword := fresh_state()
 	assert(sword.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(sword)
-	assert(is_equal_approx(sword.player_stamina, 44.0))
+	assert(is_equal_approx(sword.player_stamina, 72.0))
 	var knife := fresh_state("rogue_acrobat")
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(knife)
-	assert(is_equal_approx(knife.player_stamina, 46.0))
+	assert(is_equal_approx(knife.player_stamina, 73.0))
 	var twin := fresh_state("rogue_acrobat")
 	twin.player_weapon_frame = "twin_knives"
 	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
-	assert(is_equal_approx(twin.player_stamina, 40.0))
+	assert(is_equal_approx(twin.player_stamina, 70.0))
 
 func test_overdraw_starts_exhaustion_after_recovery() -> void:
 	var state := fresh_state()
-	state.player_stamina = 10.0
+	state.player_stamina = 8.0
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
 	assert(is_equal_approx(state.player_stamina, 0.0))
 	assert(state.player_overexertion_pending)
@@ -80,30 +82,34 @@ func test_exhaustion_uses_fixed_world_time() -> void:
 	state.player_stamina = 1.0
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
 	advance_until_ready(state)
-	assert(state.request_wait(1.0, false))
+	assert(is_equal_approx(state.player_exhaustion_remaining, state.EXHAUSTION_DURATION))
+	assert(state.request_wait(0.6, false))
 	advance_until_ready(state)
-	assert(absf(state.player_exhaustion_remaining - 1.0) <= 0.02)
-	assert(state.player_stamina <= 0.6)
+	assert(absf(state.player_exhaustion_remaining - (state.EXHAUSTION_DURATION - 0.6)) <= 0.02)
+	# Regeneration runs *through* exhaustion now rather than waiting it out, so the
+	# bar is already refilling while the lockout is still in force.
+	assert(state.player_stamina > 10.0)
 	assert(state.request_move(Vector2.RIGHT, state.MOVE_RANGE, false))
 	advance_until_ready(state)
-	assert(state.player_exhaustion_remaining < 1.0)
-	assert(state.request_wait(1.2, false))
+	assert(state.player_exhaustion_remaining < state.EXHAUSTION_DURATION - 0.6)
+	assert(state.request_wait(0.8, false))
 	advance_until_ready(state)
 	assert(is_equal_approx(state.player_exhaustion_remaining, 0.0))
-	assert(state.player_stamina >= 59.0)
-	assert(state.stamina_regen_delay_time_total >= 0.99)
-	assert(state.stamina_regen_active_time_total >= 0.99)
+	assert(state.stamina_regen_active_time_total >= 1.3)
+	# Spending no longer arms the delay -- only being hit does, and nothing hit here.
+	assert(is_equal_approx(state.stamina_regen_delay_time_total, 0.0))
 
 func test_dodge_cost_and_utility_regeneration() -> void:
 	var stamina := fresh_state()
 	assert(stamina.request_dodge(Vector2.RIGHT, false))
 	advance_until_ready(stamina)
-	assert(is_equal_approx(stamina.player_stamina, 82.0))
+	assert(is_equal_approx(stamina.player_stamina, 91.0))
 	assert(is_equal_approx(stamina.dodge_cooldown, 0.0))
 	stamina.player_stamina = 50.0
 	assert(stamina.request_rally(false))
 	advance_until_ready(stamina)
-	assert(is_equal_approx(stamina.player_stamina, 50.0))
+	# Rally spends nothing, and now regenerates while it runs.
+	assert(stamina.player_stamina >= 50.0)
 	assert(stamina.request_wait(1.1, false))
 	advance_until_ready(stamina)
 	assert(stamina.player_stamina > 50.0)
@@ -165,11 +171,18 @@ func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
 	var before := stamina.player_stamina
 	assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
-	assert(is_equal_approx(before - stamina.player_stamina, stamina.SWEEPING_CUT_STAMINA))
+	assert(is_equal_approx(before - stamina.player_stamina, stamina.stamina_cost(stamina.SWEEPING_CUT_STAMINA)))
 	advance_until_ready(stamina)
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
-	# A second sweep is reachable only by overdrawing, which empties the bar.
-	assert(stamina.player_stamina < stamina.SWEEPING_CUT_STAMINA)
+	# Halved costs put three sweeps in a full bar and overdraw on the fourth. Cost
+	# still does the limiting; it now limits a burst rather than a single use.
+	var sweeps := 1
+	while stamina.player_stamina > 0.0001 and sweeps < 8:
+		assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
+		advance_until_ready(stamina)
+		sweeps += 1
+	assert(sweeps == 4)
+	assert(stamina.player_overexertion_pending or stamina.player_exhaustion_remaining > 0.0001)
 
 	var recovery := fresh_state("warrior", "recovery")
 	recovery.player_weapon_art_library.assign(["prototype_sweeping_cut"])
@@ -228,6 +241,58 @@ func test_direct_attack_is_deliberate_and_profile_scoped() -> void:
 	var recovery := fresh_state("warrior", "recovery")
 	assert(recovery.request_combo(Vector2.LEFT, false))
 	assert(recovery.direct_attack_uses_total == 0)
+
+func exhaust(state: RunState) -> void:
+	state.player_stamina = 1.0
+	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	advance_until_ready(state)
+	assert(state.player_exhaustion_remaining > 0.0001)
+
+func test_exhaustion_slows_movement() -> void:
+	# Exhaustion's teeth are in the legs. A winded step is slow enough that the fast
+	# enemies' capture envelopes catch it, which is what makes overdrawing cost.
+	var state := fresh_state()
+	assert(is_equal_approx(state.current_move_speed(), state.player_move_speed))
+	var quick := state.wait_unit_duration()
+	exhaust(state)
+	assert(is_equal_approx(state.current_move_speed(), state.player_move_speed * state.EXHAUSTED_MOVE_SCALE))
+	assert(state.current_move_speed() < 131.0)
+	# Wait is one movement step, so it coarsens with the step rather than drifting.
+	assert(is_equal_approx(state.wait_unit_duration(), quick / state.EXHAUSTED_MOVE_SCALE))
+	var origin := state.player_pos
+	assert(state.request_move(Vector2.RIGHT, state.MOVE_RANGE, false))
+	var slow_duration := float(state.player_action["duration"])
+	advance_until_ready(state)
+	assert(absf(state.player_pos.distance_to(origin) - state.MOVE_RANGE) <= 0.5)
+	assert(slow_duration > state.MOVE_RANGE / state.player_move_speed * 2.0)
+
+func test_desperate_dodge_is_the_only_exhausted_action() -> void:
+	var state := fresh_state()
+	exhaust(state)
+	# Attacks, combos and weapon arts stay locked.
+	assert(not state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	assert(not state.request_advance(Vector2.RIGHT, false, false))
+	# The Dodge does not. It is the agency floor -- a hit must always leave one
+	# executable response -- so it degrades instead of disappearing.
+	var origin := state.player_pos
+	assert(state.request_dodge(Vector2.RIGHT, false))
+	assert(String(state.player_action["dodge_style"]) == "desperate")
+	assert(is_equal_approx(float(state.player_action["duration"]), state.EXHAUSTED_DODGE_DURATION))
+	var iframes := float(state.player_action["evade_end"]) - float(state.player_action["evade_start"])
+	assert(iframes < 0.24)
+	# The debt: bar emptied, clock restarted, and it restarts flat every time.
+	assert(is_equal_approx(state.player_stamina, 0.0))
+	assert(is_equal_approx(state.player_exhaustion_remaining, state.EXHAUSTION_DURATION))
+	assert(state.exhausted_dodge_total == 1 and state.exhausted_dodge_chain == 1)
+	advance_until_ready(state)
+	# Far enough to clear one envelope, nowhere near a full Dodge's 150 units.
+	var travel := state.player_pos.distance_to(origin)
+	assert(travel > 68.0 and travel < 120.0)
+	var after_first := state.player_exhaustion_remaining
+	assert(state.request_dodge(Vector2.RIGHT, false))
+	assert(is_equal_approx(state.player_exhaustion_remaining, state.EXHAUSTION_DURATION))
+	assert(state.player_exhaustion_remaining > after_first)
+	assert(state.exhausted_dodge_chain == 2 and state.exhausted_dodge_max_chain == 2)
 
 func test_temperament_packages() -> void:
 	var steadfast := fresh_state()

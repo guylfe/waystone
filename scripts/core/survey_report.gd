@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 12
+const FORMAT_VERSION := 13
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -84,7 +84,8 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Active Stamina regeneration: %.2fs" % float(room.get("stamina_regen_active_time", 0.0)))
 		lines.append("Exhaustion lockouts: %d" % int(room.get("overexertions", 0)))
 		lines.append("Exhausted time: %.2fs" % float(room.get("winded_time", 0.0)))
-		lines.append("Damage received while exhausted: %d" % int(room.get("exhaustion_damage_received", 0)))
+		lines.append("Damage received while exhausted and slowed: %d" % int(room.get("exhaustion_damage_received", 0)))
+		lines.append("Desperate Dodges: %d (longest chain %d)" % [int(room.get("exhausted_dodges", 0)), int(room.get("exhausted_dodge_max_chain", 0))])
 		lines.append("Exhaustion advanced by: movement %.2fs; Wait %.2fs; other %.2fs" % [float(room.get("exhaustion_move_time", 0.0)), float(room.get("exhaustion_wait_time", 0.0)), float(room.get("exhaustion_other_time", 0.0))])
 		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
 		lines.append("Terminal combo recoveries: %d" % int(room.get("terminal_combo_recoveries", 0)))
