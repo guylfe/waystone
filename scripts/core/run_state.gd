@@ -69,7 +69,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # resources disagreeing about whether being hit is a chance to recover.
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 31
-const GAME_VERSION := "0.2.15"
+const GAME_VERSION := "0.2.16"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]

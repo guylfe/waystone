@@ -1708,7 +1708,15 @@ func _handle_gesture(end_position: Vector2) -> void:
 		return
 	var enemy := _enemy_near(end_position, 54.0)
 	if not enemy.is_empty():
-		if selected_action == "skill":
+		if selected_action == "defense":
+			# A selected Defense owns the next tap, including one that lands on an
+			# enemy. Without this the tap fell through to the attack branch and
+			# silently discarded the Dodge the player had already chosen -- and it
+			# skipped the plausibility check too, so it would swing at a target well
+			# out of reach. Tapping an enemy aims the Dodge at it, as dragging does.
+			selected_action = ""
+			_begin_streamed_action(state.request_defense(Vector2(enemy["pos"]) - state.player_pos, false))
+		elif selected_action == "skill":
 			selected_action = ""
 			_begin_streamed_action(state.request_skill(Vector2(enemy["pos"]) - state.player_pos, false))
 		elif selected_action == "advance" and state.loadout_id == "rogue_sharpshooter":

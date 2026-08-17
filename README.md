@@ -1,6 +1,12 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.15` (Android version code `215`).
+Current prototype version: `0.2.16` (Android version code `216`).
+
+### v0.2.16: A chosen Defense owns the next tap
+
+- Selecting Dodge and then tapping an enemy committed an **attack** instead, silently discarding the Defense the player had already chosen. Tapping an enemy now aims the Dodge at it, exactly as dragging already did.
+- The same path also skipped the attack-plausibility check, so the discarded Dodge became a swing at a target well out of reach.
+- Ordinary enemy taps with nothing selected still attack, and other selected actions are unchanged.
 
 ### v0.2.15: Sweeping Cut is the finisher, arriving early
 
