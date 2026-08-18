@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.17` (Android version code `217`).
+Current prototype version: `0.2.18` (Android version code `218`).
+
+### v0.2.18: Exhaustion you can actually reach
+
+The `0.2.17` survey falsified its own change. The exhaustion design worked — the one room that reached it rated 3/5 against a survey mean of 1.36, with the note *"I got exhausted and it seems to work well. it needs to be less difficult to get to though"* — but it fired four times in 205 seconds of combat, 1.2 lockouts per minute against 4.1 in `0.2.15`. Exhausted time fell from 13.6% of combat to 2.7%. The tester could not empty the bar deliberately.
+
+The error was sizing costs against a static bar instead of against a fight. Room 11 spent 202 Stamina — twice a full bar — without a single lockout, because 4.1 seconds of regeneration returned 115 of it.
+
+- **`STAMINA_COST_SCALE` 0.5 → 0.65.** Chosen by replaying every room of that survey rather than by feel: Room 1 finishes at 89 of a 100 bar and stays clean as an easy room should, Rooms 4 and 11 exhaust once, and the death room lands exactly at the edge. A basic attack now costs 11.7, a Dodge 11.7, a sword combo 36.4 — three combos to a bar.
+- **Sweeping Cut is exempt from the scale and costs a flat 56.** The original reasoning — charge the combo's full price for skipping the combo's time — assumed 1.9 saved seconds were worth about a combo's Stamina. They are not, once Stamina regenerates at 28/s. Halving it to 28 brought back *"sweeping is still too easy"*, with the death room played as five sweeps and one combo. Price parity cannot restrain an action that refills faster than its advantage decays, so the sweep now costs 1.54 combos outright and a full bar holds two.
+- **Per-room desperate Dodge chains are reported per room.** A maximum is not a difference, so the delta block was emitting the run-wide value and rooms with no desperate Dodge at all reported `0 (longest chain 1)`.
+
+Untouched deliberately: regeneration. Rooms 3, 6 and 7 already showed *zero* regeneration — aggressive play never enters a regeneration-eligible action — so cutting the rate would punish careful play and leave aggression alone, which is backwards.
 
 ### v0.2.17: Stamina breathes, and exhaustion has teeth
 

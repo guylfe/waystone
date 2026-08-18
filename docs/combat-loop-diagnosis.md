@@ -107,6 +107,8 @@ From `attack_geometry.gd` and the combo definition:
 
 Sweeping Cut delivers a *wider* version of the combo's finisher, at the same reach, in **23% of the time**, for **61% of the stamina**. There is no situation in which building the combo for the finisher is correct. Restoring its 4.2s cooldown did not change this, because the cooldown does not touch the comparison — you simply sweep, walk for 4.2 seconds (which is free and regenerates stamina), and sweep again.
 
+> **Superseded in 0.2.18.** The parity argument below is wrong, and two surveys proved it. Charging the combo's full price assumes the 1.9 seconds the sweep saves are worth roughly a combo's Stamina; with continuous regeneration at 28/s they are worth far more, so the sweep wins at *any* parity price. It is now exempt from `STAMINA_COST_SCALE` and costs 56 against a combo's 36.4 — 1.54 combos, two to a full bar.
+
 The handoff's proposed rebuild — make it an immediate version of strike 3 at ~50–56 stamina — is structurally right, and the numbers support it precisely: **56 is exactly the combo's total stamina cost.** Charging the full combo price for skipping the full combo's time is the correct shape, and narrowing the arc from 160° to 117° makes it literally the finisher rather than a better one. That item needs no revision, only implementation.
 
 ---

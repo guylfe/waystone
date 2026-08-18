@@ -383,7 +383,7 @@ Kept because these were argued out once and should not be re-argued without new 
 - Campaign level cap, Adopted-track catch-up size, secondary-loadout progression.
 - Why the player carries a fragment; deliberately deferred until the campaign's characters and ending exist.
 - The degree of probabilistic enemy action selection that keeps a deterministic system from being solved (§4.5).
-- Final stamina costs, regeneration tuning and exhaustion threshold. `0.2.17` sets a candidate — halved costs, continuous 28/s regeneration, a 1.2s exhaustion that slows walking to 45% — but it is untested in survey. Dodge costs stamina and, while exhausted, costs debt instead; whether the desperate Dodge should also cost health is unanswered.
+- Final stamina costs, regeneration tuning and exhaustion threshold. `0.2.18` sets a candidate — costs at 0.65 of authored, continuous 28/s regeneration, a 1.2s exhaustion that slows walking to 45%, and Sweeping Cut exempt from the scale at a flat 56. `0.2.17` tried 0.5 and surveyed as far too generous; 0.65 is recalibrated against that survey but not yet surveyed itself. Dodge costs stamina and, while exhausted, costs debt instead; whether the desperate Dodge should also cost health is unanswered.
 - Which melee roles need redesign before any new enemy is added.
 - Whether the narrative layer in §12 survives contact with implementation. It has not been revisited since it was designed and nothing depends on it yet.
 

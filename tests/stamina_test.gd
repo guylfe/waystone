@@ -42,7 +42,7 @@ func test_parallel_rule_sets() -> void:
 	assert(not recovery.stamina_actions_locked())
 	var stamina := fresh_state()
 	assert(stamina.request_attack(stamina.player_pos + Vector2.RIGHT * 100.0, false))
-	assert(is_equal_approx(stamina.player_stamina, 91.0))
+	assert(is_equal_approx(stamina.player_stamina, 100.0 - stamina.stamina_cost(18.0)))
 	assert(float(stamina.player_action["duration"]) < recovery_duration)
 
 func test_new_combo_costs() -> void:
@@ -53,16 +53,16 @@ func test_new_combo_costs() -> void:
 	var sword := fresh_state()
 	assert(sword.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(sword)
-	assert(is_equal_approx(sword.player_stamina, 72.0))
+	assert(is_equal_approx(sword.player_stamina, 100.0 - sword.stamina_cost(18.0 + 16.0 + 22.0)))
 	var knife := fresh_state("rogue_acrobat")
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(knife)
-	assert(is_equal_approx(knife.player_stamina, 73.0))
+	assert(is_equal_approx(knife.player_stamina, 100.0 - knife.stamina_cost(14.0 + 12.0 + 12.0 + 16.0)))
 	var twin := fresh_state("rogue_acrobat")
 	twin.player_weapon_frame = "twin_knives"
 	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
-	assert(is_equal_approx(twin.player_stamina, 70.0))
+	assert(is_equal_approx(twin.player_stamina, 100.0 - twin.stamina_cost(12.0 + 9.0 + 9.0 + 9.0 + 9.0 + 12.0)))
 
 func test_overdraw_starts_exhaustion_after_recovery() -> void:
 	var state := fresh_state()
@@ -103,7 +103,7 @@ func test_dodge_cost_and_utility_regeneration() -> void:
 	var stamina := fresh_state()
 	assert(stamina.request_dodge(Vector2.RIGHT, false))
 	advance_until_ready(stamina)
-	assert(is_equal_approx(stamina.player_stamina, 91.0))
+	assert(is_equal_approx(stamina.player_stamina, 100.0 - stamina.stamina_cost(stamina.DODGE_STAMINA_COST)))
 	assert(is_equal_approx(stamina.dodge_cooldown, 0.0))
 	stamina.player_stamina = 50.0
 	assert(stamina.request_rally(false))
@@ -171,17 +171,20 @@ func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
 	var before := stamina.player_stamina
 	assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
-	assert(is_equal_approx(before - stamina.player_stamina, stamina.stamina_cost(stamina.SWEEPING_CUT_STAMINA)))
+	# Exempt from STAMINA_COST_SCALE: the authored number is the literal cost.
+	assert(is_equal_approx(before - stamina.player_stamina, stamina.SWEEPING_CUT_STAMINA))
+	assert(stamina.SWEEPING_CUT_STAMINA > stamina.stamina_cost(18.0 + 16.0 + 22.0) * 1.4)
 	advance_until_ready(stamina)
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
-	# Halved costs put three sweeps in a full bar and overdraw on the fourth. Cost
-	# still does the limiting; it now limits a burst rather than a single use.
+	# A second sweep is reachable only by overdrawing, which empties the bar. Price
+	# parity with the combo could not restrain an action that refills faster than
+	# its time advantage decays, so the sweep costs more than a combo outright.
 	var sweeps := 1
 	while stamina.player_stamina > 0.0001 and sweeps < 8:
 		assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
 		advance_until_ready(stamina)
 		sweeps += 1
-	assert(sweeps == 4)
+	assert(sweeps == 2)
 	assert(stamina.player_overexertion_pending or stamina.player_exhaustion_remaining > 0.0001)
 
 	var recovery := fresh_state("warrior", "recovery")

@@ -57,9 +57,16 @@ const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
 # Stamina is the burst budget, not the fight gate -- recovery is the primary
 # limiter. Costs are authored at their original relative shape and scaled here,
-# so the relationships stay legible (Sweeping Cut still equals the sword combo's
-# full price) and the global price level is one number to retune.
-const STAMINA_COST_SCALE := 0.5
+# so the relationships stay legible and the global price level is one number.
+#
+# 0.5 was too generous: the 0.2.17 survey emptied the bar 4 times in 205 seconds
+# of combat (1.2 lockouts per minute against 4.1 in 0.2.15) and the tester could
+# not exhaust himself deliberately. The error was sizing costs against a static
+# bar rather than against a fight -- Room 11 spent 202 Stamina without a single
+# lockout because 4.1 seconds of regeneration returned 115 of it. 0.65 was chosen
+# by replaying every room of that survey: easy rooms still finish with breath to
+# spare, and the pressure rooms exhaust once or twice as they should.
+const STAMINA_COST_SCALE := 0.65
 # Slower than the old 60/s, but continuous: spending no longer arms a delay, so
 # the bar refills while you reposition rather than pausing then snapping back.
 const STAMINA_REGEN_PER_SECOND := 28.0
@@ -89,7 +96,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # resources disagreeing about whether being hit is a chance to recover.
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.17"
+const GAME_VERSION := "0.2.18"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -227,6 +234,7 @@ var exhaustion_other_time_total := 0.0
 var exhausted_dodge_total := 0
 var exhausted_dodge_chain := 0
 var exhausted_dodge_max_chain := 0
+var exhausted_dodge_room_max_chain := 0
 var terminal_combo_recoveries_total := 0
 var terminal_combo_recovery_time_total := 0.0
 var direct_attack_uses_total := 0
@@ -480,6 +488,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhausted_dodge_total = 0
 	exhausted_dodge_chain = 0
 	exhausted_dodge_max_chain = 0
+	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	terminal_combo_recovery_time_total = 0.0
 	direct_attack_uses_total = 0
@@ -813,6 +822,7 @@ func _capture_survey_room_entry() -> void:
 	# Attack records are per room. The aggregate is computed when the room closes,
 	# so carrying the previous room's attacks in would blend two encounters.
 	survey_attack_records.clear()
+	exhausted_dodge_room_max_chain = 0
 	survey_room_entry = {
 		"time": simulation_time,
 		"hp": player_hp,
@@ -956,7 +966,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_wait_time": exhaustion_wait_time_total - float(survey_room_entry.get("exhaustion_wait_time", exhaustion_wait_time_total)),
 		"exhaustion_other_time": exhaustion_other_time_total - float(survey_room_entry.get("exhaustion_other_time", exhaustion_other_time_total)),
 		"exhausted_dodges": exhausted_dodge_total - int(survey_room_entry.get("exhausted_dodges", exhausted_dodge_total)),
-		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
+		"exhausted_dodge_max_chain": exhausted_dodge_room_max_chain,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
@@ -1378,11 +1388,14 @@ func dodge_is_available() -> bool:
 func stamina_cost(amount: float) -> float:
 	return amount * STAMINA_COST_SCALE
 
-func _spend_stamina(raw_amount: float) -> bool:
+# `scaled = false` charges the authored number directly. Sweeping Cut uses it:
+# see the note on SWEEPING_CUT_STAMINA for why price parity with the combo could
+# not hold it in check.
+func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
 	if not uses_stamina_rules(): return true
 	if raw_amount <= 0.0: return true
 	if not _can_commit_physical_action(): return false
-	var amount := stamina_cost(raw_amount)
+	var amount := stamina_cost(raw_amount) if scaled else raw_amount
 	var before := player_stamina
 	player_stamina = maxf(0.0, player_stamina - amount)
 	stamina_spent_total += amount
@@ -1962,10 +1975,19 @@ func resume_combo_hold() -> bool:
 # Now it shares the finisher's geometry, damage and posture, costs exactly what
 # the whole combo costs, and serves its complete terminal recovery in both rule
 # profiles. What you buy is the *time* you skip, and you pay the full price for it.
+# Deliberately exempt from STAMINA_COST_SCALE, so this is the literal cost.
+#
+# The original reasoning -- charge the sword combo's full price for skipping the
+# combo's time -- assumed 1.9 saved seconds were worth about a combo's Stamina.
+# They are not, once Stamina regenerates at 28/s: 0.2.17 halved the sweep to 28
+# and the 0.2.18 survey came back "sweeping is still too easy", with the death
+# room played as five sweeps and one combo. Price parity cannot restrain an
+# action that refills faster than its advantage decays, so the sweep keeps the
+# full 56 while everything around it scales -- roughly one and a half combos.
 const SWEEPING_CUT_STAMINA := 56.0
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA, false):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -2119,6 +2141,7 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 		exhausted_dodge_total += 1
 		exhausted_dodge_chain += 1
 		exhausted_dodge_max_chain = maxi(exhausted_dodge_max_chain, exhausted_dodge_chain)
+		exhausted_dodge_room_max_chain = maxi(exhausted_dodge_room_max_chain, exhausted_dodge_chain)
 		_set_message("You throw yourself clear on nothing but nerve. Your breath is gone again.")
 	else:
 		_set_message("You commit to a dodge.")
