@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.18` (Android version code `218`).
+Current prototype version: `0.2.19` (Android version code `219`).
+
+### v0.2.19: The survey stops hiding the attacks you win
+
+No balance changes. `0.2.18` played well — fun 1.36 to 2.64, exhaustion at 3.0 lockouts per minute — but two of the conclusions drawn from its report were artifacts of the report itself, so this fixes the instrument before anything else is tuned against it.
+
+- **Interrupted enemy attacks now resolve instead of vanishing.** `_finalise_capture_record` ran only when a melee action reached its own duration, and interruption replaces the action wholesale — so every attack the player cut down was silently dropped. The survey counted only attacks the player *failed* to pre-empt, which is the population most likely to have landed. The `0.2.18` report claimed 11 resolved attacks across 279 seconds; its own strike log showed at least 20 melee commitments in the same rooms. Records now carry an `interrupted` resolution and `interrupted_at_f`, the point in the wind-up where the answer landed, so being cut down before the damaging window is distinguishable from being staggered out of a swing already committed.
+- **Threat context at exhaustion**, measured by alerted state rather than proximity — a caster at 600 units is threat and distance says otherwise. Both ends of the lockout record how many enemies are alerted, how near the closest is, and whether any had already committed an attack, with the time until its damaging window opens. This exists to answer whether exhaustion arrives during danger or after the danger is dead, which damage figures alone cannot separate from deliberate play.
+- **Refused actions and starved time.** A resource's cost lives in the choices it denies, and nothing recorded them. Every action declined for Stamina is counted, alongside time spent below the price of a basic attack.
+- **A swing that finds nobody no longer prints as a corrupt record.** Strike diagnostics with no enemy in range emitted every coordinate as `(0,0)`; they now carry the real player position and facing.
+- **Survey report format 14.**
 
 ### v0.2.18: Exhaustion you can actually reach
 

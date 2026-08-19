@@ -63,6 +63,44 @@ func record_for(technique: String, kind: String, response: String, respond_at: f
 	if state.survey_attack_records.is_empty(): return {}
 	return Dictionary(state.survey_attack_records[0])
 
+# Regression: an attack the player cuts down used to leave no record at all.
+# _finalise_capture_record only ran when a melee action reached its own duration,
+# and interruption replaces the action wholesale -- so the survey counted only
+# attacks the player failed to pre-empt, the population most likely to have
+# landed. The 0.2.18 survey reported 11 resolved attacks while its own strike log
+# showed at least 20 melee commitments in the same rooms.
+func test_interrupted_attacks_still_produce_a_record() -> void:
+	var state := survey_state()
+	var option := plan_option("blade", "diagonal_cut")
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * float(option["distance"]), 999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = Vector2.LEFT
+	enemy["action"] = state._intent_melee_action(option, Vector2.LEFT)
+	state.enemies.assign([enemy])
+	# Let the wind-up start, then cut it down before its damaging window opens.
+	for _step in range(6):
+		state._tick(state.SIM_DT)
+	var live := Dictionary(state.enemies[0])
+	var action_before := Dictionary(live.get("action", {}))
+	check(String(action_before.get("kind", "")) == "melee", "the attack must still be winding up when interrupted")
+	check(float(action_before.get("elapsed", 9.0)) < float(action_before.get("startup", 0.0)),
+		"the interruption must land before the damaging window")
+	state._apply_enemy_hit_reaction(live, 1.0, "alerted", action_before)
+	check(not state.survey_attack_records.is_empty(), "an interrupted attack must still leave a record")
+	if state.survey_attack_records.is_empty(): return
+	var record := Dictionary(state.survey_attack_records[0])
+	check(String(record.get("resolution", "")) == "interrupted",
+		"an interrupted attack must resolve as interrupted, got %s" % record.get("resolution", ""))
+	check(float(record.get("interrupted_at_f", -1.0)) >= 0.0 and float(record.get("interrupted_at_f", 9.0)) < 1.0,
+		"pre-emption must be recorded as a fraction of the wind-up below 1.0")
+	var summary := state._survey_capture_summary()
+	check(int(summary.get("interrupted", 0)) == 1, "the room summary must count the interruption")
+	check(int(summary.get("pre_empted", 0)) == 1, "an attack cut down before its window must count as pre-empted")
+	# It must not be mistaken for a walking escape: the response was a strike.
+	check(int(summary.get("walk_only_attempts", 0)) == 0, "an interruption is not a walk-only attempt")
+
 func test_every_attack_produces_a_record() -> void:
 	var record := record_for("diagonal_cut", "blade", "none", 0.0)
 	check(not record.is_empty(), "a resolved attack must leave a record")
@@ -141,6 +179,7 @@ func test_clean_evade_sources_are_counted() -> void:
 	check(state.clean_evade_vault_total == 0, "a Dodge evade must not be attributed to Vault")
 
 func _init() -> void:
+	test_interrupted_attacks_still_produce_a_record()
 	test_every_attack_produces_a_record()
 	test_resolution_distinguishes_outcomes()
 	test_f_observed_tracks_when_the_player_responded()

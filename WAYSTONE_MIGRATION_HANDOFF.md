@@ -368,7 +368,7 @@ Each room records five broad groups:
 
 1. **Encounter definition:** room seed, outcome, threat tier/band, pacing phase, recipe/family, cost, ranged pressure, arena, formation, enemies, roles, and current build.
 2. **Attrition and performance:** entry/exit health, stamina, potions, combat time, damage dealt/received, hits, potion use, and death source.
-3. **Resource/commitment behavior:** stamina spend/depletion/overdraw/regeneration, regeneration delay/active time, exhaustion lockouts and exposure, damage taken while exhausted and slowed, desperate Dodge count and longest chain, blocked combo continuations, terminal combo recoveries and recovery exposure, direct attack-control uses, Dodge form/recovery exposure, and action counts.
+3. **Resource/commitment behavior:** stamina spend/depletion/overdraw/regeneration, regeneration delay/active time, exhaustion lockouts and exposure, damage taken while exhausted and slowed, desperate Dodge count and longest chain, actions refused for Stamina and time spent unable to afford a basic attack, threat context (alerted count, nearest, committed attacks pending) at both ends of every lockout, blocked combo continuations, terminal combo recoveries and recovery exposure, direct attack-control uses, Dodge form/recovery exposure, and action counts.
 4. **Presentation/contact evidence:** active view, view switches, empty melee contacts, and per-strike diagnostics including technique phase, result, targets, authored footprint, nearest enemy position, clearance, overlap, occlusion, enemy action, actor coordinates, facing, and weapon endpoints.
 5. **Subjective response:** ratings, tags, and notes.
 

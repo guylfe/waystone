@@ -94,9 +94,12 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # "hit_reaction" and "stagger" are deliberately absent. Player posture recovery
 # already excludes them, so stamina regenerating through a flinch had the two
 # resources disagreeing about whether being hit is a chance to recover.
+# What counts as an enemy having committed to hurting you. Used by the threat
+# snapshot, so a caster mid-cone reads as danger the same way a Blade mid-swing does.
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.18"
+const GAME_VERSION := "0.2.19"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -234,6 +237,17 @@ var exhaustion_other_time_total := 0.0
 var exhausted_dodge_total := 0
 var exhausted_dodge_chain := 0
 var exhausted_dodge_max_chain := 0
+var exhaustion_start_samples := 0
+var exhaustion_start_alerted_sum := 0
+var exhaustion_start_clear := 0
+var exhaustion_start_pending := 0
+var exhaustion_end_samples := 0
+var exhaustion_end_alerted_sum := 0
+var exhaustion_end_clear := 0
+var stamina_refusal_total := 0
+var exhaustion_start_soonest_sum := 0.0
+var exhaustion_start_nearest_sum := 0.0
+var stamina_starved_time_total := 0.0
 var exhausted_dodge_room_max_chain := 0
 var terminal_combo_recoveries_total := 0
 var terminal_combo_recovery_time_total := 0.0
@@ -488,6 +502,17 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhausted_dodge_total = 0
 	exhausted_dodge_chain = 0
 	exhausted_dodge_max_chain = 0
+	exhaustion_start_samples = 0
+	exhaustion_start_alerted_sum = 0
+	exhaustion_start_clear = 0
+	exhaustion_start_pending = 0
+	exhaustion_end_samples = 0
+	exhaustion_end_alerted_sum = 0
+	exhaustion_end_clear = 0
+	stamina_refusal_total = 0
+	exhaustion_start_soonest_sum = 0.0
+	exhaustion_start_nearest_sum = 0.0
+	stamina_starved_time_total = 0.0
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	terminal_combo_recovery_time_total = 0.0
@@ -861,6 +886,17 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_other_time": exhaustion_other_time_total,
 		"exhausted_dodges": exhausted_dodge_total,
 		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
+		"exhaustion_start_samples": exhaustion_start_samples,
+		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
+		"exhaustion_start_clear": exhaustion_start_clear,
+		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_end_samples": exhaustion_end_samples,
+		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
+		"exhaustion_end_clear": exhaustion_end_clear,
+		"stamina_refusal_total": stamina_refusal_total,
+		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
+		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
+		"stamina_starved_time_total": stamina_starved_time_total,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total,
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total,
 		"direct_attack_uses": direct_attack_uses_total,
@@ -967,6 +1003,17 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_other_time": exhaustion_other_time_total - float(survey_room_entry.get("exhaustion_other_time", exhaustion_other_time_total)),
 		"exhausted_dodges": exhausted_dodge_total - int(survey_room_entry.get("exhausted_dodges", exhausted_dodge_total)),
 		"exhausted_dodge_max_chain": exhausted_dodge_room_max_chain,
+		"exhaustion_start_samples": exhaustion_start_samples - int(survey_room_entry.get("exhaustion_start_samples", exhaustion_start_samples)),
+		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum - int(survey_room_entry.get("exhaustion_start_alerted_sum", exhaustion_start_alerted_sum)),
+		"exhaustion_start_clear": exhaustion_start_clear - int(survey_room_entry.get("exhaustion_start_clear", exhaustion_start_clear)),
+		"exhaustion_start_pending": exhaustion_start_pending - int(survey_room_entry.get("exhaustion_start_pending", exhaustion_start_pending)),
+		"exhaustion_end_samples": exhaustion_end_samples - int(survey_room_entry.get("exhaustion_end_samples", exhaustion_end_samples)),
+		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum - int(survey_room_entry.get("exhaustion_end_alerted_sum", exhaustion_end_alerted_sum)),
+		"exhaustion_end_clear": exhaustion_end_clear - int(survey_room_entry.get("exhaustion_end_clear", exhaustion_end_clear)),
+		"stamina_refusal_total": stamina_refusal_total - int(survey_room_entry.get("stamina_refusal_total", stamina_refusal_total)),
+		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum - float(survey_room_entry.get("exhaustion_start_soonest_sum", exhaustion_start_soonest_sum)),
+		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum - float(survey_room_entry.get("exhaustion_start_nearest_sum", exhaustion_start_nearest_sum)),
+		"stamina_starved_time_total": stamina_starved_time_total - float(survey_room_entry.get("stamina_starved_time_total", stamina_starved_time_total)),
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
@@ -1391,10 +1438,18 @@ func stamina_cost(amount: float) -> float:
 # `scaled = false` charges the authored number directly. Sweeping Cut uses it:
 # see the note on SWEEPING_CUT_STAMINA for why price parity with the combo could
 # not hold it in check.
+func _basic_attack_stamina_cost() -> float:
+	return 12.0 if player_weapon_frame == "twin_knives" else 14.0 if player_weapon_frame == "knife" else 18.0
+
 func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
 	if not uses_stamina_rules(): return true
 	if raw_amount <= 0.0: return true
-	if not _can_commit_physical_action(): return false
+	if not _can_commit_physical_action():
+		# The decision the resource is supposed to create is the one you *cannot*
+		# take. Nothing recorded it before, so exhaustion's cost was invisible
+		# except as damage, which deliberate play keeps at zero.
+		stamina_refusal_total += 1
+		return false
 	var amount := stamina_cost(raw_amount) if scaled else raw_amount
 	var before := player_stamina
 	player_stamina = maxf(0.0, player_stamina - amount)
@@ -1422,11 +1477,54 @@ func _regenerate_stamina(dt: float) -> void:
 	stamina_regenerated_total += player_stamina - before
 	stamina_regen_active_time_total += active_dt
 
+# Alerted state rather than raw proximity: an Archer at 600 units putting arrows
+# into you is threat, and distance alone says otherwise. `soonest` is how long
+# until the nearest committed attack opens its damaging window, which is what
+# actually answers whether exhaustion arrived during a window of danger.
+func _threat_snapshot() -> Dictionary:
+	var alerted := 0
+	var nearest := -1.0
+	var pending := 0
+	var soonest := -1.0
+	for enemy in enemies:
+		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+		if String(enemy.get("awareness", "idle")) != "alerted": continue
+		alerted += 1
+		var gap := Vector2(enemy["pos"]).distance_to(player_pos)
+		if nearest < 0.0 or gap < nearest: nearest = gap
+		var action: Dictionary = enemy.get("action", {})
+		if String(action.get("kind", "idle")) not in ENEMY_ATTACK_ACTION_KINDS: continue
+		var startup := float(action.get("startup", -1.0))
+		if startup < 0.0: continue
+		var remaining := startup - float(action.get("elapsed", 0.0))
+		if remaining < 0.0: continue
+		pending += 1
+		if soonest < 0.0 or remaining < soonest: soonest = remaining
+	return {"alerted": alerted, "nearest": nearest, "pending": pending, "soonest": soonest}
+
+func _record_exhaustion_threat(start: bool) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	var snapshot := _threat_snapshot()
+	var alerted := int(snapshot["alerted"])
+	if start:
+		exhaustion_start_samples += 1
+		exhaustion_start_alerted_sum += alerted
+		if alerted == 0: exhaustion_start_clear += 1
+		if int(snapshot["pending"]) > 0:
+			exhaustion_start_pending += 1
+			exhaustion_start_soonest_sum += float(snapshot["soonest"])
+		if float(snapshot["nearest"]) >= 0.0: exhaustion_start_nearest_sum += float(snapshot["nearest"])
+	else:
+		exhaustion_end_samples += 1
+		exhaustion_end_alerted_sum += alerted
+		if alerted == 0: exhaustion_end_clear += 1
+
 func _begin_exhaustion() -> void:
 	if not uses_stamina_rules(): return
 	player_overexertion_pending = false
 	player_exhaustion_remaining = EXHAUSTION_DURATION
 	overexertion_count += 1
+	_record_exhaustion_threat(true)
 	_set_message("EXHAUSTED — attacks are locked and your footwork is slow. Dodge still answers, but it costs you the recovery.")
 
 func _shorten_recovery(duration: float, active_end: float, factor: float = 0.60) -> float:
@@ -1586,8 +1684,7 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 		direction = player_facing
 	player_facing = direction.normalized()
 	var definition := _player_basic_attack_definition(player_facing)
-	var basic_cost := 12.0 if player_weapon_frame == "twin_knives" else 14.0 if player_weapon_frame == "knife" else 18.0
-	if not _spend_stamina(basic_cost): return false
+	if not _spend_stamina(_basic_attack_stamina_cost()): return false
 	player_action = _melee_action(float(definition["duration"]), float(definition["startup"]), float(definition["active_end"]), float(definition["reach"]), int(definition["damage_max"]), player_facing, String(definition["technique"]), "attack")
 	player_action["damage_min"] = int(definition["damage_min"])
 	player_action["damage_max"] = int(definition["damage_max"])
@@ -3252,6 +3349,10 @@ func _tick(dt: float) -> void:
 	var player_action_kind := String(player_action.get("kind", "idle"))
 	if uses_stamina_rules() and player_action_kind in STAMINA_REGEN_ACTIONS:
 		_regenerate_stamina(dt)
+	# Time too poor to swing at all. Distinct from exhaustion: the bar can sit
+	# under an attack's price without ever having emptied.
+	if uses_stamina_rules() and player_stamina < stamina_cost(_basic_attack_stamina_cost()):
+		stamina_starved_time_total += dt
 	if uses_stamina_rules() and player_exhaustion_remaining > 0.0001:
 		player_exhaustion_remaining = maxf(0.0, player_exhaustion_remaining - dt)
 		winded_time_total += dt
@@ -3260,6 +3361,7 @@ func _tick(dt: float) -> void:
 		else: exhaustion_other_time_total += dt
 		if player_exhaustion_remaining <= 0.0001:
 			exhausted_dodge_chain = 0
+			_record_exhaustion_threat(false)
 			_set_message("Your breath steadies. Your footing and your attacks return.")
 	_build_enemy_spatial_index()
 	_update_effects(dt)
@@ -3846,6 +3948,12 @@ func _survey_finalize_strike_probe(end_reason: String) -> void:
 	if not probe.has("closest_enemy"):
 		probe["closest_enemy"] = "none nearby"
 		probe["closest_clearance"] = -1.0
+		# Without these the row prints every coordinate as (0,0), which reads as a
+		# corrupt record rather than "the swing found nobody to measure against".
+		probe["player_x"] = player_pos.x
+		probe["player_y"] = player_pos.y
+		probe["facing_x"] = player_facing.x
+		probe["facing_y"] = player_facing.y
 	probe["visual_overlap_collision_failure"] = String(probe.get("result", "miss")) == "miss" and bool(probe.get("geometry_overlap", false)) and not bool(probe.get("occluded", false))
 	survey_strike_diagnostics.append(probe.duplicate(true))
 	player_action.erase("survey_strike_probe")
@@ -4101,6 +4209,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
+	_interrupt_enemy_action(enemy)
 	enemy["action"] = _action("stagger", stagger_duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
 	enemy["action"].merge({
@@ -4179,6 +4288,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	var reaction_strength := 1.18 if high_impact else 1.0
 	if action_kind == "charge": reaction_strength += 0.16
+	_interrupt_enemy_action(enemy)
 	enemy["action"] = _action("hit_reaction", duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
 	enemy["action"].merge({
@@ -4669,11 +4779,27 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 		record["closest"] = minf(float(record["closest"]), AttackGeometryScript.clearance_to_circle(sample, player_pos, PLAYER_RADIUS))
 	action["capture_record"] = record
 
-func _finalise_capture_record(enemy: Dictionary, action: Dictionary) -> void:
+# An attack the player cuts down never reaches its own duration, so the branch
+# that finalises capture records at completion never sees it. Every path that
+# replaces a live action has to release the record here, or the survey counts
+# only the attacks the player failed to pre-empt -- the population most likely to
+# have landed. Measured: the 0.2.18 survey reported 11 resolved attacks while its
+# own strike log showed at least 20 melee commitments in the same rooms.
+func _interrupt_enemy_action(enemy: Dictionary) -> void:
+	var action: Dictionary = enemy.get("action", {})
+	if String(action.get("kind", "")) == "melee":
+		_finalise_capture_record(enemy, action, true)
+
+func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted: bool = false) -> void:
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
 	action.erase("capture_record")
 	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if interrupted and String(record.get("resolution", "")).is_empty():
+		record["resolution"] = "interrupted"
+		# Where in the wind-up the answer landed. Below 1.0 means the attack was
+		# cut down before its damaging window ever opened.
+		record["interrupted_at_f"] = float(action.get("elapsed", 0.0)) / maxf(0.001, float(action.get("startup", 0.30)))
 	if String(record.get("resolution", "")).is_empty(): record["resolution"] = "miss"
 	record["enemy"] = String(enemy.get("kind", "unknown"))
 	record["arena"] = String(survey_room_definition.get("arena", "unknown"))
@@ -4691,16 +4817,23 @@ func _survey_capture_summary() -> Dictionary:
 	var resolved := 0
 	var walk_escapes := 0
 	var walk_attempts := 0
+	var interrupted := 0
+	var pre_empted := 0
 	for record_value in survey_attack_records:
 		var record := Dictionary(record_value)
 		resolved += 1
 		var label := "%s %s" % [record.get("enemy", "?"), record.get("technique", "?")]
 		if not per_attack.has(label):
-			per_attack[label] = {"n": 0, "contact": 0, "evaded": 0, "miss": 0, "authored_f": float(record.get("authored_f", 0.0)), "f_sum": 0.0, "f_n": 0, "closest_sum": 0.0}
+			per_attack[label] = {"n": 0, "contact": 0, "evaded": 0, "miss": 0, "interrupted": 0, "authored_f": float(record.get("authored_f", 0.0)), "f_sum": 0.0, "f_n": 0, "closest_sum": 0.0}
 		var bucket: Dictionary = per_attack[label]
 		bucket["n"] = int(bucket["n"]) + 1
 		var resolution := String(record.get("resolution", "miss"))
 		bucket[resolution] = int(bucket.get(resolution, 0)) + 1
+		if resolution == "interrupted":
+			interrupted += 1
+			# Cut down before the damaging window opened, rather than merely
+			# staggered out of a swing that had already committed.
+			if float(record.get("interrupted_at_f", 9.0)) < 1.0: pre_empted += 1
 		bucket["closest_sum"] = float(bucket["closest_sum"]) + float(record.get("closest", 0.0))
 		var observed := float(record.get("f_observed", -1.0))
 		if observed >= 0.0:
@@ -4720,6 +4853,7 @@ func _survey_capture_summary() -> Dictionary:
 			"contact": int(bucket.get("contact", 0)),
 			"evaded": int(bucket.get("evaded", 0)),
 			"miss": int(bucket.get("miss", 0)),
+			"interrupted": int(bucket.get("interrupted", 0)),
 			"authored_f": float(bucket["authored_f"]),
 			"observed_f": (float(bucket["f_sum"]) / float(maxi(1, int(bucket["f_n"])))) if int(bucket["f_n"]) > 0 else -1.0,
 			"closest": float(bucket["closest_sum"]) / float(count),
@@ -4727,6 +4861,8 @@ func _survey_capture_summary() -> Dictionary:
 	rows.sort_custom(func(a, b): return String(a["attack"]) < String(b["attack"]))
 	return {
 		"resolved": resolved,
+		"interrupted": interrupted,
+		"pre_empted": pre_empted,
 		"walk_only_attempts": walk_attempts,
 		"walk_only_escapes": walk_escapes,
 		"walk_only_escape_rate": (float(walk_escapes) / float(walk_attempts)) if walk_attempts > 0 else -1.0,
@@ -5056,6 +5192,7 @@ func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
 		if mass > 1.35 or String(existing_action.get("kind", "idle")) in ["stagger", "hit_reaction"]: continue
 		var reaction_direction := (Vector2(enemy["pos"]) - origin).normalized()
 		if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(player_action.get("direction", player_facing)).normalized()
+		_interrupt_enemy_action(enemy)
 		enemy["action"] = _action("hit_reaction", 0.28, Vector2.ZERO)
 		_clear_melee_intent(enemy)
 		enemy["action"].merge({
@@ -6020,6 +6157,17 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"exhaustion_other_time_total": exhaustion_other_time_total,
 		"exhausted_dodge_total": exhausted_dodge_total,
 		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
+		"exhaustion_start_samples": exhaustion_start_samples,
+		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
+		"exhaustion_start_clear": exhaustion_start_clear,
+		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_end_samples": exhaustion_end_samples,
+		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
+		"exhaustion_end_clear": exhaustion_end_clear,
+		"stamina_refusal_total": stamina_refusal_total,
+		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
+		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
+		"stamina_starved_time_total": stamina_starved_time_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6245,6 +6393,17 @@ func _build_save_payload() -> Dictionary:
 		"exhaustion_other_time_total": exhaustion_other_time_total,
 		"exhausted_dodge_total": exhausted_dodge_total,
 		"exhausted_dodge_max_chain": exhausted_dodge_max_chain,
+		"exhaustion_start_samples": exhaustion_start_samples,
+		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
+		"exhaustion_start_clear": exhaustion_start_clear,
+		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_end_samples": exhaustion_end_samples,
+		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
+		"exhaustion_end_clear": exhaustion_end_clear,
+		"stamina_refusal_total": stamina_refusal_total,
+		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
+		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
+		"stamina_starved_time_total": stamina_starved_time_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6541,6 +6700,17 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_other_time_total = float(payload.get("exhaustion_other_time_total", 0.0))
 	exhausted_dodge_total = int(payload.get("exhausted_dodge_total", 0))
 	exhausted_dodge_max_chain = int(payload.get("exhausted_dodge_max_chain", 0))
+	exhaustion_start_samples = int(payload.get("exhaustion_start_samples", 0))
+	exhaustion_start_alerted_sum = int(payload.get("exhaustion_start_alerted_sum", 0))
+	exhaustion_start_clear = int(payload.get("exhaustion_start_clear", 0))
+	exhaustion_start_pending = int(payload.get("exhaustion_start_pending", 0))
+	exhaustion_end_samples = int(payload.get("exhaustion_end_samples", 0))
+	exhaustion_end_alerted_sum = int(payload.get("exhaustion_end_alerted_sum", 0))
+	exhaustion_end_clear = int(payload.get("exhaustion_end_clear", 0))
+	stamina_refusal_total = int(payload.get("stamina_refusal_total", 0))
+	exhaustion_start_soonest_sum = float(payload.get("exhaustion_start_soonest_sum", 0.0))
+	exhaustion_start_nearest_sum = float(payload.get("exhaustion_start_nearest_sum", 0.0))
+	stamina_starved_time_total = float(payload.get("stamina_starved_time_total", 0.0))
 	terminal_combo_recoveries_total = int(payload.get("terminal_combo_recoveries_total", 0))
 	terminal_combo_recovery_time_total = float(payload.get("terminal_combo_recovery_time_total", 0.0))
 	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))

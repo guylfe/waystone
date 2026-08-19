@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 13
+const FORMAT_VERSION := 14
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -86,6 +86,21 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Exhausted time: %.2fs" % float(room.get("winded_time", 0.0)))
 		lines.append("Damage received while exhausted and slowed: %d" % int(room.get("exhaustion_damage_received", 0)))
 		lines.append("Desperate Dodges: %d (longest chain %d)" % [int(room.get("exhausted_dodges", 0)), int(room.get("exhausted_dodge_max_chain", 0))])
+		var starts := int(room.get("exhaustion_start_samples", 0))
+		if starts > 0:
+			var pending := int(room.get("exhaustion_start_pending", 0))
+			var soonest_text := "n/a" if pending <= 0 else ("%.2fs" % (float(room.get("exhaustion_start_soonest_sum", 0.0)) / float(pending)))
+			lines.append("Threat when exhaustion began: mean %.1f alerted, mean nearest %.0f; %d of %d with nothing alerted; %d with an attack already committed (soonest %s)" % [
+				float(room.get("exhaustion_start_alerted_sum", 0)) / float(starts),
+				float(room.get("exhaustion_start_nearest_sum", 0.0)) / float(starts),
+				int(room.get("exhaustion_start_clear", 0)), starts, pending, soonest_text])
+		var ends := int(room.get("exhaustion_end_samples", 0))
+		if ends > 0:
+			lines.append("Threat when exhaustion ended: mean %.1f alerted; %d of %d with nothing alerted" % [
+				float(room.get("exhaustion_end_alerted_sum", 0)) / float(ends),
+				int(room.get("exhaustion_end_clear", 0)), ends])
+		lines.append("Actions refused for Stamina: %d; time unable to afford a basic attack: %.2fs" % [
+			int(room.get("stamina_refusal_total", 0)), float(room.get("stamina_starved_time_total", 0.0))])
 		lines.append("Exhaustion advanced by: movement %.2fs; Wait %.2fs; other %.2fs" % [float(room.get("exhaustion_move_time", 0.0)), float(room.get("exhaustion_wait_time", 0.0)), float(room.get("exhaustion_other_time", 0.0))])
 		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
 		lines.append("Terminal combo recoveries: %d" % int(room.get("terminal_combo_recoveries", 0)))
@@ -107,14 +122,15 @@ static func build_text(session: Dictionary) -> String:
 			var escape_rate := float(capture.get("walk_only_escape_rate", -1.0))
 			var escape_text := "n/a" if escape_rate < 0.0 else ("%.0f%% (%d of %d)" % [escape_rate * 100.0, int(capture.get("walk_only_escapes", 0)), int(capture.get("walk_only_attempts", 0))])
 			lines.append("Hostile attacks resolved: %d; walk-only escape rate: %s" % [int(capture.get("resolved", 0)), escape_text])
+			lines.append("Attacks interrupted before resolving: %d (%d cut down before the damaging window)" % [int(capture.get("interrupted", 0)), int(capture.get("pre_empted", 0))])
 			lines.append("Capture per attack (authored f versus observed, mean closest approach):")
 			for row_value in Array(capture.get("attacks", [])):
 				var row := Dictionary(row_value)
 				var observed := float(row.get("observed_f", -1.0))
 				var observed_text := "no response" if observed < 0.0 else ("%.2f" % observed)
-				lines.append("  %s x%d — contact %d, evaded %d, missed %d; f authored %.2f, observed %s; closest %.1f" % [
+				lines.append("  %s x%d — contact %d, evaded %d, missed %d, interrupted %d; f authored %.2f, observed %s; closest %.1f" % [
 					String(row.get("attack", "?")), int(row.get("n", 0)),
-					int(row.get("contact", 0)), int(row.get("evaded", 0)), int(row.get("miss", 0)),
+					int(row.get("contact", 0)), int(row.get("evaded", 0)), int(row.get("miss", 0)), int(row.get("interrupted", 0)),
 					float(row.get("authored_f", 0.0)), observed_text, float(row.get("closest", 0.0))])
 		lines.append("Potions used: %d" % int(room.get("potions_used", 0)))
 		lines.append("Perfect dodges: %d" % int(room.get("perfect_dodges", 0)))
