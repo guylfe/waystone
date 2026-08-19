@@ -99,7 +99,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.19"
+const GAME_VERSION := "0.2.20"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -244,10 +244,11 @@ var exhaustion_start_pending := 0
 var exhaustion_end_samples := 0
 var exhaustion_end_alerted_sum := 0
 var exhaustion_end_clear := 0
-var stamina_refusal_total := 0
 var exhaustion_start_soonest_sum := 0.0
 var exhaustion_start_nearest_sum := 0.0
 var stamina_starved_time_total := 0.0
+var stamina_combo_starved_time_total := 0.0
+var exhaustion_threatened_time_total := 0.0
 var exhausted_dodge_room_max_chain := 0
 var terminal_combo_recoveries_total := 0
 var terminal_combo_recovery_time_total := 0.0
@@ -509,10 +510,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_end_samples = 0
 	exhaustion_end_alerted_sum = 0
 	exhaustion_end_clear = 0
-	stamina_refusal_total = 0
 	exhaustion_start_soonest_sum = 0.0
 	exhaustion_start_nearest_sum = 0.0
 	stamina_starved_time_total = 0.0
+	stamina_combo_starved_time_total = 0.0
+	exhaustion_threatened_time_total = 0.0
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	terminal_combo_recovery_time_total = 0.0
@@ -893,10 +895,11 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
-		"stamina_refusal_total": stamina_refusal_total,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
 		"stamina_starved_time_total": stamina_starved_time_total,
+		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total,
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total,
 		"direct_attack_uses": direct_attack_uses_total,
@@ -1010,10 +1013,11 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_end_samples": exhaustion_end_samples - int(survey_room_entry.get("exhaustion_end_samples", exhaustion_end_samples)),
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum - int(survey_room_entry.get("exhaustion_end_alerted_sum", exhaustion_end_alerted_sum)),
 		"exhaustion_end_clear": exhaustion_end_clear - int(survey_room_entry.get("exhaustion_end_clear", exhaustion_end_clear)),
-		"stamina_refusal_total": stamina_refusal_total - int(survey_room_entry.get("stamina_refusal_total", stamina_refusal_total)),
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum - float(survey_room_entry.get("exhaustion_start_soonest_sum", exhaustion_start_soonest_sum)),
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum - float(survey_room_entry.get("exhaustion_start_nearest_sum", exhaustion_start_nearest_sum)),
 		"stamina_starved_time_total": stamina_starved_time_total - float(survey_room_entry.get("stamina_starved_time_total", stamina_starved_time_total)),
+		"stamina_combo_starved_time_total": stamina_combo_starved_time_total - float(survey_room_entry.get("stamina_combo_starved_time_total", stamina_combo_starved_time_total)),
+		"exhaustion_threatened_time_total": exhaustion_threatened_time_total - float(survey_room_entry.get("exhaustion_threatened_time_total", exhaustion_threatened_time_total)),
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
@@ -1441,15 +1445,16 @@ func stamina_cost(amount: float) -> float:
 func _basic_attack_stamina_cost() -> float:
 	return 12.0 if player_weapon_frame == "twin_knives" else 14.0 if player_weapon_frame == "knife" else 18.0
 
+# Whole-sequence price. Sitting between this and the basic cost is the interesting
+# band: you can open, but you cannot commit to finishing. Kept in sync by hand with
+# the phase arrays in _begin_sword_combo and _begin_knife_combo.
+func _combo_stamina_cost() -> float:
+	return 60.0 if player_weapon_frame == "twin_knives" else 54.0 if player_weapon_frame == "knife" else 56.0
+
 func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
 	if not uses_stamina_rules(): return true
 	if raw_amount <= 0.0: return true
-	if not _can_commit_physical_action():
-		# The decision the resource is supposed to create is the one you *cannot*
-		# take. Nothing recorded it before, so exhaustion's cost was invisible
-		# except as damage, which deliberate play keeps at zero.
-		stamina_refusal_total += 1
-		return false
+	if not _can_commit_physical_action(): return false
 	var amount := stamina_cost(raw_amount) if scaled else raw_amount
 	var before := player_stamina
 	player_stamina = maxf(0.0, player_stamina - amount)
@@ -3349,13 +3354,22 @@ func _tick(dt: float) -> void:
 	var player_action_kind := String(player_action.get("kind", "idle"))
 	if uses_stamina_rules() and player_action_kind in STAMINA_REGEN_ACTIONS:
 		_regenerate_stamina(dt)
-	# Time too poor to swing at all. Distinct from exhaustion: the bar can sit
-	# under an attack's price without ever having emptied.
-	if uses_stamina_rules() and player_stamina < stamina_cost(_basic_attack_stamina_cost()):
-		stamina_starved_time_total += dt
+	# Time too poor to act, measured as a state rather than as refused attempts.
+	# A counter of declined actions records nothing, because a player who can read
+	# a greyed-out control never presses it -- the constraint has to be observed
+	# from the bar, not from what was tried against it.
+	if uses_stamina_rules():
+		if player_stamina < stamina_cost(_basic_attack_stamina_cost()):
+			stamina_starved_time_total += dt
+		if player_stamina < stamina_cost(_combo_stamina_cost()):
+			stamina_combo_starved_time_total += dt
 	if uses_stamina_rules() and player_exhaustion_remaining > 0.0001:
 		player_exhaustion_remaining = maxf(0.0, player_exhaustion_remaining - dt)
 		winded_time_total += dt
+		# Exhaustion sampled continuously rather than only at its two endpoints:
+		# this is what separates "the slow has no teeth" from "the lockout is timed
+		# for moments already made safe".
+		if player_is_noticed(): exhaustion_threatened_time_total += dt
 		if player_action_kind == "move": exhaustion_move_time_total += dt
 		elif player_action_kind == "wait": exhaustion_wait_time_total += dt
 		else: exhaustion_other_time_total += dt
@@ -6164,10 +6178,11 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
-		"stamina_refusal_total": stamina_refusal_total,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
 		"stamina_starved_time_total": stamina_starved_time_total,
+		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6400,10 +6415,11 @@ func _build_save_payload() -> Dictionary:
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
-		"stamina_refusal_total": stamina_refusal_total,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
 		"stamina_starved_time_total": stamina_starved_time_total,
+		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"message": message,
 		"run_active": run_active,
 		"mode_id": mode_id,
@@ -6707,10 +6723,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_end_samples = int(payload.get("exhaustion_end_samples", 0))
 	exhaustion_end_alerted_sum = int(payload.get("exhaustion_end_alerted_sum", 0))
 	exhaustion_end_clear = int(payload.get("exhaustion_end_clear", 0))
-	stamina_refusal_total = int(payload.get("stamina_refusal_total", 0))
 	exhaustion_start_soonest_sum = float(payload.get("exhaustion_start_soonest_sum", 0.0))
 	exhaustion_start_nearest_sum = float(payload.get("exhaustion_start_nearest_sum", 0.0))
 	stamina_starved_time_total = float(payload.get("stamina_starved_time_total", 0.0))
+	stamina_combo_starved_time_total = float(payload.get("stamina_combo_starved_time_total", 0.0))
+	exhaustion_threatened_time_total = float(payload.get("exhaustion_threatened_time_total", 0.0))
 	terminal_combo_recoveries_total = int(payload.get("terminal_combo_recoveries_total", 0))
 	terminal_combo_recovery_time_total = float(payload.get("terminal_combo_recovery_time_total", 0.0))
 	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))

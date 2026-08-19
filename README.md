@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.19` (Android version code `219`).
+Current prototype version: `0.2.20` (Android version code `220`).
+
+### v0.2.20: Measure states, not attempts
+
+`0.2.19` shipped a counter of actions refused for Stamina. It was worthless, and for a reason worth writing down: it counts deliberate presses of a disabled control, and a player who can read a greyed-out button never makes one. It would have reported zero whether exhaustion was crushing or irrelevant. The rule it violated — **measure states, not attempts** — is the same one behind the interrupted-attack loss fixed in `0.2.19`: any metric that requires the player to do something futile records their competence rather than the system's behaviour.
+
+- **The refusal counter is removed** and replaced by two measures that accrue from the bar's state regardless of what is attempted against it.
+- **Time unable to afford a full combo**, alongside the existing time unable to afford a basic attack. The band between them is the interesting one: you can open a sequence but cannot commit to finishing it, which is the actual decision the resource creates.
+- **Time exhausted with an enemy alerted**, sampled continuously rather than only at the two endpoints of each lockout. This is what separates "the slow has no teeth" from "the lockout is timed for moments already made safe" — a distinction damage figures cannot draw, because deliberate play keeps both at zero.
+- `Combo continuations prevented by exhaustion` is retained and was wrongly dismissed earlier. It fires when a *held* input meets an empty bar, which needs no decision to try, so it is a valid passive measure. It read zero across the `0.2.18` survey because emptying precisely at a link point is uncommon at 0.65 scale, not because it cannot fire.
+- **Survey report format 15.**
 
 ### v0.2.19: The survey stops hiding the attacks you win
 
