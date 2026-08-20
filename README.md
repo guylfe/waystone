@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.21` (Android version code `221`).
+Current prototype version: `0.2.22` (Android version code `222`).
+
+### v0.2.22: The Boar could not catch anyone
+
+`MELEE_ATTACK_PLANS` covers eight kinds — Blade, Knife, Bandit, Shield, Brute, Polearm, Captain, Knight. Boar and Hound are not among them, and only `melee` actions ever carried capture records. So the two most common melee enemies produced **no capture data at all** across three surveys, and every claim about walking's defensive value described three of the five melee kinds.
+
+They were skipped for a real reason: a charge's forward travel sits inside its damaging window, not its wind-up, so Milestone C's derived advance did not apply. But the arithmetic shows the skip landed very differently for the two of them.
+
+- **The Boar could not touch a walking player from any launch distance.** A 0.52s stationary wind-up handed the player `0.52 × 260 = 135` free units; the charge then closed `158 − 114 = 44` of them back, finishing **91 units further away than it started**. That is the pre-Milestone-C failure — walking as a universal answer — surviving intact in the one kind the milestone did not touch. It explains why the `0.2.20` run ended to a Boar only while the player was committed to something else.
+- **Retuned to `0.40 / 0.84 @ 444`** from `0.52 / 0.96 @ 360`, derived rather than guessed. Contact needs the gap to fall to the allowance of 59, not merely to stop growing, and the nearest a charge may launch is 88 — so `f = 0.50` requires a 29-unit net close at the midpoint, giving `V = (130S + 143.4) / W` = 444. Measured: from a launch gap of 90, answering immediately escapes by 52 units, answering at exactly half the wind-up contacts by 4.5. The commitment keeps its character — 195 units of unsteerable travel.
+- **`f` for a charge varies with launch distance**, because a charge commits wherever it can reach rather than at one authored strike distance the way melee plans do. 0.50 is the value at the closest launch and grows more forgiving further out; the survey now records the spread.
+- **The Hound is instrumented but deliberately unchanged.** Its numbers already net a walking player only +10 units, an effective `f` of about 0.12 — walking almost never saves you and the answer has to be a Dodge. That is recorded as description, not endorsed as design, pending a decision on whether a flanker should be walk-proof.
+- **Charges now carry capture records** through commitment, observation, contact, interruption and completion, including the obstacle-collision path that replaces the action mid-charge.
 
 ### v0.2.21: Exhaustion gets its two seconds back
 

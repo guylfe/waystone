@@ -106,7 +106,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.21"
+const GAME_VERSION := "0.2.22"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4473,6 +4473,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if kind not in ["move", "evade"]:
 			enemy["is_moving"] = false
 			enemy["last_motion"] = Vector2.ZERO
+		if kind == "charge": _observe_capture(enemy, action, elapsed)
 		if kind in ["move", "evade"]:
 			if update_locomotion:
 				var speed := _enemy_move_speed(enemy) * float(action.get("speed_multiplier", 1.0))
@@ -4535,6 +4536,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			var charge_origin := Vector2(enemy["pos"])
 			enemy["pos"] = _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
 			if Vector2(enemy["pos"]).is_equal_approx(charge_origin):
+				# Released before the action is replaced -- afterwards the charge
+				# dictionary and its record are already gone.
+				_interrupt_enemy_action(enemy)
 				enemy["action"] = _action("stagger", 0.62, Vector2.ZERO)
 				enemy["posture"] = maxf(0.0, float(enemy["posture"]) - 1.0)
 				_add_effect("posture_break", charge_origin)
@@ -4543,6 +4547,13 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				continue
 			if not bool(action["hit_done"]) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0:
 				action["hit_done"] = true
+				# Charges resolve contact here rather than through the melee tick, so the
+				# record has to be stamped on this path too or every landed charge would
+				# finalise as a miss.
+				var charge_record: Dictionary = action.get("capture_record", {})
+				if not charge_record.is_empty():
+					charge_record["resolution"] = "evaded" if _is_evasive() else "contact"
+					action["capture_record"] = charge_record
 				_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 2)), String(enemy["kind"]))
 		elif kind == "slam" and elapsed >= float(action["startup"]) and not bool(action["hit_done"]):
 			action["hit_done"] = true
@@ -4562,7 +4573,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			action["effect_done"] = true
 			_spawn_fire_circle(enemy)
 		if elapsed + 0.00001 >= float(action["duration"]):
-			if kind == "melee": _finalise_capture_record(enemy, action)
+			if kind in ["melee", "charge"]: _finalise_capture_record(enemy, action)
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
 			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
 				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
@@ -4598,10 +4609,30 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.24)
 		return
 	if enemy_kind == "boar":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.52, 0.96):
-			enemy["action"] = _charge_action(1.54, 0.52, 0.96, 360.0, 2, direction)
+		# A charge's travel happens inside its damaging window, not its wind-up, so
+		# Milestone C's forward travel never applied here. At the old 0.52s stationary
+		# wind-up that left the Boar unable to touch a walking player from ANY launch
+		# distance: the player banked 0.52 x 260 = 135 units for free, and the charge
+		# only closed 158 - 114 = 44 of them back, finishing 91 units further away
+		# than it started. Walking beat it unconditionally -- the exact failure
+		# Milestone C existed to remove, surviving in the one kind it did not touch.
+		#
+		# f = 0.50 means the charge reaches contact range against a player who answers
+		# at half the wind-up. Contact needs the gap to fall to the allowance (radius
+		# 31 + player 20 + 8 = 59), not merely to stop growing, and the nearest this
+		# may launch is 88 -- so the requirement is a 29-unit net close at the
+		# midpoint: 260(S + W) - 260(phi)S - V.W = -29, giving V = (130S + 143.4)/W.
+		# S = 0.40 with the 0.44s window kept intact yields V = 444.
+		#
+		# f varies with launch distance, because a charge commits anywhere it can
+		# reach rather than at one authored strike distance the way MELEE_ATTACK_PLANS
+		# entries do. 0.50 is therefore the value at the closest launch and it grows
+		# more forgiving further out; the survey records the spread.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 444.0, 0.40, 0.84):
+			enemy["action"] = _charge_action(1.42, 0.40, 0.84, 444.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
-			enemy["action"]["momentum_armour_start"] = 0.70
+			enemy["action"]["momentum_armour_start"] = 0.58
+			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 2.40
 		elif distance < 115.0:
 			enemy["action"] = _action("move", 0.38, -direction)
@@ -4662,6 +4693,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 440.0, 0.30, 0.68):
 			enemy["action"] = _charge_action(1.18, 0.30, 0.68, 440.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
+			# Not a design choice -- 0.12 is what this charge's current numbers already
+			# produce, recorded so the survey can compare observed against it. The Hound
+			# nets a walking player just +10 units, so walking almost never saves you and
+			# the answer has to be a Dodge. Whether a flanker SHOULD be walk-proof is
+			# open; it is authored here as description, pending that decision.
+			_attach_charge_capture(enemy["action"], 0.12, "pounce")
 			enemy["pounce_cooldown"] = 1.78
 		elif float(enemy.get("pounce_cooldown", 0.0)) > 0.0:
 			var retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.58).normalized()
@@ -4812,6 +4849,13 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 	# How near the attack came during its damaging window. This is what tunes `f`:
 	# a miss by two units and a miss by ninety are different design problems.
 	if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
+		if String(action.get("kind", "")) == "charge":
+			# A charge has no swept footprint. Its contact test is proximity against
+			# the same allowance the charge branch uses, so that is the honest measure.
+			var allowance := float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + 8.0
+			record["closest"] = minf(float(record["closest"]), Vector2(enemy["pos"]).distance_to(player_pos) - allowance)
+			action["capture_record"] = record
+			return
 		var sample: Dictionary = AttackGeometryScript.pose(action, Vector2(enemy["pos"]),
 			Vector2(action.get("direction", enemy["facing"])),
 			_nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 220.0)) + 90.0))
@@ -4824,9 +4868,25 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 # only the attacks the player failed to pre-empt -- the population most likely to
 # have landed. Measured: the 0.2.18 survey reported 11 resolved attacks while its
 # own strike log showed at least 20 melee commitments in the same rooms.
+# Charges carry capture records too. Their travel sits inside the damaging window
+# rather than the wind-up, so `f` means the same thing -- the fraction of the
+# telegraph during which walking still saves you -- but is authored rather than
+# derived from forward travel, which the charge already owns.
+func _attach_charge_capture(action: Dictionary, authored_f: float, technique: String) -> void:
+	action["capture_record"] = {
+		"technique": technique,
+		"authored_f": authored_f,
+		"committed_at": simulation_time,
+		"gap": -1.0,
+		"response_at": -1.0,
+		"response": "",
+		"closest": INF,
+		"resolution": "",
+	}
+
 func _interrupt_enemy_action(enemy: Dictionary) -> void:
 	var action: Dictionary = enemy.get("action", {})
-	if String(action.get("kind", "")) == "melee":
+	if String(action.get("kind", "")) in ["melee", "charge"]:
 		_finalise_capture_record(enemy, action, true)
 
 func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted: bool = false) -> void:

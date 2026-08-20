@@ -101,6 +101,56 @@ func test_interrupted_attacks_still_produce_a_record() -> void:
 	# It must not be mistaken for a walking escape: the response was a strike.
 	check(int(summary.get("walk_only_attempts", 0)) == 0, "an interruption is not a walk-only attempt")
 
+# Charges were invisible to capture entirely: MELEE_ATTACK_PLANS covers eight
+# kinds and neither Boar nor Hound is among them, so the two most common melee
+# enemies left no records at all across three surveys. Their travel sits inside
+# the damaging window rather than the wind-up, which is why Milestone C skipped
+# them -- but the Boar's stationary 0.52s telegraph handed a walking player 135
+# free units, so walking beat it from every launch distance.
+func charge_record(kind: String, respond_at: float, gap: float) -> Dictionary:
+	var state := survey_state()
+	var enemy := state._make_enemy(kind, state.player_pos + Vector2.RIGHT * gap, 999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = Vector2.LEFT
+	enemy["pounce_cooldown"] = 0.0
+	state.enemies.assign([enemy])
+	var responded := false
+	var startup := -1.0
+	for _step in range(1200):
+		var action := Dictionary(Dictionary(state.enemies[0])["action"])
+		if String(action.get("kind", "")) == "charge":
+			if startup < 0.0: startup = float(action.get("startup", 0.4))
+			if not responded and float(action.get("elapsed", 0.0)) >= startup * respond_at: responded = true
+		if responded and state.is_player_ready():
+			state.request_move(Vector2.LEFT, state.MOVE_RANGE, false)
+		if not state.survey_attack_records.is_empty(): break
+		state._tick(state.SIM_DT)
+	return {} if state.survey_attack_records.is_empty() else Dictionary(state.survey_attack_records[0])
+
+func test_charges_produce_capture_records() -> void:
+	for kind in ["boar", "hound"]:
+		var record := charge_record(kind, 0.0, 150.0)
+		check(not record.is_empty(), "%s charges must leave a capture record" % kind)
+		if record.is_empty(): continue
+		check(float(record.get("authored_f", -1.0)) > 0.0, "%s must carry an authored walk-safe fraction" % kind)
+		check(float(record.get("closest", 9999.0)) < 9000.0, "%s must measure a closest approach" % kind)
+
+func test_boar_charge_honours_its_authored_fraction() -> void:
+	# At the nearest distance the charge may launch from, answering before the
+	# authored fraction escapes and answering at it does not. Further out the same
+	# attack is more forgiving, because a charge commits wherever it can reach
+	# rather than at one authored strike distance.
+	var early := charge_record("boar", 0.0, 90.0)
+	var late := charge_record("boar", 0.5, 90.0)
+	check(String(early.get("resolution", "")) == "miss",
+		"reading a Boar charge immediately must escape it, got %s" % early.get("resolution", ""))
+	check(String(late.get("resolution", "")) == "contact",
+		"answering at the authored fraction must be caught, got %s" % late.get("resolution", ""))
+	check(float(early.get("f_observed", -1.0)) < float(late.get("f_observed", -1.0)),
+		"the later response must record the larger observed fraction")
+
 func test_every_attack_produces_a_record() -> void:
 	var record := record_for("diagonal_cut", "blade", "none", 0.0)
 	check(not record.is_empty(), "a resolved attack must leave a record")
@@ -179,6 +229,8 @@ func test_clean_evade_sources_are_counted() -> void:
 	check(state.clean_evade_vault_total == 0, "a Dodge evade must not be attributed to Vault")
 
 func _init() -> void:
+	test_charges_produce_capture_records()
+	test_boar_charge_honours_its_authored_fraction()
 	test_interrupted_attacks_still_produce_a_record()
 	test_every_attack_produces_a_record()
 	test_resolution_distinguishes_outcomes()
