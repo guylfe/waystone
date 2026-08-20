@@ -72,7 +72,14 @@ const STAMINA_COST_SCALE := 0.65
 const STAMINA_REGEN_PER_SECOND := 28.0
 # Only a hit suppresses regeneration now, and only briefly.
 const STAMINA_REGEN_DELAY := 0.5
-const EXHAUSTION_DURATION := 1.2
+# Back to 2.0 from the 1.2 that 0.2.17 adopted to offset the movement slow. The
+# 0.2.20 survey found exhaustion costing 2 damage across 8.33 seconds *despite*
+# an enemy being alerted for 100% of it, so there was no danger to offset. If the
+# self-covering hypothesis holds -- your own combo staggers whatever would punish
+# you -- then the first second or so is covered regardless of duration, and this
+# adds roughly 0.8s of genuinely exposed tail where there was previously almost
+# none. The effect should therefore be larger than doubling the number suggests.
+const EXHAUSTION_DURATION := 2.0
 # Exhaustion's teeth. 45% of a 260 u/s walk is 117 u/s, below the capture escape
 # threshold of every fast enemy (Knife 144, Bandit 142, Blade 131) and above the
 # slow ones (Shield 103, Brute 91) -- so being winded loses you the fights where
@@ -99,7 +106,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.20"
+const GAME_VERSION := "0.2.21"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -241,6 +248,7 @@ var exhaustion_start_samples := 0
 var exhaustion_start_alerted_sum := 0
 var exhaustion_start_clear := 0
 var exhaustion_start_pending := 0
+var exhaustion_start_reacting_sum := 0
 var exhaustion_end_samples := 0
 var exhaustion_end_alerted_sum := 0
 var exhaustion_end_clear := 0
@@ -507,6 +515,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_start_alerted_sum = 0
 	exhaustion_start_clear = 0
 	exhaustion_start_pending = 0
+	exhaustion_start_reacting_sum = 0
 	exhaustion_end_samples = 0
 	exhaustion_end_alerted_sum = 0
 	exhaustion_end_clear = 0
@@ -892,6 +901,7 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
 		"exhaustion_start_clear": exhaustion_start_clear,
 		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_start_reacting_sum": exhaustion_start_reacting_sum,
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
@@ -1010,6 +1020,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum - int(survey_room_entry.get("exhaustion_start_alerted_sum", exhaustion_start_alerted_sum)),
 		"exhaustion_start_clear": exhaustion_start_clear - int(survey_room_entry.get("exhaustion_start_clear", exhaustion_start_clear)),
 		"exhaustion_start_pending": exhaustion_start_pending - int(survey_room_entry.get("exhaustion_start_pending", exhaustion_start_pending)),
+		"exhaustion_start_reacting_sum": exhaustion_start_reacting_sum - int(survey_room_entry.get("exhaustion_start_reacting_sum", exhaustion_start_reacting_sum)),
 		"exhaustion_end_samples": exhaustion_end_samples - int(survey_room_entry.get("exhaustion_end_samples", exhaustion_end_samples)),
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum - int(survey_room_entry.get("exhaustion_end_alerted_sum", exhaustion_end_alerted_sum)),
 		"exhaustion_end_clear": exhaustion_end_clear - int(survey_room_entry.get("exhaustion_end_clear", exhaustion_end_clear)),
@@ -1490,6 +1501,7 @@ func _threat_snapshot() -> Dictionary:
 	var alerted := 0
 	var nearest := -1.0
 	var pending := 0
+	var reacting := 0
 	var soonest := -1.0
 	for enemy in enemies:
 		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
@@ -1498,6 +1510,10 @@ func _threat_snapshot() -> Dictionary:
 		var gap := Vector2(enemy["pos"]).distance_to(player_pos)
 		if nearest < 0.0 or gap < nearest: nearest = gap
 		var action: Dictionary = enemy.get("action", {})
+		# An alerted enemy in stagger or hit reaction is awake but cannot punish
+		# anything. Separating them tests whether exhaustion is covered by the very
+		# combo that caused it.
+		if String(action.get("kind", "idle")) in ["stagger", "hit_reaction"]: reacting += 1
 		if String(action.get("kind", "idle")) not in ENEMY_ATTACK_ACTION_KINDS: continue
 		var startup := float(action.get("startup", -1.0))
 		if startup < 0.0: continue
@@ -1505,7 +1521,7 @@ func _threat_snapshot() -> Dictionary:
 		if remaining < 0.0: continue
 		pending += 1
 		if soonest < 0.0 or remaining < soonest: soonest = remaining
-	return {"alerted": alerted, "nearest": nearest, "pending": pending, "soonest": soonest}
+	return {"alerted": alerted, "nearest": nearest, "pending": pending, "reacting": reacting, "soonest": soonest}
 
 func _record_exhaustion_threat(start: bool) -> void:
 	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
@@ -1518,6 +1534,7 @@ func _record_exhaustion_threat(start: bool) -> void:
 		if int(snapshot["pending"]) > 0:
 			exhaustion_start_pending += 1
 			exhaustion_start_soonest_sum += float(snapshot["soonest"])
+		exhaustion_start_reacting_sum += int(snapshot["reacting"])
 		if float(snapshot["nearest"]) >= 0.0: exhaustion_start_nearest_sum += float(snapshot["nearest"])
 	else:
 		exhaustion_end_samples += 1
@@ -3908,6 +3925,20 @@ func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
 			probe["footprint_radius"] = float(sample.get("radius", 0.0))
 	var direction := player_facing.normalized() if player_facing.length_squared() > 0.001 else Vector2.UP
 	var side := direction.rotated(PI * 0.5)
+	# Recorded whether or not an enemy is found. The enemy loop below overwrites
+	# these with identical values; without them a swing that found nobody printed
+	# every coordinate as (0,0) and read as a corrupt record rather than an honest
+	# one. The enemy coordinates stay absent, because there is no enemy.
+	probe.merge({
+		"player_x": player_pos.x,
+		"player_y": player_pos.y,
+		"facing_x": direction.x,
+		"facing_y": direction.y,
+		"weapon_start_x": float(Vector2(sample.get("weapon_start", player_pos)).x),
+		"weapon_start_y": float(Vector2(sample.get("weapon_start", player_pos)).y),
+		"weapon_end_x": float(Vector2(sample.get("weapon_end", player_pos)).x),
+		"weapon_end_y": float(Vector2(sample.get("weapon_end", player_pos)).y),
+	}, true)
 	for enemy in _nearby_enemies(player_pos, float(player_action.get("reach", player_attack_reach)) + 260.0):
 		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
 		var enemy_pos := Vector2(enemy["pos"])
@@ -3962,12 +3993,6 @@ func _survey_finalize_strike_probe(end_reason: String) -> void:
 	if not probe.has("closest_enemy"):
 		probe["closest_enemy"] = "none nearby"
 		probe["closest_clearance"] = -1.0
-		# Without these the row prints every coordinate as (0,0), which reads as a
-		# corrupt record rather than "the swing found nobody to measure against".
-		probe["player_x"] = player_pos.x
-		probe["player_y"] = player_pos.y
-		probe["facing_x"] = player_facing.x
-		probe["facing_y"] = player_facing.y
 	probe["visual_overlap_collision_failure"] = String(probe.get("result", "miss")) == "miss" and bool(probe.get("geometry_overlap", false)) and not bool(probe.get("occluded", false))
 	survey_strike_diagnostics.append(probe.duplicate(true))
 	player_action.erase("survey_strike_probe")
@@ -4838,7 +4863,7 @@ func _survey_capture_summary() -> Dictionary:
 		resolved += 1
 		var label := "%s %s" % [record.get("enemy", "?"), record.get("technique", "?")]
 		if not per_attack.has(label):
-			per_attack[label] = {"n": 0, "contact": 0, "evaded": 0, "miss": 0, "interrupted": 0, "authored_f": float(record.get("authored_f", 0.0)), "f_sum": 0.0, "f_n": 0, "closest_sum": 0.0}
+			per_attack[label] = {"n": 0, "contact": 0, "evaded": 0, "miss": 0, "interrupted": 0, "authored_f": float(record.get("authored_f", 0.0)), "f_sum": 0.0, "f_n": 0, "closest_sum": 0.0, "closest_n": 0}
 		var bucket: Dictionary = per_attack[label]
 		bucket["n"] = int(bucket["n"]) + 1
 		var resolution := String(record.get("resolution", "miss"))
@@ -4848,7 +4873,13 @@ func _survey_capture_summary() -> Dictionary:
 			# Cut down before the damaging window opened, rather than merely
 			# staggered out of a swing that had already committed.
 			if float(record.get("interrupted_at_f", 9.0)) < 1.0: pre_empted += 1
-		bucket["closest_sum"] = float(bucket["closest_sum"]) + float(record.get("closest", 0.0))
+		# 9999 is the never-sampled sentinel. An attack cut down before its damaging
+		# window has no closest approach to report, and averaging the sentinel in
+		# destroyed the mean -- 0.2.20 printed closest values of 4994 and 1401.
+		var closest := float(record.get("closest", 9999.0))
+		if closest < 9000.0:
+			bucket["closest_sum"] = float(bucket["closest_sum"]) + closest
+			bucket["closest_n"] = int(bucket["closest_n"]) + 1
 		var observed := float(record.get("f_observed", -1.0))
 		if observed >= 0.0:
 			bucket["f_sum"] = float(bucket["f_sum"]) + observed
@@ -4870,7 +4901,8 @@ func _survey_capture_summary() -> Dictionary:
 			"interrupted": int(bucket.get("interrupted", 0)),
 			"authored_f": float(bucket["authored_f"]),
 			"observed_f": (float(bucket["f_sum"]) / float(maxi(1, int(bucket["f_n"])))) if int(bucket["f_n"]) > 0 else -1.0,
-			"closest": float(bucket["closest_sum"]) / float(count),
+			"closest": (float(bucket["closest_sum"]) / float(maxi(1, int(bucket["closest_n"])))) if int(bucket["closest_n"]) > 0 else 0.0,
+			"closest_samples": int(bucket["closest_n"]),
 		})
 	rows.sort_custom(func(a, b): return String(a["attack"]) < String(b["attack"]))
 	return {
@@ -6175,6 +6207,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
 		"exhaustion_start_clear": exhaustion_start_clear,
 		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_start_reacting_sum": exhaustion_start_reacting_sum,
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
@@ -6412,6 +6445,7 @@ func _build_save_payload() -> Dictionary:
 		"exhaustion_start_alerted_sum": exhaustion_start_alerted_sum,
 		"exhaustion_start_clear": exhaustion_start_clear,
 		"exhaustion_start_pending": exhaustion_start_pending,
+		"exhaustion_start_reacting_sum": exhaustion_start_reacting_sum,
 		"exhaustion_end_samples": exhaustion_end_samples,
 		"exhaustion_end_alerted_sum": exhaustion_end_alerted_sum,
 		"exhaustion_end_clear": exhaustion_end_clear,
@@ -6720,6 +6754,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_start_alerted_sum = int(payload.get("exhaustion_start_alerted_sum", 0))
 	exhaustion_start_clear = int(payload.get("exhaustion_start_clear", 0))
 	exhaustion_start_pending = int(payload.get("exhaustion_start_pending", 0))
+	exhaustion_start_reacting_sum = int(payload.get("exhaustion_start_reacting_sum", 0))
 	exhaustion_end_samples = int(payload.get("exhaustion_end_samples", 0))
 	exhaustion_end_alerted_sum = int(payload.get("exhaustion_end_alerted_sum", 0))
 	exhaustion_end_clear = int(payload.get("exhaustion_end_clear", 0))

@@ -1,6 +1,20 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.20` (Android version code `220`).
+Current prototype version: `0.2.21` (Android version code `221`).
+
+### v0.2.21: Exhaustion gets its two seconds back
+
+The `0.2.20` survey answered the question it was built to answer, and the answer was not the expected one. Exhaustion was **not** being timed for safe moments: an enemy was alerted for **100%** of exhausted time across all three lockout rooms, at a mean nearest distance of 70 to 189 units. It still cost 2 damage in 8.33 seconds against an expected 9.8 at the run's own rate.
+
+The line that explains it is `0 with an attack already committed`, in all six lockouts. Alerted and close, but not one had launched — which suggests exhaustion is **self-covering**: the combo that empties the bar staggers the enemies that would punish you, and their reaction covers the window.
+
+- **`EXHAUSTION_DURATION` returns to 2.0** from the 1.2 that `0.2.17` adopted to offset the movement slow. There was no danger to offset. If the self-covering reading is right, the first second or so is protected regardless of duration, so this adds roughly 0.8s of genuinely exposed tail where there was almost none — a larger change than doubling the number implies.
+- **Alerted enemies are split by whether they can act.** The threat snapshot now separates those in stagger or hit reaction from those free to attack, which is what tests the hypothesis directly rather than inferring it.
+- **Closest-approach means are no longer corrupt.** An interrupted attack never opens a damaging window, so it has no closest approach; the `9999` never-sampled sentinel was being averaged in, producing the nonsense values `4994.5`, `4966.9` and `1401.7` in the `0.2.20` report. Unsampled records are now excluded and the column reads `n/a` when nothing was measurable.
+- **The zeroed strike row is properly fixed.** `0.2.19` restored the player position and facing but left the weapon arc at `(0,0)`. Those coordinates are now recorded at probe creation regardless of whether an enemy is found. The enemy coordinates stay absent, because there is no enemy.
+- **Survey report format 16.**
+
+A note on run-to-run noise: `0.2.19` and `0.2.20` changed no gameplay at all, yet fun moved 2.64 to 2.18 and tactical interest 2.43 to 2.18 between surveys. Rating differences below roughly half a point are variance, not signal.
 
 ### v0.2.20: Measure states, not attempts
 

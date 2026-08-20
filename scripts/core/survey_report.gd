@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 15
+const FORMAT_VERSION := 16
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -91,8 +91,9 @@ static func build_text(session: Dictionary) -> String:
 		if starts > 0:
 			var pending := int(room.get("exhaustion_start_pending", 0))
 			var soonest_text := "n/a" if pending <= 0 else ("%.2fs" % (float(room.get("exhaustion_start_soonest_sum", 0.0)) / float(pending)))
-			lines.append("Threat when exhaustion began: mean %.1f alerted, mean nearest %.0f; %d of %d with nothing alerted; %d with an attack already committed (soonest %s)" % [
+			lines.append("Threat when exhaustion began: mean %.1f alerted (%.1f of them staggered or reacting), mean nearest %.0f; %d of %d with nothing alerted; %d with an attack already committed (soonest %s)" % [
 				float(room.get("exhaustion_start_alerted_sum", 0)) / float(starts),
+				float(room.get("exhaustion_start_reacting_sum", 0)) / float(starts),
 				float(room.get("exhaustion_start_nearest_sum", 0.0)) / float(starts),
 				int(room.get("exhaustion_start_clear", 0)), starts, pending, soonest_text])
 		var ends := int(room.get("exhaustion_end_samples", 0))
@@ -129,10 +130,13 @@ static func build_text(session: Dictionary) -> String:
 				var row := Dictionary(row_value)
 				var observed := float(row.get("observed_f", -1.0))
 				var observed_text := "no response" if observed < 0.0 else ("%.2f" % observed)
-				lines.append("  %s x%d — contact %d, evaded %d, missed %d, interrupted %d; f authored %.2f, observed %s; closest %.1f" % [
+				# An interrupted attack has no damaging window, so it contributes no
+				# closest approach. Reporting one would be inventing a measurement.
+				var closest_text := "n/a" if int(row.get("closest_samples", 0)) <= 0 else ("%.1f" % float(row.get("closest", 0.0)))
+				lines.append("  %s x%d — contact %d, evaded %d, missed %d, interrupted %d; f authored %.2f, observed %s; closest %s" % [
 					String(row.get("attack", "?")), int(row.get("n", 0)),
 					int(row.get("contact", 0)), int(row.get("evaded", 0)), int(row.get("miss", 0)), int(row.get("interrupted", 0)),
-					float(row.get("authored_f", 0.0)), observed_text, float(row.get("closest", 0.0))])
+					float(row.get("authored_f", 0.0)), observed_text, closest_text])
 		lines.append("Potions used: %d" % int(room.get("potions_used", 0)))
 		lines.append("Perfect dodges: %d" % int(room.get("perfect_dodges", 0)))
 		lines.append("Blocks: %d" % int(room.get("successful_blocks", 0)))

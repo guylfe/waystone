@@ -92,8 +92,14 @@ func test_exhaustion_uses_fixed_world_time() -> void:
 	assert(state.request_move(Vector2.RIGHT, state.MOVE_RANGE, false))
 	advance_until_ready(state)
 	assert(state.player_exhaustion_remaining < state.EXHAUSTION_DURATION - 0.6)
-	assert(state.request_wait(0.8, false))
-	advance_until_ready(state)
+	# Drain the remainder in Wait units rather than one span of a fixed length, so
+	# this survives a change to EXHAUSTION_DURATION instead of encoding its value.
+	var guard := 0
+	while state.player_exhaustion_remaining > 0.0001 and guard < 40:
+		assert(state.request_wait(0.4, false))
+		advance_until_ready(state)
+		guard += 1
+	assert(guard < 40)
 	assert(is_equal_approx(state.player_exhaustion_remaining, 0.0))
 	assert(state.stamina_regen_active_time_total >= 1.3)
 	# Spending no longer arms the delay -- only being hit does, and nothing hit here.
