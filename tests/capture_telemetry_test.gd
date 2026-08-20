@@ -137,19 +137,49 @@ func test_charges_produce_capture_records() -> void:
 		check(float(record.get("authored_f", -1.0)) > 0.0, "%s must carry an authored walk-safe fraction" % kind)
 		check(float(record.get("closest", 9999.0)) < 9000.0, "%s must measure a closest approach" % kind)
 
-func test_boar_charge_honours_its_authored_fraction() -> void:
-	# At the nearest distance the charge may launch from, answering before the
-	# authored fraction escapes and answering at it does not. Further out the same
-	# attack is more forgiving, because a charge commits wherever it can reach
-	# rather than at one authored strike distance.
-	var early := charge_record("boar", 0.0, 90.0)
-	var late := charge_record("boar", 0.5, 90.0)
-	check(String(early.get("resolution", "")) == "miss",
-		"reading a Boar charge immediately must escape it, got %s" % early.get("resolution", ""))
-	check(String(late.get("resolution", "")) == "contact",
-		"answering at the authored fraction must be caught, got %s" % late.get("resolution", ""))
-	check(float(early.get("f_observed", -1.0)) < float(late.get("f_observed", -1.0)),
-		"the later response must record the larger observed fraction")
+func charge_outcome(kind: String, respond_at: float, gap: float, axis: Vector2) -> String:
+	var state := survey_state()
+	var enemy := state._make_enemy(kind, state.player_pos + Vector2.RIGHT * gap, 999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = Vector2.LEFT
+	enemy["pounce_cooldown"] = 0.0
+	state.enemies.assign([enemy])
+	var responded := false
+	var startup := -1.0
+	for _step in range(2000):
+		var action := Dictionary(Dictionary(state.enemies[0])["action"])
+		if String(action.get("kind", "")) == "charge":
+			if startup < 0.0: startup = float(action.get("startup", 0.3))
+			if not responded and float(action.get("elapsed", 0.0)) >= startup * respond_at: responded = true
+		if responded and state.is_player_ready(): state.request_move(axis, state.MOVE_RANGE, false)
+		if not state.survey_attack_records.is_empty(): break
+		state._tick(state.SIM_DT)
+	if state.survey_attack_records.is_empty(): return "none"
+	return String(Dictionary(state.survey_attack_records[0]).get("resolution", "?"))
+
+func test_footwork_cannot_answer_a_charge_at_close_range() -> void:
+	# The design the numbers exist to produce: too close when it commits and neither
+	# retreating along the line nor stepping off it works at any timing -- the answer
+	# is a Dodge. The Boar denies footwork with a body far wider than its silhouette,
+	# which is why the charge draws its contact radius while it runs.
+	for respond_at in [0.0, 0.5, 1.0]:
+		check(charge_outcome("boar", respond_at, 90.0, Vector2.LEFT) == "contact",
+			"retreating from a point-blank Boar charge at %.1f must fail" % respond_at)
+		check(charge_outcome("boar", respond_at, 90.0, Vector2.UP) == "contact",
+			"sidestepping a point-blank Boar charge at %.1f must fail" % respond_at)
+
+func test_distance_restores_the_answer_to_a_charge() -> void:
+	# Range is a real defence: the same charge from further out is escapable, and a
+	# late answer still is not. Without this the charge would simply be unavoidable
+	# rather than a question about spacing.
+	check(charge_outcome("boar", 0.0, 220.0, Vector2.LEFT) == "miss",
+		"an early retreat from a distant Boar charge must succeed")
+	check(charge_outcome("boar", 0.0, 150.0, Vector2.UP) == "miss",
+		"an early sidestep at mid range must succeed")
+	check(charge_outcome("boar", 1.0, 150.0, Vector2.UP) == "contact",
+		"a late sidestep at mid range must fail")
 
 func test_every_attack_produces_a_record() -> void:
 	var record := record_for("diagonal_cut", "blade", "none", 0.0)
@@ -230,7 +260,8 @@ func test_clean_evade_sources_are_counted() -> void:
 
 func _init() -> void:
 	test_charges_produce_capture_records()
-	test_boar_charge_honours_its_authored_fraction()
+	test_footwork_cannot_answer_a_charge_at_close_range()
+	test_distance_restores_the_answer_to_a_charge()
 	test_interrupted_attacks_still_produce_a_record()
 	test_every_attack_produces_a_record()
 	test_resolution_distinguishes_outcomes()

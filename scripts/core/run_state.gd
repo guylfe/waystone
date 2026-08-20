@@ -106,7 +106,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.22"
+const GAME_VERSION := "0.2.23"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4473,7 +4473,18 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if kind not in ["move", "evade"]:
 			enemy["is_moving"] = false
 			enemy["last_motion"] = Vector2.ZERO
-		if kind == "charge": _observe_capture(enemy, action, elapsed)
+		if kind == "charge":
+			# The aim follows the player through most of the wind-up and locks the
+			# instant the run begins. This penalises sidestepping without touching the
+			# retreat curve -- re-aiming at someone backing away does not help close a
+			# gap you have not started crossing. Deliberately short of the full wind-up
+			# so an early step is capped rather than erased.
+			if elapsed < float(action.get("tracking_end", 0.0)):
+				var aim := player_pos - Vector2(enemy["pos"])
+				if aim.length_squared() > 0.01:
+					action["direction"] = aim.normalized()
+					enemy["facing"] = Vector2(action["direction"])
+			_observe_capture(enemy, action, elapsed)
 		if kind in ["move", "evade"]:
 			if update_locomotion:
 				var speed := _enemy_move_speed(enemy) * float(action.get("speed_multiplier", 1.0))
@@ -4545,7 +4556,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				_set_message("The %s crashes into an obstacle." % String(enemy["kind"]))
 				enemies[index] = enemy
 				continue
-			if not bool(action["hit_done"]) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0:
+			if not bool(action["hit_done"]) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + float(action.get("contact_bonus", 8.0)):
 				action["hit_done"] = true
 				# Charges resolve contact here rather than through the melee tick, so the
 				# record has to be stamped on this path too or every landed charge would
@@ -4628,10 +4639,18 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# reach rather than at one authored strike distance the way MELEE_ATTACK_PLANS
 		# entries do. 0.50 is therefore the value at the closest launch and it grows
 		# more forgiving further out; the survey records the spread.
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 444.0, 0.40, 0.84):
-			enemy["action"] = _charge_action(1.42, 0.40, 0.84, 444.0, 2, direction)
+		# Slow, heavy and wide, with a short telegraph -- a slow charge is trivially
+		# escaped if you also get a long look at it coming. 0.80s of travel at 360
+		# covers 288 units, which out-ranges a backpedal: retreating only works if
+		# begun in the first fraction of the wind-up. Sidestepping is the real answer,
+		# and stays available because the body is wide rather than because the run is
+		# short. Tracking below 1.0 so a step taken early is not simply erased.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.30, 1.10):
+			enemy["action"] = _charge_action(1.55, 0.30, 1.10, 360.0, 5, direction)
 			enemy["action"]["label"] = "pounce"
-			enemy["action"]["momentum_armour_start"] = 0.58
+			enemy["action"]["momentum_armour_start"] = 0.48
+			enemy["action"]["tracking_end"] = 0.30 * 0.95
+			enemy["action"]["contact_bonus"] = 40.0
 			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 2.40
 		elif distance < 115.0:
@@ -4690,15 +4709,21 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
 	elif enemy_kind == "hound":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 440.0, 0.30, 0.68):
-			enemy["action"] = _charge_action(1.18, 0.30, 0.68, 440.0, 2, direction)
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.20, 0.58):
+			# The Boar's opposite. The difference that matters is not speed but how many
+			# decisions the telegraph affords: movement resolves in 0.131s steps, so a
+			# 0.20s wind-up is one look at the bar and the Boar's 0.30s is two. Commit
+			# the Dodge on first sight or wear it -- but it costs 2 rather than 5, and
+			# the narrow body leaves a sidestep genuinely available at range.
+			enemy["action"] = _charge_action(1.08, 0.20, 0.58, 500.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
-			# Not a design choice -- 0.12 is what this charge's current numbers already
-			# produce, recorded so the survey can compare observed against it. The Hound
-			# nets a walking player just +10 units, so walking almost never saves you and
-			# the answer has to be a Dodge. Whether a flanker SHOULD be walk-proof is
-			# open; it is authored here as description, pending that decision.
-			_attach_charge_capture(enemy["action"], 0.12, "pounce")
+			enemy["action"]["tracking_end"] = 0.20 * 0.85
+			enemy["action"]["contact_bonus"] = 10.0
+			# A charge's effective walk-safe fraction is dominated by launch distance
+			# rather than by timing: at 90 nothing but a Dodge answers either animal, at
+			# 220 everything does. 0.50 is the mid-range intent both are authored to, and
+			# the survey records how far the observed spread departs from it.
+			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 1.78
 		elif float(enemy.get("pounce_cooldown", 0.0)) > 0.0:
 			var retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.58).normalized()
@@ -4852,7 +4877,7 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 		if String(action.get("kind", "")) == "charge":
 			# A charge has no swept footprint. Its contact test is proximity against
 			# the same allowance the charge branch uses, so that is the honest measure.
-			var allowance := float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + 8.0
+			var allowance := float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + float(action.get("contact_bonus", 8.0))
 			record["closest"] = minf(float(record["closest"]), Vector2(enemy["pos"]).distance_to(player_pos) - allowance)
 			action["capture_record"] = record
 			return

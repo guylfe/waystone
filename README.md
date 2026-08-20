@@ -1,6 +1,17 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.22` (Android version code `222`).
+Current prototype version: `0.2.23` (Android version code `223`).
+
+### v0.2.23: A charge is a question about spacing
+
+`0.2.22` fixed the Boar's arithmetic against a player retreating **along** the charge line. Stepping off the line was never modelled, and it turned out to be roughly twice as forgiving — an effective walk-safe fraction of 0.94 against the authored 0.50, and at longer range a sidestep escaped at any timing whatsoever. The authored number only ever described one axis of movement.
+
+- **Charges track through the wind-up and lock at launch.** `tracking_end` per kind. Re-aiming at someone backing away does not help close a gap you have not started crossing, so this penalises sidestepping while leaving the retreat curve untouched. It cannot create a "too early and it reads you" window — displacement banked after the lock still counts, so the curve plateaus rather than failing — what it sets is the **ceiling** on how much a sidestep can ever be worth.
+- **Contact width is per charge** (`contact_bonus`), and **is now drawn while the charge runs**. A charging Boar connects at 91 units against a 31-unit silhouette; that width is what denies the sidestep, and rendering it is the difference between a heavy animal and being struck by empty ground.
+- **A wind-up bar.** Charges carried no sector geometry, so `_draw_attack_sector` never saw them and the crouch during which the animal tracks you was completely invisible. Every timing decision a charge is meant to pose was untestable. Fills across the wind-up only, clears at launch, sits between the health bar and the awareness marker.
+- **Boar as the heavy:** `0.30 / 1.10 @ 360`, damage 2 → **5**, contact bonus 40, tracking 0.95. Measured at point-blank, **neither retreating nor sidestepping works at any timing** — and the Dodge has a real window on both sides, failing early as the i-frames lapse before 288 units of Boar arrive, and failing late before they begin. At 150 a sidestep survives by 5.9 units; at 220 range answers it. Distance is the defence.
+- **Hound as the harrier:** `0.20 / 0.58 @ 500`, damage 2, contact bonus 10, tracking 0.85. The difference that matters is not speed but **how many decisions the telegraph affords** — movement resolves in 0.131s steps, so its 0.20s wind-up is one look at the bar where the Boar's 0.30s is two. Commit on first sight or wear it, but it costs 2 rather than 5, and its narrow body leaves a sidestep available at range.
+- Both charges are authored at `f = 0.50`. A charge's effective fraction is dominated by launch distance rather than timing — at 90 only a Dodge answers either animal, at 220 everything does — so 0.50 is the mid-range intent, and the survey records how far observation departs from it.
 
 ### v0.2.22: The Boar could not catch anyone
 
