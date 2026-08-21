@@ -106,7 +106,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.23"
+const GAME_VERSION := "0.2.24"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4645,11 +4645,19 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# begun in the first fraction of the wind-up. Sidestepping is the real answer,
 		# and stays available because the body is wide rather than because the run is
 		# short. Tracking below 1.0 so a step taken early is not simply erased.
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.30, 1.10):
-			enemy["action"] = _charge_action(1.55, 0.30, 1.10, 360.0, 5, direction)
+		# The wind-up must outlast a player commitment or it is not a decision, and the
+		# commitment is far longer than the 0.44s between combo strikes suggests:
+		# measured, a single strike locks control for 0.983s, a basic attack 0.800s, a
+		# held combo 2.475s. At the 0.30s this first shipped with, a charge that fired
+		# mid-swing resolved entirely before control returned and the outcome was set by
+		# when it happened to fire rather than by any read. 0.70 plus travel clears a
+		# single strike everywhere except point-blank, where standing inside a Boar's
+		# reach and committing anyway is a risk rather than an injustice.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.70, 1.50):
+			enemy["action"] = _charge_action(1.95, 0.70, 1.50, 360.0, 5, direction)
 			enemy["action"]["label"] = "pounce"
-			enemy["action"]["momentum_armour_start"] = 0.48
-			enemy["action"]["tracking_end"] = 0.30 * 0.95
+			enemy["action"]["momentum_armour_start"] = 0.88
+			enemy["action"]["tracking_end"] = 0.70 * 0.95
 			enemy["action"]["contact_bonus"] = 40.0
 			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 2.40
@@ -4709,15 +4717,16 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
 	elif enemy_kind == "hound":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.20, 0.58):
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.55, 0.93):
 			# The Boar's opposite. The difference that matters is not speed but how many
 			# decisions the telegraph affords: movement resolves in 0.131s steps, so a
-			# 0.20s wind-up is one look at the bar and the Boar's 0.30s is two. Commit
+			# 0.55s against the Boar's 0.70s: both outlast a commitment at range, but the
+			# Hound leaves markedly less room to use what it gives back. Commit
 			# the Dodge on first sight or wear it -- but it costs 2 rather than 5, and
 			# the narrow body leaves a sidestep genuinely available at range.
-			enemy["action"] = _charge_action(1.08, 0.20, 0.58, 500.0, 2, direction)
+			enemy["action"] = _charge_action(1.43, 0.55, 0.93, 500.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
-			enemy["action"]["tracking_end"] = 0.20 * 0.85
+			enemy["action"]["tracking_end"] = 0.55 * 0.85
 			enemy["action"]["contact_bonus"] = 10.0
 			# A charge's effective walk-safe fraction is dominated by launch distance
 			# rather than by timing: at 90 nothing but a Dodge answers either animal, at

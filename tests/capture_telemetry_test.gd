@@ -159,16 +159,55 @@ func charge_outcome(kind: String, respond_at: float, gap: float, axis: Vector2) 
 	if state.survey_attack_records.is_empty(): return "none"
 	return String(Dictionary(state.survey_attack_records[0]).get("resolution", "?"))
 
-func test_footwork_cannot_answer_a_charge_at_close_range() -> void:
-	# The design the numbers exist to produce: too close when it commits and neither
-	# retreating along the line nor stepping off it works at any timing -- the answer
-	# is a Dodge. The Boar denies footwork with a body far wider than its silhouette,
-	# which is why the charge draws its contact radius while it runs.
-	for respond_at in [0.0, 0.5, 1.0]:
-		check(charge_outcome("boar", respond_at, 90.0, Vector2.LEFT) == "contact",
-			"retreating from a point-blank Boar charge at %.1f must fail" % respond_at)
-		check(charge_outcome("boar", respond_at, 90.0, Vector2.UP) == "contact",
-			"sidestepping a point-blank Boar charge at %.1f must fail" % respond_at)
+# A charge that starts and finishes inside one player commitment is not a decision,
+# it is a dice roll on when it fired. A single strike locks control for 0.983s and a
+# basic attack for 0.800s -- not the 0.44s between combo strikes, which is what the
+# wind-ups were mistakenly sized against and what shipped a Boar that hit you
+# mid-swing with nothing to be done about it.
+func charge_outcome_while_committed(kind: String, gap: float, axis: Vector2) -> String:
+	var state := survey_state()
+	var enemy := state._make_enemy(kind, state.player_pos + Vector2.RIGHT * gap, 9999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = Vector2.LEFT
+	enemy["pounce_cooldown"] = 0.0
+	state.enemies.assign([enemy])
+	var committed := false
+	for _step in range(4000):
+		var action := Dictionary(Dictionary(state.enemies[0])["action"])
+		if String(action.get("kind", "")) == "charge" and not committed:
+			# Commit the instant the charge does: the worst case, and the one that used
+			# to resolve entirely before control came back.
+			committed = true
+			state.request_attack(state.player_pos + Vector2.RIGHT * 300.0, false)
+		if committed and state.is_player_ready(): state.request_move(axis, state.MOVE_RANGE, false)
+		if not state.survey_attack_records.is_empty(): break
+		state._tick(state.SIM_DT)
+	if state.survey_attack_records.is_empty(): return "none"
+	return String(Dictionary(state.survey_attack_records[0]).get("resolution", "?"))
+
+func test_a_charge_always_offers_a_decision_to_a_free_player() -> void:
+	# Answering the telegraph immediately must work at every range, on both axes.
+	# Anything else means the wind-up is shorter than the player's commitment.
+	for kind in ["boar", "hound"]:
+		for gap in [90.0, 150.0, 220.0]:
+			check(charge_outcome("%s" % kind, 0.0, gap, Vector2.LEFT) == "miss",
+				"an immediate retreat from a %s charge at %.0f must escape" % [kind, gap])
+
+func test_commitment_is_what_makes_you_late() -> void:
+	# The capture principle applied to charges: it is your own action lockout that
+	# converts a readable telegraph into a hit, not the telegraph being unreadable.
+	check(charge_outcome_while_committed("boar", 150.0, Vector2.LEFT) == "contact",
+		"committing to a strike inside a Boar's range must be punished")
+	check(charge_outcome_while_committed("hound", 150.0, Vector2.LEFT) == "contact",
+		"committing to a strike inside a Hound's range must be punished")
+	# Distance still buys out of it -- against the Boar. The Hound is the animal you
+	# cannot afford to be busy near at any range, which is its whole identity.
+	check(charge_outcome_while_committed("boar", 220.0, Vector2.LEFT) == "miss",
+		"range must let a committed player survive the slower charge")
+	check(charge_outcome_while_committed("hound", 220.0, Vector2.LEFT) == "contact",
+		"the Hound must punish commitment even at range")
 
 func test_distance_restores_the_answer_to_a_charge() -> void:
 	# Range is a real defence: the same charge from further out is escapable, and a
@@ -260,7 +299,8 @@ func test_clean_evade_sources_are_counted() -> void:
 
 func _init() -> void:
 	test_charges_produce_capture_records()
-	test_footwork_cannot_answer_a_charge_at_close_range()
+	test_a_charge_always_offers_a_decision_to_a_free_player()
+	test_commitment_is_what_makes_you_late()
 	test_distance_restores_the_answer_to_a_charge()
 	test_interrupted_attacks_still_produce_a_record()
 	test_every_attack_produces_a_record()

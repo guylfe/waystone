@@ -1,6 +1,25 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.23` (Android version code `223`).
+Current prototype version: `0.2.24` (Android version code `224`).
+
+### v0.2.24: A charge that resolves inside your swing is not a decision
+
+`0.2.23` shortened the Boar's wind-up to 0.30 and the Hound's to 0.20 on the reasoning that a 0.44s combo phase left one or two decision points. **0.44s is the gap between strikes inside a combo, not the time until control returns.** Measured:
+
+```
+basic attack     lockout = 0.800s
+combo strike     lockout = 0.983s
+held combo       lockout = 2.475s
+```
+
+So a commitment costs nearly a second, and at the shipped numbers a charge that fired mid-swing resolved *entirely* before the player could act. The outcome was set by when it happened to fire rather than by any read — which plays exactly as badly as it sounds. Every wind-up figure in `0.2.22` and `0.2.23` was sized against the wrong number.
+
+- **Boar `0.70 / 1.50 @ 360`**, Hound **`0.55 / 0.93 @ 500`**. Both now outlast a single commitment, so answering the telegraph immediately escapes at every range on both axes — which is the rule-4 case working rather than an exception to it.
+- **Commitment is what makes you late.** Committing to a strike inside either animal's range is punished at 150; the charge converts a readable telegraph into a hit *because you were busy*, not because it was unreadable. That is the capture principle applied to charges.
+- **The differentiation landed somewhere better than the decision-count framing it was designed around.** At 220 a committed player escapes the Boar and is still caught by the Hound. The Hound is the animal you cannot afford to be busy near at any range; the Boar is the one that hits for 5 if it reaches you.
+- Sidestepping stays harder than retreating at close range — tracking still caps what stepping off the line is worth — and at point-blank a swing that reaches the animal interrupts the charge outright, which is a legitimate third answer.
+
+The probe that let `0.2.23` ship only ever modelled a player free to act at any moment. It now models a **committed** player as well, and the regression tests assert the commitment case directly.
 
 ### v0.2.23: A charge is a question about spacing
 
