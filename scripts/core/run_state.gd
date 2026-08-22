@@ -84,6 +84,25 @@ const EXHAUSTION_DURATION := 2.0
 # threshold of every fast enemy (Knife 144, Bandit 142, Blade 131) and above the
 # slow ones (Shield 103, Brute 91) -- so being winded loses you the fights where
 # footwork was carrying you, without stranding you in a room of Brutes.
+# The Ox. A committed line rather than a committed distance: it runs until it hits
+# something or exhausts the cap, so an open arena lets it cross most of a room and
+# a wall ends it in a stagger. Startup outlasts a player commitment (0.983s for a
+# combo strike) by design -- an elite that resolves inside your swing is the same
+# defect as a Boar that does.
+const OX_CHARGE_STARTUP := 0.85
+const OX_CHARGE_SPEED := 520.0
+const OX_CHARGE_CAP := 900.0
+const OX_CHARGE_ACTIVE_END := OX_CHARGE_STARTUP + OX_CHARGE_CAP / OX_CHARGE_SPEED
+const OX_CHARGE_DURATION := OX_CHARGE_ACTIVE_END + 0.85
+# Wide enough that walking off the line fails, narrow enough that a Dodge's 150
+# units of displacement clears it. That band is the whole identity, and it has a
+# band is narrow and measured, not guessed. The aim locks at 0.765s and the charge
+# arrives at 1.14s from the nearest interesting range, leaving 0.375s in which
+# walking covers 97 units and a Dodge covers about 131 -- it displaces 150 but only
+# begins moving 0.08s after commitment, so a late Dodge lands short of its full
+# travel. The contact radius has to sit between those two numbers or the Ox is
+# either walkable or unanswerable. 41 puts it at 115.
+const OX_CONTACT_BONUS := 41.0
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
@@ -106,7 +125,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.24"
+const GAME_VERSION := "0.2.25"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -771,6 +790,7 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "boar", "role": "frontline"}]},
 		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
 		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "blade", "role": "frontline"}]},
+		{"id": "goring_line", "label": "Goring Line", "family": "elite_charge", "min_tier": 5, "phases": ["climax", "pressure"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox", "role": "elite"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "knife", "role": "flanker"}]},
 		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 4, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
 		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster", "role": "area_denial"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}]},
 		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 5, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster", "role": "area_denial"}, {"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
@@ -822,7 +842,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	return chosen
 
 func _survey_enemy_cost(kind: String) -> int:
-	return int({"boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
+	return int({"ox": 5, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
 
 func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	var result := 0
@@ -1208,7 +1228,7 @@ func has_unanchored_progress() -> bool:
 	return provisional_xp() > 0 or unanchored_discovery_count() > 0 or unanchored_shortcut()
 
 func _enemy_base_hp(kind: String) -> int:
-	return {"boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 60, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "captain": 60, "warden": 130, "werewolf": 210}.get(kind, 35)
+	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 60, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "captain": 60, "warden": 130, "werewolf": 210}.get(kind, 35)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -1224,7 +1244,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 31.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": 62.0 if kind == "werewolf" else 54.0 if kind == "ox" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 31.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -1282,7 +1302,7 @@ func _respawn_enemies() -> void:
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
 	# and equipment identity without creating another visible character stat.
-	return {"bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "hexer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "captain": 0.0, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
+	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "hexer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "captain": 0.0, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
 
 func _enemy_posture_max(kind: String) -> float:
 	var profile := CombatCatalogScript.archetype(kind)
@@ -4291,6 +4311,11 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# A boar earns armour only after its pounce has accelerated. The crouch and
 	# early travel remain interruptible, and a posture-heavy technique can still
 	# arrest a full-speed charge.
+	# Nothing short of lethal stops a running Ox. The damage has already been applied
+	# by the caller, so reaching here means the blow did not kill it.
+	if action_kind == "charge" and bool(action_before.get("unstoppable", false)) and elapsed >= float(action_before.get("startup", 0.0)):
+		_add_effect("strain", Vector2(enemy["pos"]))
+		return false
 	if enemy_kind == "boar" and action_kind == "charge" and String(action_before.get("label", "")) == "pounce":
 		var armour_start := float(action_before.get("momentum_armour_start", INF))
 		if elapsed >= armour_start and not high_impact:
@@ -4306,6 +4331,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 		"knife": 0.64,
 		"bandit": 0.64,
 		"hound": 0.64,
+		"ox": 0.46,
 		"boar": 0.58,
 		"archer": 0.56,
 		"hexer": 0.56,
@@ -4556,6 +4582,13 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				_set_message("The %s crashes into an obstacle." % String(enemy["kind"]))
 				enemies[index] = enemy
 				continue
+			var cap := float(action.get("charge_cap", 0.0))
+			if cap > 0.0:
+				action["charge_travelled"] = float(action.get("charge_travelled", 0.0)) + charge_origin.distance_to(Vector2(enemy["pos"]))
+				if float(action["charge_travelled"]) >= cap:
+					# Spent. End the run here and let the recovery play out, rather than
+					# letting an uncapped line cross the whole floor.
+					action["active_end"] = elapsed
 			if not bool(action["hit_done"]) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + float(action.get("contact_bonus", 8.0)):
 				action["hit_done"] = true
 				# Charges resolve contact here rather than through the melee tick, so the
@@ -4716,17 +4749,40 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _intent_melee_action(shield_intent, direction)
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
+	elif enemy_kind == "ox":
+		# The Ox asks a different question from every other attack in the game. Theirs
+		# is radial -- am I close enough. This one is lateral: am I on its line. It
+		# commits from any distance with line of sight and runs until it hits the
+		# player, hits a wall, or exhausts its cap, so there is no safe range, only a
+		# safe bearing. Its body is far too wide to walk out of and just narrow enough
+		# to Dodge out of, which makes the evasive action the answer rather than an
+		# alternative to footwork.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 120.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 7, direction)
+			enemy["action"]["label"] = "gore"
+			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90
+			enemy["action"]["contact_bonus"] = OX_CONTACT_BONUS
+			enemy["action"]["charge_cap"] = OX_CHARGE_CAP
+			enemy["action"]["charge_travelled"] = 0.0
+			# Nothing short of a killing blow stops it once it is moving.
+			enemy["action"]["unstoppable"] = true
+			_attach_charge_capture(enemy["action"], 0.50, "gore")
+			enemy["pounce_cooldown"] = 3.20
+		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.62)
 	elif enemy_kind == "hound":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.55, 0.93):
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.70, 1.08):
 			# The Boar's opposite. The difference that matters is not speed but how many
 			# decisions the telegraph affords: movement resolves in 0.131s steps, so a
-			# 0.55s against the Boar's 0.70s: both outlast a commitment at range, but the
-			# Hound leaves markedly less room to use what it gives back. Commit
+			# Matched to the Boar's 0.70s. At 0.55 a committed player was caught even at
+			# 220 -- "you can never be busy near a Hound" is not a decision, it is a
+			# constraint, and the information arrived after the commitment that triggered
+			# it. Differentiation lives in damage, body width, speed and re-charge
+			# cadence instead, all of which are visible before you commit. Commit
 			# the Dodge on first sight or wear it -- but it costs 2 rather than 5, and
 			# the narrow body leaves a sidestep genuinely available at range.
-			enemy["action"] = _charge_action(1.43, 0.55, 0.93, 500.0, 2, direction)
+			enemy["action"] = _charge_action(1.58, 0.70, 1.08, 500.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
-			enemy["action"]["tracking_end"] = 0.55 * 0.85
+			enemy["action"]["tracking_end"] = 0.70 * 0.85
 			enemy["action"]["contact_bonus"] = 10.0
 			# A charge's effective walk-safe fraction is dominated by launch distance
 			# rather than by timing: at 90 nothing but a Dodge answers either animal, at

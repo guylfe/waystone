@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.24` (Android version code `224`).
+Current prototype version: `0.2.25` (Android version code `225`).
+
+### v0.2.25: The Ox asks which way you are standing
+
+Every attack in the game asks a **radial** question — am I close enough. The Ox asks a **lateral** one: am I on its line. It commits from any distance with line of sight and runs until it hits the player, hits a wall, or exhausts a 900-unit cap, so there is no safe range, only a safe bearing.
+
+That inverts the answer rather than adjusting numbers, which is a far more robust way to make an enemy distinct than the tuning this milestone has otherwise consisted of. It also finally gives terrain a job: the obstacle-crash path that already existed now matters, because an Ox baited into a wall staggers and loses posture.
+
+- **`0.85 / 520 / 900-unit cap`, damage 7, 96 health, composition cost 5.** Elite tier, appearing through the new `Goring Line` recipe from tier 5.
+- **Unstoppable once running.** Nothing short of a killing blow interrupts it, so stopping it is a spacing decision rather than a damage race.
+- **Its width is derived, not chosen.** The aim locks at 0.765s and the charge arrives at 1.14s from the nearest interesting range, leaving 0.375s in which walking covers 97 units and a Dodge about 131 — it displaces 150 but only starts moving 0.08s after commitment, so a late Dodge lands short. The contact radius has to sit between those two numbers or the Ox is either walkable or unanswerable. It sits at **115**.
+- Measured at 150: retreating fails at every timing, an immediate Dodge clears by 14 units, an immediate sidestep by 2. At 300 there is room to walk clear. At 500 it runs into the arena edge and wrecks itself.
+- **Hound wind-up 0.55 → 0.70**, matching the Boar. At 0.55 a committed player was caught even at 220 — "you can never be busy near a Hound" is a constraint rather than a decision, and the information arrived after the commitment that triggered it. Its differentiation lives in damage, body width, speed and re-charge cadence, all visible before you commit.
 
 ### v0.2.24: A charge that resolves inside your swing is not a decision
 

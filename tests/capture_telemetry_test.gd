@@ -187,6 +187,57 @@ func charge_outcome_while_committed(kind: String, gap: float, axis: Vector2) -> 
 	if state.survey_attack_records.is_empty(): return "none"
 	return String(Dictionary(state.survey_attack_records[0]).get("resolution", "?"))
 
+# The Ox asks a lateral question where every other attack asks a radial one: not
+# "am I close enough" but "am I on its line". It commits from any distance with a
+# clear line and runs until it hits the player, a wall, or its cap, so there is no
+# safe range -- only a safe bearing. Its width is derived, not chosen: the aim locks
+# at 0.765s and the charge arrives at 1.14s from the nearest interesting range,
+# leaving 0.375s in which walking covers 97 units and a Dodge about 131. The contact
+# radius sits between them at 115, which is what makes the evasive action the answer
+# rather than an alternative to footwork.
+func ox_outcome(gap: float, axis: Vector2, dodge: bool, respond_at: float) -> String:
+	var state := survey_state()
+	var enemy := state._make_enemy("ox", state.player_pos + Vector2.RIGHT * gap, 9999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = Vector2.LEFT
+	enemy["pounce_cooldown"] = 0.0
+	state.enemies.assign([enemy])
+	var responded := false
+	var startup := -1.0
+	for _step in range(6000):
+		var action := Dictionary(Dictionary(state.enemies[0])["action"])
+		if String(action.get("kind", "")) == "charge":
+			if startup < 0.0: startup = float(action.get("startup", 0.85))
+			if not responded and float(action.get("elapsed", 0.0)) >= startup * respond_at: responded = true
+		if responded and state.is_player_ready():
+			if dodge: state.request_dodge(axis, false)
+			else: state.request_move(axis, state.MOVE_RANGE, false)
+		if not state.survey_attack_records.is_empty(): break
+		state._tick(state.SIM_DT)
+	if state.survey_attack_records.is_empty(): return "none"
+	return String(Dictionary(state.survey_attack_records[0]).get("resolution", "?"))
+
+func test_the_ox_cannot_be_outrun_only_evaded() -> void:
+	# Retreating along the line fails at every timing: the run is longer than any
+	# backpedal. Getting off the line is the only answer, and the Dodge is the one
+	# that clears with margin.
+	for respond_at in [0.0, 0.5, 1.0]:
+		check(ox_outcome(150.0, Vector2.LEFT, false, respond_at) == "contact",
+			"retreating along an Ox charge at %.1f must fail" % respond_at)
+	check(ox_outcome(150.0, Vector2.UP, true, 0.0) == "miss",
+		"an immediate Dodge off an Ox's line must clear it")
+	check(ox_outcome(150.0, Vector2.UP, true, 0.5) == "contact",
+		"a late Dodge off an Ox's line must not clear it")
+
+func test_the_ox_commits_from_beyond_any_other_reach() -> void:
+	# Line-based rather than distance-gated. A Boar cannot commit past about 380
+	# units; the Ox must still be a threat well beyond that, which is what makes
+	# bearing rather than spacing the question it asks.
+	check(ox_outcome(500.0, Vector2.UP, false, 0.0) != "none",
+		"the Ox must commit a charge from 500 units, where no other melee kind can")
+
 func test_a_charge_always_offers_a_decision_to_a_free_player() -> void:
 	# Answering the telegraph immediately must work at every range, on both axes.
 	# Anything else means the wind-up is shorter than the player's commitment.
@@ -299,6 +350,8 @@ func test_clean_evade_sources_are_counted() -> void:
 
 func _init() -> void:
 	test_charges_produce_capture_records()
+	test_the_ox_cannot_be_outrun_only_evaded()
+	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()
 	test_commitment_is_what_makes_you_late()
 	test_distance_restores_the_answer_to_a_charge()
