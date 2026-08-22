@@ -94,15 +94,13 @@ const OX_CHARGE_SPEED := 520.0
 const OX_CHARGE_CAP := 900.0
 const OX_CHARGE_ACTIVE_END := OX_CHARGE_STARTUP + OX_CHARGE_CAP / OX_CHARGE_SPEED
 const OX_CHARGE_DURATION := OX_CHARGE_ACTIVE_END + 0.85
-# Wide enough that walking off the line fails, narrow enough that a Dodge's 150
-# units of displacement clears it. That band is the whole identity, and it has a
-# band is narrow and measured, not guessed. The aim locks at 0.765s and the charge
-# arrives at 1.14s from the nearest interesting range, leaving 0.375s in which
-# walking covers 97 units and a Dodge covers about 131 -- it displaces 150 but only
-# begins moving 0.08s after commitment, so a late Dodge lands short of its full
-# travel. The contact radius has to sit between those two numbers or the Ox is
-# either walkable or unanswerable. 41 puts it at 115.
-const OX_CONTACT_BONUS := 41.0
+# The Ox's reach is its body: radius 76 puts contact at 104, which still sits in
+# the band the design needs -- the aim locks at 0.765s and the charge arrives at
+# 1.14s from the nearest interesting range, leaving 0.375s in which walking covers
+# 97 units and a Dodge about 131. Below 97 it is walkable, above 131 unanswerable.
+# It used to reach 115 by wearing a 41-unit invisible collar, which is a lie a
+# drawn ring only labels.
+const HOUND_NEUTRAL_AFTER_EVADE := 0.55
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
@@ -125,7 +123,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.25"
+const GAME_VERSION := "0.2.26"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1244,7 +1242,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 62.0 if kind == "werewolf" else 54.0 if kind == "ox" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 31.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": 76.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -4672,6 +4670,9 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# reach rather than at one authored strike distance the way MELEE_ATTACK_PLANS
 		# entries do. 0.50 is therefore the value at the closest launch and it grows
 		# more forgiving further out; the survey records the spread.
+		# Genuinely large -- radius 42, rather than a 31-unit animal wearing a 40-unit
+		# invisible collar. Reach now follows the silhouette, which costs the Boar real
+		# denial (91 down to 70) and is worth it.
 		# Slow, heavy and wide, with a short telegraph -- a slow charge is trivially
 		# escaped if you also get a long look at it coming. 0.80s of travel at 360
 		# covers 288 units, which out-ranges a backpedal: retreating only works if
@@ -4691,7 +4692,6 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["label"] = "pounce"
 			enemy["action"]["momentum_armour_start"] = 0.88
 			enemy["action"]["tracking_end"] = 0.70 * 0.95
-			enemy["action"]["contact_bonus"] = 40.0
 			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 2.40
 		elif distance < 115.0:
@@ -4761,7 +4761,6 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 7, direction)
 			enemy["action"]["label"] = "gore"
 			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90
-			enemy["action"]["contact_bonus"] = OX_CONTACT_BONUS
 			enemy["action"]["charge_cap"] = OX_CHARGE_CAP
 			enemy["action"]["charge_travelled"] = 0.0
 			# Nothing short of a killing blow stops it once it is moving.
@@ -4783,7 +4782,6 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _charge_action(1.58, 0.70, 1.08, 500.0, 2, direction)
 			enemy["action"]["label"] = "pounce"
 			enemy["action"]["tracking_end"] = 0.70 * 0.85
-			enemy["action"]["contact_bonus"] = 10.0
 			# A charge's effective walk-safe fraction is dominated by launch distance
 			# rather than by timing: at 90 nothing but a Dodge answers either animal, at
 			# 220 everything does. 0.50 is the mid-range intent both are authored to, and
@@ -4794,6 +4792,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.58).normalized()
 			enemy["action"] = _action("evade", 0.32, retreat)
 			enemy["action"]["speed_multiplier"] = 1.48
+			# A retreat must not feed straight back into a charge. The Bandit already
+			# gates this with a 2.0s dodge_strike cooldown; without it the Hound slips a
+			# committed strike and is mid-wind-up before the player recovers from it --
+			# a whole evade-and-counter inside one 0.983s commitment, which makes
+			# swinging at a Hound strictly a mistake.
+			enemy["pounce_cooldown"] = maxf(float(enemy["pounce_cooldown"]), 0.32 + HOUND_NEUTRAL_AFTER_EVADE)
 		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.34)
 	elif enemy_kind == "brute":
 		var brute_intent := _melee_intent(enemy, distance)

@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.25` (Android version code `225`).
+Current prototype version: `0.2.26` (Android version code `226`).
+
+### v0.2.26: If it reaches further, it has to be bigger
+
+"Large body" was implemented as an invisible collar. A Boar with a 31-unit silhouette carried a 40-unit `contact_bonus` and connected at 91; the Ox reached 115 on a 54-unit body. Drawing a ring around that does not make it honest, it only labels the lie.
+
+- **The animals are actually bigger and the collars are gone.** Boar radius 31 → **42**, Ox 54 → **76**, and every charge now uses the default 8-unit contact epsilon. Reach follows the silhouette: the Boar connects at 70 instead of 91 and the Ox at 104 instead of 115.
+- The Boar loses real denial in the trade — 91 to 70 — and will be easier to step around than the `0.2.25` numbers were tuned for. That is the honest cost of a truthful hitbox, and the charge curves are due a tuning pass regardless.
+- The Ox's 104 still sits inside the band that defines it: the aim locks at 0.765s and the charge arrives at 1.14s from the nearest interesting range, leaving 0.375s in which walking covers 97 units and a Dodge about 131. Below 97 it would be walkable, above 131 unanswerable.
+- **A Hound's retreat no longer feeds straight into a charge.** It could slip a committed strike and be mid-wind-up before the player recovered — a whole evade-and-counter inside one 0.983s commitment, which makes swinging at a Hound strictly a mistake. The Bandit already gates this with a 2.0s `dodge_strike` cooldown; the Hound now spends `0.32 + 0.55` in neutral after evading.
+- **The wind-up bar covers every telegraphed action, not just charges.** Melee attacks draw their telegraph from sector geometry, but arrows, casts and slams carried no visible wind-up at all — so the decision each was meant to pose was invisible. Archers included.
 
 ### v0.2.25: The Ox asks which way you are standing
 

@@ -2775,7 +2775,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		var marker := "?" if awareness == "suspicious" else "!"
 		var marker_color := Color("e8c35d") if awareness == "suspicious" else Color("ef665c")
 		draw_string(ThemeDB.fallback_font, pos + Vector2(-radius, -radius * 2.5), marker, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(16, int(radius * 0.8)), marker_color)
-	_draw_charge_windup(pos, radius, enemy, action)
+	_draw_windup(pos, radius, enemy, action)
 	_draw_health(pos, radius, int(enemy["hp"]), int(enemy["max_hp"]), color)
 	_draw_posture(pos, radius, float(enemy.get("posture", 1.0)), float(enemy.get("posture_max", 1.0)))
 	var phase := _phase(action)
@@ -3351,28 +3351,28 @@ func _draw_bow(pos: Vector2, facing: Vector2, radius: float, action: Dictionary,
 # clears the instant the run begins -- a placeholder for the animation that should
 # eventually carry it. Sits above the health bar and below the awareness marker so a
 # Melee Press room with six of these stays readable.
-func _draw_charge_windup(pos: Vector2, radius: float, enemy: Dictionary, action: Dictionary) -> void:
-	if String(action.get("kind", "")) != "charge": return
+# Wind-up bar. Melee attacks carry sector geometry and get their telegraph from
+# _draw_attack_sector; everything else -- charges, arrows, casts, slams -- had no
+# visible wind-up at all, so the decision each was meant to pose was invisible.
+# Fills across the wind-up only and clears the instant the action commits. Sits
+# between the health bar and the awareness marker so a crowded room stays readable.
+# A placeholder for the animation that should eventually carry it.
+func _draw_windup(pos: Vector2, radius: float, enemy: Dictionary, action: Dictionary) -> void:
+	var kind := String(action.get("kind", ""))
+	if kind in ["idle", "move", "evade", "melee", "stagger", "hit_reaction"]: return
+	if not action.has("startup"): return
 	var startup := maxf(0.001, float(action.get("startup", 0.30)))
 	var elapsed := float(action.get("elapsed", 0.0))
 	if elapsed < startup:
-		# The wind-up. Charges carry no sector geometry, so _draw_attack_sector never
-		# sees them and the crouch during which the animal tracks you was invisible --
-		# every timing decision a charge is meant to pose was untestable. Fills across
-		# the wind-up only and clears at launch; a placeholder for the animation that
-		# should eventually carry it. Sits between the health bar and the awareness
-		# marker so a Melee Press room with six of these stays readable.
 		var progress := clampf(elapsed / startup, 0.0, 1.0)
 		var bar := Rect2(pos + Vector2(-radius * 1.15, -radius * 2.15), Vector2(radius * 2.3, maxf(4.0, radius * 0.24)))
 		draw_rect(bar.grow(1.5), Color(0.04, 0.05, 0.06, 0.88))
 		draw_rect(bar, Color("2a1a14"))
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)), Color("f0a03c").lerp(Color("ff5a3c"), progress))
 		return
-	if elapsed > float(action.get("active_end", startup)): return
-	# The body that connects is far wider than the animal -- a charging Boar reaches
-	# 91 units against a 31-unit silhouette, which is what denies the sidestep. Drawn
-	# during the run so the hitbox is honest; without it the player is struck by what
-	# looks like empty ground.
+	if kind != "charge" or elapsed > float(action.get("active_end", startup)): return
+	# The contact ring during a run. It now traces the animal's own body rather
+	# than an invisible collar around it, so it reads as mass instead of a cheat.
 	var world_radius := float(enemy.get("radius", 24.0)) + state.PLAYER_RADIUS + float(action.get("contact_bonus", 8.0))
 	var tint := Color("ff7a4a")
 	if view_mode == "isometric":
