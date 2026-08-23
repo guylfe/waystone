@@ -298,9 +298,50 @@ Replace the oversized universal sweep with an expensive immediate turning-slash 
 
 ### Milestone E — Differentiate melee enemy decisions
 
-Give Boar, Hound, Knife, Bandit, Blade, Polearm, and command units substantially different spatial demands rather than speed/damage variations on the same chase. Use roles, startup, tracking, stability, recovery, coordination, and terrain interaction to create different answers.
+Give each enemy kind a distinct **question** rather than distinct statistics. Speed and damage variations on the same chase produce one problem repeated; see `docs/design-foundations.md` section 4.6. E is split into slices because bundling a behaviour change with a tuning change has repeatedly shipped numbers sized against the wrong quantity.
 
 **Exit criteria:** A player can name the required response to each role; changing a melee composition changes priorities and positioning; enemies do not collapse into a single herd for broad damage.
+
+#### E1 — Roles drive behaviour
+
+`role` is currently assigned by every recipe, printed in every survey, and never read by the simulation. Behaviour is keyed on `kind` through hardcoded lists such as `kind in ["bandit", "knife", "hound"]`, so "flanker" is three kind names rather than a concept, and a Boar tagged `frontline` behaves like any other Boar.
+
+Role becomes **intrinsic to kind** — a Hound is always a flanker — and drives the decision loop. Recipes stop authoring `role` per entry and derive it, which removes the possibility of a recipe and a kind disagreeing.
+
+| Role | Kinds | Question |
+|---|---|---|
+| Frontline | Boar, Blade, Brute, Knight | Am I in range? **Holds the front** so flankers have something to flank around |
+| Flanker | Hound, Bandit, Knife | Am I watching the right direction? |
+| Reach | Polearm, later spear/halberd kinds | Can I get past the front to the thing hitting me? Keeps distance, strikes **over** allies |
+| Screen | Shield | Can I reach what actually matters? Bodies the player off protected allies; its own strike has a long recovery, so breaking it is an opening you earn |
+| Ranged pressure | Archer | Can I afford to stay out here? |
+| Area denial | Fire Caster, Ice Caster | Where am I allowed to stand? |
+| Movement denial | Earth Caster (E5) | Which way am I allowed to **go**? |
+| Breaker | Ox | Am I on its line? |
+| Boss | Werewolf, Warden | Bespoke |
+
+Frontline holding position is the load-bearing change: today everything converges on the player, so "flanker" is only a different route to the same pile-up. Hexer leaves rotation; the revamped Shield returns.
+
+#### E2 — Generator composes by conflict
+
+Recipes express intent in role terms. Every room must contain **at least two conflicting demands**, and a composition must not recur while its answer is still fresh — the `0.2.18` survey rated the same Boar/Hound/Knife room 3/5 on first appearance and 1/5 on its second and third. Rooms failing either check are rerolled rather than relabelled.
+
+#### E3 — Charge tuning
+
+Walk-only escape measured **48%** across the `0.2.25` survey once Boar and Hound charges entered the sample: attack capture holds for melee and does not hold for charges, which are the most common attacks in the game. The Boar also lost real reach in `0.2.26` when its invisible collar was replaced by a true body (91 down to 70). Must follow E1, because role-driven approach changes charge launch distances.
+
+#### E4 — Sweeping Cut
+
+Reported as too strong when used twice in succession even after the resulting exhaustion. Needs a decision on whether the price moves a third time or what the sweep delivers is cut.
+
+#### E5 — New kinds, one per build, each surveyed
+
+Ordered by how much each multiplies the existing roster rather than adds to it.
+
+1. **Earth Caster** — movement denial. Cuts directions rather than areas, which makes the Ox's line lethal, the Boar's charge non-walkable, and the Shield's screen a real wall.
+2. **Duellist** — the only enemy that makes *attacking* a decision. Two attacks with **different openings**: a poke with a long wind-up and fast recovery, answered by intercepting it before it commits; a swing with little wind-up and slow recovery, answered afterwards. Every attack stays answerable — an attack with no opening is a lock, not a difficulty. Its riposte is `sword_riposte` seen from the other side, so building it specifies the player's parry as well.
+3. **Chanter** — buff mage. Several buffs from one kind, distinguished the way any multi-attack enemy is: colour-coded wind-up bar and a long telegraph. Hangs back and never closes, so it is also the reason to travel.
+4. **Captain revamp** — enabler whose death visibly slackens what surrounds it.
 
 ### Milestone F — Re-survey and tune the combat kernel
 

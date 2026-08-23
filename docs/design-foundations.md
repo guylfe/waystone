@@ -174,6 +174,24 @@ So Waystone needs more **renewable strategic uncertainty** than either CQ2 or a 
 
 This is the strongest long-term argument for the information-as-a-resource system in §13.
 
+### 4.6 Individually solvable, combinatorially hard
+
+An enemy a patient player cannot beat one-on-one is either unfair or a boss. Difficulty belongs to the **room**, not to the unit: each kind should be answerable alone, and the encounter is what makes the answer expensive. Designing each enemy to be individually unsolvable produces a roster of walls rather than a set of questions.
+
+The corollary is the composition rule: **pair enemies whose correct answers conflict.** Two enemies demanding the same response produce one problem twice, however different their silhouettes.
+
+- A Duellist says *wait for the right moment.* A Chanter says *hurry, this is compounding.*
+- A Shield says *go around.* An Archer says *not while you are out in the open.*
+- An Ox says *watch your bearing.* Flankers say *watch your back.*
+
+Two things in the Combat Survey record support this, and one qualifies it.
+
+Rooms containing a ranged or area-denial element rate consistently higher than pure melee rooms — in the `0.2.20` survey, rooms 4, 8, 10 and 11 all scored 3/5 for fun and tactical interest while melee-only rooms scored 1–2. Those rooms are precisely the ones where two demands conflict: close the distance, but not through open ground.
+
+The sharper evidence is repetition. In the `0.2.18` survey, Boar/Hound/Knife appeared three times. Its **first** appearance rated 3/5 for fun; the second and third rated **1/5 across every axis**, in different arenas and under different recipe labels. The composition was not bad — it was *spent*. A room's value decays on repetition even when its geometry changes, because the question it asks is already answered.
+
+So the generator carries two obligations: every room should contain at least two conflicting demands, and a composition should not recur while its answer is still fresh. A recipe label is not variety.
+
 ---
 
 ## 5. The frozen-time premise
