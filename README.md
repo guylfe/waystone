@@ -1,6 +1,19 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.28` (Android version code `228`).
+Current prototype version: `0.2.29` (Android version code `229`).
+
+### v0.2.29: Ten melee rooms out of thirteen was the generator
+
+The `0.2.28` survey rated 1.46 for fun with three rooms tagged unfair, and the largest cause was not combat at all: **ten of thirteen rooms were pure melee, and four recipes produced nine of them.**
+
+- **The early deck could not do anything else.** Below tier 4 there was exactly one non-melee recipe, and tier is `1 + (room − 1) / 2`, so the first six rooms could only draw melee. `crossfire_chase` 4 → 2, `polearm_screen` 6 → 3, `fire_pursuit` 5 → 3, `ice_displacement` 5 → 4, `brute_support` 7 → 5, `captain_cross` 7 → 6, `knight_command` 9 → 8.
+- **Phase was the harder gate, and it is not fixed by tier.** The `opening` pool offered one ranged option out of three and `respite` one of five, so those rooms were near-guaranteed melee at any tier. `screened_archer` gains `opening`, `fire_pursuit` gains `respite`: now 2 of 4 and 2 of 6.
+- **Repetition window 2 → 4**, plus a new rule: prefer a recipe that introduces a role the previous room did not have. A recipe label is not variety.
+- **The Shield guarded through its own swing.** Strike diagnostics showed `BLOCKED` against a shield at `melee@0.06` and `melee@1.22` — it was attacking from behind an active guard, which is the opposite of the design. Its guard now drops for the whole of its attack and recovery, which is the opening a screen is supposed to sell you.
+- **The Ox could not reach its own charge gate.** At radius 76 it could never stand further than 96 units away, against a hardcoded 120-unit floor — so it walked up and never charged again, two gores in 36 seconds. Radius 76 → **52** (it was larger than the Werewolf, which is a boss), and the gate is now derived from its own body so changing the silhouette cannot disarm the attack.
+- **The charge contact ring is gone.** It existed to make an invisible collar honest; with the collar removed in `0.2.26` it only traced body plus player radius and read as an artificial circle.
+
+Still outstanding: enemy crowding, which killed a run by movement lockout rather than by difficulty, and is worse since bodies grew.
 
 ### v0.2.28: One fix, one diagnosis, one withdrawal
 

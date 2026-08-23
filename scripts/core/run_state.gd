@@ -89,6 +89,7 @@ const EXHAUSTION_DURATION := 2.0
 # a wall ends it in a stagger. Startup outlasts a player commitment (0.983s for a
 # combo strike) by design -- an elite that resolves inside your swing is the same
 # defect as a Boar that does.
+const OX_CHARGE_MIN_GAP := 40.0
 const OX_CHARGE_STARTUP := 0.85
 const OX_CHARGE_SPEED := 520.0
 const OX_CHARGE_CAP := 900.0
@@ -104,6 +105,7 @@ const HOUND_NEUTRAL_AFTER_EVADE := 0.55
 # Where each role wants to stand relative to the player. Frontline and screen sit
 # between the player and something they are covering; reach holds its own bearing
 # at spear distance instead of closing.
+const RECIPE_REPEAT_WINDOW := 4
 const ANCHORED_ROLES := ["frontline", "screen", "reach"]
 # Generous, so a frontliner corrects only when it is genuinely out of place rather
 # than shuffling instead of fighting.
@@ -136,7 +138,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.28"
+const GAME_VERSION := "0.2.29"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -799,18 +801,28 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		{"id": "opening_pursuit", "label": "Opening Pursuit", "family": "pursuit", "min_tier": 1, "phases": ["opening", "respite"], "formations": ["frontline", "spread"], "enemies": [{"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "knife"}, {"kind": "boar"}]},
 		{"id": "mixed_skirmish", "label": "Mixed Skirmish", "family": "skirmish", "min_tier": 1, "phases": ["development", "contrast", "respite"], "formations": ["spread", "flanked", "split"], "enemies": [{"kind": "boar"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
 		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "boar"}]},
-		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["opening", "development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
 		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade"}, {"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "blade"}]},
 		{"id": "goring_line", "label": "Goring Line", "family": "elite_charge", "min_tier": 5, "phases": ["climax", "pressure"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "knife"}]},
-		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 4, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
-		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
-		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 5, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 2, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 4, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
+		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 3, "phases": ["development", "pressure", "climax", "respite"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
-		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 6, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
-		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 7, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
-		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 7, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain"}, {"kind": "archer"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
-		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 9, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 6, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain"}, {"kind": "archer"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 8, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
+
+# Roles present in a room, from either a list of kind names or the report's enemy
+# label list. Used to keep consecutive rooms from asking the same question.
+func _survey_role_set(entries: Array) -> Dictionary:
+	var found := {}
+	for entry in entries:
+		var kind := String(entry).to_lower().replace(" ", "_")
+		var role := CombatCatalogScript.role(kind)
+		if not kind.is_empty(): found[role] = true
+	return found
 
 func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
 	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
@@ -822,13 +834,26 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	var recent_ids: Array[String] = []
 	var recent_family := ""
 	var completed_rooms: Array = survey_session.get("rooms", [])
-	for index in range(maxi(0, completed_rooms.size() - 2), completed_rooms.size()):
+	for index in range(maxi(0, completed_rooms.size() - RECIPE_REPEAT_WINDOW), completed_rooms.size()):
 		recent_ids.append(String(Dictionary(completed_rooms[index]).get("recipe_id", "")))
 	if not completed_rooms.is_empty(): recent_family = String(Dictionary(completed_rooms[-1]).get("recipe_family", ""))
 	var unused: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return not recent_ids.has(String(recipe["id"])))
 	if not unused.is_empty(): candidates = unused
 	var different_family: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return String(recipe["family"]) != recent_family)
 	if not different_family.is_empty(): candidates = different_family
+	# Prefer a room that asks something the last one did not. Two enemies demanding
+	# the same response produce one problem twice -- see design-foundations 4.6 --
+	# and a recipe label is not variety: the 0.2.28 survey ran ten melee rooms under
+	# four labels and read as one fight repeated.
+	if not completed_rooms.is_empty():
+		var previous_roles := _survey_role_set(Dictionary(completed_rooms[-1]).get("enemies", []))
+		var fresh: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool:
+			var kinds: Array = []
+			for entry in Array(recipe["enemies"]): kinds.append(String(Dictionary(entry).get("kind", "")))
+			for role in _survey_role_set(kinds).keys():
+				if not previous_roles.has(role): return true
+			return false)
+		if not fresh.is_empty(): candidates = fresh
 	var chosen := Dictionary(candidates[room_rng.randi_range(0, candidates.size() - 1)]).duplicate(true)
 	var enemies: Array[Dictionary] = []
 	for enemy_value in Array(chosen["enemies"]): enemies.append(Dictionary(enemy_value).duplicate())
@@ -1255,7 +1280,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 76.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": 52.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -4227,6 +4252,11 @@ func _enemy_death_has_witness(victim: Dictionary) -> bool:
 
 func _enemy_blocks_attack(enemy: Dictionary) -> bool:
 	if String(enemy["kind"]) != "shield": return false
+	# The guard cannot be up while the sword is out. Its own strike, and the long
+	# recovery after it, is the opening a screen is supposed to sell you -- blocking
+	# straight through the attack made it unanswerable, which the 0.2.28 survey
+	# tagged unfair after landing BLOCKED against a shield at melee@0.06 and 1.22.
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) in ["melee", "dodge_strike", "charge", "slam"]: return false
 	var incoming := player_pos - Vector2(enemy["pos"])
 	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(72.0))
 
@@ -4776,7 +4806,11 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# safe bearing. Its body is far too wide to walk out of and just narrow enough
 		# to Dodge out of, which makes the evasive action the answer rather than an
 		# alternative to footwork.
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 120.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		# Derived from its own body rather than a constant. At radius 76 the Ox could
+		# not physically stand further than 96 units away, so a hardcoded 120-unit
+		# floor meant it walked up and never charged again -- two gores in 36 seconds
+		# in the 0.2.28 survey. Changing the silhouette must not disarm the attack.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= float(enemy["radius"]) + PLAYER_RADIUS + OX_CHARGE_MIN_GAP and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 7, direction)
 			enemy["action"]["label"] = "gore"
 			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90

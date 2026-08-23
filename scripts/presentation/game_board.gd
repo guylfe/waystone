@@ -3370,15 +3370,10 @@ func _draw_windup(pos: Vector2, radius: float, enemy: Dictionary, action: Dictio
 		draw_rect(bar, Color("2a1a14"))
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * progress, bar.size.y)), Color("f0a03c").lerp(Color("ff5a3c"), progress))
 		return
-	if kind != "charge" or elapsed > float(action.get("active_end", startup)): return
-	# The contact ring during a run. It now traces the animal's own body rather
-	# than an invisible collar around it, so it reads as mass instead of a cheat.
-	var world_radius := float(enemy.get("radius", 24.0)) + state.PLAYER_RADIUS + float(action.get("contact_bonus", 8.0))
-	var tint := Color("ff7a4a")
-	if view_mode == "isometric":
-		_draw_projected_world_circle(Vector2(enemy["pos"]), world_radius, Color(tint, 0.09), Color(tint, 0.40), maxf(2.0, radius * 0.10))
-	else:
-		draw_arc(pos, world_radius * world_scale, 0.0, TAU, 30, Color(tint, 0.40), maxf(2.0, radius * 0.10))
+	# The contact ring that used to be drawn during a charge is gone. It existed to
+	# make an invisible 40-unit collar honest; with the collar removed in 0.2.26 it
+	# only traced body plus player radius, and read as an artificial circle rather
+	# than as mass.
 
 func _draw_health(pos: Vector2, radius: float, hp: int, max_hp: int, color: Color) -> void:
 	var bar := Rect2(pos + Vector2(-radius, -radius * 1.75), Vector2(radius * 2.0, maxf(3.0, radius * 0.18)))

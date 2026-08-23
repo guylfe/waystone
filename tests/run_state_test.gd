@@ -1389,8 +1389,17 @@ func test_shield_front_arc() -> void:
 	var shield := state._make_enemy("shield", state.player_pos + Vector2(0, -95), 10)
 	shield["facing"] = Vector2.DOWN
 	state.enemies = [shield]
-	assert(state.request_attack(Vector2(shield["pos"])))
-	assert(int(state.enemies[0]["hp"]) == 10)
+	# Guard up: a frontal attack is turned away.
+	assert(state._enemy_blocks_attack(state.enemies[0]))
+	# Guard down while its own sword is out. Its strike, and the long recovery after
+	# it, is the opening a screen is supposed to sell you; blocking straight through
+	# the attack made the Shield unanswerable and the 0.2.28 survey tagged it unfair.
+	# Asserted against the rule rather than through a simulated swing, because the
+	# shield now commits an attack of its own while that swing resolves.
+	state.enemies[0]["action"] = state._action("melee", 1.2, Vector2.DOWN)
+	assert(not state._enemy_blocks_attack(state.enemies[0]))
+	state.enemies[0]["action"] = state._idle_action()
+	assert(state._enemy_blocks_attack(state.enemies[0]))
 
 func test_new_enemy_roles() -> void:
 	var state: RunState = RunStateScript.new()
