@@ -22,7 +22,7 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 The combat loop, and nothing else. More enemies, classes, biomes, campaign content or encounter density all wait until moving, attacking, defending and surviving pressure are satisfying in a small room.
 
-Milestone order is fixed by dependency: **A** (combo continuation follows live input) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation). A and B are absent from the source as of `0.2.10`.
+Milestone order is fixed by dependency: **A** (combo continuation follows live input) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation) → **F** (re-survey and tune the kernel, including the Recovery-versus-Stamina comparison) → **G** (encounter grammar, and only then the smallest number of new enemies the surveys have shown to be missing). A through D are implemented as of `0.2.26`; E is next. The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md` — note that new enemy kinds belong to G and are gated on a gap being demonstrated rather than anticipated, which the Ox deliberately jumped in `0.2.25`.
 
 ---
 

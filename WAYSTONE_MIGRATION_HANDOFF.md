@@ -322,30 +322,17 @@ Role becomes **intrinsic to kind** — a Hound is always a flanker — and drive
 
 Frontline holding position is the load-bearing change: today everything converges on the player, so "flanker" is only a different route to the same pile-up. Hexer leaves rotation; the revamped Shield returns.
 
-#### E2 — Generator composes by conflict
-
-Recipes express intent in role terms. Every room must contain **at least two conflicting demands**, and a composition must not recur while its answer is still fresh — the `0.2.18` survey rated the same Boar/Hound/Knife room 3/5 on first appearance and 1/5 on its second and third. Rooms failing either check are rerolled rather than relabelled.
-
-#### E3 — Charge tuning
+#### E2 — Charge tuning
 
 Walk-only escape measured **48%** across the `0.2.25` survey once Boar and Hound charges entered the sample: attack capture holds for melee and does not hold for charges, which are the most common attacks in the game. The Boar also lost real reach in `0.2.26` when its invisible collar was replaced by a true body (91 down to 70). Must follow E1, because role-driven approach changes charge launch distances.
-
-#### E4 — Sweeping Cut
-
-Reported as too strong when used twice in succession even after the resulting exhaustion. Needs a decision on whether the price moves a third time or what the sweep delivers is cut.
-
-#### E5 — New kinds, one per build, each surveyed
-
-Ordered by how much each multiplies the existing roster rather than adds to it.
-
-1. **Earth Caster** — movement denial. Cuts directions rather than areas, which makes the Ox's line lethal, the Boar's charge non-walkable, and the Shield's screen a real wall.
-2. **Duellist** — the only enemy that makes *attacking* a decision. Two attacks with **different openings**: a poke with a long wind-up and fast recovery, answered by intercepting it before it commits; a swing with little wind-up and slow recovery, answered afterwards. Every attack stays answerable — an attack with no opening is a lock, not a difficulty. Its riposte is `sword_riposte` seen from the other side, so building it specifies the player's parry as well.
-3. **Chanter** — buff mage. Several buffs from one kind, distinguished the way any multi-attack enemy is: colour-coded wind-up bar and a long telegraph. Hangs back and never closes, so it is also the reason to travel.
-4. **Captain revamp** — enabler whose death visibly slackens what surrounds it.
 
 ### Milestone F — Re-survey and tune the combat kernel
 
 Run short seeded A/B surveys across both combat profiles after the preceding systems are stable. Compare equivalent recipes and geometry before changing generator weights.
+
+This is where the **Recovery versus Stamina** comparison belongs, and it waits until Stamina is at its best — testing cooldowns against a Stamina build that was misconfigured would retire the question on bad evidence. Note the measured noise floor when reading any comparison: `0.2.19` and `0.2.20` changed no gameplay whatsoever and fun still moved 2.64 to 2.18 between surveys, so a single-run difference below roughly half a point is variance.
+
+Also outstanding here: Sweeping Cut is still reported as too strong when used twice in succession, even after the resulting exhaustion. That is Milestone D's remainder rather than new work, and it needs a decision on whether the price moves a third time or what the sweep delivers is cut.
 
 **Exit criteria:** Dodge is used because situations demand it; Stamina/exhaustion create real decisions; fun and tactical-interest ratings improve without a corresponding rise in unfair/unclear-contact reports; no dominant universal tactic replaces strafe-and-sweep.
 
@@ -354,6 +341,21 @@ Run short seeded A/B surveys across both combat profiles after the preceding sys
 Only after the combat kernel passes, use survey evidence to author and weight encounter archetypes, exclusions, formation rules, pacing, and role gaps. Add the smallest number of enemies needed to fill demonstrated language gaps.
 
 **Exit criteria:** Two seeds create meaningfully different tactical stories from the same biome and roster; pressure and relief are deliberate; geometry and composition both matter.
+
+#### G1 — Compose by conflict
+
+Recipes express intent in role terms. Every room must contain **at least two conflicting demands** — two enemies demanding the same response produce one problem twice, see `docs/design-foundations.md` section 4.6 — and a composition must not recur while its answer is still fresh. The `0.2.18` survey rated the same Boar/Hound/Knife room 3/5 on first appearance and 1/5 across every axis on its second and third, in different arenas under different recipe labels. Rooms failing either check are rerolled rather than relabelled.
+
+#### G2 — New kinds, one per build, each surveyed
+
+Gated on the gap being **demonstrated** by survey rather than anticipated. Ordered by how much each multiplies the existing roster rather than adds to it.
+
+1. **Earth Caster** — movement denial. Cuts directions rather than areas, which makes the Ox's line lethal, the Boar's charge non-walkable, and the Shield's screen a real wall.
+2. **Duellist** — the only enemy that makes *attacking* a decision. Two attacks with **different openings**: a poke with a long wind-up and fast recovery, answered by intercepting it before it commits; a swing with little wind-up and slow recovery, answered afterwards. Every attack stays answerable — an attack with no opening is a lock, not a difficulty. Its riposte is `sword_riposte` seen from the other side, so building it specifies the player's parry as well.
+3. **Chanter** — buff mage. Several buffs from one kind, distinguished the way any multi-attack enemy is: colour-coded wind-up bar and a long telegraph. Hangs back and never closes, so it is also the reason to travel.
+4. **Captain revamp** — enabler whose death visibly slackens what surrounds it.
+
+**The Ox jumped this gate.** It shipped in `0.2.25` before the kernel passed, as a knowing exception on the grounds that it is a mechanic — lateral commitment — that the roster structurally could not test. It has still never appeared in a survey, because its recipe is tier 5 and no run has reached it. Treat that as a debt against G rather than as precedent.
 
 ### Later product roadmap
 
