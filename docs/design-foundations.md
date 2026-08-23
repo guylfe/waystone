@@ -188,9 +188,11 @@ Two things in the Combat Survey record support this, and one qualifies it.
 
 Rooms containing a ranged or area-denial element rate consistently higher than pure melee rooms — in the `0.2.20` survey, rooms 4, 8, 10 and 11 all scored 3/5 for fun and tactical interest while melee-only rooms scored 1–2. Those rooms are precisely the ones where two demands conflict: close the distance, but not through open ground.
 
-The sharper evidence is repetition. In the `0.2.18` survey, Boar/Hound/Knife appeared three times. Its **first** appearance rated 3/5 for fun; the second and third rated **1/5 across every axis**, in different arenas and under different recipe labels. The composition was not bad — it was *spent*. A room's value decays on repetition even when its geometry changes, because the question it asks is already answered.
+A caution on the second observation, because it was originally written up as a design law and is not one. In the `0.2.18` survey, Boar/Hound/Knife appeared three times: its first appearance rated 3/5 for fun, its second and third **1/5 across every axis**, in different arenas under different recipe labels. That is a real measurement, but of the **instrument**, not of the game. In a Combat Survey the tester is grading rooms, and a room whose problem is already solved is less interesting *to assess* — which explains the drop without saying anything about a player mid-run who is not filling in ratings.
 
-So the generator carries two obligations: every room should contain at least two conflicting demands, and a composition should not recur while its answer is still fresh. A recipe label is not variety.
+The conflict finding above is unaffected, because it compares different room types **within a single run** rather than comparing a room against its own repeats.
+
+> **The Combat Survey is a coverage instrument, not a slice of the game.** Its room ordering, pacing, repetition and threat curve are properties of the harness. Ratings compare rooms *to each other within a run*; they are not a forecast of how a room would feel encountered once, in a real expedition, by someone playing rather than grading. Drawing pacing or content rules from the survey's shape is a map-territory error, and it has been made here before.
 
 ---
 

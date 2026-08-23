@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.29` (Android version code `229`).
+Current prototype version: `0.2.30` (Android version code `230`).
+
+### v0.2.30: The survey is an instrument, not a slice of the game
+
+`0.2.29` fixed the survey deck using pacing logic — a repetition window, and a rule preferring a recipe that introduced a role the previous room lacked. That is variety-as-pacing, which is a property of the game. The Combat Survey's job is **coverage**: show the tester as many distinct room types as one run can hold. Repetition inside it is a sampling question, not a design flaw.
+
+- **Recipe selection samples closer to without-replacement.** Anything not yet seen this run is drawn first; repeats begin only once the eligible pool is exhausted, and the window and family filters survive only as the tie-break for that case. With fourteen recipes and thirteen-room runs, a run should now show nearly the whole deck.
+- The role-freshness rule is removed. It optimised against the previous room rather than for total coverage.
+- **`docs/design-foundations.md` §4.6 is corrected.** It claimed *"a room's value decays on repetition"*, evidenced by Boar/Hound/Knife rating 3/5 on first appearance and 1/5 on its second and third in the `0.2.18` survey. That measurement is real but it measures the **instrument**: in a survey the tester is grading rooms, and a room whose problem is already solved is less interesting *to assess*. It says nothing about a player mid-run who is not filling in ratings. The observation and its numbers are kept; the design obligation drawn from them is not.
+- The conflict rule in §4.6 is unaffected — it compares different room types *within a single run*, not a room against its own repeats.
+- §4.6 now carries a standing caution that the survey's ordering, pacing, repetition and threat curve are harness artifacts, and that reading content rules out of its shape is a map-territory error.
+
+The tier and phase changes from `0.2.29` stand: those widen what the instrument can *show*, which is exactly what a coverage instrument should do.
 
 ### v0.2.29: Ten melee rooms out of thirteen was the generator
 

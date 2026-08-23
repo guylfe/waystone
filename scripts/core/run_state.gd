@@ -138,7 +138,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.29"
+const GAME_VERSION := "0.2.30"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -814,16 +814,6 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 8, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
 
-# Roles present in a room, from either a list of kind names or the report's enemy
-# label list. Used to keep consecutive rooms from asking the same question.
-func _survey_role_set(entries: Array) -> Dictionary:
-	var found := {}
-	for entry in entries:
-		var kind := String(entry).to_lower().replace(" ", "_")
-		var role := CombatCatalogScript.role(kind)
-		if not kind.is_empty(): found[role] = true
-	return found
-
 func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
 	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
 	var candidates: Array[Dictionary] = []
@@ -831,29 +821,31 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		var recipe := Dictionary(recipe_value)
 		if tier >= int(recipe["min_tier"]) and Array(recipe["phases"]).has(pacing_phase): candidates.append(recipe)
 	if candidates.is_empty(): candidates.append(Dictionary(_survey_recipe_catalog()[0]))
-	var recent_ids: Array[String] = []
-	var recent_family := ""
 	var completed_rooms: Array = survey_session.get("rooms", [])
-	for index in range(maxi(0, completed_rooms.size() - RECIPE_REPEAT_WINDOW), completed_rooms.size()):
-		recent_ids.append(String(Dictionary(completed_rooms[index]).get("recipe_id", "")))
-	if not completed_rooms.is_empty(): recent_family = String(Dictionary(completed_rooms[-1]).get("recipe_family", ""))
-	var unused: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return not recent_ids.has(String(recipe["id"])))
-	if not unused.is_empty(): candidates = unused
+	# Coverage, not pacing. The survey exists to show the tester as many distinct
+	# room types as one run can hold, so anything not yet seen this run is drawn
+	# first and repeats begin only once the eligible pool is exhausted.
+	#
+	# An earlier version optimised against the PREVIOUS room instead -- a repetition
+	# window and a role-freshness rule -- which is variety-as-pacing, a property of
+	# the game rather than of the instrument. See the caution in
+	# docs/design-foundations.md section 4.6: survey ordering and repetition are
+	# harness artifacts and are not evidence about how the game plays.
+	var seen_ids: Array[String] = []
+	for room_value in completed_rooms: seen_ids.append(String(Dictionary(room_value).get("recipe_id", "")))
+	var unseen: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return not seen_ids.has(String(recipe["id"])))
+	if not unseen.is_empty():
+		candidates = unseen
+	else:
+		# Pool exhausted. Fall back to spacing repeats out rather than clustering them.
+		var recent_ids: Array[String] = []
+		for index in range(maxi(0, completed_rooms.size() - RECIPE_REPEAT_WINDOW), completed_rooms.size()):
+			recent_ids.append(String(Dictionary(completed_rooms[index]).get("recipe_id", "")))
+		var unused: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return not recent_ids.has(String(recipe["id"])))
+		if not unused.is_empty(): candidates = unused
+	var recent_family := "" if completed_rooms.is_empty() else String(Dictionary(completed_rooms[-1]).get("recipe_family", ""))
 	var different_family: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return String(recipe["family"]) != recent_family)
 	if not different_family.is_empty(): candidates = different_family
-	# Prefer a room that asks something the last one did not. Two enemies demanding
-	# the same response produce one problem twice -- see design-foundations 4.6 --
-	# and a recipe label is not variety: the 0.2.28 survey ran ten melee rooms under
-	# four labels and read as one fight repeated.
-	if not completed_rooms.is_empty():
-		var previous_roles := _survey_role_set(Dictionary(completed_rooms[-1]).get("enemies", []))
-		var fresh: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool:
-			var kinds: Array = []
-			for entry in Array(recipe["enemies"]): kinds.append(String(Dictionary(entry).get("kind", "")))
-			for role in _survey_role_set(kinds).keys():
-				if not previous_roles.has(role): return true
-			return false)
-		if not fresh.is_empty(): candidates = fresh
 	var chosen := Dictionary(candidates[room_rng.randi_range(0, candidates.size() - 1)]).duplicate(true)
 	var enemies: Array[Dictionary] = []
 	for enemy_value in Array(chosen["enemies"]): enemies.append(Dictionary(enemy_value).duplicate())
