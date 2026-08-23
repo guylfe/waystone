@@ -332,7 +332,7 @@ const MELEE_ATTACK_PLANS := {
 		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
 	],
 	"polearm": [
-		{"technique": "thrust", "distance": 218.0, "weight": 1.0, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "f_rad": 0.35, "advance_distance": 229.0, "advance_end": 1.35, "damage": 3},
+		{"technique": "thrust", "distance": 218.0, "weight": 1.7, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "f_rad": 0.35, "advance_distance": 229.0, "advance_end": 1.35, "damage": 3},
 		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 2},
 	],
 	"captain": [

@@ -105,6 +105,14 @@ const HOUND_NEUTRAL_AFTER_EVADE := 0.55
 # between the player and something they are covering; reach holds its own bearing
 # at spear distance instead of closing.
 const ANCHORED_ROLES := ["frontline", "screen", "reach"]
+# Generous, so a frontliner corrects only when it is genuinely out of place rather
+# than shuffling instead of fighting.
+# NOTE: a frontliner aligns while approaching and then drifts, because its attacks
+# carry it off the line and nothing pulls it back -- measured at 41 degrees off the
+# bearing it wants. Gating attack commitment on being in position was tried and
+# withdrawn: it destabilised when an enemy should commit, breaking two roster
+# assertions for a marginal gain. Correcting a held line needs a reposition that
+# does not compete with attacking, not a veto over it.
 const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 210.0}
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
@@ -128,7 +136,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.27"
+const GAME_VERSION := "0.2.28"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4743,6 +4751,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# approach rather than falling out of branch order, so both actually occur
 		# instead of the thrust always winning by being tested at the greater distance.
 		var polearm_intent := _melee_intent(enemy, distance)
+		# NOTE: reach does not yet hold its distance, and a step-back cannot fix it.
+		# The thrust carries 229 units of authored forward travel from Milestone C's
+		# capture model, so committing at 218 always lands the spear in melee -- at
+		# speed 120 a retreat recovers about 53 units against that 229, and gating the
+		# attack behind a retreat merely stops it attacking. Making reach real means
+		# reworking the thrust's forward travel, which changes its capture curve.
 		if distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _intent_melee_action(polearm_intent, direction)
 			_clear_melee_intent(enemy)
@@ -4802,7 +4816,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# committed strike and is mid-wind-up before the player recovers from it --
 			# a whole evade-and-counter inside one 0.983s commitment, which makes
 			# swinging at a Hound strictly a mistake.
-			enemy["pounce_cooldown"] = maxf(float(enemy["pounce_cooldown"]), 0.32 + HOUND_NEUTRAL_AFTER_EVADE)
+			# Applied on ENTERING the evade only. This branch runs while the cooldown is
+			# already above zero, so re-arming it every decision made the gate feed
+			# itself and the Hound retreated indefinitely -- measured at a mean 495
+			# units from the player, half a screen, for a flanker.
+			if String(Dictionary(enemy.get("action", {})).get("kind", "")) != "evade":
+				enemy["pounce_cooldown"] = maxf(float(enemy["pounce_cooldown"]), 0.32 + HOUND_NEUTRAL_AFTER_EVADE)
 		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.34)
 	elif enemy_kind == "brute":
 		var brute_intent := _melee_intent(enemy, distance)
@@ -5108,7 +5127,15 @@ func _approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
 		# would put a frontliner a whole strike distance BEHIND the line it is meant
 		# to hold, which is how the first cut of this measured 199 units out when it
 		# was aiming for 88.
-		return player_pos + _role_bearing(enemy, role) * strike_distance
+		#
+		# Reach additionally refuses to approach inside its hold distance. Its short
+		# attack exists to answer a player who walks onto the point, not to be walked
+		# to: approaching at the selected intent's distance let one reverse-cut roll
+		# pull the Polearm to 112, where the same roll became overwhelmingly likely
+		# and it never came back out.
+		var stand := strike_distance
+		if role == "reach": stand = maxf(stand, float(ROLE_HOLD_DISTANCE[role]))
+		return player_pos + _role_bearing(enemy, role) * stand
 	var anchor := _pursuit_target(enemy)
 	var outward := Vector2(enemy["pos"]) - anchor
 	if outward.length_squared() < 0.001: outward = Vector2(enemy["pos"]) - player_pos

@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.27` (Android version code `227`).
+Current prototype version: `0.2.28` (Android version code `228`).
+
+### v0.2.28: One fix, one diagnosis, one withdrawal
+
+Three known gaps from `0.2.27` were taken together. One is fixed, one turned out to need work of a different order, and one was tried and taken back out.
+
+**Fixed — the Hound was retreating to half a screen.** The evade-to-charge gate added in `0.2.26` set its cooldown floor *inside* the evade branch, and that branch only runs while the cooldown is already above zero. So it re-armed its own gate on every decision and the Hound could never stop retreating: measured at a **mean 495 units** from the player, for a flanker. The floor now applies on entering the evade only. Mean distance **495 → 133**, with charges still landing.
+
+**Diagnosed, not fixed — reach cannot hold its distance.** The Polearm's thrust carries **229 units** of authored forward travel from Milestone C's capture model, and it commits at 218 — so every thrust ends in melee by construction. A step-back cannot recover it: at speed 120 a retreat covers about 53 units against that 229, and gating the attack behind a retreat only stops the spear attacking, which broke two roster assertions. Making reach real means reworking the thrust's forward travel, which changes its capture curve. That is Milestone C work, recorded in the branch rather than left to be rediscovered. The Polearm's long thrust is weighted up (1.0 → 1.7) so at least its attack choice matches the role.
+
+**Withdrawn — gating attacks on being in position.** A frontliner aligns while approaching and then drifts, because its attacks carry it off the line and nothing pulls it back; it settles about 41° off the bearing it wants. Refusing to attack while out of position corrected that, and also destabilised *when* enemies commit, breaking two roster assertions for a marginal gain. Correcting a held line needs a reposition that does not compete with attacking, not a veto over it.
 
 ### v0.2.27: Roles stop being decoration — Milestone E1
 
