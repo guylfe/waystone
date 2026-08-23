@@ -1,6 +1,17 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.26` (Android version code `226`).
+Current prototype version: `0.2.27` (Android version code `227`).
+
+### v0.2.27: Roles stop being decoration — Milestone E1
+
+`role` was assigned by every recipe, printed in every survey report, and **never read by the simulation**. Behaviour keyed on `kind` through hardcoded lists like `kind in ["bandit", "knife", "hound"]`, so "flanker" was three kind names rather than a concept, and a Boar tagged `frontline` behaved like any other Boar. The vocabulary the whole encounter generator is built on did nothing.
+
+- **Role is now a property of the kind**, declared in `ARCHETYPES` and read through `CombatCatalogScript.role()`. A Hound is always a flanker. Recipes no longer author a role per entry, so a recipe and a kind can no longer disagree.
+- **Role drives approach.** `_role_bearing()` decides which way an enemy wants to stand from the player, and both the pursuit target and the melee approach share it. Frontline covers its whole group; a **screen** covers specifically the allies that cannot defend themselves; **reach** holds the bearing it already has instead of closing; flankers keep their existing lane behaviour.
+- **The Shield returns to rotation** as the screen, and `Screened Archer` now has an actual screen in it rather than a Blade. Composition cost 3.
+- Measured, starting every kind 77° off a backline ally's bearing: a screen settles at **24°** and a flanker at **45°**. They are now cleanly opposed, where before every kind ran at the same point and "flanker" was only a different route into the same pile-up.
+
+**Two limits worth stating rather than discovering.** Frontline reaches 38° rather than fully holding the line — contact and its own attack advance pull it around. And **reach does not yet hold distance**: the Polearm still closes to melee because its intent selection keeps picking the short reverse cut, which is the attack-mix work E lists separately. Both are visible in play rather than hidden.
 
 ### v0.2.26: If it reaches further, it has to be bigger
 

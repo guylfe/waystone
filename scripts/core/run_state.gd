@@ -101,6 +101,11 @@ const OX_CHARGE_DURATION := OX_CHARGE_ACTIVE_END + 0.85
 # It used to reach 115 by wearing a 41-unit invisible collar, which is a lie a
 # drawn ring only labels.
 const HOUND_NEUTRAL_AFTER_EVADE := 0.55
+# Where each role wants to stand relative to the player. Frontline and screen sit
+# between the player and something they are covering; reach holds its own bearing
+# at spear distance instead of closing.
+const ANCHORED_ROLES := ["frontline", "screen", "reach"]
+const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 210.0}
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
@@ -123,7 +128,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.26"
+const GAME_VERSION := "0.2.27"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -679,7 +684,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	for index in range(enemy_plan.size()):
 		var planned_enemy := Dictionary(enemy_plan[index])
 		var kind := String(planned_enemy["kind"])
-		var role := String(planned_enemy.get("role", "frontline"))
+		var role := CombatCatalogScript.role(kind)
 		var slot := _survey_take_spawn_slot(available_spawn_slots, role, player_start)
 		var jitter := Vector2(room_rng.randf_range(-34.0, 34.0), room_rng.randf_range(-28.0, 28.0))
 		var spawn_position: Vector2 = slot + jitter
@@ -783,20 +788,20 @@ func _survey_threat_band(pacing_phase: String, room_rng: RandomNumberGenerator) 
 
 func _survey_recipe_catalog() -> Array[Dictionary]:
 	return [
-		{"id": "opening_pursuit", "label": "Opening Pursuit", "family": "pursuit", "min_tier": 1, "phases": ["opening", "respite"], "formations": ["frontline", "spread"], "enemies": [{"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "knife", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
-		{"id": "mixed_skirmish", "label": "Mixed Skirmish", "family": "skirmish", "min_tier": 1, "phases": ["development", "contrast", "respite"], "formations": ["spread", "flanked", "split"], "enemies": [{"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
-		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "boar", "role": "frontline"}]},
-		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
-		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "blade", "role": "frontline"}]},
-		{"id": "goring_line", "label": "Goring Line", "family": "elite_charge", "min_tier": 5, "phases": ["climax", "pressure"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox", "role": "elite"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "knife", "role": "flanker"}]},
-		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 4, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer", "role": "ranged_pressure"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "boar", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
-		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster", "role": "area_denial"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}]},
-		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 5, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster", "role": "area_denial"}, {"kind": "boar", "role": "frontline"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
-		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster", "role": "area_denial"}, {"kind": "fire_caster", "role": "area_denial"}, {"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "boar", "role": "frontline"}]},
-		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 6, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
-		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 7, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "knife", "role": "flanker"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "blade", "role": "frontline"}]},
-		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 7, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "hound", "role": "flanker"}, {"kind": "blade", "role": "frontline"}], "reinforcements": [{"kind": "bandit", "role": "flanker"}, {"kind": "knife", "role": "flanker"}]},
-		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 9, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight", "role": "anchor"}, {"kind": "archer", "role": "ranged_pressure"}, {"kind": "ice_caster", "role": "area_denial"}, {"kind": "bandit", "role": "flanker"}], "reinforcements": [{"kind": "blade", "role": "frontline"}, {"kind": "hound", "role": "flanker"}]},
+		{"id": "opening_pursuit", "label": "Opening Pursuit", "family": "pursuit", "min_tier": 1, "phases": ["opening", "respite"], "formations": ["frontline", "spread"], "enemies": [{"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "knife"}, {"kind": "boar"}]},
+		{"id": "mixed_skirmish", "label": "Mixed Skirmish", "family": "skirmish", "min_tier": 1, "phases": ["development", "contrast", "respite"], "formations": ["spread", "flanked", "split"], "enemies": [{"kind": "boar"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "boar"}]},
+		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade"}, {"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "blade"}]},
+		{"id": "goring_line", "label": "Goring Line", "family": "elite_charge", "min_tier": 5, "phases": ["climax", "pressure"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "knife"}]},
+		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 4, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
+		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 5, "phases": ["development", "pressure", "climax"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 6, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 7, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 7, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain"}, {"kind": "archer"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 9, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
 
 func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
@@ -840,7 +845,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	return chosen
 
 func _survey_enemy_cost(kind: String) -> int:
-	return int({"ox": 5, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
+	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
 
 func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	var result := 0
@@ -848,7 +853,7 @@ func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	return result
 
 func _survey_is_ranged_pressure(planned_enemy: Dictionary) -> bool:
-	return String(planned_enemy.get("role", "")) in ["ranged_pressure", "area_denial"]
+	return CombatCatalogScript.role(String(planned_enemy.get("kind", ""))) in ["ranged_pressure", "area_denial"]
 
 func _survey_plan_kind_count(enemies_plan: Array[Dictionary], kind: String) -> int:
 	var result := 0
@@ -1289,7 +1294,7 @@ func _respawn_enemies() -> void:
 			if kind in ["warden", "werewolf"] and _boss_defeated: continue
 			var enemy := _make_enemy(kind, Vector2(template["pos"]), _enemy_base_hp(kind), area_id)
 			enemy["layer"] = String(template.get("layer", "expedition_surface"))
-			if template.has("role"): enemy["survey_role"] = String(template["role"])
+			enemy["survey_role"] = CombatCatalogScript.role(String(template.get("kind", enemy.get("kind", ""))))
 			if template.has("facing"):
 				var authored_facing := Vector2(template["facing"])
 				if authored_facing.length_squared() > 0.001: enemy["facing"] = authored_facing.normalized()
@@ -5097,6 +5102,13 @@ func _approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
 	# Walk to a ring at the intended strike distance around the pursuit anchor
 	# rather than into the player's body. The anchor keeps the existing lead and
 	# lane behaviour, so flankers still reserve separate approach corridors.
+	var role := _enemy_role(enemy)
+	if role in ANCHORED_ROLES:
+		# These roles hold a bearing rather than orbit the player. Orbiting the anchor
+		# would put a frontliner a whole strike distance BEHIND the line it is meant
+		# to hold, which is how the first cut of this measured 199 units out when it
+		# was aiming for 88.
+		return player_pos + _role_bearing(enemy, role) * strike_distance
 	var anchor := _pursuit_target(enemy)
 	var outward := Vector2(enemy["pos"]) - anchor
 	if outward.length_squared() < 0.001: outward = Vector2(enemy["pos"]) - player_pos
@@ -5204,14 +5216,48 @@ func _archer_support_target(enemy: Dictionary, direction_to_player: Vector2, dis
 	if distance < 235.0: desired = Vector2(enemy["pos"]) - direction_to_player * 280.0 + side * (130.0 if int(enemy["id"]) % 2 == 0 else -130.0)
 	return desired
 
+func _enemy_role(enemy: Dictionary) -> String:
+	return CombatCatalogScript.role(String(enemy.get("kind", "")))
+
+# Centre of the living allies matching `roles`, excluding the subject itself.
+# Returns the player's position when there is nobody to anchor to, which collapses
+# the anchored roles back to a straight approach rather than to a stalled one.
+func _ally_anchor(subject: Dictionary, roles: Array) -> Vector2:
+	var sum := Vector2.ZERO
+	var count := 0
+	for other in enemies:
+		if int(other.get("id", -1)) == int(subject.get("id", -2)): continue
+		if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
+		if not roles.is_empty() and _enemy_role(other) not in roles: continue
+		sum += Vector2(other["pos"])
+		count += 1
+	return player_pos if count == 0 else sum / float(count)
+
+# Which way a role wants to stand from the player. Frontline covers its whole
+# group, a screen covers specifically the allies that cannot defend themselves,
+# and reach simply holds the bearing it already has instead of closing. When there
+# is nobody to cover, all three collapse to the enemy's own bearing -- a straight
+# approach rather than a stalled one.
+func _role_bearing(enemy: Dictionary, role: String) -> Vector2:
+	var anchor := player_pos
+	if role == "frontline": anchor = _ally_anchor(enemy, [])
+	elif role == "screen": anchor = _ally_anchor(enemy, ["ranged_pressure", "area_denial", "reach"])
+	var outward := anchor - player_pos
+	if outward.length_squared() < 1.0: outward = Vector2(enemy["pos"]) - player_pos
+	if outward.length_squared() < 0.001: outward = -player_facing
+	return outward.normalized()
+
 func _pursuit_target(enemy: Dictionary) -> Vector2:
 	var target := player_pos
 	var kind := String(enemy.get("kind", ""))
+	var role := _enemy_role(enemy)
 	if String(player_action.get("kind", "idle")) == "move":
 		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
-		var lead := 120.0 if kind in ["hound", "bandit", "knife"] else 45.0
+		var lead := 120.0 if role == "flanker" else 45.0
 		target += motion * lead
-	if kind in ["bandit", "knife", "hound"]:
+	if role in ANCHORED_ROLES:
+		return player_pos + _role_bearing(enemy, role) * ROLE_HOLD_DISTANCE[role]
+	if role == "flanker":
 		# Flankers reserve distinct lanes around the player's projected route. This
 		# makes them intercept lateral movement instead of joining a single trailing
 		# column that the player can herd into one broad sweep.
