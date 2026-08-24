@@ -308,7 +308,11 @@ func test_polearm_reach_and_timing() -> void:
 	assert(state.request_wait(0.20))
 	var enemy: Dictionary = state.enemies[0]
 	var action: Dictionary = enemy["action"]
-	assert(float(enemy["radius"]) > state.ENEMY_RADIUS)
+	# Reach, not bulk. This asserted a body BIGGER than a standard enemy; at radius 42
+	# and 60 health the Polearm had a Boar's frame while acting as a support unit,
+	# which does not read -- an enemy that size needs a boss's move set to earn it.
+	# What must hold is the spear's reach and timing, which the rest of this covers.
+	assert(is_equal_approx(float(enemy["radius"]), state.ENEMY_RADIUS))
 	assert(String(action["kind"]) == "melee")
 	assert(float(action["reach"]) >= 210.0)
 	assert(float(action["startup"]) >= 0.9)
@@ -716,7 +720,9 @@ func test_player_reaction_cannot_be_stunlocked() -> void:
 	var elapsed_before := float(state.player_action["elapsed"])
 	var duration_before := float(state.player_action["duration"])
 	state._resolve_incoming_hit(2, 1, "second bandit", Vector2.RIGHT, state.player_pos)
-	assert(state.player_hp == 98)
+	# 5 apiece, not 1: every connecting strike is now felt (MIN_FELT_DAMAGE). The
+	# stunlock rule this test exists for is asserted below and is untouched.
+	assert(state.player_hp == 90)
 	assert(String(state.player_action["kind"]) == "stagger")
 	assert(is_equal_approx(float(state.player_action["elapsed"]), elapsed_before))
 	assert(is_equal_approx(float(state.player_action["duration"]), duration_before))
@@ -730,7 +736,9 @@ func test_player_reaction_cannot_be_stunlocked() -> void:
 	var hp_before_recovery_tick_hit := state.player_hp
 	state._player_reaction_completed_this_tick = true
 	state._resolve_incoming_hit(4, 1, "late bandit", Vector2.DOWN, state.player_pos)
-	assert(state.player_hp == hp_before_recovery_tick_hit - 1)
+	# 5, not 1 -- MIN_FELT_DAMAGE. What this line guards is that a hit landing on the
+	# recovery tick still costs health without stealing the recovery, not its size.
+	assert(state.player_hp == hp_before_recovery_tick_hit - 5)
 	assert(state.is_player_ready())
 
 func test_line_of_sight_uses_exact_wall_intersection() -> void:
@@ -1422,13 +1430,32 @@ func test_new_enemy_roles() -> void:
 	hound["pounce_cooldown"] = 0.8
 	state._choose_enemy_action(hound)
 	assert(String(Dictionary(hound["action"])["kind"]) == "evade")
-	var bandit := state._make_enemy("bandit", state.player_pos + Vector2(0, -180), 5)
+	# The Bandit's slip is a READ, not a range check. It used to fire on a distance
+	# band and a timer, which meant it could not counter anything -- it never looked at
+	# the player at all, and at 1 health it was never felt either. It now answers the
+	# player's WIND-UP, so standing at a given range must not be enough to draw it.
+	var bandit := state._make_enemy("bandit", state.player_pos + Vector2(0, -90), 5)
 	bandit["revealed_to_player"] = true
 	bandit["revealed_elapsed"] = 0.35
+	bandit["awareness"] = "alerted"
+	state.enemies.append(bandit)
 	state._choose_enemy_action(bandit)
+	assert(String(Dictionary(bandit["action"])["kind"]) != "dodge_strike")
+	bandit["action"] = state._idle_action()
+	state.player_facing = Vector2.UP
+	state.player_action = state._action("combo", 1.0, Vector2.UP)
+	state.player_action["startup"] = 0.30
+	state.player_action["reach"] = 104.0
+	state.player_action["elapsed"] = 0.10
+	state._try_bandit_counter(bandit)
 	assert(String(Dictionary(bandit["action"])["kind"]) == "dodge_strike")
 	bandit["action"]["elapsed"] = 0.18
 	assert(state._enemy_evades_attack(bandit))
+	# Spent. The cooldown is the tell: swinging at a Bandit that has used its slip is
+	# supposed to be the safe moment, so a second read must not fire.
+	bandit["action"] = state._idle_action()
+	state._try_bandit_counter(bandit)
+	assert(String(Dictionary(bandit["action"])["kind"]) != "dodge_strike")
 	var hexer := state._make_enemy("hexer", state.player_pos + Vector2(0, -400), 7)
 	state._choose_enemy_action(hexer)
 	assert(String(Dictionary(hexer["action"])["kind"]) == "hex")

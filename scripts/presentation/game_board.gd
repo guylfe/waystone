@@ -2753,6 +2753,14 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
 	if reeling: _draw_reaction_motion(pos, facing, radius, action, color)
 	if kind == "captain": draw_arc(pos, radius * 1.5, 0.0, TAU, 20, Color(color, 0.45), maxf(2.0, radius * 0.12))
+	# A Bandit that still has its slip is dangerous to swing at; one that has spent it
+	# is free. That distinction is the whole loop, so it cannot live only in the
+	# simulation -- an enemy which reads your commitment without a tell is unfair
+	# rather than difficult. Two ticks on the guard side, present only while ready.
+	if kind == "bandit" and float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and String(action["kind"]) not in ["hit_reaction", "stagger"]:
+		var ready_angle := facing.angle()
+		for offset in [-0.62, 0.62]:
+			draw_arc(pos, radius * 1.34, ready_angle + offset - 0.16, ready_angle + offset + 0.16, 6, Color("e8e0a8"), maxf(2.0, radius * 0.10))
 	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling, Vector2(pose["body_scale"]), float(pose["stride"]))
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):

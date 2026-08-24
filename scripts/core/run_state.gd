@@ -121,6 +121,23 @@ const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 210.0}
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
 # neither armour list and lost 4 of 4 gores in the 0.2.30 survey.
 const HEAVY_TELEGRAPH_MASS := 1.6
+# Bodies the player shoves aside rather than stops dead against. 1.35 is the line
+# that already decides whether a body reacts to being vaulted, so mass now has one
+# meaning throughout: 1.35 and up is a body you cannot move. That leaves Shield,
+# Brute, Knight and Ox as the only things in the game that can physically stop you,
+# which is their job -- and a Knife can never body-block you again.
+const PUSHABLE_MASS := 1.35
+# Health cost of one authored damage point, before defense. The old flat x5 left a
+# cliff rather than a curve: at the survey's defense of 4 the three authored-1
+# attacks landed for 1 health while everything else landed for 6 or more -- and
+# those three belonged to the Knife and Bandit, the two enemies that land most
+# often. The enemy you could not avoid did nothing; the enemies that hurt never
+# landed, which is rooms 9, 10 and 12 of the 0.2.30 survey rating 1/5 for
+# difficulty. Anything unlisted keeps the old scale.
+const DAMAGE_HEALTH_COST := {1: 9, 2: 14, 3: 17, 4: 20, 5: 25, 6: 30, 7: 35, 8: 40}
+# Every connecting strike must be felt. Below this a hit is bookkeeping, and armour
+# should never turn an attack into nothing at all.
+const MIN_FELT_DAMAGE := 5
 # The Ox reopening its own charge lane. Reversing is itself a charge so the wind-up
 # inherits the same armour a gore has; the cap keeps it a repositioning step rather
 # than a retreat.
@@ -159,10 +176,13 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # resources disagreeing about whether being hit is a chance to recover.
 # What counts as an enemy having committed to hurting you. Used by the threat
 # snapshot, so a caster mid-cone reads as danger the same way a Blade mid-swing does.
+# Player actions that are a swing at something -- what a Bandit reads to know it is
+# being attacked. Kept beside the enemy list so the two stay recognisably a pair.
+const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.31"
+const GAME_VERSION := "0.2.32"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1291,7 +1311,12 @@ func has_unanchored_progress() -> bool:
 	return provisional_xp() > 0 or unanchored_discovery_count() > 0 or unanchored_shortcut()
 
 func _enemy_base_hp(kind: String) -> int:
-	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 60, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "captain": 60, "warden": 130, "werewolf": 210}.get(kind, 35)
+	# The Polearm is a soldier carrying a long weapon, not a heavyweight. At radius 42
+	# and 60 health it had a Boar's body and nearly a Shield's durability while acting
+	# as a support unit, which does not read: an enemy that size needs a boss's move
+	# set to earn it. Dropped to an ordinary humanoid frame so its reach is the thing
+	# that makes it dangerous.
+	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "captain": 60, "warden": 130, "werewolf": 210}.get(kind, 35)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -1307,7 +1332,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 52.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "polearm" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": 52.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -4526,6 +4551,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
 		var dodge_cooldown := float(enemy.get("dodge_cooldown", 0.0))
 		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
+		_try_bandit_counter(enemy)
 		if float(enemy.get("patience_max", 0.0)) > 0.0: _update_shield_patience(enemy, enemy_dt)
 		var neutral_cooldown := float(enemy.get("neutral_cooldown", 0.0))
 		if neutral_cooldown > 0.0: enemy["neutral_cooldown"] = maxf(0.0, neutral_cooldown - enemy_dt)
@@ -4608,13 +4634,23 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				if intended_distance > 0.0 and Vector2(enemy["pos"]).distance_to(player_pos) <= intended_distance:
 					action["duration"] = minf(float(action["duration"]), float(action["elapsed"]))
 		elif kind == "dodge_strike":
+			# Aim the counter once, at the moment the slip ends. A lunge deliberately does
+			# not steer, but a counter that swung down the line it dodged along would miss
+			# by the width of the dodge -- the evasion is the commitment here, the riposte
+			# is the payoff for it.
+			if elapsed > float(action.get("dodge_end", 0.30)) and not bool(action.get("counter_aimed", false)):
+				action["counter_aimed"] = true
+				var aim := (player_pos - Vector2(enemy["pos"])).normalized()
+				if aim.length_squared() > 0.001:
+					action["direction"] = aim
+					enemy["facing"] = aim
 			if update_locomotion and elapsed <= float(action.get("dodge_end", 0.30)):
 				# Locomotion runs on alternate simulation ticks, so the step is doubled to
 				# keep the authored world speed correct -- see this loop's caller. Without
 				# it the Bandit closed ~59 units instead of the ~117 its 390 x 0.30 implies,
 				# i.e. every dodge-strike travelled at exactly half its authored speed.
 				# `charge` and `pounce_combo` are not gated on this flag and were correct.
-				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action["direction"]) * float(action.get("speed", 390.0)) * enemy_dt * 2.0, float(enemy["radius"]), int(enemy["id"]))
+				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action.get("dodge_direction", action["direction"])) * float(action.get("speed", 390.0)) * enemy_dt * 2.0, float(enemy["radius"]), int(enemy["id"]))
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]): _resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "claw_combo":
 			_resolve_enemy_combo_tick(enemy, elapsed)
@@ -4782,11 +4818,6 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if float(enemy.get("neutral_cooldown", 0.0)) > 0.0:
 			var neutral_side := direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5)
 			enemy["action"] = _enemy_move_action(enemy, Vector2(enemy["pos"]) + (neutral_side - direction * 0.25).normalized() * 95.0, minf(0.24, float(enemy["neutral_cooldown"])))
-		elif float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and distance >= 112.0 and distance <= 245.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _melee_action(1.18, 0.42, 0.53, 84.0, 1, direction, "quick_cut", "dodge_strike")
-			enemy["action"]["dodge_end"] = 0.30
-			enemy["action"]["speed"] = 390.0
-			enemy["dodge_cooldown"] = 2.00
 		elif distance <= float(_melee_intent(enemy, distance)["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# The cut remains quick, but its recovery creates a real neutral window.
 			# Fast identity comes from startup and footwork, not a full cycle that can
@@ -5410,6 +5441,42 @@ func _shield_station(ward: Vector2) -> Vector2:
 	if outward.length_squared() < 1.0: return ward
 	return ward + outward.normalized() * SHIELD_WARD_STATION
 
+# The Bandit answers being SWUNG AT. What stood here before was named dodge_strike
+# but read nothing: it fired on a distance band and a timer, closed 117 units with
+# invulnerability on the way in, and stabbed for 1 health. It could not counter
+# anything because it never looked at the player -- which is why it was never felt.
+#
+# This reads the commitment instead. It triggers during the player's WIND-UP, before
+# the swing resolves, so it is a read rather than a reaction to being hit, and it
+# slips sideways: perpendicular motion leaves the arc while holding the distance its
+# counter needs. Its cooldown is the tell -- once it has spent the dodge, swinging at
+# it is safe, and that is the loop the player is meant to learn.
+func _try_bandit_counter(enemy: Dictionary) -> void:
+	if String(enemy.get("kind", "")) != "bandit" or int(enemy.get("hp", 0)) <= 0: return
+	if float(enemy.get("dodge_cooldown", 0.0)) > 0.0: return
+	if String(enemy.get("awareness", "idle")) != "alerted": return
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) not in ["idle", "move"]: return
+	if String(player_action.get("kind", "idle")) not in PLAYER_ATTACK_ACTION_KINDS: return
+	# Only during the wind-up. Slipping a swing that has already landed is not a read.
+	if float(player_action.get("elapsed", 0.0)) >= float(player_action.get("startup", 0.24)): return
+	var to_enemy := Vector2(enemy["pos"]) - player_pos
+	var distance := to_enemy.length()
+	if distance > float(player_action.get("reach", player_attack_reach)) + float(enemy["radius"]) + 30.0: return
+	if not _within_arc(player_facing, to_enemy, deg_to_rad(85.0)): return
+	# Circle-step, not a retreat. A purely perpendicular slip carried the Bandit from
+	# 90 units out to 131 and its riposte fell short -- an evasion that cannot convert
+	# is the same half-dead mechanic this replaced. The inward weight keeps the
+	# distance its counter needs while still leaving the arc.
+	var lateral := to_enemy.normalized().rotated(PI * 0.5 * (1.0 if int(enemy["id"]) % 2 == 0 else -1.0))
+	var side := (lateral - to_enemy.normalized() * 0.5).normalized()
+	_interrupt_enemy_action(enemy)
+	enemy["action"] = _melee_action(1.24, 0.46, 0.58, 96.0, 3, -to_enemy.normalized(), "quick_cut", "dodge_strike")
+	enemy["action"]["dodge_end"] = 0.26
+	enemy["action"]["speed"] = 330.0
+	enemy["action"]["dodge_direction"] = side
+	enemy["dodge_cooldown"] = 2.40
+	_add_effect("strain", Vector2(enemy["pos"]))
+
 func _enemy_mass(kind: String) -> float:
 	return float(Dictionary(CombatCatalogScript.archetype(kind).get("properties", {})).get("mass", 1.0))
 
@@ -5776,9 +5843,9 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF) -> void:
 	var impact := player_pos if not contact_position.is_finite() else contact_position
 	var posture_damage := float(damage) * 1.5
-	var scaled_damage := damage * 5
+	var scaled_damage := int(DAMAGE_HEALTH_COST.get(damage, damage * 5))
 	var physical_defense := int(player_attributes.get("defense", 0)) + int(player_properties.get("armor", 0))
-	var mitigated_damage := maxi(1, scaled_damage - physical_defense)
+	var mitigated_damage := maxi(MIN_FELT_DAMAGE, scaled_damage - physical_defense)
 	if _is_evasive():
 		_trigger_clean_dodge(impact, source_name)
 		return
@@ -6233,8 +6300,37 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 		if _circle_intersects_rect(position, radius, wall): return true
 	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true
 	for enemy in local_enemies:
-		if _enemy_on_current_layer(enemy) and int(enemy["id"]) != actor_id and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]): return true
+		if not _enemy_on_current_layer(enemy) or int(enemy["id"]) == actor_id or int(enemy["hp"]) <= 0: continue
+		# Light bodies do not block the PLAYER -- they are displaced instead, in
+		# _displace_light_bodies. Enemies still collide with each other normally, so
+		# formations keep their shape and only the player parts a crowd.
+		if actor_id == 0 and _enemy_is_pushable(enemy): continue
+		if position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]): return true
 	return not _actor_footprint_on_floor(position, radius)
+
+func _enemy_is_pushable(enemy: Dictionary) -> bool:
+	return _enemy_mass(String(enemy.get("kind", ""))) < PUSHABLE_MASS
+
+# Shove overlapping light bodies out along the contact normal. A tight ring of five
+# left 14 of 24 movement directions completely dead, which reads as the controls
+# failing rather than as pressure -- and it got worse as bodies grew.
+#
+# The push is exactly the overlap and no more: the player parts a crowd, it does not
+# launch anyone. Displacement runs through _move_actor so a body cannot be shoved
+# through a wall or into another body; when it genuinely has nowhere to go it stays,
+# which is the cornered case and should feel tight.
+func _displace_light_bodies(position: Vector2, radius: float, local_enemies: Array[Dictionary]) -> void:
+	for enemy in local_enemies:
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
+		if not _enemy_is_pushable(enemy): continue
+		var enemy_pos := Vector2(enemy["pos"])
+		var overlap := radius + float(enemy["radius"]) - position.distance_to(enemy_pos)
+		if overlap <= 0.0: continue
+		var away := enemy_pos - position
+		if away.length_squared() < 0.001: away = Vector2(enemy.get("facing", Vector2.DOWN))
+		if away.length_squared() < 0.001: away = Vector2.RIGHT
+		enemy["pos"] = _move_actor(enemy_pos, away.normalized() * overlap, float(enemy["radius"]), int(enemy["id"]))
+		_update_enemy_bucket_membership(enemy)
 
 func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int) -> Vector2:
 	# Both axis candidates share the same nearby geometry. Querying the spatial
@@ -6249,6 +6345,7 @@ func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int) 
 	candidate = Vector2(result.x, origin.y + delta.y)
 	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, local_enemies):
 		result.y = candidate.y
+	if actor_id == 0: _displace_light_bodies(result, radius, local_enemies)
 	return result
 
 func _position_blocked(position: Vector2, radius: float, actor_id: int) -> bool:

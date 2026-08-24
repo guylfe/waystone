@@ -478,6 +478,69 @@ func test_late_phases_have_content_above_the_opening_tiers() -> void:
 			if int(recipe["min_tier"]) >= 4 and phase in Array(recipe["phases"]): late += 1
 		check(late > 0, "%s has no recipe above the opening tiers" % phase)
 
+# --- Milestone E3: mass, crowding and felt damage ------------------------------
+
+func free_directions(state: RunState) -> int:
+	var free := 0
+	for degrees in range(0, 360, 15):
+		var step := Vector2.RIGHT.rotated(deg_to_rad(float(degrees))) * state.MOVE_SPEED / 120.0
+		if state._move_actor(state.player_pos, step, state.PLAYER_RADIUS, 0).distance_to(state.player_pos) > 0.0001: free += 1
+	return free
+
+func ringed_state(kind: String, count: int) -> RunState:
+	var state := survey_state()
+	for index in range(count):
+		var bearing := Vector2.RIGHT.rotated(TAU * float(index) / float(count))
+		var probe := state._make_enemy(kind, Vector2.ZERO, 1, 5)
+		var enemy := state._make_enemy(kind, state.player_pos + bearing * (state.PLAYER_RADIUS + float(probe["radius"]) + 1.0), 999, 5)
+		enemy["awareness"] = "alerted"
+		state.enemies.append(enemy)
+	state._build_enemy_spatial_index()
+	return state
+
+func test_the_player_parts_a_crowd_of_light_bodies() -> void:
+	# A tight ring of five left 14 of 24 directions completely dead, which reads as
+	# the controls failing rather than as pressure -- and it worsened as bodies grew.
+	var state := ringed_state("knife", 5)
+	check(free_directions(state) == 24, "light bodies should never take a movement direction away")
+
+func test_heavy_bodies_still_stop_you() -> void:
+	# The other half of the rule: if everything gave way, nothing would be a wall and
+	# the anchor roles would have no way to charge you for going around them.
+	var state := ringed_state("ox", 5)
+	check(free_directions(state) < 24, "an Ox ring should still block movement")
+
+func test_mass_decides_what_can_be_shoved() -> void:
+	var state := survey_state()
+	var pushable := ["hound", "knife", "bandit", "blade", "archer", "captain", "polearm", "boar"]
+	var immovable := ["shield", "brute", "knight", "ox"]
+	for kind in pushable:
+		check(state._enemy_is_pushable(state._make_enemy(kind, state.player_pos, 1, 5)), "%s should be shoveable" % kind)
+	for kind in immovable:
+		check(not state._enemy_is_pushable(state._make_enemy(kind, state.player_pos, 1, 5)), "%s should be a wall" % kind)
+
+func test_every_connecting_strike_is_felt() -> void:
+	# The flat x5 curve left a cliff, not a gradient: at the survey's defense of 4 the
+	# three authored-1 attacks cost 1 health while everything else cost 6 or more --
+	# and those three belonged to the Knife and Bandit, the enemies that land most
+	# often. The enemy you could not avoid did nothing.
+	var expected := {1: 5, 2: 10, 3: 13}
+	for authored in expected.keys():
+		var state := survey_state()
+		var defense: int = int(state.player_attributes.get("defense", 0)) + int(state.player_properties.get("armor", 0))
+		check(defense == 4, "this expectation is authored against a physical defense of 4, got %d" % defense)
+		var before: int = state.player_hp
+		state._resolve_incoming_hit(1, int(authored), "probe", Vector2.LEFT, state.player_pos)
+		var felt: int = before - state.player_hp
+		check(felt == int(expected[authored]), "authored %d should cost %d health, cost %d" % [authored, int(expected[authored]), felt])
+
+func test_no_attack_can_be_reduced_to_nothing() -> void:
+	var state := survey_state()
+	state.player_properties["armor"] = 999
+	var before: int = state.player_hp
+	state._resolve_incoming_hit(1, 1, "probe", Vector2.LEFT, state.player_pos)
+	check(before - state.player_hp == state.MIN_FELT_DAMAGE, "armour must never turn a hit into nothing")
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -490,6 +553,11 @@ func _init() -> void:
 	test_screen_tempers_differ_between_instances()
 	test_a_ward_must_be_something_the_screen_can_stand_in_front_of()
 	test_late_phases_have_content_above_the_opening_tiers()
+	test_the_player_parts_a_crowd_of_light_bodies()
+	test_heavy_bodies_still_stop_you()
+	test_mass_decides_what_can_be_shoved()
+	test_every_connecting_strike_is_felt()
+	test_no_attack_can_be_reduced_to_nothing()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

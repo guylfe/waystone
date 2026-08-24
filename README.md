@@ -1,6 +1,31 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.31` (Android version code `231`).
+Current prototype version: `0.2.32` (Android version code `232`).
+
+### v0.2.32: Mass means something, and every hit is felt
+
+Four changes, all of them consequences of reading the `0.2.30` numbers rather than the design documents.
+
+**The enemy you could not avoid did nothing.** Damage resolved as `authored × 5 − defense`, which at the survey's physical defense of 4 produced a cliff rather than a curve: three attacks landed for **1 health** and everything else for 6 or more. The three were `knife quick_cut`, `bandit quick_cut` and `bandit dodge_strike` — and the Knife landed 6 of 9 attempts, the best hit rate in the game. The enemies that hurt never connected; the one that always connected was free. That is rooms 9, 10 and 12 rating 1/5 for difficulty, explained in one table.
+
+- `DAMAGE_HEALTH_COST` replaces the flat multiplier with an explicit curve. At defense 4 the felt values become **5 / 10 / 13 / 16 / 21 / 31** where they were 1 / 6 / 11 / 16 / 21 / 31.
+- `MIN_FELT_DAMAGE` is 5. **Every connecting strike is felt**, and armour can never reduce an attack to nothing — the floor holds the whole roster above zero as defense grows through a run.
+
+**A tight ring of five bodies left 14 of 24 movement directions completely dead.** That reads as the controls failing, not as pressure, and it got worse as bodies grew.
+
+- The player now **shoves lighter bodies aside** instead of stopping against them, displaced exactly by the overlap — parting a crowd, not launching anyone. Displacement runs through `_move_actor`, so nothing is pushed through a wall; a body with nowhere to go stays put, which is the cornered case and should feel tight.
+- The threshold is `mass < 1.35`, the same line that already decides whether a body reacts to being vaulted. **Mass now has one meaning throughout: 1.35 and up is a body you cannot move.** That leaves Shield, Brute, Knight and Ox as the only things in the game that can physically stop you — which is precisely their job, and it means a Knife can never body-block you again. Enemies still collide with each other, so formations keep their shape.
+
+**The Bandit's "dodge-counter" never read anything.** It fired on a distance band and a 2s timer, closed 117 units with invulnerability on the way in, and stabbed for 1 health. It could not counter, because it never looked at the player — which is why it was never felt.
+
+- It now answers **being swung at**: it triggers during the player's wind-up, before the swing resolves, so it is a read rather than a reaction to being hit.
+- It **circle-steps** rather than retreats. A purely perpendicular slip carried it from 90 units out to 131 and the riposte fell short — an evasion that cannot convert is the same half-dead mechanic this replaced. With an inward weight it now converts from 60 through 120 units, for 13.
+- The counter is **aimed once**, when the slip ends. A lunge deliberately does not steer, but a riposte swung down the line it dodged along would miss by the width of the dodge.
+- **Its cooldown is the tell**, and the tell is drawn: a Bandit still holding its slip shows two guard ticks. An enemy that reads your commitment without a visible ready-state is unfair rather than difficult. Spend it and swinging at that Bandit is safe — that is the loop.
+
+**The Polearm was a support unit with a Boar's body.** Radius 42 and 60 health while acting as a screen-and-poke enemy does not read; a body that size needs a boss's move set to earn it. Dropped to an ordinary humanoid frame (radius 28, health 34) so its **reach** is what makes it dangerous.
+
+Its behaviour is untouched and still wrong — the thrust carries 229 units of forward travel, so it lunges into melee every time. That needs the commitment-read the Shield now has, and is not in this build.
 
 ### v0.2.31: Anchors anchor — Milestone E2
 
