@@ -1,6 +1,34 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.30` (Android version code `230`).
+Current prototype version: `0.2.31` (Android version code `231`).
+
+### v0.2.31: Anchors anchor — Milestone E2
+
+`0.2.30`'s coverage sampling did its job — eleven distinct recipes in thirteen rooms — and the honest instrument immediately produced a clean reading. Rooms carrying ranged or area pressure averaged **3.33/5 for fun and 3.17 for tactical interest**; melee-only rooms averaged **1.71 and 1.43**. A 1.6-point gap against a ~0.5 noise floor. The cost confound (melee-only rooms averaged cost 5.1 against 7.2) does not carry it: cost-7 and cost-8 melee rooms still rated 2/5, while a cost-6 room with two archers rated 4/5. More melee does not rescue a melee room, it makes a longer one.
+
+Which means the melee enemy's job is to make reaching the ranged threat expensive — and that job was not being done.
+
+**Ten heavy attacks across Ox, Brute and Polearm. Zero contacts.** Against six landed hits from nine Knife pokes. The heaviest bodies in the game were the safest things in it.
+
+- **Telegraph armour now covers the wind-up.** The hold in `_break_posture` required `active_started`, so armour began only once the weapon was already moving and the telegraph — the entire reason a heavy enemy exists — was a free cancel window. The ordinary flinch path already refused light hits during startup; posture breaks did not, and a combo reaches a break readily. The bigger the body, the longer the opening it handed over.
+- The gate is now **`mass >= 1.6`** rather than a hardcoded kind list. That selects Warden, Brute, Knight and **Ox** — which had been in neither armour list, and lost 4 of 4 gores.
+- **A committed heavy is still answerable.** High-impact blows (≥ 3.5) interrupt startup as before, so the counter is a specific thing the player must bring rather than any swing at all. An attack with no opening can never be answered if it repeats.
+- **The Ox reopens its own charge lane.** It could not charge from inside its own minimum range, and walking toward the player can never restore that gap — hence four gores and then an animal standing in strike range being hit. It now reverses under its own power. The disengage *is* a charge, so at mass 2.4 its wind-up inherits the same armour a gore has and cannot be stunlocked; it is capped at 190 units so it reopens a lane instead of becoming the Hound's unbounded 495-unit retreat. A cornered Ox still crashes into the wall behind it.
+
+**The screen was a frontliner with a block flag.** Nine swings in one room, off a proximity gate — which is a trigger the player can pull at will by stepping in and out.
+
+- **It strikes because the player is late, not because the player is near.** It commits only when your current action's remaining lockout exceeds its own wind-up. Movement and idle are not commitments; **Wait is**, so spending time is the honest way to draw it.
+- **Patience degrades its judgement rather than merely releasing it.** Each Shield spawns with a per-instance budget (2.6–4.4s, drawn from the room seed, so a replayed seed replays exactly and two Shields differ). It drains only during a standoff. At full patience it takes only windows it can genuinely punish; as the standoff drags, the window it will accept shrinks toward zero, so it starts biting on footwork and finally on nothing at all. **Those misreads are the openings worth the most**, because a player who has not committed is free to answer the instant the guard drops. The patient player is rewarded rather than stalled, and an enemy that is always correct is annoying rather than difficult.
+- **It stations itself relative to its ward, not to the player**, so it cannot be kited off what it is covering. Walking around it costs time — which is what the archer behind it is selling — rather than costing it its position.
+- **The guard is no longer drawn through its own attack.** `_enemy_blocks_attack` already dropped the block for those action kinds; the sprite was contradicting the rule, which is part of why the swing read as unanswerable.
+- **A ward must be something it can stand in front of.** `_ally_anchor` averaged every matching ally on the layer — on a generated floor a Shield picked a ward 11,754 units away and steered off the navigation grid. Bounded to 420 units. This also fixes frontline bearings outside the survey.
+
+**The deck ran out.** Rooms 12 and 13 repeated because **no recipe above `min_tier` 3 was tagged `respite` or `opening`** — at tier 6 the generator's only legal "respite" was a tier-1 melee room it had already dealt. Coverage sampling cannot fix a deck with nothing left in it. Two additions, both deliberately small, and neither another melee crowd:
+
+- **Warded Caster** (respite/contrast, tier 4+): Shield + Fire Caster — a screen against area denial.
+- **Outrider Line** (opening/development, tier 5+): Ox + Archer — you must move to avoid the charge, and moving is what the archer punishes.
+
+Deferred: **polearm reach**. The source already records why — the thrust carries 229 units of authored forward travel, so committing at 218 always ends in melee. Making reach real means reworking its capture curve, which is its own change.
 
 ### v0.2.30: The survey is an instrument, not a slice of the game
 

@@ -116,6 +116,30 @@ const ANCHORED_ROLES := ["frontline", "screen", "reach"]
 # assertions for a marginal gain. Correcting a held line needs a reposition that
 # does not compete with attacking, not a veto over it.
 const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 210.0}
+# Mass at which a body stops losing its own authored attack to chip damage. 1.6
+# selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
+# Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
+# neither armour list and lost 4 of 4 gores in the 0.2.30 survey.
+const HEAVY_TELEGRAPH_MASS := 1.6
+# The Ox reopening its own charge lane. Reversing is itself a charge so the wind-up
+# inherits the same armour a gore has; the cap keeps it a repositioning step rather
+# than a retreat.
+const OX_DISENGAGE_STARTUP := 0.34
+const OX_DISENGAGE_SPEED := 430.0
+const OX_DISENGAGE_CAP := 190.0
+# The screen. Its guard radius is the zone it contests; its station is measured from
+# the ward rather than from the player. Patience is per-instance and spans a few
+# seconds of standoff, so its temper cannot be counted the way a fixed timer could.
+# How far away an ally can be and still be something a role is covering. Unbounded,
+# _ally_anchor averaged every matching enemy on the layer -- on a generated floor a
+# Shield picked a ward 11,754 units away and steered off the navigation grid. A role
+# covers what it can stand in front of.
+const ROLE_ANCHOR_RADIUS := 420.0
+const SHIELD_GUARD_RADIUS := 150.0
+const SHIELD_WARD_STATION := 104.0
+const SHIELD_STRIKE_WINDUP := 0.46
+const SHIELD_PATIENCE_MIN := 2.6
+const SHIELD_PATIENCE_MAX := 4.4
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
@@ -138,7 +162,7 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.30"
+const GAME_VERSION := "0.2.31"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -811,6 +835,17 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
 		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 6, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain"}, {"kind": "archer"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		# High-tier respite and opening. Both phases previously topped out at min_tier 3,
+		# so a tier-6 "respite" could only be a tier-1 melee recipe it had already shown:
+		# the 0.2.30 run exhausted the eligible pool at room 12 and repeated, which the
+		# tester read as the generator recycling. Coverage sampling cannot fix a deck
+		# that has nothing left to deal.
+		#
+		# Both are deliberately small. A respite is a light room, not a slow one, and
+		# neither is another melee crowd -- the same run rated melee-only rooms 1.7/5 for
+		# fun against 3.3 for rooms carrying ranged or area pressure.
+		{"id": "warded_caster", "label": "Warded Caster", "family": "screened_ranged", "min_tier": 4, "phases": ["respite", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "shield"}, {"kind": "fire_caster"}], "reinforcements": [{"kind": "polearm"}, {"kind": "hound"}]},
+		{"id": "outrider_line", "label": "Outrider Line", "family": "elite_charge", "min_tier": 5, "phases": ["opening", "development"], "formations": ["spread", "ranged_support"], "enemies": [{"kind": "ox"}, {"kind": "archer"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
 		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 8, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
 
@@ -1290,6 +1325,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"last_known_player": position,
 		"heard_sound_sequence": 0,
 		"pounce_cooldown": 0.0,
+		"patience": _shield_patience_budget(kind, position, _next_enemy_id),
+		"patience_max": _shield_patience_budget(kind, position, _next_enemy_id),
 		"dodge_cooldown": 0.0,
 		"neutral_cooldown": 0.0,
 		"shot_cooldown": 0.22 * float(_next_enemy_id % 3) if kind == "archer" else 0.0,
@@ -4278,9 +4315,17 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	var action: Dictionary = enemy["action"]
 	var kind := String(enemy["kind"])
 	var action_kind := String(action.get("kind", "idle"))
-	var elapsed := float(action.get("elapsed", 0.0))
-	var active_started := action.has("startup") and elapsed >= float(action.get("startup", 999.0))
-	if kind in ["brute", "knight", "warden"] and active_started and action_kind in ["melee", "slam", "charge"]:
+	# Armour covers the WIND-UP, not just the swing. The hold used to require
+	# active_started, which left the telegraph -- the entire reason a heavy enemy
+	# exists -- as a free cancel window: the 0.2.30 survey recorded ten heavy attacks
+	# across Ox, Brute and Polearm and zero contacts, against six landed hits from
+	# nine Knife pokes. The bigger the body, the longer the opening it handed over.
+	#
+	# The ordinary flinch path already refused light hits here; posture breaks did
+	# not, and a combo reaches a break readily. High-impact blows still interrupt
+	# startup through _apply_enemy_hit_reaction, so a committed heavy is answered by
+	# a real blow or by leaving -- never by chip damage, and never by nothing.
+	if _enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS and action_kind in ["melee", "slam", "charge"]:
 		enemy["posture"] = 0.25
 		_add_effect("strain", Vector2(enemy["pos"]))
 		_set_message("The heavy enemy holds its grounded attack.")
@@ -4339,7 +4384,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# impacts may still interrupt startup, and accumulated posture damage remains
 	# the universal route to a full break. Once the weapon moves, even a strong
 	# ordinary hit must trade with or evade the grounded commitment.
-	if enemy_kind in ["brute", "knight", "warden"] and action_kind in ["melee", "slam", "charge"]:
+	if _enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS and action_kind in ["melee", "slam", "charge"]:
 		if active_started or not high_impact: return false
 	# A boar earns armour only after its pounce has accelerated. The crouch and
 	# early travel remain interruptible, and a posture-heavy technique can still
@@ -4481,6 +4526,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
 		var dodge_cooldown := float(enemy.get("dodge_cooldown", 0.0))
 		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
+		if float(enemy.get("patience_max", 0.0)) > 0.0: _update_shield_patience(enemy, enemy_dt)
 		var neutral_cooldown := float(enemy.get("neutral_cooldown", 0.0))
 		if neutral_cooldown > 0.0: enemy["neutral_cooldown"] = maxf(0.0, neutral_cooldown - enemy_dt)
 		var shot_cooldown := float(enemy.get("shot_cooldown", 0.0))
@@ -4785,11 +4831,26 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(polearm_intent["distance"])), 0.70)
 	elif enemy_kind == "shield":
+		# A screen denies access; its sword is the exception, not the job. The 0.2.30
+		# survey caught it swinging nine times in one room off a proximity gate, which
+		# is a trigger the player can pull at will by stepping in and out.
 		var shield_intent := _melee_intent(enemy, distance)
-		if distance <= float(shield_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		var ward := _ally_anchor(enemy, ["ranged_pressure", "area_denial", "reach"])
+		var guarding := not ward.is_equal_approx(player_pos)
+		var sees_player := _has_line_of_sight(Vector2(enemy["pos"]), player_pos)
+		var in_guard := distance <= SHIELD_GUARD_RADIUS and sees_player
+		if distance <= float(shield_intent["distance"]) + STRIKE_COMMIT_BAND and sees_player and _shield_wants_to_strike(enemy, in_guard, guarding):
 			enemy["action"] = _intent_melee_action(shield_intent, direction)
 			_clear_melee_intent(enemy)
-		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
+			# It got what it was waiting for. Composure returns whether or not the swing
+			# connects, so one read cannot cascade into a chain of free ones.
+			enemy["patience"] = float(enemy.get("patience_max", 0.0))
+		elif guarding:
+			enemy["action"] = _enemy_move_action(enemy, _shield_station(ward), 0.58)
+		else:
+			# Nothing left to guard. A screen with no ward is just a defensive frontliner;
+			# holding a line to nowhere would stall the last enemy alive.
+			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(shield_intent["distance"])), 0.58)
 	elif enemy_kind == "ox":
 		# The Ox asks a different question from every other attack in the game. Theirs
 		# is radial -- am I close enough. This one is lateral: am I on its line. It
@@ -4812,6 +4873,24 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["unstoppable"] = true
 			_attach_charge_capture(enemy["action"], 0.50, "gore")
 			enemy["pounce_cooldown"] = 3.20
+		elif float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			# Ready, but standing inside its own minimum range. Walking toward the player
+			# can never restore the gap a charge needs, so the 0.2.30 Ox landed four gores
+			# and then milled about in strike range being hit -- "he starts getting
+			# confused and not knowing what to do".
+			#
+			# Backing out is itself a charge, deliberately: mass 2.4 clears
+			# HEAVY_TELEGRAPH_MASS, so the reverse wind-up carries the same armour the
+			# gore does and the escape cannot be stunlocked out of existence. Capped, so
+			# it reopens a lane instead of becoming the Hound's unbounded retreat, which
+			# measured 495 units. A cornered Ox still crashes into the wall behind it.
+			var reset_end := OX_DISENGAGE_STARTUP + OX_DISENGAGE_CAP / OX_DISENGAGE_SPEED
+			enemy["action"] = _charge_action(reset_end + 0.20, OX_DISENGAGE_STARTUP, reset_end, OX_DISENGAGE_SPEED, 0, -direction)
+			enemy["action"]["label"] = "reset"
+			enemy["action"]["charge_cap"] = OX_DISENGAGE_CAP
+			enemy["action"]["charge_travelled"] = 0.0
+			# A disengage has no contact window; it must never resolve a hit on the way out.
+			enemy["action"]["hit_done"] = true
 		else: enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.62)
 	elif enemy_kind == "hound":
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 500.0, 0.70, 1.08):
@@ -5269,6 +5348,71 @@ func _archer_support_target(enemy: Dictionary, direction_to_player: Vector2, dis
 	if distance < 235.0: desired = Vector2(enemy["pos"]) - direction_to_player * 280.0 + side * (130.0 if int(enemy["id"]) % 2 == 0 else -130.0)
 	return desired
 
+# Per-instance temper, drawn from the spawn the room seed produced. A replayed seed
+# replays exactly, and two Shields in one room still differ -- a fixed budget would
+# be countable, and this has to be read off the enemy instead.
+func _shield_patience_budget(kind: String, position: Vector2, id: int) -> float:
+	if kind != "shield": return 0.0
+	var mixed := absi(hash(Vector2i(position.round())) ^ (id * 2654435761))
+	return SHIELD_PATIENCE_MIN + float(mixed % 1000) / 999.0 * (SHIELD_PATIENCE_MAX - SHIELD_PATIENCE_MIN)
+
+# Patience runs only during a standoff -- the player inside the guard zone and not
+# committed to anything worth punishing. A screen has no reason to lose composure
+# over someone who is not threatening its ward, and none while it is reeling.
+func _update_shield_patience(enemy: Dictionary, dt: float) -> void:
+	var budget := float(enemy.get("patience_max", 0.0))
+	var patience := float(enemy.get("patience", budget))
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) in ["hit_reaction", "stagger"]: return
+	var near := String(enemy.get("awareness", "idle")) == "alerted" and Vector2(enemy["pos"]).distance_to(player_pos) <= SHIELD_GUARD_RADIUS
+	if not near:
+		enemy["patience"] = minf(budget, patience + dt * 0.55)
+	elif _player_commitment_remaining() <= 0.0:
+		enemy["patience"] = maxf(0.0, patience - dt)
+
+# How long the player is still locked into what they are doing, in world seconds.
+# Movement and idle are not commitments: they are short and interruptible, which is
+# precisely why a gate built on proximity could be baited by stepping in and out.
+# Wait is a commitment, so spending time is the honest way to draw a screen.
+func _player_commitment_remaining() -> float:
+	var kind := String(player_action.get("kind", "idle"))
+	if kind in ["idle", "move"]: return 0.0
+	var remaining := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0)))
+	return remaining / maxf(0.01, _player_personal_tempo())
+
+# A screen strikes because the player is LATE, not because the player is near.
+#
+# Patience degrades its judgement rather than merely releasing it. Full, it accepts
+# only a window it can genuinely punish. As a standoff drags, the window it will
+# take shrinks toward zero, so it begins biting on footwork and finally on nothing
+# at all -- and those are the openings worth the most, because a player who has not
+# committed is free to answer the instant the guard drops. Being right and being
+# patient trade against each other, which is what keeps this from being a wall with
+# a timer, and it means the patient player is rewarded rather than stalled.
+func _shield_wants_to_strike(enemy: Dictionary, in_guard: bool, guarding: bool) -> bool:
+	if not guarding: return true
+	var budget := float(enemy.get("patience_max", 0.0))
+	if budget <= 0.0: return true
+	var patience := clampf(float(enemy.get("patience", budget)) / budget, 0.0, 1.0)
+	if patience <= 0.0: return true
+	if not in_guard: return false
+	var window := _player_commitment_remaining()
+	# Below a third it starts mistaking footwork for commitment. That is a genuine
+	# misread and the most punishable thing it does, which is the point: an enemy that
+	# is always correct is annoying rather than difficult.
+	if patience < 0.34 and String(player_action.get("kind", "idle")) == "move": window = maxf(window, 0.30)
+	return window >= SHIELD_STRIKE_WINDUP * patience
+
+# The station is measured from the WARD, not from the player, so a screen cannot be
+# kited off the thing it is covering. Walking around it costs time -- which is what
+# the archer behind it is selling -- rather than costing it its position.
+func _shield_station(ward: Vector2) -> Vector2:
+	var outward := player_pos - ward
+	if outward.length_squared() < 1.0: return ward
+	return ward + outward.normalized() * SHIELD_WARD_STATION
+
+func _enemy_mass(kind: String) -> float:
+	return float(Dictionary(CombatCatalogScript.archetype(kind).get("properties", {})).get("mass", 1.0))
+
 func _enemy_role(enemy: Dictionary) -> String:
 	return CombatCatalogScript.role(String(enemy.get("kind", "")))
 
@@ -5278,10 +5422,12 @@ func _enemy_role(enemy: Dictionary) -> String:
 func _ally_anchor(subject: Dictionary, roles: Array) -> Vector2:
 	var sum := Vector2.ZERO
 	var count := 0
+	var origin := Vector2(subject.get("pos", player_pos))
 	for other in enemies:
 		if int(other.get("id", -1)) == int(subject.get("id", -2)): continue
 		if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
 		if not roles.is_empty() and _enemy_role(other) not in roles: continue
+		if origin.distance_to(Vector2(other.get("pos", origin))) > ROLE_ANCHOR_RADIUS: continue
 		sum += Vector2(other["pos"])
 		count += 1
 	return player_pos if count == 0 else sum / float(count)

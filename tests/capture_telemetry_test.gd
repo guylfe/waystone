@@ -348,8 +348,148 @@ func test_clean_evade_sources_are_counted() -> void:
 		"a hit crossing Dodge i-frames must count as a Dodge clean evade, got %d" % state.clean_evade_dodge_total)
 	check(state.clean_evade_vault_total == 0, "a Dodge evade must not be attributed to Vault")
 
+# --- Milestone E2: the anchor roles ---------------------------------------------
+#
+# The 0.2.30 survey recorded ten heavy attacks across Ox, Brute and Polearm and
+# ZERO contacts, against six landed hits from nine Knife pokes. The heaviest bodies
+# in the game were the safest things in it, because a long telegraph was a free
+# cancel window and the armour meant to cover it only began once the weapon was
+# already moving.
+
+func armed_enemy(state: RunState, kind: String, offset: Vector2) -> Dictionary:
+	var enemy := state._make_enemy(kind, state.player_pos + offset, 999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	state.enemies.append(enemy)
+	return enemy
+
+func test_a_heavy_telegraph_survives_posture_pressure() -> void:
+	for kind in ["brute", "ox"]:
+		var state := survey_state()
+		var gap := Vector2.UP * 70.0 if kind == "brute" else Vector2.RIGHT * 400.0
+		var enemy := armed_enemy(state, kind, gap)
+		state._choose_enemy_action(enemy)
+		var committed := String(Dictionary(enemy["action"]).get("kind", ""))
+		check(committed in ["melee", "charge"], "%s should commit an attack from its own range, got %s" % [kind, committed])
+		# Mid wind-up, before the damaging window opens.
+		enemy["action"]["elapsed"] = 0.10
+		var broke: bool = state._apply_posture_damage(enemy, 99.0)
+		check(not broke, "%s should not lose its wind-up to a posture break" % kind)
+		check(String(Dictionary(enemy["action"]).get("kind", "")) == committed, "%s should still be attacking after a posture break in its wind-up" % kind)
+
+func test_a_heavy_telegraph_still_answers_to_a_real_blow() -> void:
+	# Armour must not mean invulnerability: an attack with no opening can never be
+	# answered if it repeats. Chip damage is refused, a heavy blow during startup is
+	# not, which makes the counter a specific thing the player has to bring.
+	var state := survey_state()
+	var brute := armed_enemy(state, "brute", Vector2.UP * 70.0)
+	state._choose_enemy_action(brute)
+	brute["action"]["elapsed"] = 0.10
+	var light: bool = state._apply_enemy_hit_reaction(brute, 1.0, "alerted", brute["action"], Vector2.ZERO, {})
+	check(not light, "a light hit should not flinch a heavy out of its wind-up")
+	var heavy: bool = state._apply_enemy_hit_reaction(brute, 4.0, "alerted", brute["action"], Vector2.ZERO, {})
+	check(heavy, "a high-impact blow should still interrupt a heavy's wind-up")
+
+func test_the_ox_reopens_its_own_charge_lane() -> void:
+	# Standing inside its own minimum range, walking toward the player can never
+	# restore the gap a gore needs. The 0.2.30 Ox landed four charges and then milled
+	# about in strike range being hit.
+	var state := survey_state()
+	var ox := armed_enemy(state, "ox", Vector2.RIGHT * 90.0)
+	state._choose_enemy_action(ox)
+	var action: Dictionary = ox["action"]
+	check(String(action.get("kind", "")) == "charge", "a crowded Ox should commit a movement charge, got %s" % String(action.get("kind", "")))
+	check(String(action.get("label", "")) == "reset", "a crowded Ox should reset rather than gore")
+	check(int(action.get("damage", -1)) == 0 and bool(action.get("hit_done", false)), "a disengage must carry no contact window")
+	check(Vector2(action.get("direction", Vector2.ZERO)).dot(Vector2.RIGHT) > 0.9, "the Ox should reverse away from the player")
+	# Bounded: this reopens a lane, it does not flee. The Hound's unbounded retreat
+	# measured 495 units from the player.
+	check(float(action.get("charge_cap", 0.0)) <= 260.0, "the disengage must stay a repositioning step")
+
+func test_the_ox_still_gores_from_open_ground() -> void:
+	var state := survey_state()
+	var ox := armed_enemy(state, "ox", Vector2.RIGHT * 400.0)
+	state._choose_enemy_action(ox)
+	check(String(Dictionary(ox["action"]).get("label", "")) == "gore", "an Ox with room should still gore")
+
+# --- The screen -----------------------------------------------------------------
+
+func shield_room() -> Array:
+	var state := survey_state()
+	armed_enemy(state, "archer", Vector2.UP * 240.0)
+	var shield := armed_enemy(state, "shield", Vector2.UP * 60.0)
+	return [state, shield]
+
+func test_a_screen_does_not_strike_a_free_player() -> void:
+	# Proximity is a trigger the player can pull at will by stepping in and out, which
+	# is how the 0.2.30 Shield got nine swings in a single room.
+	var room := shield_room()
+	var state: RunState = room[0]
+	var shield: Dictionary = room[1]
+	state._choose_enemy_action(shield)
+	check(String(Dictionary(shield["action"]).get("kind", "")) != "melee", "a screen should not strike a player who is not committed to anything")
+
+func test_a_screen_punishes_a_committed_player() -> void:
+	var room := shield_room()
+	var state: RunState = room[0]
+	var shield: Dictionary = room[1]
+	state.player_action = state._action("combo", 1.20, Vector2.UP)
+	state._choose_enemy_action(shield)
+	check(String(Dictionary(shield["action"]).get("kind", "")) == "melee", "a screen should punish a player who is late")
+
+func test_a_screen_loses_composure_on_its_own() -> void:
+	# It has to make mistakes the player can punish, and a standoff has to resolve.
+	# An enemy that is always correct is annoying rather than difficult.
+	var room := shield_room()
+	var state: RunState = room[0]
+	var shield: Dictionary = room[1]
+	shield["patience"] = 0.0
+	state._choose_enemy_action(shield)
+	check(String(Dictionary(shield["action"]).get("kind", "")) == "melee", "a screen out of patience should swing at nothing")
+
+func test_screen_tempers_differ_between_instances() -> void:
+	var state := survey_state()
+	var first := armed_enemy(state, "shield", Vector2.UP * 60.0)
+	var second := armed_enemy(state, "shield", Vector2.DOWN * 130.0)
+	check(float(first["patience_max"]) > 0.0, "a screen should carry a patience budget")
+	check(not is_equal_approx(float(first["patience_max"]), float(second["patience_max"])), "two screens should not share a temper")
+
+func test_a_ward_must_be_something_the_screen_can_stand_in_front_of() -> void:
+	# Unbounded, the anchor averaged every matching ally on the layer -- on a generated
+	# floor that picked a ward 11,754 units away and steered off the navigation grid.
+	var state := survey_state()
+	var shield := armed_enemy(state, "shield", Vector2.UP * 60.0)
+	armed_enemy(state, "archer", Vector2.UP * 4000.0)
+	var ward: Vector2 = state._ally_anchor(shield, ["ranged_pressure", "area_denial", "reach"])
+	check(ward.is_equal_approx(state.player_pos), "a distant ally is not a ward")
+
+# --- The deck -------------------------------------------------------------------
+
+func test_late_phases_have_content_above_the_opening_tiers() -> void:
+	# Coverage sampling cannot fix a deck with nothing left to deal. Respite and
+	# opening both topped out at min_tier 3, so the 0.2.30 run exhausted them at room
+	# 12 and repeated tier-1 melee rooms at tiers 6 and 7.
+	var state := survey_state()
+	for phase in ["respite", "opening"]:
+		var late := 0
+		for recipe_value in state._survey_recipe_catalog():
+			var recipe := Dictionary(recipe_value)
+			if int(recipe["min_tier"]) >= 4 and phase in Array(recipe["phases"]): late += 1
+		check(late > 0, "%s has no recipe above the opening tiers" % phase)
+
 func _init() -> void:
 	test_charges_produce_capture_records()
+	test_a_heavy_telegraph_survives_posture_pressure()
+	test_a_heavy_telegraph_still_answers_to_a_real_blow()
+	test_the_ox_reopens_its_own_charge_lane()
+	test_the_ox_still_gores_from_open_ground()
+	test_a_screen_does_not_strike_a_free_player()
+	test_a_screen_punishes_a_committed_player()
+	test_a_screen_loses_composure_on_its_own()
+	test_screen_tempers_differ_between_instances()
+	test_a_ward_must_be_something_the_screen_can_stand_in_front_of()
+	test_late_phases_have_content_above_the_opening_tiers()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

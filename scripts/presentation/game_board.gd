@@ -2757,7 +2757,12 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
 		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
-	if kind == "shield": _draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
+	# The guard cannot be drawn while the sword is out. run_state's _enemy_blocks_attack
+	# already drops the block for exactly these action kinds, so painting the arc
+	# through an attack made the sprite contradict the rule -- the 0.2.30 survey read
+	# the Shield as "too aggressive" partly because its opening was invisible.
+	if kind == "shield" and String(action["kind"]) not in ["melee", "dodge_strike", "charge", "slam"]:
+		_draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
 	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false, world_radius)
 	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(world_pos, action, false)
 	elif String(action["kind"]) in ["claw_combo", "pounce_combo"]: _draw_claw_combo(world_pos, action, color)
