@@ -138,6 +138,32 @@ const DAMAGE_HEALTH_COST := {1: 9, 2: 14, 3: 17, 4: 20, 5: 25, 6: 30, 7: 35, 8: 
 # Every connecting strike must be felt. Below this a hit is bookkeeping, and armour
 # should never turn an attack into nothing at all.
 const MIN_FELT_DAMAGE := 5
+# A parry costs the player their turn rather than their health. Long enough that the
+# rest of the room gets to act inside it, short enough that it is a mistake and not a
+# death sentence.
+const DUELLIST_PARRY_STAGGER := 0.86
+const DUELLIST_PARRY_COOLDOWN := 3.10
+# The Chanter's spellbook. One effect at a time, each with its own colour AND its own
+# silhouette so the colour is never load-bearing. Every one of them ends the moment
+# the Chanter dies -- otherwise killing it first accomplishes nothing retroactively
+# and the decision it is supposed to pose has no payoff.
+const CHANT_DURATION := 7.0
+const CHANT_COOLDOWN := 3.6
+const CHANT_STARTUP := 0.78
+const CHANT_RADIUS := 300.0
+const CHANT_SPEED_SCALE := 1.35
+const CHANT_WARD_REDUCTION := 0.45
+const CHANT_POISE_BONUS := 2.5
+# Sundered ground. It deals no damage at all: crossing it costs TIME, and in frozen
+# time spending time is handing every other enemy in the room a free move. That is a
+# different currency from the fire and ice zones, which threaten damage instead.
+const SUNDERED_SLOW := 0.5
+const SUNDERED_RADIUS := 168.0
+const SUNDERED_DURATION := 7.5
+# The javelin. Slow and wide rather than fast and precise -- it is a lane being taken
+# away, not a shot to be feared.
+const JAVELIN_SPEED := 360.0
+const JAVELIN_RADIUS := 22.0
 # The Ox reopening its own charge lane. Reversing is itself a charge so the wind-up
 # inherits the same armour a gore has; the cap keeps it a repositioning step rather
 # than a retreat.
@@ -181,8 +207,8 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
-const SAVE_VERSION := 32
-const GAME_VERSION := "0.2.32"
+const SAVE_VERSION := 33
+const GAME_VERSION := "0.2.33"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -414,7 +440,6 @@ var _enemy_spatial_cache_dirty := true
 var _terrain_feature_buckets: Dictionary = {}
 var _player_reaction_completed_this_tick := false
 var _streamed_enemy_indices := PackedInt32Array()
-var _active_captains: Array[Dictionary] = []
 var _active_enemy_cache_dirty := true
 var _flow_target_cell := Vector2i(-999999, -999999)
 var _flow_next_cell: Dictionary = {}
@@ -854,7 +879,18 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
 		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
-		{"id": "captain_cross", "label": "Captain Cross", "family": "command", "min_tier": 6, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "captain"}, {"kind": "archer"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		# Kill-the-caster, priced. The Chanter hardens or hastens the bodies in front of
+		# it and hides behind them, so the room asks whether reaching it is worth what
+		# reaching it costs.
+		{"id": "chanted_line", "label": "Chanted Line", "family": "command", "min_tier": 6, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "chanter"}, {"kind": "brute"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		# The two ranged enemies together, deliberately: the Archer punishes standing
+		# still and the Javelineer punishes running in a straight line, so between them
+		# both answers are spent and the Shield decides which one you are forced into.
+		{"id": "closing_lanes", "label": "Closing Lanes", "family": "crossfire", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
+		# Ground that costs time, in front of an enemy you cannot afford to reach late.
+		{"id": "broken_ground", "label": "Broken Ground", "family": "area_denial", "min_tier": 4, "phases": ["development", "contrast", "respite"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "earth_caster"}, {"kind": "polearm"}, {"kind": "knife"}], "reinforcements": [{"kind": "archer"}, {"kind": "boar"}]},
+		# The Duellist wants your attention on it. The Javelineer wants you to move.
+		{"id": "measured_guard", "label": "Measured Guard", "family": "skirmish", "min_tier": 4, "phases": ["opening", "contrast", "pressure"], "formations": ["spread", "flanked"], "enemies": [{"kind": "duellist"}, {"kind": "javelineer"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "bandit"}]},
 		# High-tier respite and opening. Both phases previously topped out at min_tier 3,
 		# so a tier-6 "respite" could only be a tier-1 melee recipe it had already shown:
 		# the 0.2.30 run exhausted the eligible pool at room 12 and repeated, which the
@@ -925,7 +961,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	return chosen
 
 func _survey_enemy_cost(kind: String) -> int:
-	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "captain": 4, "knight": 5}.get(kind, 2))
+	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "chanter": 4, "javelineer": 2, "earth_caster": 3, "duellist": 4, "knight": 5}.get(kind, 2))
 
 func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	var result := 0
@@ -1316,7 +1352,7 @@ func _enemy_base_hp(kind: String) -> int:
 	# as a support unit, which does not read: an enemy that size needs a boss's move
 	# set to earn it. Dropped to an ordinary humanoid frame so its reach is the thing
 	# that makes it dangerous.
-	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "captain": 60, "warden": 130, "werewolf": 210}.get(kind, 35)
+	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -1350,6 +1386,9 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"last_known_player": position,
 		"heard_sound_sequence": 0,
 		"pounce_cooldown": 0.0,
+		"chants": {},
+		"chant_source_id": -1,
+		"parry_cooldown": 0.0,
 		"patience": _shield_patience_budget(kind, position, _next_enemy_id),
 		"patience_max": _shield_patience_budget(kind, position, _next_enemy_id),
 		"dodge_cooldown": 0.0,
@@ -1392,7 +1431,7 @@ func _respawn_enemies() -> void:
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
 	# and equipment identity without creating another visible character stat.
-	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "hexer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "captain": 0.0, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
+	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "hexer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
 
 func _enemy_posture_max(kind: String) -> float:
 	var profile := CombatCatalogScript.archetype(kind)
@@ -1550,7 +1589,21 @@ func player_is_exhausted() -> bool:
 # Every consumer of walking speed goes through this, so exhaustion slows stepping,
 # the Wait unit derived from a step, and the streamed-move duration together.
 func current_move_speed() -> float:
-	return player_move_speed * (EXHAUSTED_MOVE_SCALE if player_is_exhausted() else 1.0)
+	return player_move_speed * (EXHAUSTED_MOVE_SCALE if player_is_exhausted() else 1.0) * _terrain_speed_scale(player_pos)
+
+# Sundered ground slows whoever is standing in it, player and enemy alike. Making it
+# one-sided would have been simpler and would have read as arbitrary; symmetrical, it
+# becomes terrain the player can use -- an Ox charging through broken earth is slowed
+# by the same rule, which is the whole-buffalo principle applied to a hazard.
+func _terrain_speed_scale(position: Vector2) -> float:
+	var scale := 1.0
+	for hazard in hazards:
+		if String(hazard.get("kind", "")) != "sundered_ground": continue
+		if String(hazard.get("layer", current_layer)) != current_layer: continue
+		if not bool(hazard.get("triggered", false)): continue
+		if position.distance_to(Vector2(hazard["pos"])) > float(hazard.get("radius", SUNDERED_RADIUS)): continue
+		scale = minf(scale, float(hazard.get("slow", SUNDERED_SLOW)))
+	return scale
 
 # Dodge is the one physical action exhaustion does not take away. The UI asks this
 # rather than stamina_actions_locked() so the button stays live while winded.
@@ -2986,7 +3039,6 @@ func _build_enemy_spatial_index() -> void:
 	if not _enemy_spatial_cache_dirty: return
 	_enemy_buckets.clear()
 	_enemy_bucket_cell_by_id.clear()
-	_active_captains.clear()
 	_refresh_active_enemy_cache()
 	var active_count := 0
 	for index in _streamed_enemy_indices:
@@ -2995,7 +3047,6 @@ func _build_enemy_spatial_index() -> void:
 		if not _enemy_buckets.has(cell): _enemy_buckets[cell] = []
 		_enemy_buckets[cell].append(enemy)
 		_enemy_bucket_cell_by_id[int(enemy["id"])] = cell
-		if String(enemy.get("kind", "")) == "captain" and int(enemy.get("hp", 0)) > 0: _active_captains.append(enemy)
 		active_count += 1
 	performance_metrics["active_enemies"] = active_count
 	performance_metrics["resident_enemies"] = enemies.size()
@@ -4137,7 +4188,19 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 		var contact_result: Dictionary = {}
 		hit_ids.append(int(enemy["id"]))
 		var hit_point := Vector2(contact["point"])
-		if _enemy_evades_attack(enemy):
+		if _enemy_parries_attack(enemy):
+			# The Duellist takes your TURN, not your health. That is the whole distinction
+			# from the Bandit: one relocates and counters, the other stands its ground and
+			# spends the thing you cannot buy back in frozen time.
+			_survey_mark_strike_resolution(enemy, "blocked")
+			enemy["parry_cooldown"] = DUELLIST_PARRY_COOLDOWN
+			enemy["action"] = _action("idle", 0.0, Vector2.ZERO)
+			_add_effect("block", hit_point)
+			_add_effect("posture_break", player_pos)
+			player_action = _action("stagger", DUELLIST_PARRY_STAGGER, Vector2.ZERO)
+			_apply_action_poise(player_action)
+			_set_message("The duellist turns your blade aside.")
+		elif _enemy_evades_attack(enemy):
 			_survey_mark_strike_resolution(enemy, "evaded")
 			_add_effect("dodge", Vector2(enemy["pos"]))
 			_set_message("The bandit slips through the attack.")
@@ -4201,6 +4264,9 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 		multiplier = 2.0 if has_track_rank("rogue", 1) else 1.5
 		multiplier += float(source_action.get("unaware_bonus_multiplier", 0.0))
 		if has_track_rank("rogue", 3): source_action["suppress_alert_until_end"] = true
+	# Red chant. Reduction rather than immunity, so a warded enemy is slower to kill
+	# but never a wall -- the answer is to remove the Chanter, not to give up.
+	if _enemy_has_chant(enemy, "ward"): multiplier *= 1.0 - CHANT_WARD_REDUCTION
 	var explicit_bonus := 0
 	var defense_ignore := 0
 	var aimed_contact := aimed_enemy_id == int(enemy.get("id", -1)) and aimed_remaining > 0.0
@@ -4314,6 +4380,46 @@ func _enemy_blocks_attack(enemy: Dictionary) -> bool:
 	var incoming := player_pos - Vector2(enemy["pos"])
 	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(72.0))
 
+# The Duellist's answer to being swung at. Where the Bandit slips sideways and
+# ripostes, this one plants and catches the blade: no damage to either side, and the
+# player loses their turn instead of their health. In frozen time that is the more
+# expensive currency, because every other enemy in the room gets to act inside it.
+#
+# The stance is entered in _try_duellist_parry during the player's wind-up, so it is a
+# read on a commitment, not a reaction to a landed hit. It is also visible -- the
+# stance is drawn -- and it has a cooldown, so the counter-play is to bait it out with
+# something cheap and then attack into the gap.
+func _enemy_parries_attack(enemy: Dictionary) -> bool:
+	if String(enemy.get("kind", "")) != "duellist": return false
+	var action: Dictionary = enemy.get("action", {})
+	if String(action.get("kind", "idle")) != "parry_stance": return false
+	var elapsed := float(action.get("elapsed", 0.0))
+	if elapsed > float(action.get("parry_end", 0.42)): return false
+	var incoming := player_pos - Vector2(enemy["pos"])
+	# Front only. Getting behind a Duellist is the positional answer to it.
+	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(96.0))
+
+func _try_duellist_parry(enemy: Dictionary) -> void:
+	if String(enemy.get("kind", "")) != "duellist" or int(enemy.get("hp", 0)) <= 0: return
+	var cooldown := float(enemy.get("parry_cooldown", 0.0))
+	if cooldown > 0.0:
+		enemy["parry_cooldown"] = maxf(0.0, cooldown - SIM_DT)
+		return
+	if String(enemy.get("awareness", "idle")) != "alerted": return
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) not in ["idle", "move"]: return
+	if String(player_action.get("kind", "idle")) not in PLAYER_ATTACK_ACTION_KINDS: return
+	if float(player_action.get("elapsed", 0.0)) >= float(player_action.get("startup", 0.24)): return
+	var to_enemy := Vector2(enemy["pos"]) - player_pos
+	if to_enemy.length() > float(player_action.get("reach", player_attack_reach)) + float(enemy["radius"]) + 24.0: return
+	if not _within_arc(player_facing, to_enemy, deg_to_rad(85.0)): return
+	_interrupt_enemy_action(enemy)
+	# Face the threat: the parry only catches what comes at its front.
+	enemy["facing"] = (player_pos - Vector2(enemy["pos"])).normalized()
+	enemy["action"] = _action("parry_stance", 0.72, (player_pos - Vector2(enemy["pos"])).normalized())
+	enemy["action"]["parry_end"] = 0.42
+	# Spent whether or not it catches anything, so a feint really does draw it.
+	enemy["parry_cooldown"] = DUELLIST_PARRY_COOLDOWN
+
 func _enemy_evades_attack(enemy: Dictionary) -> bool:
 	if String(enemy.get("kind", "")) != "bandit": return false
 	var action: Dictionary = enemy.get("action", {})
@@ -4350,7 +4456,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	# not, and a combo reaches a break readily. High-impact blows still interrupt
 	# startup through _apply_enemy_hit_reaction, so a committed heavy is answered by
 	# a real blow or by leaving -- never by chip damage, and never by nothing.
-	if _enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS and action_kind in ["melee", "slam", "charge"]:
+	if (_enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
 		enemy["posture"] = 0.25
 		_add_effect("strain", Vector2(enemy["pos"]))
 		_set_message("The heavy enemy holds its grounded attack.")
@@ -4409,7 +4515,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# impacts may still interrupt startup, and accumulated posture damage remains
 	# the universal route to a full break. Once the weapon moves, even a strong
 	# ordinary hit must trade with or evade the grounded commitment.
-	if _enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS and action_kind in ["melee", "slam", "charge"]:
+	if (_enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
 		if active_started or not high_impact: return false
 	# A boar earns armour only after its pounce has accelerated. The crouch and
 	# early travel remain interruptible, and a posture-heavy technique can still
@@ -4441,7 +4547,10 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 		"ice_caster": 0.56,
 		"fire_caster": 0.56,
 		"blade": 0.48,
-		"captain": 0.48,
+		"duellist": 0.44,
+		"chanter": 0.58,
+		"javelineer": 0.54,
+		"earth_caster": 0.56,
 		"polearm": 0.38,
 		"shield": 0.38,
 		"brute": 0.24,
@@ -4531,6 +4640,12 @@ func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) 
 
 func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 	_refresh_active_enemy_cache()
+	# Which casters are still standing. Anything sustained by a Chanter that is no
+	# longer alive ends this tick -- collected here rather than through a death hook so
+	# it cannot be missed by whichever of the several damage paths landed the kill.
+	var living_chanters: Dictionary = {}
+	for other in enemies:
+		if String(other.get("kind", "")) == "chanter" and int(other.get("hp", 0)) > 0: living_chanters[int(other.get("id", -1))] = true
 	for index in _streamed_enemy_indices:
 		if index < 0 or index >= enemies.size(): continue
 		var enemy := enemies[index]
@@ -4553,6 +4668,13 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
 		_try_bandit_counter(enemy)
 		if float(enemy.get("patience_max", 0.0)) > 0.0: _update_shield_patience(enemy, enemy_dt)
+		if not Dictionary(enemy.get("chants", {})).is_empty():
+			if not living_chanters.has(int(enemy.get("chant_source_id", -1))):
+				enemy["chants"] = {}
+				_add_effect("strain", Vector2(enemy["pos"]))
+			else:
+				_tick_chants(enemy, enemy_dt)
+		_try_duellist_parry(enemy)
 		var neutral_cooldown := float(enemy.get("neutral_cooldown", 0.0))
 		if neutral_cooldown > 0.0: enemy["neutral_cooldown"] = maxf(0.0, neutral_cooldown - enemy_dt)
 		var shot_cooldown := float(enemy.get("shot_cooldown", 0.0))
@@ -4722,6 +4844,15 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "shoot" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_projectile(enemy)
+		elif kind == "hurl" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_spawn_javelin(enemy)
+		elif kind == "sunder" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_spawn_sundered_ground(Vector2(action.get("target", player_pos)), int(enemy["id"]), String(enemy.get("layer", current_layer)))
+		elif kind == "chant" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_resolve_chant(enemy, String(action.get("label", "ward")))
 		elif kind in ["hex", "ice_hex"] and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_hex(enemy, Vector2(action["target"]), "ice_hex" if kind == "ice_hex" else "hex")
@@ -4850,13 +4981,20 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# approach rather than falling out of branch order, so both actually occur
 		# instead of the thrust always winning by being tested at the greater distance.
 		var polearm_intent := _melee_intent(enemy, distance)
-		# NOTE: reach does not yet hold its distance, and a step-back cannot fix it.
-		# The thrust carries 229 units of authored forward travel from Milestone C's
-		# capture model, so committing at 218 always lands the spear in melee -- at
-		# speed 120 a retreat recovers about 53 units against that 229, and gating the
-		# attack behind a retreat merely stops it attacking. Making reach real means
-		# reworking the thrust's forward travel, which changes its capture curve.
-		if distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		# Reach holds now. The thrust used to carry 229 units of authored forward travel
+		# -- more than its own 218 reach -- so committing at 218 always ended with the
+		# spear in melee and the Polearm fought like a slow Blade. That travel was not a
+		# mistake: at a 0.90s wind-up against a 260/s walk the player clears 234 units,
+		# so without the lunge the attack could never land at all. Shortening the wind-up
+		# to 0.42 is what let the travel come down to 60.
+		#
+		# What it buys is a reach enemy that behaves like one. A free player walks out of
+		# the thrust and should; a player locked into a combo cannot, and wears it. So it
+		# throws the spear at LATENESS rather than at range -- the same read the Shield
+		# uses -- which is what "strike from behind other enemies" actually means.
+		var polearm_in_band := distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND
+		var polearm_can_convert := _player_commitment_remaining() >= float(polearm_intent["startup"]) * 0.60 or distance <= float(polearm_intent["distance"]) * 0.55
+		if polearm_in_band and polearm_can_convert and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _intent_melee_action(polearm_intent, direction)
 			_clear_melee_intent(enemy)
 		else:
@@ -4965,12 +5103,52 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _intent_melee_action(brute_intent, direction)
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(brute_intent["distance"])), 0.78)
-	elif enemy_kind == "captain":
-		var captain_intent := _melee_intent(enemy, distance)
-		if distance <= float(captain_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _intent_melee_action(captain_intent, direction)
+	elif enemy_kind == "chanter":
+		# Order of business for a support unit: get behind something, then work. It has
+		# no attack at all -- if you reach it, it is finished, which is the price it pays
+		# for being worth reaching.
+		var chant_allies := _chant_targets(enemy)
+		if not _chanter_is_screened(enemy, chant_allies) or distance < 240.0:
+			enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
+		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and not chant_allies.is_empty():
+			var chant := _choose_chant(chant_allies)
+			enemy["action"] = _action("chant", CHANT_STARTUP + 0.46, direction)
+			enemy["action"]["startup"] = CHANT_STARTUP
+			enemy["action"]["label"] = chant
+			enemy["shot_cooldown"] = CHANT_COOLDOWN
+		else:
+			enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
+	elif enemy_kind == "javelineer":
+		# Slower than an Archer and far easier to sidestep. That is not a weakness to be
+		# corrected: while the javelin is in the air one lane is unavailable, so what it
+		# actually spends is the player's choice of direction. Alone it is nearly
+		# harmless; behind a frontliner who already dictates where you can stand, it
+		# collects.
+		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 720.0 and distance >= 190.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _action("hurl", 1.46, direction)
+			enemy["action"]["startup"] = 0.86
+			enemy["shot_cooldown"] = 2.30 + 0.20 * float(int(enemy["id"]) % 3)
+		else:
+			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
+	elif enemy_kind == "earth_caster":
+		# It never aims at where you are. Ground you are standing on is ground you have
+		# already spent; the cut that matters is between you and where you want to be.
+		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _action("sunder", 1.72, direction)
+			enemy["action"]["startup"] = 0.92
+			enemy["action"]["target"] = _sunder_target(enemy)
+			enemy["shot_cooldown"] = 4.20
+		else:
+			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
+	elif enemy_kind == "duellist":
+		# It reads a swing the way the Bandit does, but it answers by standing still and
+		# taking your turn rather than by relocating. The parry itself lives in
+		# _try_duellist_parry; this branch is only its ordinary footwork and attacks.
+		var duellist_intent := _melee_intent(enemy, distance)
+		if distance <= float(duellist_intent["distance"]) + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _intent_melee_action(duellist_intent, direction)
 			_clear_melee_intent(enemy)
-		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(captain_intent["distance"])), 0.44)
+		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(duellist_intent["distance"])), 0.40)
 	elif enemy_kind == "ice_caster":
 		if distance <= 310.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("ice_cone", 2.42, direction)
@@ -4993,9 +5171,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
 	elif enemy_kind == "archer":
 		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos) and _archer_has_clear_lane(enemy):
-			enemy["action"] = _action("shoot", 1.62, direction)
-			enemy["action"]["startup"] = 0.68
-			enemy["shot_cooldown"] = 1.05 + 0.22 * float(int(enemy["id"]) % 3)
+			# ~2.7s between shots was not pressure, it was weather. The 0.2.30 survey
+			# scored every room carrying ranged pressure at 3.33/5 against 1.71 for
+			# melee-only rooms, and the Archer was the only ranged enemy in all of them.
+			# The thing carrying the good rooms should actually push.
+			enemy["action"] = _action("shoot", 1.24, direction)
+			enemy["action"]["startup"] = 0.46
+			enemy["shot_cooldown"] = 0.70 + 0.15 * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "knight":
@@ -5368,8 +5550,12 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "hexer": 155.0, "ice_caster": 150.0, "fire_caster": 160.0, "captain": 235.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
-	if kind != "captain" and _captain_near(enemy): speed *= 1.14
+	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "hexer": 155.0, "ice_caster": 150.0, "fire_caster": 160.0, "chanter": 150.0, "javelineer": 170.0, "earth_caster": 140.0, "duellist": 265.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
+	# The Captain's invisible x1.14 aura is gone. What replaces it is the Chanter's
+	# Quickening -- same idea, but you can see which enemies have it and you can end it
+	# by killing the caster.
+	if _enemy_has_chant(enemy, "haste"): speed *= CHANT_SPEED_SCALE
+	speed *= _terrain_speed_scale(Vector2(enemy["pos"]))
 	return speed
 
 func _archer_support_target(enemy: Dictionary, direction_to_player: Vector2, distance: float) -> Vector2:
@@ -5537,10 +5723,91 @@ func _pursuit_target(enemy: Dictionary) -> Vector2:
 		target += route.rotated(PI * 0.5) * float(lane_pattern[lane_index]) * lane_spacing
 	return target
 
-func _captain_near(subject: Dictionary) -> bool:
-	if _enemy_spatial_cache_dirty: _build_enemy_spatial_index()
-	for enemy in _active_captains:
-		if String(enemy.get("layer", current_layer)) == String(subject.get("layer", current_layer)) and String(enemy["kind"]) == "captain" and int(enemy["hp"]) > 0 and Vector2(enemy["pos"]).distance_to(Vector2(subject["pos"])) <= 720.0: return true
+# --- The Chanter's spellbook ----------------------------------------------------
+#
+# Three chants, one at a time, each with a colour and a distinct silhouette:
+#   haste  -- blue,   a ring: moves faster
+#   bulwark-- yellow, a chevron: posture and telegraph armour
+#   ward   -- red,    a diamond: incoming damage reduced
+#
+# You know the Chanter buffs. You do not know which buff is coming, which is the same
+# information shape as an enemy with two attacks. What you can always see is which
+# allies are currently carrying what, because the effect is drawn on THEM.
+
+func _enemy_has_chant(enemy: Dictionary, chant: String) -> bool:
+	return float(Dictionary(enemy.get("chants", {})).get(chant, 0.0)) > 0.0
+
+func _chant_remaining(enemy: Dictionary, chant: String) -> float:
+	return float(Dictionary(enemy.get("chants", {})).get(chant, 0.0))
+
+func _tick_chants(enemy: Dictionary, dt: float) -> void:
+	var chants: Dictionary = enemy.get("chants", {})
+	if chants.is_empty(): return
+	var survivors: Dictionary = {}
+	for chant in chants.keys():
+		var remaining := float(chants[chant]) - dt
+		if remaining > 0.0: survivors[chant] = remaining
+	enemy["chants"] = survivors
+
+# Every chant this caster is sustaining dies with it. Without this, killing the
+# Chanter first buys nothing you can see, and "kill it first" stops being a decision.
+func _end_chants_from(source_id: int) -> void:
+	for enemy in enemies:
+		var chants: Dictionary = enemy.get("chants", {})
+		if chants.is_empty(): continue
+		if int(enemy.get("chant_source_id", -1)) != source_id: continue
+		enemy["chants"] = {}
+		_add_effect("strain", Vector2(enemy["pos"]))
+
+# Allies close enough to be worth chanting over, excluding the caster itself.
+func _chant_targets(caster: Dictionary) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for other in enemies:
+		if int(other.get("id", -1)) == int(caster.get("id", -2)): continue
+		if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
+		if String(other.get("kind", "")) == "chanter": continue
+		if Vector2(caster["pos"]).distance_to(Vector2(other["pos"])) > CHANT_RADIUS: continue
+		result.append(other)
+	return result
+
+# Which chant this room wants. Not random: it reads what its allies are and picks the
+# one that suits them, so a Chanter behind a Brute hardens it while a Chanter behind
+# Hounds speeds them up. You still cannot know which is coming until it lands, because
+# you cannot see which allies it has counted.
+func _choose_chant(targets: Array[Dictionary]) -> String:
+	var heavy := 0
+	var fast := 0
+	for enemy in targets:
+		if _enemy_mass(String(enemy.get("kind", ""))) >= HEAVY_TELEGRAPH_MASS: heavy += 1
+		elif _enemy_move_speed(enemy) >= 250.0: fast += 1
+	if heavy > 0 and heavy >= fast: return "bulwark"
+	if fast > 0: return "haste"
+	return "ward"
+
+# Nothing of its own left between it and the player: put an ally there. A support unit
+# caught in the open should be trying to get behind something, not trading.
+func _chanter_retreat_target(caster: Dictionary, allies: Array[Dictionary]) -> Vector2:
+	var away := (Vector2(caster["pos"]) - player_pos)
+	if away.length_squared() < 1.0: away = -player_facing
+	var best := Vector2.INF
+	var best_score := INF
+	for ally in allies:
+		var ally_pos := Vector2(ally["pos"])
+		# Stand a body-length behind the ally, on the far side from the player.
+		var behind := ally_pos + (ally_pos - player_pos).normalized() * (float(ally.get("radius", ENEMY_RADIUS)) + 74.0)
+		var score := Vector2(caster["pos"]).distance_to(behind)
+		if score < best_score:
+			best_score = score
+			best = behind
+	if best.is_finite(): return best
+	# Nobody to hide behind. Put distance between itself and the player instead.
+	return Vector2(caster["pos"]) + away.normalized() * 340.0
+
+# Is any living ally actually between this caster and the player? Measured against the
+# segment, so an ally off to one side does not count as cover.
+func _chanter_is_screened(caster: Dictionary, allies: Array[Dictionary]) -> bool:
+	for ally in allies:
+		if _segment_distance_to_point(player_pos, Vector2(caster["pos"]), Vector2(ally["pos"])) <= float(ally.get("radius", ENEMY_RADIUS)) + 34.0: return true
 	return false
 
 func _charge_action(duration: float, startup: float, active_end: float, speed: float, damage: int, direction: Vector2) -> Dictionary:
@@ -5607,6 +5874,73 @@ func _melee_action(duration: float, startup: float, active_end: float, reach: fl
 	result["damage"] = damage
 	result["technique_id"] = technique_id
 	return result
+
+# Thrown where the player is GOING. Running in a straight line is what beats an
+# Archer, so the second ranged enemy has to punish exactly that -- otherwise both of
+# them ask the same question and the room learns nothing new.
+func _spawn_javelin(enemy: Dictionary) -> void:
+	var origin := Vector2(enemy["pos"])
+	var aim := player_pos
+	if String(player_action.get("kind", "idle")) == "move":
+		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
+		var flight := origin.distance_to(player_pos) / JAVELIN_SPEED
+		aim += motion * current_move_speed() * flight
+	var direction := (aim - origin).normalized()
+	if direction.length_squared() < 0.001: direction = Vector2(enemy["facing"]).normalized()
+	projectiles.append({
+		"pos": origin + direction * 44.0,
+		"vel": direction * JAVELIN_SPEED,
+		"radius": JAVELIN_RADIUS,
+		"damage": 3,
+		"kind": "javelin",
+		"launch_direction": direction,
+		"turn_rate": 0.0,
+		"max_track_angle": 0.0,
+		"source_id": int(enemy["id"]),
+		"layer": String(enemy.get("layer", current_layer)),
+	})
+	_set_message("A javelin is away.")
+
+# The cut goes between the player and where the player is trying to reach, not under
+# their feet.
+func _sunder_target(enemy: Dictionary) -> Vector2:
+	var target := player_pos
+	if String(player_action.get("kind", "idle")) == "move":
+		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
+		target += motion * 190.0
+	else:
+		# Standing still: cut the line back toward the caster's own allies, which is the
+		# ground the player would have to cross to reach anything.
+		var inward := (Vector2(enemy["pos"]) - player_pos)
+		if inward.length_squared() > 1.0: target += inward.normalized() * 150.0
+	return target
+
+func _spawn_sundered_ground(position: Vector2, source_id: int, layer: String) -> void:
+	hazards.append({
+		"kind": "sundered_ground",
+		"pos": position,
+		"radius": SUNDERED_RADIUS,
+		"elapsed": 0.0,
+		"trigger_at": 0.55,
+		"duration": SUNDERED_DURATION,
+		"damage": 0,
+		"slow": SUNDERED_SLOW,
+		"source_id": source_id,
+		"triggered": false,
+		"layer": layer,
+	})
+	_set_message("The ground splits and buckles.")
+
+func _resolve_chant(caster: Dictionary, chant: String) -> void:
+	var targets := _chant_targets(caster)
+	if targets.is_empty(): return
+	for enemy in targets:
+		var chants: Dictionary = enemy.get("chants", {})
+		chants[chant] = CHANT_DURATION
+		enemy["chants"] = chants
+		enemy["chant_source_id"] = int(caster["id"])
+		_add_effect("posture_break" if chant == "bulwark" else "strain", Vector2(enemy["pos"]))
+	_set_message({"haste": "A quickening runs through them.", "bulwark": "Their stances harden.", "ward": "A ward settles over them."}.get(chant, "A chant rises."))
 
 func _spawn_projectile(enemy: Dictionary) -> void:
 	var direction: Vector2 = Vector2(enemy["facing"]).normalized()
@@ -5760,6 +6094,13 @@ func _update_hazards(dt: float) -> void:
 				hazard["triggered"] = true
 				_add_effect("ice", player_pos)
 				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "ice cone", origin - player_pos)
+		elif kind == "sundered_ground":
+			# It never resolves a hit. The cost of this ground is the time it takes to
+			# cross, which _terrain_speed_scale collects, and in frozen time that is the
+			# same as handing every other enemy in the room a free move.
+			if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
+				hazard["triggered"] = true
+				_add_effect("strain", Vector2(hazard["pos"]))
 		elif not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
 			hazard["triggered"] = true
 			_add_effect("fire" if kind == "fire_circle" else "ice" if kind == "ice_hex" else "hex", Vector2(hazard["pos"]))
@@ -5841,6 +6182,10 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	_set_message("The %s is struck by the %s." % [String(enemy["kind"]), source_label])
 
 func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF) -> void:
+	# Zero authored damage is not an attack. MIN_FELT_DAMAGE exists to stop armour
+	# reducing a real blow to nothing; without this guard it would instead turn every
+	# damageless effect -- sundered ground, the Ox's disengage -- into a 5-point hit.
+	if damage <= 0: return
 	var impact := player_pos if not contact_position.is_finite() else contact_position
 	var posture_damage := float(damage) * 1.5
 	var scaled_damage := int(DAMAGE_HEALTH_COST.get(damage, damage * 5))
@@ -6112,7 +6457,7 @@ func _remove_dead_enemies() -> void:
 			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
 
 func _xp_for_enemy(kind: String) -> int:
-	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "ice_caster": 4, "fire_caster": 4, "brute": 5, "knight": 7, "captain": 5, "warden": 12, "werewolf": 18}.get(kind, 2))
+	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "ice_caster": 4, "fire_caster": 4, "brute": 5, "knight": 7, "chanter": 6, "javelineer": 3, "earth_caster": 5, "duellist": 6, "warden": 12, "werewolf": 18}.get(kind, 2))
 
 func _cleared_area_count() -> int:
 	var occupied: Dictionary = {}

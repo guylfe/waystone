@@ -2145,7 +2145,15 @@ func _draw_projectile(projectile: Dictionary) -> void:
 		draw_line(ground - shadow_direction * 0.55, ground + shadow_direction * 0.55, Color(0.01, 0.02, 0.025, 0.58), maxf(2.0, radius * 0.62))
 		draw_circle(ground, maxf(2.0, radius * 0.38), Color(0.01, 0.02, 0.025, 0.68))
 		draw_line(ground, center, Color(0.62, 0.78, 0.83, 0.18), maxf(1.0, world_scale))
-	if kind == "firebolt":
+	if kind == "javelin":
+		# Long and slow and obvious. The lane it occupies is the threat, so the shaft is
+		# drawn at its real length rather than as a dart.
+		var shaft := maxf(26.0, world_scale * 46.0)
+		draw_line(center - direction * shaft * 0.62, center + direction * shaft * 0.38, Color("cbb27a"), maxf(3.0, world_scale * 7.0))
+		var jav_tip := center + direction * shaft * 0.38
+		var jav_side := direction.rotated(PI * 0.5)
+		draw_colored_polygon(PackedVector2Array([jav_tip + direction * shaft * 0.16, jav_tip + jav_side * shaft * 0.10, jav_tip - jav_side * shaft * 0.10]), Color("f3e3b4"))
+	elif kind == "firebolt":
 		draw_line(center - direction * 22.0 * world_scale, center, Color(0.94, 0.31, 0.10, 0.48), maxf(3.0, world_scale * 9.0))
 		draw_circle(center, maxf(5.0, radius * 0.72), Color("f06b24"))
 		draw_circle(center - direction * 2.0, maxf(2.0, world_scale * 4.0), Color("ffd36a"))
@@ -2154,6 +2162,29 @@ func _draw_projectile(projectile: Dictionary) -> void:
 		var tip := center + direction * 10.0
 		var side := direction.rotated(PI * 0.5)
 		draw_colored_polygon(PackedVector2Array([tip, center + direction * 4.0 + side * 3.5, center + direction * 4.0 - side * 3.5]), Color("fff1b8"))
+
+# A chant is drawn on the enemy CARRYING it, not on the caster, because what the
+# player needs to read is which bodies in front of them have changed.
+#
+# Colour and shape both carry the meaning, so the colour is never load-bearing:
+#   haste   blue   ring      -- moves faster
+#   bulwark yellow chevron   -- posture and telegraph armour
+#   ward    red    diamond   -- incoming damage reduced
+func _draw_chant_marks(pos: Vector2, radius: float, enemy: Dictionary) -> void:
+	var chants: Dictionary = enemy.get("chants", {})
+	if chants.is_empty(): return
+	var slot := 0
+	for chant in ["haste", "bulwark", "ward"]:
+		if float(chants.get(chant, 0.0)) <= 0.0: continue
+		var mark := pos + Vector2(0.0, -radius * 1.62) + Vector2(float(slot) * radius * 0.52 - radius * 0.26, 0.0)
+		var size := maxf(3.0, radius * 0.22)
+		if chant == "haste":
+			draw_arc(mark, size, 0.0, TAU, 14, Color("5fb8f0"), maxf(2.0, size * 0.42))
+		elif chant == "bulwark":
+			draw_polyline(PackedVector2Array([mark + Vector2(-size, size * 0.7), mark + Vector2(0.0, -size * 0.8), mark + Vector2(size, size * 0.7)]), Color("f2cf4a"), maxf(2.0, size * 0.42))
+		else:
+			draw_polyline(_closed_points(PackedVector2Array([mark + Vector2(0.0, -size), mark + Vector2(size, 0.0), mark + Vector2(0.0, size), mark + Vector2(-size, 0.0)])), Color("e06868"), maxf(2.0, size * 0.42))
+		slot += 1
 
 func _draw_isometric_focus_overlay(visible: Dictionary) -> void:
 	if view_mode != "isometric": return
@@ -2747,12 +2778,12 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "captain": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
+	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("a08055"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
 	if reeling: _draw_reaction_motion(pos, facing, radius, action, color)
-	if kind == "captain": draw_arc(pos, radius * 1.5, 0.0, TAU, 20, Color(color, 0.45), maxf(2.0, radius * 0.12))
+	_draw_chant_marks(pos, radius, enemy)
 	# A Bandit that still has its slip is dangerous to swing at; one that has spent it
 	# is free. That distinction is the whole loop, so it cannot live only in the
 	# simulation -- an enemy which reads your commitment without a tell is unfair
@@ -2873,8 +2904,23 @@ func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: f
 		var spell_color := Color("9be7ff") if kind == "ice_caster" else Color("ff9b4f")
 		draw_line(pos + side * radius * 0.65, pos + side * radius * 0.65 + facing * radius * 1.45, spell_color.darkened(0.22), maxf(2.0, radius * 0.12))
 		draw_circle(pos + side * radius * 0.65 + facing * radius * 1.45, radius * 0.22, spell_color)
-	elif kind == "captain":
-		draw_polyline(PackedVector2Array([pos - side * radius * 0.55 - facing * radius * 0.5, pos - side * radius * 0.55 + facing * radius * 0.2, pos - side * radius * 0.1 - facing * radius * 0.05]), Color("ffe277"), 2.0)
+	elif kind == "chanter":
+		# An open book, held. Nothing about the Chanter is a weapon.
+		var spine := pos + facing * radius * 0.55
+		draw_polyline(PackedVector2Array([spine - side * radius * 0.62 - facing * radius * 0.10, spine - side * radius * 0.10 + facing * radius * 0.12, spine + side * radius * 0.42 - facing * radius * 0.10]), Color("efe0ff"), maxf(2.0, radius * 0.10))
+		draw_line(spine - side * radius * 0.10 + facing * radius * 0.12, spine - side * radius * 0.10 - facing * radius * 0.30, Color("efe0ff"), maxf(1.5, radius * 0.07))
+	elif kind == "javelineer":
+		# Held overhand, angled back to throw.
+		var shaft := pos + facing * radius * 0.35
+		draw_line(shaft - side * radius * 0.75 - facing * radius * 0.55, shaft + side * radius * 0.55 + facing * radius * 0.70, Color("f0dfae"), maxf(2.0, radius * 0.11))
+	elif kind == "earth_caster":
+		# A low broken line: the ground, split.
+		var base := pos + facing * radius * 0.72
+		draw_polyline(PackedVector2Array([base - side * radius * 0.78, base - side * radius * 0.24 - facing * radius * 0.26, base + side * radius * 0.18 + facing * radius * 0.10, base + side * radius * 0.74 - facing * radius * 0.20]), Color("d8bb8a"), maxf(2.0, radius * 0.11))
+	elif kind == "duellist":
+		# Narrow blade, presented forward.
+		draw_line(pos + facing * radius * 0.30, pos + facing * radius * 1.30, Color("ffe9a8"), maxf(2.0, radius * 0.08))
+		draw_line(pos + facing * radius * 0.30 - side * radius * 0.26, pos + facing * radius * 0.30 + side * radius * 0.26, Color("ffe9a8"), maxf(1.5, radius * 0.07))
 	elif kind == "warden":
 		draw_polyline(PackedVector2Array([pos - side * radius * 0.55 - facing * radius * 0.45, pos - side * radius * 0.25 - facing * radius * 0.85, pos - facing * radius * 0.5, pos + side * radius * 0.25 - facing * radius * 0.85, pos + side * radius * 0.55 - facing * radius * 0.45]), Color("f1c25e"), maxf(2.0, radius * 0.09))
 	elif kind == "werewolf":
@@ -2941,7 +2987,11 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 		draw_polyline(_closed_points(head_shape), color.lightened(0.2), maxf(2.0, width * 0.5))
 	elif technique in ["heavy_chop", "heavy_cleave"]:
 		draw_line(weapon_end - screen_direction * maxf(12.0, world_scale * 20.0), weapon_end, color.lightened(0.16), width * 1.8)
-	if active: draw_circle(weapon_end, maxf(2.0, width * 0.55), Color(color, 0.75))
+	# No tip dot on a thrust. On a sword the weapon end sits near the body and the dot
+	# reads as impact; on a 218-unit spear it is a disc floating in open space with
+	# nothing to attach to, which is the "weird circle" the 0.2.32 Polearm showed.
+	if active and String(sample.get("shape", "")) != "segment":
+		draw_circle(weapon_end, maxf(2.0, width * 0.55), Color(color, 0.75))
 
 func _draw_attack_sector(sample: Dictionary, action: Dictionary, player_weapon: bool) -> void:
 	var effect_alpha := float(sample.get("effect_alpha", 0.0))
@@ -3193,6 +3243,18 @@ func _draw_hazard(hazard: Dictionary) -> void:
 			draw_polyline(_closed_points(cone), Color("a8e9ff"), maxf(2.0, world_scale * 5.0))
 		var terminus := _project_world_sector(world_center, float(hazard["radius"]), direction.angle() - half_angle, half_angle * 2.0, 18)
 		draw_polyline(_closed_points(terminus), Color(0.48, 0.78, 0.93, 0.20), maxf(1.0, world_scale * 2.0))
+		return
+	if kind == "sundered_ground":
+		# Drawn as broken ground rather than as a threat zone: it deals no damage, and
+		# painting it like fire would teach the player to avoid it for the wrong reason.
+		var broken := _world_ring(world_center, float(hazard["radius"]), 26)
+		draw_colored_polygon(broken, Color(0.42, 0.31, 0.19, 0.16))
+		draw_polyline(_closed_points(broken), Color(0.78, 0.62, 0.40, 0.52), maxf(1.5, world_scale * 3.0))
+		for spoke in range(7):
+			var angle := TAU * float(spoke) / 7.0 + 0.4
+			var inner := _world_to_screen(world_center + Vector2.RIGHT.rotated(angle) * float(hazard["radius"]) * 0.22)
+			var outer := _world_to_screen(world_center + Vector2.RIGHT.rotated(angle) * float(hazard["radius"]) * 0.92)
+			draw_line(inner, outer, Color(0.72, 0.56, 0.34, 0.42), maxf(1.5, world_scale * 2.4))
 		return
 	var fill_color := Color(0.55, 0.25, 0.70, 0.08 + progress * 0.12)
 	var edge_color := Color("b57bea")
@@ -4294,13 +4356,13 @@ func _draw_inspection() -> void:
 			break
 	if enemy.is_empty(): return
 	var kind := String(enemy["kind"])
-	var names := {"ox": "Ox", "boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "knight": "Two-Handed Knight", "hexer": "Hexer", "ice_caster": "Ice Caster", "fire_caster": "Fire Caster", "captain": "Captain", "warden": "Warden", "werewolf": "Werewolf"}
-	var speeds := {"ox": "Fast", "boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "werewolf": "Fast", "captain": "Fast", "blade": "Medium", "archer": "Medium", "hexer": "Medium", "ice_caster": "Medium", "fire_caster": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "knight": "Very slow", "warden": "Slow"}
-	var reaches := {"ox": "Long", "boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "werewolf": "Long", "blade": "Medium", "shield": "Medium", "captain": "Medium", "brute": "Medium", "archer": "Long", "hexer": "Long", "ice_caster": "Long", "fire_caster": "Long", "polearm": "Long", "knight": "Long", "warden": "Long"}
-	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "hexer": "Delayed danger zones", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "captain": "Strengthens nearby movement", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
+	var names := {"ox": "Ox", "boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "knight": "Two-Handed Knight", "hexer": "Hexer", "ice_caster": "Ice Caster", "fire_caster": "Fire Caster", "chanter": "Chanter", "javelineer": "Javelineer", "earth_caster": "Earth Caster", "duellist": "Duellist", "warden": "Warden", "werewolf": "Werewolf"}
+	var speeds := {"ox": "Fast", "boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "werewolf": "Fast", "duellist": "Fast", "javelineer": "Medium", "chanter": "Medium", "earth_caster": "Slow", "blade": "Medium", "archer": "Medium", "hexer": "Medium", "ice_caster": "Medium", "fire_caster": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "knight": "Very slow", "warden": "Slow"}
+	var reaches := {"ox": "Long", "boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "werewolf": "Long", "blade": "Medium", "shield": "Medium", "duellist": "Medium", "javelineer": "Long", "chanter": "None", "earth_caster": "Long", "brute": "Medium", "archer": "Long", "hexer": "Long", "ice_caster": "Long", "fire_caster": "Long", "polearm": "Long", "knight": "Long", "warden": "Long"}
+	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "hexer": "Delayed danger zones", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "chanter": "Buffs allies; no attack of its own; hides behind them", "javelineer": "Slow throw that leads your movement; denies a lane", "earth_caster": "Sundered ground; costs time, not health", "duellist": "Parries a swing it reads; two attacks, two different openings", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
-	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "captain": "thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}
+	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "duellist": "thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}
 	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", signature_techniques.get(kind, "")))
 	var technique_text := AttackGeometryScript.label(technique_id) if technique_id != "" else "Ranged"
 	var posture_ratio := float(enemy.get("posture", 1.0)) / maxf(0.01, float(enemy.get("posture_max", 1.0)))

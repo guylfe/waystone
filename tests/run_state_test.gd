@@ -303,20 +303,36 @@ func test_enemy_freezes_mid_action() -> void:
 	assert(float(action["duration"]) >= 1.4)
 
 func test_polearm_reach_and_timing() -> void:
+	# Reach, not bulk, and lateness, not range.
+	#
+	# This used to assert a body bigger than a standard enemy, a 0.9s wind-up and a
+	# 2.2s attack -- the numbers of a lunge that carried 229 units, more than its own
+	# 218 reach, so every thrust ended in melee and the Polearm fought like a slow
+	# Blade. That travel was not an error: at 0.9s against a 260/s walk the player
+	# clears 234 units, so without it the thrust could never land at all.
+	#
+	# What replaced it: a fast poke that barely moves, thrown only when the player is
+	# committed to something else. A free player walks out of it and should.
 	var state: RunState = RunStateScript.new()
-	state.enemies = [state._make_enemy("polearm", state.player_pos + Vector2(0.0, -205.0), 12)]
-	assert(state.request_wait(0.20))
-	var enemy: Dictionary = state.enemies[0]
-	var action: Dictionary = enemy["action"]
-	# Reach, not bulk. This asserted a body BIGGER than a standard enemy; at radius 42
-	# and 60 health the Polearm had a Boar's frame while acting as a support unit,
-	# which does not read -- an enemy that size needs a boss's move set to earn it.
-	# What must hold is the spear's reach and timing, which the rest of this covers.
+	var enemy := state._make_enemy("polearm", state.player_pos + Vector2(0.0, -205.0), 12)
+	state.enemies = [enemy]
 	assert(is_equal_approx(float(enemy["radius"]), state.ENEMY_RADIUS))
+	# Free player, inside spear range: it must NOT throw the spear away on someone who
+	# can simply step back.
+	state.player_action = state._idle_action()
+	state._choose_enemy_action(enemy)
+	assert(String(Dictionary(enemy["action"])["kind"]) != "melee")
+	# Committed player: now it collects.
+	state.player_action = state._action("wait", 2.0, Vector2.UP)
+	state._choose_enemy_action(enemy)
+	var action: Dictionary = enemy["action"]
 	assert(String(action["kind"]) == "melee")
+	assert(String(action["technique_id"]) == "thrust")
 	assert(float(action["reach"]) >= 210.0)
-	assert(float(action["startup"]) >= 0.9)
-	assert(float(action["duration"]) >= 2.2)
+	assert(float(action["startup"]) <= 0.50)
+	# The invariant that makes it a reach enemy at all: it must never carry itself
+	# further forward than it can reach.
+	assert(float(action["advance_distance"]) < float(action["reach"]) * 0.5)
 	enemy["pos"] = state.player_pos + Vector2(0.0, -95.0)
 	state._choose_enemy_action(enemy)
 	action = enemy["action"]
@@ -444,7 +460,7 @@ func test_shared_actor_and_weapon_foundation() -> void:
 		var frame: Dictionary = CombatCatalogScript.weapon_frame(frame_id)
 		assert(not Array(frame["art_ids"]).is_empty())
 		for art_id in Array(frame["art_ids"]): assert(not CombatCatalogScript.weapon_art(String(art_id)).is_empty())
-	var expected_frames := {"boar": "natural", "hound": "natural", "bandit": "twin_knives", "archer": "bow", "ice_caster": "staff", "fire_caster": "staff", "knight": "zweihander", "werewolf": "natural", "brute": "impact", "captain": "sword", "polearm": "spear", "blade": "sword", "knife": "twin_knives", "warden": "zweihander"}
+	var expected_frames := {"boar": "natural", "hound": "natural", "bandit": "twin_knives", "archer": "bow", "ice_caster": "staff", "fire_caster": "staff", "knight": "zweihander", "werewolf": "natural", "brute": "impact", "duellist": "sword", "chanter": "staff", "javelineer": "spear", "earth_caster": "staff", "polearm": "spear", "blade": "sword", "knife": "twin_knives", "warden": "zweihander"}
 	for enemy_kind in expected_frames:
 		var enemy := state._make_enemy(String(enemy_kind), state.player_pos, state._enemy_base_hp(String(enemy_kind)))
 		assert(String(enemy["weapon_frame"]) == String(expected_frames[enemy_kind]))
@@ -503,7 +519,11 @@ func test_signature_attack_roster() -> void:
 	# What must hold is that whatever it commits comes from its own authored plan.
 	# Each enemy is placed at its plan's shortest strike distance, where every
 	# option is inside its commit band, so a commitment always happens.
-	for kind in ["bandit", "knife", "blade", "polearm", "brute", "captain", "knight", "shield"]:
+	# A committed player, because several kinds now decide on lateness rather than on
+	# range -- the Shield, and the Polearm. Wait is a commitment but not an attack, so
+	# it draws them without also triggering the Bandit slip or the Duellist parry.
+	state.player_action = state._action("wait", 3.0, Vector2.UP)
+	for kind in ["bandit", "knife", "blade", "polearm", "brute", "duellist", "knight", "shield"]:
 		var plan: Array = CombatCatalogScript.melee_attack_plan(kind)
 		assert(not plan.is_empty())
 		var techniques: Array[String] = []
@@ -1466,15 +1486,28 @@ func test_new_enemy_roles() -> void:
 	var close_polearm := state._make_enemy("polearm", state.player_pos + Vector2.UP * 94.0, 12)
 	state._choose_enemy_action(close_polearm)
 	assert(String(Dictionary(close_polearm["action"])["technique_id"]) == "reverse_cut")
-	var close_captain := state._make_enemy("captain", state.player_pos + Vector2.UP * 90.0, 12)
-	state._choose_enemy_action(close_captain)
-	assert(String(Dictionary(close_captain["action"])["technique_id"]) == "quick_cut")
-	var captain := state._make_enemy("captain", Vector2(120, 120), 12)
+	# The Duellist replaces the Captain in the flanker slot. At close range it takes the
+	# swing rather than the poke, because the swing's opening is on its wind-up and the
+	# poke's is on its recovery -- two attacks that cannot be answered the same way.
+	var close_duellist := state._make_enemy("duellist", state.player_pos + Vector2.UP * 96.0, 12)
+	state._choose_enemy_action(close_duellist)
+	assert(String(Dictionary(close_duellist["action"])["technique_id"]) in ["diagonal_cut", "thrust"])
+	# The Captain's invisible x1.14 aura is gone. A Chanter's Quickening replaces it and
+	# has to be applied explicitly, so a Blade standing next to one is NOT hastened until
+	# the chant actually lands.
 	state.player_pos = Vector2(200, 200)
-	state.enemies = [captain]
-	state._invalidate_active_enemy_cache()
+	var chanter := state._make_enemy("chanter", Vector2(120, 120), 12)
 	var blade := state._make_enemy("blade", Vector2(300, 300), 7)
-	assert(state._enemy_move_speed(blade) > 190.0)
+	state.enemies = [chanter, blade]
+	state._invalidate_active_enemy_cache()
+	var unhasted := state._enemy_move_speed(blade)
+	state._resolve_chant(chanter, "haste")
+	assert(state._enemy_has_chant(blade, "haste"))
+	assert(state._enemy_move_speed(blade) > unhasted)
+	# And it ends with its caster rather than outliving them.
+	chanter["hp"] = 0
+	state._update_enemies(state.SIM_DT)
+	assert(not state._enemy_has_chant(blade, "haste"))
 
 func test_back_half_expedition_roles() -> void:
 	var state: RunState = RunStateScript.new()

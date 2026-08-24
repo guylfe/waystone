@@ -277,7 +277,30 @@ const ARCHETYPES := {
 	"fire_caster": {"role": "area_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"fire": 2}, "vision_range": 620.0}},
 	"brute": {"role": "frontline", "weapon_frame": "impact", "weapon_arts": ["impact_ground_smash"], "equipped_weapon_art": "impact_ground_smash", "defense_id": "", "attributes": {"health": 9, "speed": 1, "stealth": 0, "awareness": 3, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.65}},
 	"knight": {"role": "frontline", "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep", "zweihander_half_sword"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 1, "stealth": 0, "awareness": 5, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 2, "mass": 1.7}},
-	"captain": {"role": "flanker", "weapon_frame": "sword", "weapon_arts": ["sword_thrust"], "equipped_weapon_art": "sword_thrust", "defense_id": "", "attributes": {"health": 7, "speed": 5, "stealth": 0, "awareness": 7, "resolve": 6, "intelligence": 0, "faith": 0}, "properties": {}},
+	# The Captain is gone. Its identity was "strengthens nearby movement", which was
+	# a x1.14 locomotion buff inside 720 units -- invisible on the enemies it touched,
+	# imperceptible in size, and effectively always on for a whole room. Strip that
+	# and what remained was a fast enemy leading with a 142-reach thrust, which is why
+	# the 0.2.30 tester called it "the spear enemy" in a room with no Polearm in it.
+	#
+	# The Chanter is what that role was supposed to be: it buffs explicitly, visibly,
+	# and one effect at a time, so killing it first is a real decision with a price.
+	"chanter": {"role": "support", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 4, "intelligence": 8, "faith": 6}, "properties": {"vision_range": 620.0}},
+	# Lane denial, not damage. A javelin is easy to sidestep and that is the point --
+	# while it is in the air one direction is unavailable, so it is weak alone and
+	# strong in a room where something else has already spent your options. It throws
+	# where the player is GOING, which punishes the straight-line running that beats
+	# an Archer.
+	"javelineer": {"role": "ranged_pressure", "weapon_frame": "spear", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 3, "stealth": 0, "awareness": 6, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}},
+	# The third currency. Fire and Ice deny ground by threatening damage; sundered
+	# earth costs you TIME, which in frozen time is the same as giving every other
+	# enemy in the room a free move.
+	"earth_caster": {"role": "movement_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 5, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0}},
+	# The Bandit slips AROUND you and relocates; the Duellist holds its ground and
+	# takes your turn away. Its two attacks put their openings in different places --
+	# the poke is safe on the wind-up and exposed on the recovery, the swing is the
+	# reverse -- so it cannot be solved by repeating one answer.
+	"duellist": {"role": "flanker", "weapon_frame": "sword", "weapon_arts": ["sword_thrust"], "equipped_weapon_art": "sword_thrust", "defense_id": "", "attributes": {"health": 6, "speed": 5, "stealth": 0, "awareness": 7, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}},
 	"warden": {"role": "boss", "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.6}},
 	"werewolf": {"role": "boss", "weapon_frame": "natural", "weapon_arts": ["natural_pounce", "natural_flurry"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 10, "speed": 7, "stealth": 4, "awareness": 8, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.45}},
 }
@@ -332,12 +355,16 @@ const MELEE_ATTACK_PLANS := {
 		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
 	],
 	"polearm": [
-		{"technique": "thrust", "distance": 218.0, "weight": 1.7, "duration": 2.25, "startup": 0.90, "active_end": 1.35, "reach": 218.0, "f_rad": 0.35, "advance_distance": 229.0, "advance_end": 1.35, "damage": 3},
+		{"technique": "thrust", "distance": 205.0, "weight": 1.7, "duration": 1.35, "startup": 0.42, "active_end": 0.62, "reach": 218.0, "f_rad": 0.85, "advance_distance": 60.0, "advance_end": 0.62, "damage": 3},
 		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 2},
 	],
-	"captain": [
-		{"technique": "thrust", "distance": 172.0, "weight": 1.0, "duration": 1.26, "startup": 0.44, "active_end": 0.72, "reach": 142.0, "f_rad": 0.40, "advance_distance": 131.0, "advance_end": 0.72, "damage": 2},
-		{"technique": "quick_cut", "distance": 102.0, "weight": 1.0, "duration": 1.02, "startup": 0.30, "active_end": 0.55, "reach": 106.0, "f_rad": 0.40, "advance_distance": 13.0, "advance_end": 0.18, "damage": 2},
+	# Two attacks whose openings sit in different places, so no single habit answers
+	# both. The poke commits fast and is punished afterwards; the swing announces
+	# itself and is punished before. Guess wrong on which one is coming and the answer
+	# you brought is the one that loses.
+	"duellist": [
+		{"technique": "thrust", "distance": 148.0, "weight": 1.0, "duration": 1.58, "startup": 0.26, "active_end": 0.48, "reach": 132.0, "f_rad": 0.30, "advance_distance": 74.0, "advance_end": 0.48, "damage": 3},
+		{"technique": "diagonal_cut", "distance": 104.0, "weight": 1.0, "duration": 1.06, "startup": 0.62, "active_end": 0.84, "reach": 116.0, "f_rad": 0.62, "advance_distance": 20.0, "advance_end": 0.30, "damage": 3},
 	],
 	"knight": [
 		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "f_rad": 0.45, "advance_distance": 234.0, "advance_end": 1.46, "damage": 4},

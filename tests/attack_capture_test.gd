@@ -72,7 +72,7 @@ func trial(kind: String, technique: String, response: String, respond_at: float,
 
 func test_stationary_player_is_hit() -> void:
 	# The floor: an attack that cannot hit someone standing still is not an attack.
-	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "captain", "knight"]:
+	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "duellist", "knight"]:
 		for option_value in CombatCatalogScript.melee_attack_plan(kind):
 			var technique := String(Dictionary(option_value)["technique"])
 			var result := trial(kind, technique, "none", 0.0)
@@ -95,7 +95,7 @@ func test_dodge_covers_the_late_window() -> void:
 	check(not bool(result["hit"]), "Dodge must answer the window where walking has stopped working")
 
 func test_attackers_actually_advance() -> void:
-	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "captain", "knight"]:
+	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "duellist", "knight"]:
 		for option_value in CombatCatalogScript.melee_attack_plan(kind):
 			var option := Dictionary(option_value)
 			var authored := float(option.get("advance_distance", 0.0))

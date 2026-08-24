@@ -512,7 +512,7 @@ func test_heavy_bodies_still_stop_you() -> void:
 
 func test_mass_decides_what_can_be_shoved() -> void:
 	var state := survey_state()
-	var pushable := ["hound", "knife", "bandit", "blade", "archer", "captain", "polearm", "boar"]
+	var pushable := ["hound", "knife", "bandit", "blade", "archer", "javelineer", "polearm", "boar"]
 	var immovable := ["shield", "brute", "knight", "ox"]
 	for kind in pushable:
 		check(state._enemy_is_pushable(state._make_enemy(kind, state.player_pos, 1, 5)), "%s should be shoveable" % kind)
@@ -541,6 +541,190 @@ func test_no_attack_can_be_reduced_to_nothing() -> void:
 	state._resolve_incoming_hit(1, 1, "probe", Vector2.LEFT, state.player_pos)
 	check(before - state.player_hp == state.MIN_FELT_DAMAGE, "armour must never turn a hit into nothing")
 
+# --- Milestone E4: the roster earns its places ----------------------------------
+
+func alerted(state: RunState, kind: String, offset: Vector2) -> Dictionary:
+	var enemy := state._make_enemy(kind, state.player_pos + offset, 999, 5)
+	enemy["awareness"] = "alerted"
+	enemy["alert_remaining"] = 9.0
+	enemy["revealed_to_player"] = true
+	enemy["revealed_elapsed"] = 5.0
+	enemy["facing"] = (state.player_pos - Vector2(enemy["pos"])).normalized()
+	state.enemies.append(enemy)
+	return enemy
+
+# --- The Chanter ----------------------------------------------------------------
+
+func test_a_chanter_has_no_attack_of_its_own() -> void:
+	# It is worth reaching precisely because reaching it ends the problem. An enemy
+	# that buffs AND fights would be a better version of every other enemy.
+	check(CombatCatalogScript.melee_attack_plan("chanter").is_empty(), "the Chanter should carry no attack plan")
+
+func test_a_chanter_puts_an_ally_between_itself_and_you() -> void:
+	var state := survey_state()
+	alerted(state, "brute", Vector2.UP * 170.0)
+	var chanter := alerted(state, "chanter", Vector2.UP * 90.0)
+	state._choose_enemy_action(chanter)
+	check(String(Dictionary(chanter["action"])["kind"]) == "move", "a cornered Chanter should reposition, not stand and cast")
+
+func test_a_chant_suits_the_allies_it_has() -> void:
+	# You know it buffs. You do not know which buff, because you cannot see which
+	# allies it has counted -- the same information shape as an enemy with two attacks.
+	var heavy := survey_state()
+	alerted(heavy, "brute", Vector2.UP * 150.0)
+	var heavy_caster := alerted(heavy, "chanter", Vector2.UP * 400.0)
+	check(heavy._choose_chant(heavy._chant_targets(heavy_caster)) == "bulwark", "heavy allies should be hardened")
+	var fast := survey_state()
+	alerted(fast, "hound", Vector2.UP * 150.0)
+	var fast_caster := alerted(fast, "chanter", Vector2.UP * 400.0)
+	check(fast._choose_chant(fast._chant_targets(fast_caster)) == "haste", "fast allies should be quickened")
+
+func test_bulwark_lends_telegraph_armour_to_a_light_body() -> void:
+	# The yellow chant is not a stat: it makes a Blade behave like a heavy for as long
+	# as it lasts, which is a visible, killable reason the room got harder.
+	var state := survey_state()
+	var blade := alerted(state, "blade", Vector2.UP * 70.0)
+	var chanter := alerted(state, "chanter", Vector2.UP * 300.0)
+	state.player_action = state._action("wait", 3.0, Vector2.UP)
+	state._choose_enemy_action(blade)
+	check(String(Dictionary(blade["action"])["kind"]) == "melee", "the Blade should be attacking for this to mean anything")
+	blade["action"]["elapsed"] = 0.06
+	check(state._apply_posture_damage(blade, 99.0), "an unchanted Blade loses its wind-up to a posture break")
+	state._choose_enemy_action(blade)
+	blade["action"]["elapsed"] = 0.06
+	state._resolve_chant(chanter, "bulwark")
+	check(state._enemy_has_chant(blade, "bulwark"), "the chant should have landed")
+	check(not state._apply_posture_damage(blade, 99.0), "a bulwarked Blade should hold its wind-up")
+
+func test_ward_reduces_damage_without_granting_immunity() -> void:
+	var state := survey_state()
+	var blade := alerted(state, "blade", Vector2.UP * 70.0)
+	var chanter := alerted(state, "chanter", Vector2.UP * 300.0)
+	var plain := int(Dictionary(state._resolve_player_physical_values(blade, 20, 1.0, {}))["damage"])
+	state._resolve_chant(chanter, "ward")
+	var warded := int(Dictionary(state._resolve_player_physical_values(blade, 20, 1.0, {}))["damage"])
+	check(warded < plain, "ward should reduce incoming damage")
+	check(warded > 0, "ward must never make an enemy immune -- the answer is the caster, not surrender")
+
+# --- The Javelineer -------------------------------------------------------------
+
+func test_a_javelin_is_thrown_where_you_are_going() -> void:
+	# Running in a straight line is what beats an Archer, so the second ranged enemy
+	# has to punish exactly that, or both of them ask the same question.
+	var state := survey_state()
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
+	state.player_action = state._action("move", 3.0, Vector2.RIGHT)
+	state._spawn_javelin(javelineer)
+	check(state.projectiles.size() == 1, "the throw should produce a projectile")
+	if state.projectiles.is_empty(): return
+	var javelin := Dictionary(state.projectiles[0])
+	check(Vector2(javelin["vel"]).normalized().x > 0.15, "the javelin should lead a player moving right")
+
+func test_a_javelin_trades_speed_for_width() -> void:
+	# Easy to sidestep, and that is the design: while it is in the air one lane is
+	# unavailable. It spends your choice of direction, not your health.
+	var state := survey_state()
+	var archer := alerted(state, "archer", Vector2.UP * 420.0)
+	state._spawn_projectile(archer)
+	var arrow := Dictionary(state.projectiles[0])
+	state.projectiles.clear()
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
+	state.player_action = state._idle_action()
+	state._spawn_javelin(javelineer)
+	var javelin := Dictionary(state.projectiles[0])
+	check(Vector2(javelin["vel"]).length() < Vector2(arrow["vel"]).length(), "a javelin should fly slower than an arrow")
+	check(float(javelin["radius"]) > float(arrow["radius"]), "a javelin should cover more ground than an arrow")
+
+# --- The Earth Caster -----------------------------------------------------------
+
+func test_sundered_ground_costs_time_and_never_health() -> void:
+	# The third currency. Fire and ice threaten damage; this one takes the only thing
+	# frozen time makes expensive.
+	var state := survey_state()
+	var caster := alerted(state, "earth_caster", Vector2.UP * 380.0)
+	var open_speed := state.current_move_speed()
+	state._spawn_sundered_ground(state.player_pos, int(caster["id"]), state.current_layer)
+	state.hazards[0]["triggered"] = true
+	check(state.current_move_speed() < open_speed, "sundered ground should slow the player")
+	var before: int = state.player_hp
+	for _step in range(240): state._update_hazards(state.SIM_DT)
+	check(state.player_hp == before, "sundered ground must never deal damage")
+
+func test_sundered_ground_slows_enemies_too() -> void:
+	# Symmetrical on purpose. One-sided it would read as arbitrary; shared, it becomes
+	# terrain the player can use -- an Ox charging through broken earth is slowed by the
+	# same rule.
+	var state := survey_state()
+	var hound := alerted(state, "hound", Vector2.UP * 120.0)
+	var open_speed := state._enemy_move_speed(hound)
+	state._spawn_sundered_ground(Vector2(hound["pos"]), 999, state.current_layer)
+	state.hazards[0]["triggered"] = true
+	check(state._enemy_move_speed(hound) < open_speed, "sundered ground should slow enemies as well")
+
+func test_the_cut_lands_between_you_and_where_you_are_going() -> void:
+	var state := survey_state()
+	var caster := alerted(state, "earth_caster", Vector2.UP * 380.0)
+	state.player_action = state._action("move", 3.0, Vector2.RIGHT)
+	var target: Vector2 = state._sunder_target(caster)
+	check(target.x > state.player_pos.x + 60.0, "ground you already stand on is ground you have already spent")
+
+# --- The Duellist ---------------------------------------------------------------
+
+func test_a_duellist_parries_a_swing_it_read() -> void:
+	# The Bandit slips around you and counters; this one plants and takes your turn.
+	# In frozen time that is the more expensive currency, because the rest of the room
+	# gets to act inside it.
+	var state := survey_state()
+	var duellist := alerted(state, "duellist", Vector2.UP * 90.0)
+	duellist["action"] = state._idle_action()
+	state.player_facing = Vector2.UP
+	state.player_action = state._action("combo", 2.0, Vector2.UP)
+	state.player_action["startup"] = 0.30
+	state.player_action["reach"] = 104.0
+	state.player_action["elapsed"] = 0.10
+	state._try_duellist_parry(duellist)
+	check(String(Dictionary(duellist["action"])["kind"]) == "parry_stance", "it should take the stance during the wind-up")
+	duellist["action"]["elapsed"] = 0.20
+	check(state._enemy_parries_attack(duellist), "a swing into the stance should be parried")
+
+func test_a_parry_can_be_baited_and_then_punished() -> void:
+	# Spent whether or not it catches anything, so the counter-play is to draw it with
+	# something cheap and attack into the gap. An enemy that always parries is a wall.
+	var state := survey_state()
+	var duellist := alerted(state, "duellist", Vector2.UP * 90.0)
+	duellist["action"] = state._idle_action()
+	state.player_facing = Vector2.UP
+	state.player_action = state._action("combo", 2.0, Vector2.UP)
+	state.player_action["startup"] = 0.30
+	state.player_action["reach"] = 104.0
+	state.player_action["elapsed"] = 0.10
+	state._try_duellist_parry(duellist)
+	duellist["action"] = state._idle_action()
+	state._try_duellist_parry(duellist)
+	check(String(Dictionary(duellist["action"])["kind"]) != "parry_stance", "the stance is on a cooldown and must not re-arm immediately")
+
+func test_a_duellist_cannot_parry_what_comes_from_behind() -> void:
+	var state := survey_state()
+	var duellist := alerted(state, "duellist", Vector2.UP * 90.0)
+	duellist["action"] = state._action("parry_stance", 0.72, Vector2.DOWN)
+	duellist["action"]["parry_end"] = 0.42
+	duellist["action"]["elapsed"] = 0.20
+	duellist["facing"] = Vector2.UP
+	check(not state._enemy_parries_attack(duellist), "getting behind a Duellist is the positional answer to it")
+
+func test_the_duellists_two_attacks_open_in_different_places() -> void:
+	# One poke, one swing. The poke commits fast and is punished on its recovery; the
+	# swing announces itself and is punished before it lands. No single habit answers
+	# both, which is what stops it being solved by repetition.
+	var poke := plan_option("duellist", "thrust")
+	var swing := plan_option("duellist", "diagonal_cut")
+	check(not poke.is_empty() and not swing.is_empty(), "the Duellist should carry both attacks")
+	if poke.is_empty() or swing.is_empty(): return
+	check(float(poke["startup"]) < float(swing["startup"]), "the poke should commit faster than the swing")
+	var poke_recovery := float(poke["duration"]) - float(poke["active_end"])
+	var swing_recovery := float(swing["duration"]) - float(swing["active_end"])
+	check(poke_recovery > swing_recovery, "the poke should be the one you punish afterwards")
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -558,6 +742,20 @@ func _init() -> void:
 	test_mass_decides_what_can_be_shoved()
 	test_every_connecting_strike_is_felt()
 	test_no_attack_can_be_reduced_to_nothing()
+	test_a_chanter_has_no_attack_of_its_own()
+	test_a_chanter_puts_an_ally_between_itself_and_you()
+	test_a_chant_suits_the_allies_it_has()
+	test_bulwark_lends_telegraph_armour_to_a_light_body()
+	test_ward_reduces_damage_without_granting_immunity()
+	test_a_javelin_is_thrown_where_you_are_going()
+	test_a_javelin_trades_speed_for_width()
+	test_sundered_ground_costs_time_and_never_health()
+	test_sundered_ground_slows_enemies_too()
+	test_the_cut_lands_between_you_and_where_you_are_going()
+	test_a_duellist_parries_a_swing_it_read()
+	test_a_parry_can_be_baited_and_then_punished()
+	test_a_duellist_cannot_parry_what_comes_from_behind()
+	test_the_duellists_two_attacks_open_in_different_places()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

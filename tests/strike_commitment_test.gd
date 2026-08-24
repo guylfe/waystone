@@ -11,8 +11,10 @@ extends SceneTree
 # unavoidable depending on where that landed.
 #
 # Measured spreads across 100 seeded approaches per kind:
-#   before  blade 69.7  polearm 78.2  captain 51.0  knight 47.5  shield 47.9
-#   after   blade  7.3  polearm  0.2  captain  3.4  knight  1.7  shield  2.1
+#   before  blade 69.7  polearm 78.2  duellist 51.0  knight 47.5  shield 47.9
+#   after   blade  7.3  polearm  0.2  duellist  3.4  knight  1.7  shield  2.1
+# (the Captain named in these 0.2.x figures is now the Duellist; the measurement
+#  stands, the kind it was taken on was replaced in 0.2.33.)
 #
 # Two properties are locked here: enemies commit inside a tight band around their
 # intended strike distance, and enemies with two attacks actually use both.
@@ -67,7 +69,7 @@ func plan_distance(kind: String, technique: String) -> float:
 	return -1.0
 
 func test_commit_distance_band() -> void:
-	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "captain", "knight"]:
+	for kind in ["blade", "knife", "bandit", "shield", "brute", "polearm", "duellist", "knight"]:
 		var worst := 0.0
 		var samples := 0
 		var missed := 0
@@ -91,7 +93,7 @@ func test_two_attack_enemies_use_both() -> void:
 	# Branch ordering previously made these unreachable on approach: the longer
 	# attack was tested at the greater distance and always won, so a Polearm never
 	# used its shaft cut and a Knight never cleaved unless the player walked in.
-	for kind in ["polearm", "captain", "knight"]:
+	for kind in ["polearm", "duellist", "knight"]:
 		var seen := {}
 		for id_offset in range(8):
 			for distance_step in range(5):

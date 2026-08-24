@@ -787,10 +787,10 @@ static func _expedition_encounters(part: int, sockets: Array, rng: RandomNumberG
 static func _campaign_encounter(area_id: int, center: Vector2, layer: String, rng: RandomNumberGenerator) -> Array[Dictionary]:
 	var rosters := {
 		1: ["blade", "knife", "hound", "archer", "blade"],
-		3: ["polearm", "archer", "hexer", "blade", "hound", "captain"],
-		5: ["polearm", "archer", "hexer", "blade", "hound", "captain"],
+		3: ["polearm", "archer", "hexer", "blade", "hound", "javelineer"],
+		5: ["polearm", "archer", "hexer", "blade", "hound", "duellist"],
 		6: ["hound", "hexer", "polearm", "knife", "blade", "hexer"],
-		7: ["brute", "hexer", "polearm", "captain", "blade", "hound"],
+		7: ["brute", "hexer", "polearm", "chanter", "blade", "hound"],
 		8: ["brute", "polearm", "hound", "archer", "knife"],
 	}
 	var roster: Array = rosters.get(area_id, ["blade", "hound", "knife"])

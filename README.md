@@ -1,6 +1,36 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.32` (Android version code `232`).
+Current prototype version: `0.2.33` (Android version code `233`).
+
+### v0.2.33: Four enemies that ask four questions — Milestone E4
+
+The `0.2.30` survey measured a 1.6-point fun gap between rooms carrying non-melee pressure (3.33/5) and melee-only rooms (1.71) — and the roster had exactly **one** `ranged_pressure` enemy. Every good room in that run was carrying the same Archer. This build widens the thing that was doing the work, and retires the enemy that was doing none.
+
+**The Polearm becomes a spear.** Its thrust carried **229 units of forward travel against a 218-unit reach**, so every attack ended in melee and it fought like a slow Blade. That lunge was not a mistake: at a 0.90s wind-up against a 260/s walk the player clears 234 units, so without it the thrust could never land at all. Shortening the wind-up to 0.42 is what let the travel come down to 60.
+
+- It now throws the spear at **lateness rather than range** — the same read the Shield got in `0.2.31`. A free player walks out of it and should; a player locked in a 0.98s combo cannot. Probed: **0 damage to a walking player, 13 to a committed one.**
+- The filled tip dot is gone from thrusts. On a sword the weapon end sits near the body and it reads as impact; on a 218-unit spear it was a disc floating in open space.
+
+**The Archer actually fires.** Its cycle was 1.62s of action plus a 1.05–1.49s cooldown — ~2.7s between shots, which is weather, not pressure. Now 1.24s and 0.70s, bringing the cycle under 2s.
+
+**The Captain is gone; the Chanter replaces it.** Its identity was "strengthens nearby movement", which in practice was `×1.14` locomotion inside 720 units: invisible on the enemies it touched, imperceptible in size, and effectively always on for a whole room. Strip that and what remained was a fast enemy leading with a 142-reach thrust — which is why the `0.2.30` tester called it "the spear enemy" in a room containing no Polearm.
+
+- **No attack of its own.** Reaching it ends the problem, which is what makes reaching it worth pricing.
+- **A spellbook, one chant at a time**, chosen to suit the allies it actually has: `haste` (blue **ring**), `bulwark` (yellow **chevron**), `ward` (red **diamond**). Colour and shape both carry the meaning, so the colour is never load-bearing.
+- Chants are **drawn on the allies carrying them**, not on the caster — what the player needs to read is which bodies in front of them have changed.
+- **Bulwark is not a stat**: it lends telegraph armour, so a Blade holds its wind-up like a heavy for as long as it lasts. **Ward reduces damage but never grants immunity** — the answer is the caster, not surrender.
+- **Every chant ends the moment the Chanter dies.** Collected from a living-caster sweep rather than a death hook, so no damage path can miss it.
+- It hides: with no ally between it and the player it moves behind the nearest one, or away if it has none.
+
+**The Javelineer denies a lane.** It is slower than the Archer and easy to sidestep — that is the design. While the javelin is in the air one direction is unavailable, so what it spends is your **choice of direction**, not your health. Alone it is nearly harmless; behind a frontliner who already dictates where you can stand, it collects. It throws where the player is **going**, which punishes the straight-line running that beats an Archer. Paired with the Archer, both answers are spent at once.
+
+**The Earth Caster introduces a third currency.** Fire and ice deny ground by threatening damage; sundered ground deals **none at all** — crossing it costs *time*, and in frozen time spending time is handing every other enemy in the room a free move. It cuts the ground **between you and where you are going**, never under your feet. The slow is symmetrical: an Ox charging through broken earth is slowed by the same rule, so it is terrain the player can use.
+
+**The Duellist takes your turn instead of your health.** Where the Bandit slips sideways and ripostes, this one plants and catches the blade — no damage to either side, and the player is staggered for 0.86s while the rest of the room acts. It reads the player's wind-up, faces the threat, and only parries from the front, so **getting behind it is the positional answer**. The stance is spent whether or not it catches anything, so a cheap feint really does draw it. Its two attacks put their openings in different places — the poke commits fast and is punished on its recovery, the swing announces itself and is punished before — so no single habit answers both.
+
+**Also:** zero authored damage now means *no hit at all*. `MIN_FELT_DAMAGE` exists to stop armour reducing a real blow to nothing; without a guard it would have turned every damageless effect — sundered ground, the Ox's disengage — into a 5-point hit.
+
+Four new rooms place them: **Chanted Line** (Chanter behind a Brute), **Closing Lanes** (Archer and Javelineer spending both answers while a Shield picks which one you are forced into), **Broken Ground** (sundered earth in front of a spear), and **Measured Guard** (a Duellist wanting your attention while a Javelineer wants you to move).
 
 ### v0.2.32: Mass means something, and every hit is felt
 
