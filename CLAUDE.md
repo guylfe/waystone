@@ -11,6 +11,7 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 3. **`docs/combat-loop-diagnosis.md`**, **`docs/attack-capture-design.md`**, **`docs/attack-capture-implementation.md`** — the current work. Authoritative on combat-loop matters where they overlap the handoff.
 4. **`docs/combat-character-framework.md`** — detailed combat and character rules.
 5. **`docs/design-brief.md`**, **`docs/expedition-encounter-redesign.md`** — slice promise and the deferred encounter plan.
+6. **`docs/elemental-casters.md`** — the agreed, unimplemented design for the four elemental casters, the Elementalist subclass, and the shared systems they need. Read before touching any caster, projectile elevation, burn or frost.
 
 `README.md` carries implemented-version history and the current version number. It is long; read it last.
 
@@ -22,15 +23,31 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 The combat loop, and nothing else. More enemies, classes, biomes, campaign content or encounter density all wait until moving, attacking, defending and surviving pressure are satisfying in a small room.
 
-Milestone order is fixed by dependency: **A** (combo continuation follows live input) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation) → **F** (re-survey and tune the kernel, including the Recovery-versus-Stamina comparison) → **G** (encounter grammar, and only then the smallest number of new enemies the surveys have shown to be missing). **A through E are implemented as of `0.2.33`.** E ran to four slices: E1 roles (`0.2.27`), E2 anchors anchor (`0.2.31`), E3 mass and felt damage (`0.2.32`), E4 the roster (`0.2.33`).
+Milestone order is fixed by dependency: **A** (combo continuation follows live input) → **B** (post-hit hyperarmor) → **C** (attack capture, plus the Wait rework) → **D** (Sweeping Cut) → **E** (melee enemy differentiation) → **F** (re-survey and tune the kernel, including the Recovery-versus-Stamina comparison) → **G** (encounter grammar, and only then the enemies the surveys have shown to be missing). **A through E are implemented as of `0.2.33`.** E ran to four slices: E1 roles (`0.2.27`), E2 anchors anchor (`0.2.31`), E3 mass and felt damage (`0.2.32`), E4 the roster (`0.2.33`). The `0.2.33` survey ran, and `0.2.34` shipped the six fixes it asked for.
 
-**Nothing since `0.2.30` has been played.** Telegraph armour, the Ox disengage, Shield patience, the crowding push, the damage curve, the Bandit counter, and the whole E4 roster are unvalidated. The next step is a survey, not more building — it is the falsification test for E2 through E4 together, and stacking further work on top of it is how the `0.2.28` Ox happened.
+**What that survey proved, and it is the thing to act on.** Rooms carrying non-melee pressure scored **3.50 mean fun** and **3.50 want-again**; the four pure-melee rooms scored **1.50 and 1.00 — unanimous**. Those four are pre-existing recipes drawing on the pre-existing roster, and *nothing in E2, E3 or E4 moved them by a point*. Melee-only rooms are no longer an enemy problem; they are a composition problem. That is **G1**, and it is next.
 
-Then **F**, whose contents are: retune from that survey, run the **Recovery-versus-Stamina comparison that has never been run**, and establish whether the melee-room gap closed (`0.2.30` measured 1.71/5 fun for melee-only rooms against 3.33 for rooms carrying non-melee pressure). Then **G1** encounter grammar — the generator still composes by tier, phase and cost, and does not know that Archer + Shield is a better room than Boar + Hound even though the survey proved it.
+### The agreed order
 
-The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md`. New enemy kinds belong to G2 and are gated on a gap being demonstrated rather than anticipated — the Ox jumped that gate in `0.2.25`; the E4 roster passed it on the ranged-pressure measurement above, except the Duellist, which was approved as a deliberate exception.
+1. **G1 — encounter grammar.** Each enemy declares the axis it pressures; the generator composes rooms whose axes conflict. Not a hardcoded list of good pairs — that is the same mistake as the recipe table it replaces. Author the taxonomy with the axes the elemental casters will occupy even though nothing fills them yet, the way `movement_denial` existed before the Earth Caster arrived to fill it. **Retire the Hexer** in this pass, since otherwise a benched enemy needs an axis declared for it.
+2. **Survey.** The falsification test for G1 — and the first run in which a poorly rated room means a bad *room*. This de-confounds every survey that follows, which is most of why G1 comes before the caster work rather than after it.
+3. **Shared systems** — projectile elevation and friendly fire, the burn and frost meters, the barrier list. Cheap to get wrong and everything downstream depends on them. See `docs/elemental-casters.md` §2.
+4. **Earth's wall**, since that caster already exists and `sunder` shipped in `0.2.33`.
+5. **Fire and Ice**, as *replacements* rather than additions. Both casters exist and currently have one close AoE and one ranged AoE each — four abilities, two verbs.
+6. **Air** — the one genuinely new enemy kind in the programme.
+7. **The Elementalist**, and the **Stamina → Energy rename** with it. The rename's cost is the historical record and is identical whenever it lands, so it ships beside the class that motivates it rather than as speculative churn.
 
-Still never done, outside the milestone list: **renderer validation of A–D** (all verified headless only) and an **Acrobat survey run** — every survey so far has been Warrior.
+### Still owed, outside that line
+
+- **F is not finished.** The retune happened in `0.2.34`, but the **Recovery-versus-Stamina comparison has still never been run** — the whole reason for fixing Stamina was to compare it fairly against the cooldown model. Keeping one resource bar for casters (no mana) means this comparison covers them too.
+- **G2 leftovers:** Werewolf and Warden as real bosses. Both exist as kinds; neither has boss behaviour. Still gated on a demonstrated gap.
+- **The Chanter and the Ox have never been played.** Neither appeared in the `0.2.33` run — `chanted_line` needs tier 6 and the run ended at tier 5.
+- **Renderer validation of A–D** — all of it verified headless only.
+- **An Acrobat survey run** — every survey so far has been Warrior.
+
+New enemy kinds belong to G2 and are gated on a gap being demonstrated rather than anticipated — the Ox jumped that gate in `0.2.25`; the E4 roster passed it on the ranged-pressure measurement, except the Duellist, which was approved as a deliberate exception. The elemental programme passes it on the `0.2.33` measurement above, with the caveat that Fire and Ice are repairs to existing content rather than additions.
+
+The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md`; the caster design lives in `docs/elemental-casters.md`.
 
 ---
 
