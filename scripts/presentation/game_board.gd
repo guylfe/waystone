@@ -2778,7 +2778,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("a08055"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
+	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "hexer": Color("9e72d8"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("6f9b6a"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
@@ -2788,6 +2788,19 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	# is free. That distinction is the whole loop, so it cannot live only in the
 	# simulation -- an enemy which reads your commitment without a tell is unfair
 	# rather than difficult. Two ticks on the guard side, present only while ready.
+	# A Duellist still holding its parry takes your turn if you swing at it; one that
+	# has spent it is free to attack. That is the entire loop, and in 0.2.33 it was
+	# invisible -- the Bandit got a ready-tell and this did not, so the cooldown that
+	# was already there read as "it parries whenever it likes". A raised guard in front,
+	# distinct from the Bandit's two side ticks.
+	if kind == "duellist" and float(enemy.get("parry_cooldown", 0.0)) <= 0.0 and String(action["kind"]) not in ["hit_reaction", "stagger"]:
+		var guard_side := facing.rotated(PI * 0.5)
+		var guard := pos + facing * radius * 0.92
+		draw_polyline(PackedVector2Array([
+			guard - guard_side * radius * 0.42 - facing * radius * 0.18,
+			guard,
+			guard + guard_side * radius * 0.42 - facing * radius * 0.18,
+		]), Color("bfe8ff"), maxf(2.0, radius * 0.10))
 	if kind == "bandit" and float(enemy.get("dodge_cooldown", 0.0)) <= 0.0 and String(action["kind"]) not in ["hit_reaction", "stagger"]:
 		var ready_angle := facing.angle()
 		for offset in [-0.62, 0.62]:
@@ -2914,9 +2927,18 @@ func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: f
 		var shaft := pos + facing * radius * 0.35
 		draw_line(shaft - side * radius * 0.75 - facing * radius * 0.55, shaft + side * radius * 0.55 + facing * radius * 0.70, Color("f0dfae"), maxf(2.0, radius * 0.11))
 	elif kind == "earth_caster":
-		# A low broken line: the ground, split.
-		var base := pos + facing * radius * 0.72
-		draw_polyline(PackedVector2Array([base - side * radius * 0.78, base - side * radius * 0.24 - facing * radius * 0.26, base + side * radius * 0.18 + facing * radius * 0.10, base + side * radius * 0.74 - facing * radius * 0.20]), Color("d8bb8a"), maxf(2.0, radius * 0.11))
+		# Staff first, ground second. The broken-line glyph alone did not say "caster" at
+		# a glance, so it read as another melee body -- it needs to share the silhouette
+		# its role-mates have before it says anything of its own.
+		var earth_color := Color("bfe0a8")
+		draw_line(pos + side * radius * 0.65, pos + side * radius * 0.65 + facing * radius * 1.45, earth_color.darkened(0.28), maxf(2.0, radius * 0.12))
+		draw_colored_polygon(PackedVector2Array([
+			pos + side * radius * 0.65 + facing * radius * 1.45 + Vector2(0.0, -radius * 0.26),
+			pos + side * radius * 0.65 + facing * radius * 1.45 + Vector2(radius * 0.24, radius * 0.10),
+			pos + side * radius * 0.65 + facing * radius * 1.45 + Vector2(-radius * 0.24, radius * 0.10),
+		]), earth_color)
+		var base := pos + facing * radius * 0.78
+		draw_polyline(PackedVector2Array([base - side * radius * 0.70, base - side * radius * 0.20 - facing * radius * 0.22, base + side * radius * 0.16 + facing * radius * 0.08, base + side * radius * 0.66 - facing * radius * 0.18]), earth_color.darkened(0.15), maxf(1.5, radius * 0.09))
 	elif kind == "duellist":
 		# Narrow blade, presented forward.
 		draw_line(pos + facing * radius * 0.30, pos + facing * radius * 1.30, Color("ffe9a8"), maxf(2.0, radius * 0.08))
@@ -4362,7 +4384,7 @@ func _draw_inspection() -> void:
 	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "hexer": "Delayed danger zones", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "chanter": "Buffs allies; no attack of its own; hides behind them", "javelineer": "Slow throw that leads your movement; denies a lane", "earth_caster": "Sundered ground; costs time, not health", "duellist": "Parries a swing it reads; two attacks, two different openings", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
-	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "duellist": "thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}
+	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "duellist": "rapier_thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}
 	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", signature_techniques.get(kind, "")))
 	var technique_text := AttackGeometryScript.label(technique_id) if technique_id != "" else "Ranged"
 	var posture_ratio := float(enemy.get("posture", 1.0)) / maxf(0.01, float(enemy.get("posture_max", 1.0)))

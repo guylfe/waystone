@@ -1,6 +1,32 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.33` (Android version code `233`).
+Current prototype version: `0.2.34` (Android version code `234`).
+
+### v0.2.34: Six fixes the `0.2.33` survey asked for
+
+That run produced the first 5/5 fun ever recorded (room 9) and the first 5/5 on tactical interest and want-again (room 10). It also isolated the remaining problem precisely — see the note at the end.
+
+**The Shield's opening was unreachable.** Tagged *unfair* twice. Its guard is down for the whole of its own attack, and that attack is its **only** opening — so `0.2.31`'s patience system, by cutting its swings from nine a room to three, shrank the *number* of openings without growing them. Fewer windows, same size.
+
+- The cut runs **2.15s** instead of 1.65s (wind-up 0.62 → 0.74, active end 0.92 → 1.06). Sized against the player's measured 0.983s combo lockout: the Shield commits while you are busy, so the window has to still be open when you get control back. **Measured: 0.67s of reachable window before, 1.17s now.**
+- Worth knowing and undocumented until now: its guard is a **72° frontal arc**, so attacking from outside it already ignores the block entirely. Flanking has always worked.
+
+**A light body could act inside the swing that hit it.** A posture break already guarantees `player_remaining + 0.72s`; an ordinary flinch guaranteed nothing, so a Blade's flat 0.48s expired mid-combo and it hit back from frames the player could not answer from — *"he recuperated before I was able to finish the combo."*
+
+- A flinch now lasts at least as long as the commitment that caused it. **This is not a bonus opening**: no time is added, so the enemy is free the instant the player is. Measured: 0.48s → 1.07s against a 1.10s remaining combo.
+- Heavies are excluded. They answer with armour instead, and giving them this as well would make a committed heavy unpunishable.
+
+**The Javelineer faced you and threw somewhere else.** The lead was computed at *release*, so it aimed through the whole wind-up at the player and then threw at where they were going — no telegraph, and a shot that could not be read. The line is now committed **at the announcement**, the thrower faces it, and it releases along it without re-aiming, which is the same promise every other attack in this game makes.
+
+**The Polearm went 0 for 5.** Weighted selection kept picking the 205-unit thrust at 105 units (1.7 against reverse_cut's 1.0), and a thrust authored for 205 is trivially walked out of from half that distance. Inside the point it now takes the shaft cut, which needs no lateness gate because at that range there is nothing to be late for. The long thrust is still thrown only at a committed player.
+
+**The Duellist's parry was invisible.** It always had a 3.1s cooldown; the Bandit got a ready-tell in `0.2.32` and this did not, so a mechanic that was already fair read as *"it parries whenever it likes."* It now shows a raised guard in front while the parry is available — distinct from the Bandit's two side ticks. Its poke also became a sword rather than a spear: **reach 132 → 104**, its own `rapier_thrust` technique so it draws with a slim profile, and a shorter commit distance to match.
+
+**The Earth Caster looked like the Polearm.** Literally: `POLEARM_COLOR` is `d08a48` and the Earth Caster was `a08055`. It is now a distinct green-earth, and it carries a **staff** like the other casters — the broken-ground glyph alone never said "caster" at a glance, and a role needs to share its role-mates' silhouette before it says anything of its own.
+
+**Still outstanding from that run:** the Earth Caster's temporary **barrier** — a wall that cuts your retreat rather than taxing it. Not in this build, because walls are baked into a cached navigation grid and a barrier has to live outside it, which means enemies would path as if it were not there. That needs building carefully rather than quickly.
+
+**And the finding that matters more than any of the above:** rooms 1, 2, 3 and 6 — every pure-melee room — scored **1.50 mean fun and 1.00 on want-again, unanimously**, against 3.50 and 3.50 for rooms carrying non-melee pressure. Those four are pre-existing recipes drawing on the pre-existing roster, and *nothing in E2, E3 or E4 moved them*. Melee-only rooms are no longer an enemy problem; they are a composition problem, which is Milestone G1.
 
 ### v0.2.33: Four enemies that ask four questions — Milestone E4
 

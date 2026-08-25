@@ -349,7 +349,16 @@ const MELEE_ATTACK_PLANS := {
 		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "f_rad": 0.45, "advance_distance": 51.0, "advance_end": 0.22, "damage": 1},
 	],
 	"shield": [
-		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 1.65, "startup": 0.62, "active_end": 0.92, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.37, "damage": 2},
+		# Longer than any other single cut, deliberately. A screen's guard is down for the
+		# whole of its own attack and that attack is its ONLY opening, so cutting its
+		# swing rate from nine a room to three -- which patience did in 0.2.31 -- shrank
+		# the number of openings without growing them. The 0.2.33 tester tagged it unfair
+		# twice for exactly that.
+		#
+		# 2.15s is sized against the player's 0.983s combo lockout: the Shield commits
+		# while you are busy, so the window has to still be open when you get control
+		# back. Anything under about 1.6s closes before you can reach it.
+		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 2.15, "startup": 0.74, "active_end": 1.06, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.44, "damage": 2},
 	],
 	"brute": [
 		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
@@ -363,7 +372,11 @@ const MELEE_ATTACK_PLANS := {
 	# itself and is punished before. Guess wrong on which one is coming and the answer
 	# you brought is the one that loses.
 	"duellist": [
-		{"technique": "thrust", "distance": 148.0, "weight": 1.0, "duration": 1.58, "startup": 0.26, "active_end": 0.48, "reach": 132.0, "f_rad": 0.30, "advance_distance": 74.0, "advance_end": 0.48, "damage": 3},
+		# A sword poke, not a spear thrust. At 132 reach it was longer than a Polearm's
+		# shaft cut and read as the wrong weapon entirely; the speed was right, the
+		# distance was not. Its own technique id so it draws with a rapier's slim profile
+		# rather than the spear's.
+		{"technique": "rapier_thrust", "distance": 118.0, "weight": 1.0, "duration": 1.46, "startup": 0.26, "active_end": 0.44, "reach": 104.0, "f_rad": 0.30, "advance_distance": 46.0, "advance_end": 0.44, "damage": 3},
 		{"technique": "diagonal_cut", "distance": 104.0, "weight": 1.0, "duration": 1.06, "startup": 0.62, "active_end": 0.84, "reach": 116.0, "f_rad": 0.62, "advance_distance": 20.0, "advance_end": 0.30, "damage": 3},
 	],
 	"knight": [

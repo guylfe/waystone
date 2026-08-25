@@ -18,6 +18,7 @@ const TECHNIQUES := {
 	"heavy_cleave": {"motion": "arc", "start_angle": -1.658, "end_angle": 1.658, "inner_radius": 34.0, "radius": 10.0, "multi": true, "label": "Heavy cleave"},
 	"heavy_chop": {"motion": "arc", "start_angle": -0.50, "end_angle": 0.20, "inner_radius": 32.0, "radius": 9.0, "multi": false, "label": "Heavy chop"},
 	"thrust": {"motion": "thrust", "radius": 10.0, "multi": false, "label": "Thrust"},
+	"rapier_thrust": {"motion": "thrust", "radius": 6.0, "multi": false, "label": "Rapier thrust"},
 	"driving_cut": {"motion": "thrust", "radius": 8.0, "multi": false, "label": "Driving cut"},
 	"bite": {"motion": "bite", "radius": 24.0, "multi": false, "label": "Bite"},
 	"forward_smash": {"motion": "smash", "radius": 58.0, "multi": true, "label": "Heavy smash"},

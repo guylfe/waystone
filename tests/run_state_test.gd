@@ -1491,7 +1491,7 @@ func test_new_enemy_roles() -> void:
 	# poke's is on its recovery -- two attacks that cannot be answered the same way.
 	var close_duellist := state._make_enemy("duellist", state.player_pos + Vector2.UP * 96.0, 12)
 	state._choose_enemy_action(close_duellist)
-	assert(String(Dictionary(close_duellist["action"])["technique_id"]) in ["diagonal_cut", "thrust"])
+	assert(String(Dictionary(close_duellist["action"])["technique_id"]) in ["diagonal_cut", "rapier_thrust"])
 	# The Captain's invisible x1.14 aura is gone. A Chanter's Quickening replaces it and
 	# has to be applied explicitly, so a Blade standing next to one is NOT hastened until
 	# the chant actually lands.

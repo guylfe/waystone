@@ -716,7 +716,7 @@ func test_the_duellists_two_attacks_open_in_different_places() -> void:
 	# One poke, one swing. The poke commits fast and is punished on its recovery; the
 	# swing announces itself and is punished before it lands. No single habit answers
 	# both, which is what stops it being solved by repetition.
-	var poke := plan_option("duellist", "thrust")
+	var poke := plan_option("duellist", "rapier_thrust")
 	var swing := plan_option("duellist", "diagonal_cut")
 	check(not poke.is_empty() and not swing.is_empty(), "the Duellist should carry both attacks")
 	if poke.is_empty() or swing.is_empty(): return
@@ -724,6 +724,95 @@ func test_the_duellists_two_attacks_open_in_different_places() -> void:
 	var poke_recovery := float(poke["duration"]) - float(poke["active_end"])
 	var swing_recovery := float(swing["duration"]) - float(swing["active_end"])
 	check(poke_recovery > swing_recovery, "the poke should be the one you punish afterwards")
+
+# --- 0.2.34: what the 0.2.33 survey said was broken -----------------------------
+
+func test_a_screens_opening_outlasts_the_commitment_that_bought_it() -> void:
+	# A screen's guard is down for the whole of its own attack, and that attack is its
+	# ONLY opening. Patience cut its swings from nine a room to three, which shrank the
+	# NUMBER of openings without growing them -- the 0.2.33 tester tagged it unfair
+	# twice. The window has to still be open when the player gets control back.
+	var option := plan_option("shield", "diagonal_cut")
+	check(not option.is_empty(), "the Shield should carry its cut")
+	if option.is_empty(): return
+	# 0.983s is the measured lockout of a combo strike, the commitment that draws it.
+	check(float(option["duration"]) - 0.983 > 0.60, "the guard-down window must survive the player's combo lockout with room to reach it")
+
+func test_a_light_body_cannot_act_inside_the_swing_that_hit_it() -> void:
+	# "He recuperated before I was able to finish the combo" -- 0.2.33 room 6. A posture
+	# break already guaranteed player_remaining + 0.72s; an ordinary flinch guaranteed
+	# nothing, so a Blade's flat 0.48s expired mid-combo and it hit back from frames the
+	# player could not answer from.
+	var state := survey_state()
+	var blade := alerted(state, "blade", Vector2.UP * 70.0)
+	state.player_action = state._action("combo", 1.40, Vector2.UP)
+	state.player_action["startup"] = 0.24
+	state.player_action["elapsed"] = 0.30
+	var remaining := state._player_commitment_remaining()
+	state._choose_enemy_action(blade)
+	var before := Dictionary(blade["action"]).duplicate(true)
+	state._apply_enemy_hit_reaction(blade, 1.0, "alerted", before, Vector2.ZERO, {})
+	check(String(Dictionary(blade["action"])["kind"]) == "hit_reaction", "the Blade should flinch")
+	check(float(Dictionary(blade["action"])["duration"]) >= remaining - 0.05, "the flinch must cover the rest of the commitment that caused it")
+
+func test_a_heavy_body_keeps_its_short_recovery() -> void:
+	# Heavies answer with armour instead. Giving them the flinch floor as well would
+	# make a committed heavy unpunishable, which is the opposite of the E2 intent.
+	var state := survey_state()
+	var ox := alerted(state, "ox", Vector2.RIGHT * 400.0)
+	state.player_action = state._action("combo", 2.40, Vector2.UP)
+	state.player_action["startup"] = 0.24
+	state.player_action["elapsed"] = 0.30
+	state._choose_enemy_action(ox)
+	var before := Dictionary(ox["action"]).duplicate(true)
+	before["elapsed"] = 0.10
+	state._apply_enemy_hit_reaction(ox, 4.0, "alerted", before, Vector2.ZERO, {})
+	if String(Dictionary(ox["action"])["kind"]) != "hit_reaction": return
+	check(float(Dictionary(ox["action"])["duration"]) < 1.0, "a heavy should not inherit the flinch floor")
+
+func test_the_spear_takes_its_short_cut_when_you_are_inside_the_point() -> void:
+	# Weighted selection kept choosing the 205-unit thrust at 105 units (1.7 against
+	# 1.0), and a thrust authored for 205 is trivially walked out of from half that.
+	# It went 0 for 5 across the 0.2.33 run.
+	var state := survey_state()
+	var polearm := alerted(state, "polearm", Vector2.UP * 95.0)
+	state.player_action = state._idle_action()
+	state._choose_enemy_action(polearm)
+	check(String(Dictionary(polearm["action"]).get("technique_id", "")) == "reverse_cut", "inside the point, the shaft cut is the answer")
+
+func test_the_long_thrust_is_still_only_thrown_at_lateness() -> void:
+	var state := survey_state()
+	var polearm := alerted(state, "polearm", Vector2.UP * 205.0)
+	state.player_action = state._idle_action()
+	state._choose_enemy_action(polearm)
+	check(String(Dictionary(polearm["action"])["kind"]) != "melee", "a free player at spear range should not draw the thrust")
+	state.player_action = state._action("wait", 2.0, Vector2.UP)
+	state._choose_enemy_action(polearm)
+	check(String(Dictionary(polearm["action"]).get("technique_id", "")) == "thrust", "a committed player should")
+
+func test_a_javelineer_faces_where_it_throws() -> void:
+	# It used to compute the lead at RELEASE, so it faced the player through the whole
+	# wind-up and then threw somewhere else -- no telegraph, and a shot that could not
+	# be read.
+	var state := survey_state()
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 400.0)
+	state.player_action = state._action("move", 3.0, Vector2.RIGHT)
+	state._choose_enemy_action(javelineer)
+	check(String(Dictionary(javelineer["action"])["kind"]) == "hurl", "it should be winding up a throw")
+	if String(Dictionary(javelineer["action"])["kind"]) != "hurl": return
+	var line := Vector2(Dictionary(javelineer["action"])["direction"])
+	check(Vector2(javelineer["facing"]).dot(line) > 0.999, "the thrower must face its own line")
+	state._spawn_javelin(javelineer)
+	check(not state.projectiles.is_empty(), "the throw should produce a javelin")
+	if state.projectiles.is_empty(): return
+	check(Vector2(Dictionary(state.projectiles[0])["vel"]).normalized().dot(line) > 0.999, "and release along it rather than re-aiming")
+
+func test_the_duellists_poke_is_a_sword_not_a_spear() -> void:
+	var poke := plan_option("duellist", "rapier_thrust")
+	var spear := plan_option("polearm", "thrust")
+	check(not poke.is_empty(), "the Duellist should carry a rapier thrust")
+	if poke.is_empty() or spear.is_empty(): return
+	check(float(poke["reach"]) < float(spear["reach"]) * 0.55, "a sword poke must not out-reach a polearm's shaft cut")
 
 func _init() -> void:
 	test_charges_produce_capture_records()
@@ -756,6 +845,13 @@ func _init() -> void:
 	test_a_parry_can_be_baited_and_then_punished()
 	test_a_duellist_cannot_parry_what_comes_from_behind()
 	test_the_duellists_two_attacks_open_in_different_places()
+	test_a_screens_opening_outlasts_the_commitment_that_bought_it()
+	test_a_light_body_cannot_act_inside_the_swing_that_hit_it()
+	test_a_heavy_body_keeps_its_short_recovery()
+	test_the_spear_takes_its_short_cut_when_you_are_inside_the_point()
+	test_the_long_thrust_is_still_only_thrown_at_lateness()
+	test_a_javelineer_faces_where_it_throws()
+	test_the_duellists_poke_is_a_sword_not_a_spear()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

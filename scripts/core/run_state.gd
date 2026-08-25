@@ -208,7 +208,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.33"
+const GAME_VERSION := "0.2.34"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4560,6 +4560,17 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	}.get(enemy_kind, 0.48))
 	if awareness_before != "alerted": duration += 0.16
 	if high_impact: duration += 0.10
+	# A light body cannot recover and act INSIDE the swing that hit it. A posture break
+	# already guarantees player_remaining + 0.72s; an ordinary flinch guaranteed nothing,
+	# so a Blade's flat 0.48s expired mid-combo and it got a free hit in frames the
+	# player could not answer from -- "he recuperated before I was able to finish the
+	# combo", 0.2.33 room 6.
+	#
+	# This is not a bonus opening: there is no added time, so the enemy is free the
+	# instant the player is. Heavies are excluded because they answer with armour
+	# instead, and giving them this as well would make a committed heavy unpunishable.
+	if _enemy_mass(enemy_kind) < HEAVY_TELEGRAPH_MASS:
+		duration = maxf(duration, _player_commitment_remaining() * _enemy_personal_tempo(enemy))
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
@@ -4992,8 +5003,17 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# the thrust and should; a player locked into a combo cannot, and wears it. So it
 		# throws the spear at LATENESS rather than at range -- the same read the Shield
 		# uses -- which is what "strike from behind other enemies" actually means.
+		# Inside the point, the shaft cut is the answer -- not a 205-unit thrust thrown at
+		# someone standing on top of you. Weighted selection alone kept picking the thrust
+		# at 105 units (1.7 against 1.0) and it went 0 for 5 across the 0.2.33 run, because
+		# a thrust authored for 205 is trivially walked out of from half that distance.
+		var polearm_short: Dictionary = _plan_option("polearm", "reverse_cut")
+		if not polearm_short.is_empty() and distance <= float(polearm_short["distance"]) + STRIKE_COMMIT_BAND:
+			polearm_intent = polearm_short
 		var polearm_in_band := distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND
-		var polearm_can_convert := _player_commitment_remaining() >= float(polearm_intent["startup"]) * 0.60 or distance <= float(polearm_intent["distance"]) * 0.55
+		# The long thrust is still gated on lateness; the short cut is not, because at
+		# that range there is nothing to be late for.
+		var polearm_can_convert := String(polearm_intent["technique"]) != "thrust" or _player_commitment_remaining() >= float(polearm_intent["startup"]) * 0.60
 		if polearm_in_band and polearm_can_convert and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _intent_melee_action(polearm_intent, direction)
 			_clear_melee_intent(enemy)
@@ -5125,8 +5145,14 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# harmless; behind a frontliner who already dictates where you can stand, it
 		# collects.
 		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 720.0 and distance >= 190.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("hurl", 1.46, direction)
+			# Aimed here, at the announcement, rather than at release. Computing the lead
+			# when the javelin left the hand let the thrower face the player through the
+			# whole wind-up and then throw somewhere else -- no telegraph, and a shot that
+			# could not be read. Committing the line up front makes it the same kind of
+			# promise every other attack in this game makes.
+			enemy["action"] = _action("hurl", 1.46, _javelin_lead(enemy))
 			enemy["action"]["startup"] = 0.86
+			enemy["facing"] = Vector2(enemy["action"]["direction"])
 			enemy["shot_cooldown"] = 2.30 + 0.20 * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
@@ -5227,6 +5253,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			var move_target := player_pos if distance > 520.0 else Vector2(enemy["pos"]) - direction * 240.0
 			enemy["action"] = _enemy_move_action(enemy, move_target, 0.56)
+
+func _plan_option(kind: String, technique: String) -> Dictionary:
+	for option_value in CombatCatalogScript.melee_attack_plan(kind):
+		var option := Dictionary(option_value)
+		if String(option["technique"]) == technique: return option
+	return {}
 
 func _melee_intent(enemy: Dictionary, gap: float) -> Dictionary:
 	# An enemy carries its chosen attack across the whole approach so it walks to a
@@ -5878,15 +5910,26 @@ func _melee_action(duration: float, startup: float, active_end: float, reach: fl
 # Thrown where the player is GOING. Running in a straight line is what beats an
 # Archer, so the second ranged enemy has to punish exactly that -- otherwise both of
 # them ask the same question and the room learns nothing new.
-func _spawn_javelin(enemy: Dictionary) -> void:
+# Where the player will be, not where they are. Running in a straight line is what
+# beats an Archer, so the second ranged enemy has to punish exactly that.
+func _javelin_lead(enemy: Dictionary) -> Vector2:
 	var origin := Vector2(enemy["pos"])
 	var aim := player_pos
 	if String(player_action.get("kind", "idle")) == "move":
 		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
 		var flight := origin.distance_to(player_pos) / JAVELIN_SPEED
 		aim += motion * current_move_speed() * flight
-	var direction := (aim - origin).normalized()
-	if direction.length_squared() < 0.001: direction = Vector2(enemy["facing"]).normalized()
+	var lead := (aim - origin).normalized()
+	if lead.length_squared() < 0.001: lead = Vector2(enemy["facing"]).normalized()
+	if lead.length_squared() < 0.001: lead = Vector2.DOWN
+	return lead
+
+func _spawn_javelin(enemy: Dictionary) -> void:
+	var origin := Vector2(enemy["pos"])
+	# The line committed to at the announcement. It does not re-aim: an early read
+	# escapes it, which is what makes the telegraph worth reading.
+	var direction := Vector2(Dictionary(enemy.get("action", {})).get("direction", Vector2(enemy["facing"]))).normalized()
+	if direction.length_squared() < 0.001: direction = _javelin_lead(enemy)
 	projectiles.append({
 		"pos": origin + direction * 44.0,
 		"vel": direction * JAVELIN_SPEED,
