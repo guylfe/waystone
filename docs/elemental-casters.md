@@ -252,8 +252,11 @@ The spellbook is the bestiary.
 
 A second bar would split the tension four milestones went into building: a caster who
 spends mana for offence and stamina for defence never faces the trade the Warrior faces,
-and casting becomes defensively free. Keeping one bar also means Milestone F's
-Recovery-versus-Stamina comparison covers the caster for free.
+and casting becomes defensively free. Keeping one bar is also why the
+**Recovery-versus-Stamina comparison runs after this class ships rather than in F**:
+"casting competes with dodging" is the entire argument against mana, and under Recovery
+there is no bar for it to compete with. Testing Warrior-only would answer half the
+question and let the caster invalidate it.
 
 ### The rename
 

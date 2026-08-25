@@ -36,16 +36,24 @@ Milestone order is fixed by dependency: **A** (combo continuation follows live i
 5. **Fire and Ice**, as *replacements* rather than additions. Both casters exist and currently have one close AoE and one ranged AoE each — four abilities, two verbs.
 6. **Air** — the one genuinely new enemy kind in the programme.
 7. **The Elementalist**, and the **Stamina → Energy rename** with it. The rename's cost is the historical record and is identical whenever it lands, so it ships beside the class that motivates it rather than as speculative churn.
+8. **The Recovery-versus-Stamina comparison** — the last open question about the kernel, and it runs *here* rather than in F. The caster economy is designed around Stamina existing: "casting competes with dodging" is the entire reason for refusing a mana bar, and under Recovery there is no bar for it to compete with. Running the comparison Warrior-only would answer half the question and then let the caster invalidate it. Waiting costs little — telegraph armour, the crowding push and the damage curve are all profile-agnostic, and the only Stamina-specific tuning is the costs themselves, which need redoing under Recovery whenever the test happens.
+
+**Steps 1 and 2 close the combat-loop series.** Steps 3 through 8 are the first *content* programme, and the gate is being crossed deliberately rather than by drift — see the note below.
 
 ### Still owed, outside that line
 
-- **F is not finished.** The retune happened in `0.2.34`, but the **Recovery-versus-Stamina comparison has still never been run** — the whole reason for fixing Stamina was to compare it fairly against the cooldown model. Keeping one resource bar for casters (no mana) means this comparison covers them too.
-- **G2 leftovers:** Werewolf and Warden as real bosses. Both exist as kinds; neither has boss behaviour. Still gated on a demonstrated gap.
+- **Werewolf and Warden as real bosses.** Both exist as kinds; neither has boss behaviour. This is what remains of G2 and it is still gated on a demonstrated gap.
 - **The Chanter and the Ox have never been played.** Neither appeared in the `0.2.33` run — `chanted_line` needs tier 6 and the run ended at tier 5.
 - **Renderer validation of A–D** — all of it verified headless only.
 - **An Acrobat survey run** — every survey so far has been Warrior.
 
-New enemy kinds belong to G2 and are gated on a gap being demonstrated rather than anticipated — the Ox jumped that gate in `0.2.25`; the E4 roster passed it on the ranged-pressure measurement, except the Duellist, which was approved as a deliberate exception. The elemental programme passes it on the `0.2.33` measurement above, with the caveat that Fire and Ice are repairs to existing content rather than additions.
+### On the milestone letters, which have stopped tracking the work
+
+A through G were built to answer the combat loop and nothing else. **G1 is the last of them.** G2 was written as "the smallest number of new enemies the surveys have shown to be missing", and **E4 already spent most of it** — the Javelineer, Earth Caster, Chanter and Duellist were G2 content pulled forward on a demonstrated ranged-pressure gap. What remains of G2 is the two bosses above.
+
+The caster programme is therefore **not** G2, and labelling it so would be convenient rather than true: it is one new enemy kind, two rewrites, eight abilities, three shared systems and a player subclass. Calling that "the smallest number of new enemies" would quietly blur the gate the *No content-first escape* trap exists to hold. So it is recorded here as its own programme, with the gate crossed as a decision: the `0.2.33` measurement demonstrated the gap, and Fire and Ice are repairs to existing content rather than additions.
+
+New enemy kinds remain gated on a gap being demonstrated rather than anticipated — the Ox jumped that gate in `0.2.25`; the Duellist was approved as a deliberate exception.
 
 The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md`; the caster design lives in `docs/elemental-casters.md`.
 
