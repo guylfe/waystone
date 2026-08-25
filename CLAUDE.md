@@ -11,7 +11,8 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 3. **`docs/combat-loop-diagnosis.md`**, **`docs/attack-capture-design.md`**, **`docs/attack-capture-implementation.md`** — the current work. Authoritative on combat-loop matters where they overlap the handoff.
 4. **`docs/combat-character-framework.md`** — detailed combat and character rules.
 5. **`docs/design-brief.md`**, **`docs/expedition-encounter-redesign.md`** — slice promise and the deferred encounter plan.
-6. **`docs/elemental-casters.md`** — the agreed, unimplemented design for the four elemental casters, the Elementalist subclass, and the shared systems they need. Read before touching any caster, projectile elevation, burn or frost.
+6. **`docs/survey-archive-findings.md`** — what 297 rated rooms across 30 runs actually say about composition, and two designs the evidence killed. Read before proposing anything about encounter generation.
+7. **`docs/elemental-casters.md`** — the agreed, unimplemented design for the four elemental casters, the Elementalist subclass, and the shared systems they need. Read before touching any caster, projectile elevation, burn or frost.
 
 `README.md` carries implemented-version history and the current version number. It is long; read it last.
 
@@ -29,7 +30,9 @@ Milestone order is fixed by dependency: **A** (combo continuation follows live i
 
 ### The agreed order
 
-1. **G1 — encounter grammar.** Each enemy declares the axis it pressures; the generator composes rooms whose axes conflict. Not a hardcoded list of good pairs — that is the same mistake as the recipe table it replaces. Author the taxonomy with the axes the elemental casters will occupy even though nothing fills them yet, the way `movement_denial` existed before the Earth Caster arrived to fill it. **Retire the Hexer** in this pass, since otherwise a benched enemy needs an axis declared for it.
+1. **G1 — encounter grammar.** Built on the archive analysis in `docs/survey-archive-findings.md`, not on intuition: across 200 recent rooms, *number of non-melee enemies* is very nearly the whole effect (0 → 1.61 fun, 1 → 2.48, 2 → 3.20), and it holds inside every version era, strongest in the most recent. So G1 (a) **guarantees non-melee presence**, at least one and preferably two, and (b) **deliberately composes a few pure-melee rooms from the differentiated roster** — Shield, Duellist, Ox, Polearm — as an explicit experiment, because the Shield and Duellist have *never once* appeared in a melee-only room and the archive therefore cannot say whether melee-only rooms are irredeemable or merely built from the five oldest kinds. Also **retire the Hexer** in this pass.
+
+   Two designs the evidence killed, recorded so they are not re-proposed: a demand/punish **conflict taxonomy** (193 of 200 rooms scored zero — the metric barely varies), and **role-diversity scoring** (role count and non-melee count are nearly the same variable, because eight melee bodies share two roles while every other role is a singleton).
 2. **Survey.** The falsification test for G1 — and the first run in which a poorly rated room means a bad *room*. This de-confounds every survey that follows, which is most of why G1 comes before the caster work rather than after it.
 3. **Shared systems** — projectile elevation and friendly fire, the burn and frost meters, the barrier list. Cheap to get wrong and everything downstream depends on them. See `docs/elemental-casters.md` §2.
 4. **Earth's wall**, since that caster already exists and `sunder` shipped in `0.2.33`.
