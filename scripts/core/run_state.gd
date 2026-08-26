@@ -219,7 +219,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.35"
+const GAME_VERSION := "0.2.36"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -888,7 +888,12 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		# Skirmish, Melee Cross and Melee Press -- were the measured 1.5s. They are
 		# retired rather than patched, because patching them would have meant adding an
 		# archer to each and losing the ability to test melee-only rooms at all.
-		{"id": "first_arrows", "label": "First Arrows", "family": "skirmish", "min_tier": 1, "phases": ["opening", "development", "respite"], "formations": ["ranged_support", "spread"], "enemies": [{"kind": "archer"}, {"kind": "hound"}], "reinforcements": [{"kind": "knife"}, {"kind": "boar"}]},
+				# Three bodies, not two. A lone melee escort leaves the Archer trivially reachable
+		# -- "when enemies are very dispersed the ranged enemy doesn't really affect the
+		# fight", 0.2.35 room 2 -- and the archive has no rooms of two enemies at all, so
+		# that shape was below anything ever measured. Its best band is 4-5 enemies with
+		# 2-3 melee alongside the pressure.
+		{"id": "first_arrows", "label": "First Arrows", "family": "skirmish", "min_tier": 1, "phases": ["opening", "development", "respite"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "archer"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
 		{"id": "hunted", "label": "Hunted", "family": "pursuit", "min_tier": 1, "phases": ["contrast", "pressure", "development"], "formations": ["spread", "flanked"], "enemies": [{"kind": "archer"}, {"kind": "boar"}, {"kind": "knife"}], "reinforcements": [{"kind": "hound"}, {"kind": "bandit"}]},
 		# --- Melee experiments -------------------------------------------------------
 		# Deliberate, not filler. Every melee-only room in the archive was built from the
@@ -4449,7 +4454,12 @@ func _enemy_blocks_attack(enemy: Dictionary) -> bool:
 	# recovery after it, is the opening a screen is supposed to sell you -- blocking
 	# straight through the attack made it unanswerable, which the 0.2.28 survey
 	# tagged unfair after landing BLOCKED against a shield at melee@0.06 and 1.22.
-	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) in ["melee", "dodge_strike", "charge", "slam"]: return false
+	# Reeling counts too. The 0.2.35 survey tagged two rooms unfair, and the strike log
+	# shows why: six blocks landed while the Shield was in `hit_reaction`, at elapsed
+	# 0.40 through 1.79 -- you hit it, it flinched, and it blocked your follow-up with a
+	# guard it could not possibly be holding. The 0.2.34 lengthening made this worse by
+	# putting more of its life into states that were not on this list.
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) in ["melee", "dodge_strike", "charge", "slam", "hit_reaction", "stagger"]: return false
 	var incoming := player_pos - Vector2(enemy["pos"])
 	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(72.0))
 
@@ -5281,9 +5291,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# scored every room carrying ranged pressure at 3.33/5 against 1.71 for
 			# melee-only rooms, and the Archer was the only ranged enemy in all of them.
 			# The thing carrying the good rooms should actually push.
-			enemy["action"] = _action("shoot", 1.24, direction)
-			enemy["action"]["startup"] = 0.46
-			enemy["shot_cooldown"] = 0.70 + 0.15 * float(int(enemy["id"]) % 3)
+			# 0.2.30 was right that ~2.7s between shots is weather rather than pressure, and
+			# 0.2.33 overcorrected: at 0.46 startup a shot begun the instant the player
+			# commits lands well inside a 0.983s strike lockout, every time, so the answer
+			# was "never attack" rather than a decision. Sat between the two.
+			enemy["action"] = _action("shoot", 1.30, direction)
+			enemy["action"]["startup"] = 0.60
+			enemy["shot_cooldown"] = 0.86 + 0.15 * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "knight":

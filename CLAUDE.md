@@ -100,6 +100,7 @@ If the Fold is not connected, still build and commit, and say the install was sk
 - **Choose the combat rule profile explicitly in tests.** A `RunState` instantiated without setup defaults to Recovery. Pass `"recovery"` or `"stamina"` so a passing test means what its name claims.
 - **Enemy locomotion runs on alternate ticks.** `_update_enemies(dt, _simulation_tick_index % 2 == 0)` means anything gated on `update_locomotion` needs a `× 2.0` step to hit its authored speed. `dodge_strike` is missing it and travels at half speed.
 - **No content-first escape.** More enemies or rooms multiply a weak loop rather than repair it.
+- **A familiar room is not a solved room.** Waystone is a continuous spatial simulation, not a tactics puzzle. There is no discrete move list to memorise, the instance is never recreated, and §6 withholds the numbers that would let deliberation become arithmetic. Knowledge of *enemies* accumulates permanently; solutions to *rooms* do not. Any reasoning that starts "the player already knows the answer, so this beat is empty" is starting from a false premise — discard the argument, not the beat. This mistake has been made repeatedly; see `docs/design-foundations.md` §4.5.
 - **No health-only difficulty, no invisible combat math, no input-dexterity creep.** Difficulty comes from action selection, composition, terrain, partial information and resources.
 - **Local checkout only.** Do not assume an older OneDrive tree is authoritative, and do not move the source into a synchronized cloud folder to reach tools.
 

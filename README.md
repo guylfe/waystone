@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.35` (Android version code `235`).
+Current prototype version: `0.2.36` (Android version code `236`).
+
+### v0.2.36: A reeling guard is not a guard
+
+The `0.2.35` survey ran five rooms and tagged two of them **unfair**. Both notes named the same two causes, and neither is about composition.
+
+**The Shield blocked while it was flinching.** `_enemy_blocks_attack` excluded its own attack states but not `hit_reaction` or `stagger` — so you hit it, it reeled, and it blocked your follow-up with a guard it could not possibly be holding. The strike log makes it unarguable: **six blocks landed at `hit_reaction@0.40` through `@1.79`** across the two rooms tagged unfair. `0.2.34`'s lengthening of its attack made this worse by moving more of its life into states that were not on the list. Reeling now counts.
+
+**The Archer was overcorrected.** `0.2.30` was right that ~2.7s between shots is weather rather than pressure, but `0.2.33` went to a 0.46s wind-up — which lands inside a 0.983s strike lockout *every* time, so the only answer was to stop attacking. Now 0.60s wind-up and a 0.86s cooldown, between the two.
+
+**The opening room was thinner than anything ever measured.** *"When enemies are very dispersed the ranged enemy doesn't really affect the fight."* First Arrows fielded two enemies, and the archive contains **no two-enemy rooms at all** — its best band is 4–5 enemies with 2–3 melee alongside the pressure. A lone escort leaves the Archer trivially reachable, so the room becomes a chase. Third body added, and its formations tightened.
+
+**On the G1 result itself: the first melee experiment is confounded.** Warded Duel drew Shield + Duellist + Boar and rated 2/5 for fun — but two of the six bad Shield blocks happened inside it, so the room was measuring the bug rather than the hypothesis. What survived is the tester's own note, which is the encouraging half: *"when the melee enemies are genuinely different from each other it is fun."* The experiment needs a clean run before it says anything.
 
 ### v0.2.35: Composition by evidence — Milestone G1
 

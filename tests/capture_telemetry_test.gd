@@ -954,6 +954,38 @@ func test_the_hexer_is_gone() -> void:
 		for entry in Array(Dictionary(recipe_value)["enemies"]):
 			check(String(Dictionary(entry).get("kind", "")) != "hexer", "a recipe still fields a Hexer")
 
+func test_a_reeling_screen_cannot_hold_its_guard() -> void:
+	# The 0.2.35 survey tagged two rooms unfair and the strike log named the cause: six
+	# blocks landed while the Shield was in hit_reaction, at elapsed 0.40 through 1.79.
+	# You hit it, it flinched, and it blocked the follow-up with a guard it could not be
+	# holding. Its own attack was already excluded; being staggered was not.
+	var state := survey_state()
+	var shield := alerted(state, "shield", Vector2.UP * 70.0)
+	shield["facing"] = (state.player_pos - Vector2(shield["pos"])).normalized()
+	shield["action"] = state._idle_action()
+	check(state._enemy_blocks_attack(shield), "an untouched Shield facing you should block")
+	for reeling in ["hit_reaction", "stagger"]:
+		shield["action"] = state._action(reeling, 0.8, Vector2.ZERO)
+		check(not state._enemy_blocks_attack(shield), "a Shield in %s must not block" % reeling)
+	shield["action"] = state._action("melee", 2.15, Vector2.UP)
+	check(not state._enemy_blocks_attack(shield), "a Shield mid-swing must not block")
+
+func test_the_archer_leaves_room_to_answer_it() -> void:
+	# 0.2.30 was right that ~2.7s between shots is weather; 0.2.33 overcorrected to a
+	# 0.46 wind-up, which lands inside a 0.983s strike lockout every time -- so the only
+	# answer was to stop attacking. The wind-up has to survive contact with a commitment.
+	var state := survey_state()
+	var archer := alerted(state, "archer", Vector2.UP * 420.0)
+	# Archers spawn with a small staggered cooldown (0.22 x id % 3) so a formation does
+	# not volley in unison. Cleared here so the first decision is the shot under test.
+	archer["shot_cooldown"] = 0.0
+	state._choose_enemy_action(archer)
+	var action: Dictionary = archer["action"]
+	check(String(action["kind"]) == "shoot", "the archer should be drawing")
+	if String(action["kind"]) != "shoot": return
+	check(float(action["startup"]) >= 0.55, "the archer's wind-up should leave time to read it")
+	check(float(action["startup"]) <= 0.68, "but it should stay faster than the 0.2.30 archer that read as weather")
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1000,6 +1032,8 @@ func _init() -> void:
 	test_every_recipe_can_actually_be_drawn()
 	test_every_enemy_kind_can_reach_a_room()
 	test_the_hexer_is_gone()
+	test_a_reeling_screen_cannot_hold_its_guard()
+	test_the_archer_leaves_room_to_answer_it()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

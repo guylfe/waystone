@@ -168,11 +168,30 @@ Waystone's recurring failure has been ordinary movement paying almost none of th
 
 ### 4.5 The solvability risk
 
-Dead Cells and its peers get replayability partly from **execution variance** — you can fail a run you understand perfectly. Frozen time removes that entirely: Waystone tests knowledge, and knowledge accumulates permanently.
+Dead Cells and its peers get replayability partly from **execution variance** — you can fail a run you understand perfectly. Frozen time removes the *reflex* component of that: Waystone never tests reaction speed, and knowledge of how an enemy behaves accumulates permanently.
 
 So Waystone needs more **renewable strategic uncertainty** than either CQ2 or a typical action roguelike: bounded probabilistic enemy action selection, terrain variation, partial information, genuine build diversity, and difficulty that escalates by introducing new enemy *techniques and combinations* — the Boss Cells / tiered-difficulty model — rather than by inflating numbers.
 
 This is the strongest long-term argument for the information-as-a-resource system in §13.
+
+#### A familiar room is not a solved room
+
+**This subsection exists because the inference has been drawn repeatedly, by more than one reader of this document, and it corrupts everything downstream of it.** The error is to read "frozen time removes execution variance" as "a room the player understands is finished", and then to reason as though Waystone were a tactics game in which a solved position is a memorised move sequence. **Waystone is a continuous spatial simulation, not a tactics puzzle**, and §3.4 rejects that framing by name.
+
+Three reasons the inference fails:
+
+- **There is no move list to memorise.** A tactics game offers a finite discrete choice per turn, so a solved position collapses to a remembered sequence. Waystone's action space is *continuous over continuous geometry*: where you stand, which way you face, which arc a swing sweeps, how far you have travelled when you commit, and how deep into an enemy's telegraph you commit. Those are judged fresh every time on a continuum; they are not matched against a stored answer.
+- **The instance is never recreated.** Enemies advance continuously at 120 Hz through every committed action, so the room's state a moment from now is a function of exactly when and where you acted. Add bounded probabilistic action selection once telegraphed, detection and noise, patrol and formation variation, entry direction, terrain, the build you are carrying, and the health, stamina and potion state you arrived in — the same recipe is a different problem.
+- **Unlimited thinking time does not yield an answer, because the numbers are withheld.** §6 exposes properties qualitatively and deliberately refuses exact durations, distances and posture values so that deliberation cannot become arithmetic. A player with infinite time still has to *judge*.
+
+What accumulates permanently is **knowledge of enemies and of principles** — what a Boar commits to, what a Shield punishes, that an Archer prices open ground. What does not accumulate is a **solution to a room**, because rooms are not instantiated twice.
+
+Two consequences, both load-bearing for content and pacing:
+
+- **A familiar composition is legitimate content anywhere in a run.** Repetition of a *recipe* is not repetition of an *experience*, and a beat built on well-understood enemies is not thereby empty. §4.6 already records the measurement that looks like counter-evidence — Boar/Hound/Knife rating 3/5 and then 1/5 twice in `0.2.18` — and already concludes that it measured the grading task, not the game.
+- **Skill expression survives.** Frozen time removes reaction speed as a skill; it does not remove spatial judgement. Two players who both understand a room perfectly will play it differently and get different results, and the better one is executing better.
+
+Any argument that begins *"the player already knows the answer, so this beat is empty"* is starting from a false premise. Discard the argument, not the beat.
 
 ### 4.6 Individually solvable, combinatorially hard
 
