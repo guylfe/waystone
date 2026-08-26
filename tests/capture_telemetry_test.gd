@@ -986,6 +986,29 @@ func test_the_archer_leaves_room_to_answer_it() -> void:
 	check(float(action["startup"]) >= 0.55, "the archer's wind-up should leave time to read it")
 	check(float(action["startup"]) <= 0.68, "but it should stay faster than the 0.2.30 archer that read as weather")
 
+func test_rooms_are_populated_enough_for_the_pressure_to_matter() -> void:
+	# G1 guarantees non-melee PRESENCE, which is not the same as pressure. The 0.2.35
+	# survey ran rooms of 2, 3, 3, 4 and 3 enemies and the tester noted that a dispersed
+	# ranged enemy "doesn't really affect the fight" -- one melee escort leaves an Archer
+	# trivially reachable and the room becomes a chase.
+	#
+	# The cause was the budget: 2 + tier gave 3 at tier 1, which the G1 recipes already
+	# spent on their base composition, so the reinforcement loop never ran once. The
+	# archive's best band is 4-5 enemies (2.76 and 2.71 mean fun) against 2.29 at six.
+	var state := survey_state()
+	var counts := {}
+	var total := 0
+	for salt in range(6):
+		for room_number in range(1, 14):
+			var recipe := composition_for(state, room_number, salt)
+			var size := Array(recipe["enemies"]).size()
+			counts[size] = int(counts.get(size, 0)) + 1
+			total += 1
+			check(size <= 5, "room %d fielded %d enemies; six-enemy rooms are the archive's worst band" % [room_number, size])
+	var in_band := int(counts.get(4, 0)) + int(counts.get(5, 0))
+	check(float(in_band) / float(total) > 0.55,
+		"most rooms should sit in the measured 4-5 band, got %.0f%%" % (100.0 * float(in_band) / float(total)))
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1034,6 +1057,7 @@ func _init() -> void:
 	test_the_hexer_is_gone()
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
+	test_rooms_are_populated_enough_for_the_pressure_to_matter()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

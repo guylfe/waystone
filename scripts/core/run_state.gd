@@ -219,7 +219,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.36"
+const GAME_VERSION := "0.2.37"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1018,12 +1018,23 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	var chosen := Dictionary(candidates[room_rng.randi_range(0, candidates.size() - 1)]).duplicate(true)
 	var enemies: Array[Dictionary] = []
 	for enemy_value in Array(chosen["enemies"]): enemies.append(Dictionary(enemy_value).duplicate())
-	var target_budget := mini(18, 2 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
+	# 2 + tier was sized for the old deck, whose base recipes were cheap -- Boar + Hound
+	# cost 2 -- and left the fill loop below to do the work. The G1 recipes are
+	# front-loaded instead, so at tier 1 the budget of 3 was already spent by the base
+	# composition and reinforcements never fired at all: the 0.2.35 survey ran rooms of
+	# 2, 3, 3, 4 and 3 enemies, and the tester noted that a dispersed ranged enemy
+	# "doesn't really affect the fight". The archive's best band is 4-5 enemies with 2-3
+	# melee alongside the pressure, which needs roughly two more points of budget.
+	var target_budget := mini(18, 4 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
 	if pacing_phase == "respite": target_budget = maxi(3, target_budget - 2)
 	var cost := _survey_composition_cost(enemies)
 	var reinforcements: Array = chosen.get("reinforcements", [])
 	var attempts := 0
-	while cost < target_budget and enemies.size() < 6 and not reinforcements.is_empty() and attempts < 18:
+	# Capped at five, not six. The archive rates six-enemy rooms at 2.29 mean fun -- its
+	# worst band -- against 2.76 at four and 2.71 at five. Thin evidence (n=7) but it is
+	# the only evidence, it points one way, and a lower cap also keeps the crowding push
+	# from having to do as much work.
+	while cost < target_budget and enemies.size() < 5 and not reinforcements.is_empty() and attempts < 18:
 		attempts += 1
 		var option := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
 		var kind := String(option["kind"])

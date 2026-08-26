@@ -1,6 +1,26 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.36` (Android version code `236`).
+Current prototype version: `0.2.37` (Android version code `237`).
+
+### v0.2.37: Presence is not pressure
+
+`0.2.35` guaranteed every room a non-melee enemy and the rooms still rated 2. The tester named why: *"when enemies are very dispersed the ranged enemy doesn't really affect the fight."* One melee escort leaves an Archer trivially reachable, and the room becomes a chase rather than a problem.
+
+**The cause was the reinforcement budget, and it had been quietly dead.**
+
+```
+target_budget = min(18, 2 + tier + (2 stress / 1 unusual / 0 conventional))
+```
+
+At tier 1 conventional that is **3** — and First Arrows already cost 3, Hunted cost 4. Every room in that survey was at or over budget before the fill loop was even considered, so **it never ran once**. The formula was sized for the old deck, whose base recipes were cheap (Boar + Hound = 2) and left reinforcements to do the work; the G1 recipes are front-loaded instead.
+
+- Budget raised to `4 + tier + band`. Measured across 390 generated rooms: **mean enemies per room 3.0 → 4.03**, with rooms 1–3 rising from about 2.3 to 3.71.
+- **Capped at five rather than six.** The archive rates six-enemy rooms at **2.29** mean fun — its worst band — against 2.76 at four and 2.71 at five. Thin evidence (n=7), but it is the only evidence and it points one way, and a lower cap also leaves the crowding push less to do.
+- Result: **73% of rooms now sit in the measured 4–5 band**, none above it.
+
+Both changes are one lever each, deliberately: base recipe costs were left alone so the next survey can attribute what it sees.
+
+**Watch for a difficulty spike.** This adds roughly one enemy per room across the board. The two things that killed the last run — the Archer's wind-up and the Shield blocking while reeling — were fixed in `0.2.36`, so there is headroom, but this is the change most likely to have overshot.
 
 ### v0.2.36: A reeling guard is not a guard
 
