@@ -109,12 +109,21 @@ func test_attackers_actually_advance() -> void:
 				"%s %s advanced only %.1f of an authored %.1f" % [kind, option["technique"], result["advanced"], authored])
 
 func test_spear_punishes_retreat_more_than_lateral() -> void:
-	# Identity out of geometry rather than bespoke behaviour: stepping forward ruins
-	# backing away but makes going around easier, because the enemy ends up closer
-	# and its arc is quicker to clear. "Never back away from a spear."
+	# Superseded in 0.2.34, and the reversal was the point of that change.
+	#
+	# This asserted "never back away from a spear", which was true only because the
+	# thrust carried 229 units of forward travel against its own 218 reach -- so every
+	# thrust ended in melee and the Polearm fought like a slow Blade. That travel was not
+	# a mistake either: at a 0.90s wind-up against a 260/s walk the player clears 234
+	# units, so without the lunge the attack could never land at all.
+	#
+	# Shortening the wind-up to 0.42 let the travel drop to 60, and a free player now
+	# walks out of the thrust -- deliberately. The spear is thrown at LATENESS instead,
+	# which is what "strike from behind other enemies" actually means. Probed at 0
+	# damage to a walking player and 13 to a committed one.
 	var radial := trial("polearm", "thrust", "retreat", 0.5)
 	var lateral := trial("polearm", "thrust", "lateral", 0.5)
-	check(bool(radial["hit"]), "a spear thrust must punish a mid-telegraph retreat")
+	check(not bool(radial["hit"]), "a free player who reads the thrust and backs away must escape it")
 	check(not bool(lateral["hit"]), "stepping out of a spear's narrow line must still work")
 
 func test_translation_stops_before_arc_contact() -> void:

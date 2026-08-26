@@ -1,6 +1,37 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.34` (Android version code `234`).
+Current prototype version: `0.2.35` (Android version code `235`).
+
+### v0.2.35: Composition by evidence — Milestone G1
+
+The generator now composes rooms from what 297 rated rooms actually say, and the survey runner stopped hiding failures.
+
+**The rule, and it is not a preference.** Across 200 recent rooms the count of non-melee enemies maps to mean fun of **1.61 / 2.48 / 3.20** for 0 / 1 / 2 of them. The effect holds inside every version era and is *largest* in the most recent (+1.40 at `0.2.27+`), so it is not an artifact of pooling old data. All ten of the best rooms ever recorded contain a non-melee enemy; 87% of the worst are pure melee. Full analysis in `docs/survey-archive-findings.md`.
+
+- **Every room now carries non-melee pressure**, enforced in the selector rather than trusted to the deck, so a recipe added later cannot quietly reintroduce the rooms that measured 1.5.
+- **The four recipes that measured 1.5 are retired** — Opening Pursuit, Mixed Skirmish, Melee Cross, Melee Press. Patched rather than retired would have meant bolting an archer onto each and losing the ability to test melee-only rooms at all.
+- **Two designs the evidence killed**, recorded so they are not re-proposed: a demand/punish **conflict taxonomy** (193 of 200 rooms scored zero — the metric barely varies) and **role-diversity scoring** (role count and non-melee count are nearly the same variable, because eight melee bodies share two roles while every other role is a singleton).
+
+**Melee experiments, on rooms 3, 7 and 11.** Deterministic, not random — a designed experiment that only *might* appear is how the Chanter and Ox spent a whole version unplayed. Every melee-only room in the archive was built from the five oldest kinds, and **the Shield and Duellist have never once appeared in one**, so "melee-only rooms are irredeemable" and "those five enemies are undifferentiated" are still indistinguishable. Warded Duel, Goring Reach and Heavy Press field Shield, Duellist, Ox, Polearm and Brute to settle it.
+
+**Reachability is now a test.** Every recipe and all 17 enemy kinds can be drawn in a 13-room run. Two recipes previously could not: `dual_elements` and `knight_command`. The trap is structural — climax falls on rooms 5 and 11, and 11 is always an experiment, so any climax-only recipe above tier 3 is unreachable by construction.
+
+**The Hexer is retired.** Under the elemental framework its delayed danger zone is a delivery mechanism rather than an element, and Fire and Ice both already use it.
+
+**The runner was lying.** `run-tests.ps1` counted only `Assertion failed|SCRIPT ERROR` and discarded the exit code, so every test file using the `failures`-array convention reported PASS regardless of outcome. Fixing it revealed failures in **five** files. Four were tests preserving designs that had been deliberately superseded:
+
+- the Polearm's *"never back away from a spear"*, which `0.2.34` inverted on purpose;
+- the Hound *"punishing commitment at any range"*, a direction E2 explicitly rejected — the source records the reasoning at the Hound's own charge gate;
+- Sweeping Cut costing the *scaled* combo total, when it has been exempt from `STAMINA_COST_SCALE` since `0.2.18`;
+- Polearm commitment tests driven by an idle player, when it now decides on lateness.
+
+**And three real bugs the newly-visible tests caught:**
+
+- **A reach enemy could deadlock.** `_melee_intent` could roll the shaft-cut intent while the Polearm stood at range — and the reach role refuses to approach inside its hold distance, so it could never satisfy that intent and simply walked forever. Measured stuck at 194.6 units with clear line of sight, holding an intent that required 116. Its attack is now chosen by distance, not by a weighted roll it cannot honour.
+- **The reach role held at 210 while its own thrust commits at 205 + 4.** A Polearm standing exactly at its assigned distance was one unit outside its own commit band. A role must be able to act from the distance it is told to hold.
+- **A charging body could be shoved aside.** The `0.2.32` crowding push is mass-gated, and the Hound at 0.75 is the most shoveable thing in the game and the one that spends the most time charging. A committed charge is now solid whatever it weighs — which is what the Ox's `unstoppable` flag already said for one kind.
+
+Test harness fixes worth noting: `survey_state()` now resets `_next_enemy_id` and rebuilds the wall spatial index. Clearing `walls` never rebuilt the index that line-of-sight actually queries, so tests silently kept whatever geometry the opening room drew — which is how changing the recipe deck broke unrelated tests.
 
 ### v0.2.34: Six fixes the `0.2.33` survey asked for
 

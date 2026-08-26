@@ -1476,9 +1476,12 @@ func test_new_enemy_roles() -> void:
 	bandit["action"] = state._idle_action()
 	state._try_bandit_counter(bandit)
 	assert(String(Dictionary(bandit["action"])["kind"]) != "dodge_strike")
-	var hexer := state._make_enemy("hexer", state.player_pos + Vector2(0, -400), 7)
-	state._choose_enemy_action(hexer)
-	assert(String(Dictionary(hexer["action"])["kind"]) == "hex")
+	# The Hexer is retired. Its identity was a delayed danger zone, which under the
+	# elemental framework is a delivery mechanism rather than an element -- and both
+	# Fire and Ice already use it. The Ice Caster carries the behaviour it stood for.
+	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2(0, -400), 7)
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["kind"]) == "ice_hex")
 	var brute := state._make_enemy("brute", state.player_pos + Vector2(0, -140), 16)
 	state._choose_enemy_action(brute)
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")

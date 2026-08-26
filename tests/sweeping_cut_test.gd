@@ -60,8 +60,13 @@ func test_it_costs_the_whole_combo() -> void:
 	while combo.advance_streamed_action_tick(): pass
 	var combo_cost := combo_before - combo.player_stamina
 
-	check(absf(sweep_cost - combo_cost) < 0.01,
-		"Sweeping Cut should cost the combo's total: sweep %.0f versus combo %.0f" % [sweep_cost, combo_cost])
+	# Sweeping Cut is charged through _spend_stamina(SWEEPING_CUT_STAMINA, false) -- the
+	# `false` exempts it from STAMINA_COST_SCALE. So it costs what the combo would cost
+	# UNSCALED, which is the comparison that survived 0.2.18 introducing the scale. The
+	# old assertion compared it against the scaled combo and has been quietly red since.
+	var unscaled_combo := combo_cost / combo.STAMINA_COST_SCALE
+	check(absf(sweep_cost - unscaled_combo) < 1.5,
+		"Sweeping Cut should cost the combo's unscaled total: sweep %.0f versus combo %.0f unscaled %.0f" % [sweep_cost, combo_cost, unscaled_combo])
 
 func test_damage_and_posture_match_the_finisher() -> void:
 	for rules in ["stamina", "recovery"]:

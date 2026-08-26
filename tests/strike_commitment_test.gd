@@ -51,7 +51,14 @@ func approach(kind: String, start_distance: float, enemy_id: int, seed_value: in
 	enemy["dodge_cooldown"] = 9.0
 	enemy["facing"] = Vector2.LEFT
 	state.enemies.assign([enemy])
+	# Wait is a commitment but not an attack, so it draws the kinds that now decide on
+	# LATENESS rather than on range -- the Shield since 0.2.31, the Polearm since 0.2.34
+	# -- without also triggering the Bandit's slip or the Duellist's parry. Re-issued as
+	# it expires so the approach stays observed for its whole length.
 	for _step in range(700):
+		var remaining := float(state.player_action.get("duration", 0.0)) - float(state.player_action.get("elapsed", 0.0))
+		if String(state.player_action.get("kind", "idle")) == "idle" or remaining < 1.0:
+			state.player_action = state._action("wait", 4.0, Vector2.UP)
 		state._tick(state.SIM_DT)
 		var now: Dictionary = state.enemies[0]
 		var action := Dictionary(now["action"])
@@ -97,7 +104,13 @@ func test_two_attack_enemies_use_both() -> void:
 		var seen := {}
 		for id_offset in range(8):
 			for distance_step in range(5):
-				var result := approach(kind, 300.0 + float(distance_step) * 11.3, 40 + id_offset, 4100 + id_offset * 131 + distance_step * 17)
+				# Sample both bands. Since 0.2.34 the Polearm holds its distance and takes
+				# the shaft cut only when the player is already inside the point, so an
+				# approach that starts at 300 will only ever show the thrust -- the short
+				# attack is reached by the player closing, not by the enemy advancing.
+				var starts: Array[float] = [96.0, 150.0, 240.0, 300.0, 340.0]
+				var start: float = starts[distance_step]
+				var result := approach(kind, start, 40 + id_offset, 4100 + id_offset * 131 + distance_step * 17)
 				if result.is_empty(): continue
 				seen[String(result["technique"])] = int(seen.get(String(result["technique"]), 0)) + 1
 		for option_value in CombatCatalogScript.melee_attack_plan(kind):

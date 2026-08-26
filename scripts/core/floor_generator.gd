@@ -774,7 +774,7 @@ static func _expedition_encounters(part: int, sockets: Array, rng: RandomNumberG
 		var offset: Vector2 = Vector2(offsets[local_index % offsets.size()]).rotated(rng.randf_range(-0.28, 0.28)) * (1.0 + int(local_index / offsets.size()) * 0.24)
 		# Casters need enough room that their circles and cones read as separate
 		# problems rather than one indistinct stack of danger zones.
-		if kind in ["ice_caster", "fire_caster", "hexer"]:
+		if kind in ["ice_caster", "fire_caster", "earth_caster"]:
 			offset *= 1.52 + int(local_index / offsets.size()) * 0.10
 		result.append({
 			"kind": kind, "pos": Vector2(socket["pos"]) + offset,
@@ -787,10 +787,10 @@ static func _expedition_encounters(part: int, sockets: Array, rng: RandomNumberG
 static func _campaign_encounter(area_id: int, center: Vector2, layer: String, rng: RandomNumberGenerator) -> Array[Dictionary]:
 	var rosters := {
 		1: ["blade", "knife", "hound", "archer", "blade"],
-		3: ["polearm", "archer", "hexer", "blade", "hound", "javelineer"],
-		5: ["polearm", "archer", "hexer", "blade", "hound", "duellist"],
-		6: ["hound", "hexer", "polearm", "knife", "blade", "hexer"],
-		7: ["brute", "hexer", "polearm", "chanter", "blade", "hound"],
+		3: ["polearm", "archer", "earth_caster", "blade", "hound", "javelineer"],
+		5: ["polearm", "archer", "ice_caster", "blade", "hound", "duellist"],
+		6: ["hound", "earth_caster", "polearm", "knife", "blade", "javelineer"],
+		7: ["brute", "ice_caster", "polearm", "chanter", "blade", "hound"],
 		8: ["brute", "polearm", "hound", "archer", "knife"],
 	}
 	var roster: Array = rosters.get(area_id, ["blade", "hound", "knife"])

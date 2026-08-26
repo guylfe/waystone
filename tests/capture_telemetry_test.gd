@@ -31,6 +31,18 @@ func survey_state() -> RunState:
 	state.start_run("warrior", "combat_survey", 4242, "encounter", "stamina")
 	state.enemies.clear()
 	state.walls.clear()
+	# Clearing the array is not enough: the wall spatial index is what line-of-sight
+	# actually queries, so without a rebuild these tests keep whatever geometry the
+	# opening room happened to draw -- and a test's result then depends on which arena
+	# the recipe deck produced, which is how changing the deck broke unrelated tests.
+	state._build_wall_spatial_index()
+	state.hazards.clear()
+	state.projectiles.clear()
+	# Several behaviours are seeded on enemy id -- which side a Bandit slips to, which
+	# lane a Hound reserves, a Shield's temper. Without this, a test's outcome depends on
+	# how many enemies the opening room happened to spawn, so changing the recipe deck
+	# silently flips unrelated tests. The id restarts here so a test controls its own.
+	state._next_enemy_id = 1
 	return state
 
 # Drives one attack against a scripted response and returns its record.
@@ -253,12 +265,18 @@ func test_commitment_is_what_makes_you_late() -> void:
 		"committing to a strike inside a Boar's range must be punished")
 	check(charge_outcome_while_committed("hound", 150.0, Vector2.LEFT) == "contact",
 		"committing to a strike inside a Hound's range must be punished")
-	# Distance still buys out of it -- against the Boar. The Hound is the animal you
-	# cannot afford to be busy near at any range, which is its whole identity.
+	# Distance buys out of it for BOTH animals. This used to assert that the Hound
+	# punished commitment at any range -- but that direction was explicitly rejected
+	# during E2 and the source records the reasoning at the Hound's charge gate:
+	# tracking_end was matched to the Boar's 0.70 precisely because at 0.55 "a committed
+	# player was caught even at 220", and "you can never be busy near a Hound" is a
+	# constraint rather than a decision. The test was preserving the direction the design
+	# threw out. Hound differentiation lives in damage, body width, speed and re-charge
+	# cadence, all of which are visible before you commit.
 	check(charge_outcome_while_committed("boar", 220.0, Vector2.LEFT) == "miss",
 		"range must let a committed player survive the slower charge")
-	check(charge_outcome_while_committed("hound", 220.0, Vector2.LEFT) == "contact",
-		"the Hound must punish commitment even at range")
+	check(charge_outcome_while_committed("hound", 220.0, Vector2.LEFT) == "miss",
+		"range must buy out of the Hound's charge too -- E2 rejected the alternative")
 
 func test_distance_restores_the_answer_to_a_charge() -> void:
 	# Range is a real defence: the same charge from further out is escapable, and a
@@ -814,6 +832,128 @@ func test_the_duellists_poke_is_a_sword_not_a_spear() -> void:
 	if poke.is_empty() or spear.is_empty(): return
 	check(float(poke["reach"]) < float(spear["reach"]) * 0.55, "a sword poke must not out-reach a polearm's shaft cut")
 
+# --- Milestone G1: composition ---------------------------------------------------
+#
+# These encode the findings in docs/survey-archive-findings.md, taken from 297 rated
+# rooms across 30 runs. The headline: the number of NON-MELEE enemies in a room is very
+# nearly the whole story. 0/1/2 of them maps to 1.61/2.48/3.20 mean fun, the effect
+# holds inside every version era and is largest in the most recent, all ten of the best
+# rooms ever recorded contain one, and 87% of the worst rooms are pure melee.
+#
+# Two designs the archive killed, asserted against here so they are not quietly
+# reintroduced: a demand/punish conflict score (193 of 200 rooms scored zero) and
+# role-diversity scoring (role count and non-melee count are nearly the same variable).
+
+func room_phase(room_number: int) -> String:
+	return ["opening", "development", "contrast", "pressure", "climax", "respite"][(room_number - 1) % 6]
+
+func composition_for(state: RunState, room_number: int, salt: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9000 + salt * 131 + room_number
+	var phase := room_phase(room_number)
+	return state._survey_composition(rng, room_number, state._survey_threat_band(phase, rng), phase)
+
+func test_every_room_carries_non_melee_pressure() -> void:
+	# The guarantee. Enforced in the selector rather than trusted to the deck, so a
+	# recipe added later cannot quietly reintroduce the rooms that measured 1.5 fun.
+	var offenders := 0
+	for salt in range(8):
+		var state := survey_state()
+		for room_number in range(1, 14):
+			var recipe := composition_for(state, room_number, salt)
+			if bool(recipe.get("melee_experiment", false)): continue
+			if state._recipe_non_melee_count(recipe) == 0: offenders += 1
+	check(offenders == 0, "%d non-experiment rooms were composed with no non-melee pressure" % offenders)
+
+func test_melee_only_rooms_are_deliberate_and_rationed() -> void:
+	# The exception exists to run an experiment, not to pad the deck. Every melee-only
+	# room in the archive was built from the five oldest kinds and the Shield and
+	# Duellist never once appeared in one -- so "melee-only rooms are irredeemable" and
+	# "those five enemies are undifferentiated" are still indistinguishable.
+	var state := survey_state()
+	var experiment_rooms: Array[int] = []
+	for room_number in range(1, 14):
+		if state._survey_is_melee_experiment_room(room_number): experiment_rooms.append(room_number)
+	check(experiment_rooms == [3, 7, 11], "experiments should fall on rooms 3, 7 and 11, got %s" % str(experiment_rooms))
+
+func test_the_experiment_uses_the_differentiated_roster() -> void:
+	# Testing melee differentiation with Boar and Hound would answer nothing: those are
+	# the kinds the archive already condemned. The experiment has to field the enemies
+	# E2, E3 and E4 actually changed.
+	var differentiated := ["shield", "duellist", "ox", "polearm", "brute"]
+	var state := survey_state()
+	var checked := 0
+	for recipe_value in state._survey_recipe_catalog():
+		var recipe := Dictionary(recipe_value)
+		if not bool(recipe.get("melee_experiment", false)): continue
+		checked += 1
+		var found := false
+		for entry in Array(recipe["enemies"]):
+			if String(Dictionary(entry).get("kind", "")) in differentiated: found = true
+		check(found, "%s is a melee experiment built from none of the differentiated kinds" % String(recipe["id"]))
+	check(checked >= 3, "there should be enough melee experiments to read a result, found %d" % checked)
+
+func test_a_melee_experiment_really_is_melee_only() -> void:
+	# If an experiment carried an archer it would measure nothing.
+	var state := survey_state()
+	for recipe_value in state._survey_recipe_catalog():
+		var recipe := Dictionary(recipe_value)
+		if not bool(recipe.get("melee_experiment", false)): continue
+		check(state._recipe_non_melee_count(recipe) == 0,
+			"%s is flagged as a melee experiment but carries non-melee pressure" % String(recipe["id"]))
+
+func test_every_room_number_has_something_to_draw() -> void:
+	# A tier-and-phase combination with no eligible recipe would fall back to the first
+	# entry in the catalog regardless of fitness.
+	var state := survey_state()
+	for salt in range(4):
+		for room_number in range(1, 14):
+			var recipe := composition_for(state, room_number, salt)
+			check(not String(recipe.get("id", "")).is_empty(), "room %d produced no recipe" % room_number)
+			check(not Array(recipe.get("enemies", [])).is_empty(), "room %d produced an empty composition" % room_number)
+
+func test_every_recipe_can_actually_be_drawn() -> void:
+	# The Chanter and the Ox spent a whole version unplayed because chanted_line needed
+	# tier 6 and a ten-room run reaches tier 5. A recipe that cannot be reached is a
+	# recipe that cannot be evaluated, and this is how that stops being discovered by
+	# accident. Climax is the trap: it falls on rooms 5 and 11, and 11 is always an
+	# experiment, so a climax-only recipe above tier 3 is unreachable by construction.
+	var state := survey_state()
+	var reachable: Dictionary = {}
+	for room_number in range(1, 14):
+		var tier := 1 + int(floor(float(room_number - 1) * 0.5))
+		var phase := room_phase(room_number)
+		var wants_experiment := state._survey_is_melee_experiment_room(room_number)
+		for recipe_value in state._survey_recipe_catalog():
+			var recipe := Dictionary(recipe_value)
+			if tier < int(recipe["min_tier"]) or not Array(recipe["phases"]).has(phase): continue
+			if bool(recipe.get("melee_experiment", false)) != wants_experiment: continue
+			reachable[String(recipe["id"])] = true
+	for recipe_value in state._survey_recipe_catalog():
+		var recipe_id := String(Dictionary(recipe_value)["id"])
+		check(reachable.has(recipe_id), "%s can never be drawn in a 13-room run" % recipe_id)
+
+func test_every_enemy_kind_can_reach_a_room() -> void:
+	var state := survey_state()
+	var placed: Dictionary = {}
+	for recipe_value in state._survey_recipe_catalog():
+		for entry in Array(Dictionary(recipe_value)["enemies"]):
+			placed[String(Dictionary(entry).get("kind", ""))] = true
+	for kind in ["archer", "javelineer", "chanter", "earth_caster", "ox", "duellist", "shield", "polearm", "brute", "knight"]:
+		check(placed.has(kind), "%s is in the roster but no recipe fields it" % kind)
+
+func test_the_hexer_is_gone() -> void:
+	# Retired in G1. Its identity was a delayed danger zone, which under the elemental
+	# framework is a delivery mechanism rather than an element -- and Fire and Ice both
+	# already use it.
+	# archetype() falls back to the Blade for unknown ids, so it is never empty -- ask
+	# the table directly.
+	check(not CombatCatalogScript.ARCHETYPES.has("hexer"), "the Hexer should no longer be in the catalog")
+	var state := survey_state()
+	for recipe_value in state._survey_recipe_catalog():
+		for entry in Array(Dictionary(recipe_value)["enemies"]):
+			check(String(Dictionary(entry).get("kind", "")) != "hexer", "a recipe still fields a Hexer")
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -852,6 +992,14 @@ func _init() -> void:
 	test_the_long_thrust_is_still_only_thrown_at_lateness()
 	test_a_javelineer_faces_where_it_throws()
 	test_the_duellists_poke_is_a_sword_not_a_spear()
+	test_every_room_carries_non_melee_pressure()
+	test_melee_only_rooms_are_deliberate_and_rationed()
+	test_the_experiment_uses_the_differentiated_roster()
+	test_a_melee_experiment_really_is_melee_only()
+	test_every_room_number_has_something_to_draw()
+	test_every_recipe_can_actually_be_drawn()
+	test_every_enemy_kind_can_reach_a_room()
+	test_the_hexer_is_gone()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()

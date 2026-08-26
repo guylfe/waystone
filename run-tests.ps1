@@ -95,12 +95,15 @@ foreach ($name in $Selected) {
     # failure. Without this the runner would block forever on a red test.
     $job = Start-Job -ScriptBlock {
         param($godot, $root, $file)
-        & $godot --headless --path $root --script $file 2>&1 | Out-String
+        $text = & $godot --headless --path $root --script $file 2>&1 | Out-String
+        [pscustomobject]@{ Output = $text; Code = $LASTEXITCODE }
     } -ArgumentList $Godot, $ProjectRoot, "tests/$name.gd"
 
     if (Wait-Job $job -Timeout $TimeoutSeconds) {
-        $output = (Receive-Job $job) -join "`n"
-        $code = 0
+        $result = Receive-Job $job
+        $output = ($result | ForEach-Object { $_.Output }) -join "`n"
+        $code = ($result | ForEach-Object { $_.Code } | Select-Object -Last 1)
+        if ($null -eq $code) { $code = 0 }
         $timedOut = $false
     } else {
         Stop-Job $job
@@ -111,8 +114,13 @@ foreach ($name in $Selected) {
     }
     Remove-Job $job -Force
 
-    $problems = ([regex]::Matches($output, 'Assertion failed|SCRIPT ERROR')).Count
-    $ok = (-not $timedOut) -and ($problems -eq 0)
+    # Two reporting conventions exist in tests/. Files that assert() surface
+    # "Assertion failed"; files that collect into a failures array surface "FAILED:"
+    # and exit non-zero. Only the first was ever counted, so every check()-style file
+    # reported PASS no matter what it found -- which hid two real failures in
+    # capture_telemetry_test, the file carrying most of the milestone coverage.
+    $problems = ([regex]::Matches($output, 'Assertion failed|SCRIPT ERROR|FAILED:')).Count
+    $ok = (-not $timedOut) -and ($problems -eq 0) -and ($code -eq 0)
 
     if ($ok) {
         Write-Host ("{0,-34} PASS" -f $name) -ForegroundColor Green

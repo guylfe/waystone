@@ -106,6 +106,13 @@ const HOUND_NEUTRAL_AFTER_EVADE := 0.55
 # between the player and something they are covering; reach holds its own bearing
 # at spear distance instead of closing.
 const RECIPE_REPEAT_WINDOW := 4
+# Roles that are not a melee body. Expressed as roles rather than as a list of kinds so
+# the elemental casters slot in as rows later instead of needing a retrofit.
+const NON_MELEE_ROLES := ["ranged_pressure", "area_denial", "movement_denial", "support"]
+# Every fourth room is a melee experiment: rooms 3, 7 and 11 of a run. Deterministic
+# rather than random, because a designed experiment that only *might* appear is how the
+# Chanter and the Ox spent a whole version unplayed.
+const MELEE_EXPERIMENT_EVERY := 4
 const ANCHORED_ROLES := ["frontline", "screen", "reach"]
 # Generous, so a frontliner corrects only when it is genuinely out of place rather
 # than shuffling instead of fighting.
@@ -115,7 +122,11 @@ const ANCHORED_ROLES := ["frontline", "screen", "reach"]
 # withdrawn: it destabilised when an enemy should commit, breaking two roster
 # assertions for a marginal gain. Correcting a held line needs a reposition that
 # does not compete with attacking, not a veto over it.
-const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 210.0}
+# Reach holds at 200 rather than 210 for a specific reason: the thrust commits at
+# 205 + STRIKE_COMMIT_BAND (4), so a Polearm standing at 210 was one unit outside its
+# own commit band and would hold that spot without ever attacking. A role must be able
+# to act from the distance it is told to hold.
+const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 200.0}
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
 # selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
@@ -208,7 +219,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.34"
+const GAME_VERSION := "0.2.35"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -867,26 +878,45 @@ func _survey_threat_band(pacing_phase: String, room_rng: RandomNumberGenerator) 
 
 func _survey_recipe_catalog() -> Array[Dictionary]:
 	return [
-		{"id": "opening_pursuit", "label": "Opening Pursuit", "family": "pursuit", "min_tier": 1, "phases": ["opening", "respite"], "formations": ["frontline", "spread"], "enemies": [{"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "knife"}, {"kind": "boar"}]},
-		{"id": "mixed_skirmish", "label": "Mixed Skirmish", "family": "skirmish", "min_tier": 1, "phases": ["development", "contrast", "respite"], "formations": ["spread", "flanked", "split"], "enemies": [{"kind": "boar"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
-		{"id": "melee_cross", "label": "Melee Cross", "family": "melee_pressure", "min_tier": 2, "phases": ["opening", "contrast", "pressure", "respite"], "formations": ["flanked", "surround", "split"], "enemies": [{"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "boar"}]},
+		# Every room carries non-melee pressure unless it is explicitly flagged as a
+		# melee experiment below. That is not a preference: across 200 rooms of archive,
+		# rooms with 0/1/2 non-melee enemies rate 1.61/2.48/3.20 for fun, the effect
+		# holds inside every version era, and it is largest in the most recent. See
+		# docs/survey-archive-findings.md.
+		#
+		# The four recipes this deck used to open with -- Opening Pursuit, Mixed
+		# Skirmish, Melee Cross and Melee Press -- were the measured 1.5s. They are
+		# retired rather than patched, because patching them would have meant adding an
+		# archer to each and losing the ability to test melee-only rooms at all.
+		{"id": "first_arrows", "label": "First Arrows", "family": "skirmish", "min_tier": 1, "phases": ["opening", "development", "respite"], "formations": ["ranged_support", "spread"], "enemies": [{"kind": "archer"}, {"kind": "hound"}], "reinforcements": [{"kind": "knife"}, {"kind": "boar"}]},
+		{"id": "hunted", "label": "Hunted", "family": "pursuit", "min_tier": 1, "phases": ["contrast", "pressure", "development"], "formations": ["spread", "flanked"], "enemies": [{"kind": "archer"}, {"kind": "boar"}, {"kind": "knife"}], "reinforcements": [{"kind": "hound"}, {"kind": "bandit"}]},
+		# --- Melee experiments -------------------------------------------------------
+		# Deliberate, not filler. Every melee-only room in the archive was built from the
+		# five oldest kinds; the Shield and Duellist have never once appeared in one.
+		# So "melee-only rooms are irredeemable" and "those five enemies are
+		# undifferentiated" are still indistinguishable, and three milestones of melee
+		# differentiation have never been composed into a room that could test them.
+		#
+		# These are drawn from the differentiated roster and each asks three different
+		# questions: go around it, do not swing at it, get out of its line.
+		{"id": "warded_duel", "label": "Warded Duel", "family": "melee_experiment", "melee_experiment": true, "min_tier": 2, "phases": ["contrast", "opening", "development"], "formations": ["frontline", "flanked"], "enemies": [{"kind": "shield"}, {"kind": "duellist"}, {"kind": "boar"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
+		{"id": "goring_reach", "label": "Goring Reach", "family": "melee_experiment", "melee_experiment": true, "min_tier": 4, "phases": ["opening", "pressure", "climax"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox"}, {"kind": "polearm"}], "reinforcements": [{"kind": "duellist"}, {"kind": "hound"}]},
+		{"id": "heavy_press", "label": "Heavy Press", "family": "melee_experiment", "melee_experiment": true, "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "formations": ["surround", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "polearm"}, {"kind": "duellist"}], "reinforcements": [{"kind": "shield"}, {"kind": "bandit"}]},
 		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["opening", "development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
-		{"id": "melee_press", "label": "Melee Press", "family": "melee_pressure", "min_tier": 3, "phases": ["development", "contrast", "climax", "respite"], "formations": ["surround", "flanked", "frontline"], "enemies": [{"kind": "blade"}, {"kind": "bandit"}, {"kind": "knife"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "blade"}]},
-		{"id": "goring_line", "label": "Goring Line", "family": "elite_charge", "min_tier": 5, "phases": ["climax", "pressure"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox"}, {"kind": "hound"}], "reinforcements": [{"kind": "boar"}, {"kind": "knife"}]},
 		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 2, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
 		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 4, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
 		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 3, "phases": ["development", "pressure", "climax", "respite"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
-		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
 		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
 		# Kill-the-caster, priced. The Chanter hardens or hastens the bodies in front of
 		# it and hides behind them, so the room asks whether reaching it is worth what
 		# reaching it costs.
-		{"id": "chanted_line", "label": "Chanted Line", "family": "command", "min_tier": 6, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "chanter"}, {"kind": "brute"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		{"id": "chanted_line", "label": "Chanted Line", "family": "command", "min_tier": 4, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "chanter"}, {"kind": "brute"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
 		# The two ranged enemies together, deliberately: the Archer punishes standing
 		# still and the Javelineer punishes running in a straight line, so between them
 		# both answers are spent and the Shield decides which one you are forced into.
-		{"id": "closing_lanes", "label": "Closing Lanes", "family": "crossfire", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
+		{"id": "closing_lanes", "label": "Closing Lanes", "family": "lane_denial", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
 		# Ground that costs time, in front of an enemy you cannot afford to reach late.
 		{"id": "broken_ground", "label": "Broken Ground", "family": "area_denial", "min_tier": 4, "phases": ["development", "contrast", "respite"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "earth_caster"}, {"kind": "polearm"}, {"kind": "knife"}], "reinforcements": [{"kind": "archer"}, {"kind": "boar"}]},
 		# The Duellist wants your attention on it. The Javelineer wants you to move.
@@ -900,10 +930,30 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		# Both are deliberately small. A respite is a light room, not a slow one, and
 		# neither is another melee crowd -- the same run rated melee-only rooms 1.7/5 for
 		# fun against 3.3 for rooms carrying ranged or area pressure.
-		{"id": "warded_caster", "label": "Warded Caster", "family": "screened_ranged", "min_tier": 4, "phases": ["respite", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "shield"}, {"kind": "fire_caster"}], "reinforcements": [{"kind": "polearm"}, {"kind": "hound"}]},
-		{"id": "outrider_line", "label": "Outrider Line", "family": "elite_charge", "min_tier": 5, "phases": ["opening", "development"], "formations": ["spread", "ranged_support"], "enemies": [{"kind": "ox"}, {"kind": "archer"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
-		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 8, "phases": ["pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "warded_caster", "label": "Warded Caster", "family": "warded", "min_tier": 4, "phases": ["respite", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "shield"}, {"kind": "fire_caster"}], "reinforcements": [{"kind": "polearm"}, {"kind": "hound"}]},
+		{"id": "outrider_line", "label": "Outrider Line", "family": "elite_charge", "min_tier": 4, "phases": ["opening", "development"], "formations": ["spread", "ranged_support"], "enemies": [{"kind": "ox"}, {"kind": "archer"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
+		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 5, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
+
+# How many enemies in a recipe are not melee bodies. This is the single strongest
+# predictor of a room's rating in the entire survey archive -- 0/1/2 of them maps to
+# 1.61/2.48/3.20 mean fun across 200 rooms.
+# Rooms 3, 7 and 11 of a run. Three melee-only rooms per thirteen is a readable sample
+# without letting the deck drift back to what the archive already condemned.
+#
+# The question they exist to answer: every melee-only room ever surveyed was built from
+# the five oldest kinds, and the Shield and Duellist have never appeared in one. So the
+# archive cannot separate "melee-only rooms are irredeemable" from "those five enemies
+# are undifferentiated" -- and E2, E3 and E4 all went into differentiating melee
+# behaviour without a single room composed to test it.
+func _survey_is_melee_experiment_room(room_number: int) -> bool:
+	return room_number % MELEE_EXPERIMENT_EVERY == 3
+
+func _recipe_non_melee_count(recipe: Dictionary) -> int:
+	var count := 0
+	for entry in Array(recipe.get("enemies", [])):
+		if CombatCatalogScript.role(String(Dictionary(entry).get("kind", ""))) in NON_MELEE_ROLES: count += 1
+	return count
 
 func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
 	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
@@ -912,6 +962,22 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		var recipe := Dictionary(recipe_value)
 		if tier >= int(recipe["min_tier"]) and Array(recipe["phases"]).has(pacing_phase): candidates.append(recipe)
 	if candidates.is_empty(): candidates.append(Dictionary(_survey_recipe_catalog()[0]))
+	# G1. Two rules, both from docs/survey-archive-findings.md rather than from taste.
+	#
+	# The first is a guarantee: a room carries non-melee pressure. Across 200 rooms the
+	# count of non-melee enemies explains very nearly the whole variation in rating, all
+	# ten of the best rooms ever recorded contain one, and 87% of the worst rooms are
+	# pure melee. This is enforced here rather than trusted to the deck, so a recipe
+	# added later cannot quietly reintroduce the rooms that measured 1.5.
+	#
+	# The second is an experiment, and it is the reason the guarantee has an exception
+	# at all -- see _survey_is_melee_experiment_room.
+	var experiments: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return bool(recipe.get("melee_experiment", false)))
+	var pressured: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return _recipe_non_melee_count(recipe) > 0)
+	if _survey_is_melee_experiment_room(room_number) and not experiments.is_empty():
+		candidates = experiments
+	elif not pressured.is_empty():
+		candidates = pressured
 	var completed_rooms: Array = survey_session.get("rooms", [])
 	# Coverage, not pacing. The survey exists to show the tester as many distinct
 	# room types as one run can hold, so anything not yet seen this run is drawn
@@ -937,6 +1003,13 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	var recent_family := "" if completed_rooms.is_empty() else String(Dictionary(completed_rooms[-1]).get("recipe_family", ""))
 	var different_family: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return String(recipe["family"]) != recent_family)
 	if not different_family.is_empty(): candidates = different_family
+	# Prefer two sources of non-melee pressure where the phase wants weight -- applied
+	# LAST, after coverage and family variety, because it is the weakest claim in the
+	# analysis. The 0-to-1 step rests on 132 rooms against 58; the 1-to-2 step rests on
+	# 58 against 10. A lean, not a rule, and it yields to anything better evidenced.
+	if pacing_phase in ["pressure", "climax"]:
+		var doubled: Array[Dictionary] = candidates.filter(func(recipe: Dictionary) -> bool: return _recipe_non_melee_count(recipe) >= 2)
+		if not doubled.is_empty(): candidates = doubled
 	var chosen := Dictionary(candidates[room_rng.randi_range(0, candidates.size() - 1)]).duplicate(true)
 	var enemies: Array[Dictionary] = []
 	for enemy_value in Array(chosen["enemies"]): enemies.append(Dictionary(enemy_value).duplicate())
@@ -1352,7 +1425,7 @@ func _enemy_base_hp(kind: String) -> int:
 	# as a support unit, which does not read: an enemy that size needs a boss's move
 	# set to earn it. Dropped to an ordinary humanoid frame so its reach is the thing
 	# that makes it dangerous.
-	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "hexer": 35, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
+	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -1431,7 +1504,7 @@ func _respawn_enemies() -> void:
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
 	# and equipment identity without creating another visible character stat.
-	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "hexer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
+	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
 
 func _enemy_posture_max(kind: String) -> float:
 	var profile := CombatCatalogScript.archetype(kind)
@@ -4462,7 +4535,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 		_set_message("The heavy enemy holds its grounded attack.")
 		return false
 	var break_bonus_seconds := 0.08 * float(track_property_ranks.get("openings_break_duration", 0))
-	var stagger_duration := (0.52 if kind in ["knife", "hound", "bandit"] else 0.66 if kind in ["archer", "hexer", "ice_caster", "fire_caster", "boar"] else 0.78) + break_bonus_seconds
+	var stagger_duration := (0.52 if kind in ["knife", "hound", "bandit"] else 0.66 if kind in ["archer", "ice_caster", "fire_caster", "boar"] else 0.78) + break_bonus_seconds
 	# A posture break is meant to create an actionable opening. Its timer runs
 	# while the player's breaking strike is still recovering, so a short fixed
 	# duration could expire before time froze again. Guarantee 0.72 seconds of
@@ -4543,7 +4616,6 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 		"ox": 0.46,
 		"boar": 0.58,
 		"archer": 0.56,
-		"hexer": 0.56,
 		"ice_caster": 0.56,
 		"fire_caster": 0.56,
 		"blade": 0.48,
@@ -4608,7 +4680,7 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 	var offset := player_pos - enemy_pos
 	var distance := offset.length()
 	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
-	var vision_range := (620.0 if String(enemy["kind"]) in ["archer", "hexer", "ice_caster", "fire_caster", "warden", "werewolf"] else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
+	var vision_range := (620.0 if String(enemy["kind"]) in ["archer", "ice_caster", "fire_caster", "warden", "werewolf"] else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
 	var within_cone := distance <= 105.0 or (distance <= vision_range and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
 	if not within_cone: enemy["los_refresh_remaining"] = 0.0
 	var execution_holds_unaware := String(player_action.get("ability_id", "")) == "knife_execution" and int(player_action.get("execution_target_id", -1)) == int(enemy.get("id", -2)) and float(player_action.get("elapsed", 0.0)) <= float(player_action.get("active_end", 0.0)) and not Array(player_action.get("hit_ids", [])).has(int(enemy.get("id", -2)))
@@ -5007,9 +5079,17 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# someone standing on top of you. Weighted selection alone kept picking the thrust
 		# at 105 units (1.7 against 1.0) and it went 0 for 5 across the 0.2.33 run, because
 		# a thrust authored for 205 is trivially walked out of from half that distance.
+		# Distance decides which attack, not a weighted roll. The roll could hand a reach
+		# enemy the shaft-cut intent while it stood at range -- and the reach role refuses
+		# to approach inside its hold distance, so it could never satisfy that intent and
+		# simply walked forever. Measured: a Polearm stuck at 194.6 units with clear line
+		# of sight, holding an intent that required 116.
 		var polearm_short: Dictionary = _plan_option("polearm", "reverse_cut")
+		var polearm_long: Dictionary = _plan_option("polearm", "thrust")
 		if not polearm_short.is_empty() and distance <= float(polearm_short["distance"]) + STRIKE_COMMIT_BAND:
 			polearm_intent = polearm_short
+		elif not polearm_long.is_empty():
+			polearm_intent = polearm_long
 		var polearm_in_band := distance <= float(polearm_intent["distance"]) + STRIKE_COMMIT_BAND
 		# The long thrust is still gated on lateness; the short cut is not, because at
 		# that range there is nothing to be late for.
@@ -5212,14 +5292,6 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _intent_melee_action(knight_intent, direction)
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(knight_intent["distance"])), 0.72)
-	elif enemy_kind == "hexer":
-		if distance <= 620.0 and distance >= 150.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("hex", 1.98, direction)
-			enemy["action"]["startup"] = 0.76
-			enemy["action"]["target"] = player_pos + player_facing * 24.0
-		else:
-			var target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 220.0 if distance < 500.0 else player_pos
-			enemy["action"] = _enemy_move_action(enemy, target, 0.52)
 	elif enemy_kind == "werewolf":
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and _charge_can_contact(enemy, distance, 420.0, 0.34, 0.76):
 			if rng.randf() < 0.55: enemy["action"] = _werewolf_pounce_combo(direction)
@@ -5582,7 +5654,7 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "hexer": 155.0, "ice_caster": 150.0, "fire_caster": 160.0, "chanter": 150.0, "javelineer": 170.0, "earth_caster": 140.0, "duellist": 265.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
+	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "ice_caster": 150.0, "fire_caster": 160.0, "chanter": 150.0, "javelineer": 170.0, "earth_caster": 140.0, "duellist": 265.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
 	# The Captain's invisible x1.14 aura is gone. What replaces it is the Chanter's
 	# Quickening -- same idea, but you can see which enemies have it and you can end it
 	# by killing the caster.
@@ -6500,7 +6572,7 @@ func _remove_dead_enemies() -> void:
 			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
 
 func _xp_for_enemy(kind: String) -> int:
-	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "hexer": 4, "ice_caster": 4, "fire_caster": 4, "brute": 5, "knight": 7, "chanter": 6, "javelineer": 3, "earth_caster": 5, "duellist": 6, "warden": 12, "werewolf": 18}.get(kind, 2))
+	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "ice_caster": 4, "fire_caster": 4, "brute": 5, "knight": 7, "chanter": 6, "javelineer": 3, "earth_caster": 5, "duellist": 6, "warden": 12, "werewolf": 18}.get(kind, 2))
 
 func _cleared_area_count() -> int:
 	var occupied: Dictionary = {}
@@ -6697,6 +6769,12 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 	return not _actor_footprint_on_floor(position, radius)
 
 func _enemy_is_pushable(enemy: Dictionary) -> bool:
+	# A committed charge is a mass in motion and is never shoved aside, whatever the body
+	# weighs. This matters most for the Hound, at mass 0.75 the most shoveable thing in
+	# the game and the one that spends the most time charging -- walking through a
+	# charging animal is not a defence anyone authored. The Ox already said this with its
+	# `unstoppable` flag; the rule belongs to charges rather than to one kind.
+	if String(Dictionary(enemy.get("action", {})).get("kind", "")) == "charge": return false
 	return _enemy_mass(String(enemy.get("kind", ""))) < PUSHABLE_MASS
 
 # Shove overlapping light bodies out along the contact normal. A tight ring of five
