@@ -1005,6 +1005,14 @@ func test_rooms_are_populated_enough_for_the_pressure_to_matter() -> void:
 			counts[size] = int(counts.get(size, 0)) + 1
 			total += 1
 			check(size <= 5, "room %d fielded %d enemies; six-enemy rooms are the archive's worst band" % [room_number, size])
+			# And a floor. The melee experiments are built from expensive bodies, so their
+			# base composition ate the whole budget and the fill loop never ran -- Goring
+			# Reach shipped as a TWO enemy room in two consecutive surveys. A room that
+			# small cannot answer the question the experiment exists to ask.
+			var floor_size := 3 if room_phase(room_number) == "respite" else 4
+			check(size >= floor_size, "room %d fielded only %d enemies" % [room_number, size])
+			if bool(recipe.get("melee_experiment", false)):
+				check(size >= 4, "a melee experiment fielded only %d enemies; it cannot show enemies interacting" % size)
 	var in_band := int(counts.get(4, 0)) + int(counts.get(5, 0))
 	check(float(in_band) / float(total) > 0.55,
 		"most rooms should sit in the measured 4-5 band, got %.0f%%" % (100.0 * float(in_band) / float(total)))

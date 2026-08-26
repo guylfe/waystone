@@ -219,7 +219,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.37"
+const GAME_VERSION := "0.2.38"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -499,6 +499,17 @@ var survey_current_view_mode := "isometric"
 var survey_room_view_modes: Array[String] = ["isometric"]
 var survey_view_switches := 0
 var survey_empty_melee_contacts := 0
+# Four separate 0.2.37 notes said the same thing -- "archers were non-factors", "enemies
+# in different corners", "I easily picked enemies off one by one", "I did not need to
+# fight mobs a single time". Nothing in the report could confirm or refute it, and two
+# plausible explanations (formation spread, spawn clustering) were tested against the
+# archive and both turned out to be confounds for composition. So measure it directly
+# rather than guessing a third time.
+var survey_engagement_samples := 0
+var survey_engagement_alerted_sum := 0
+var survey_engagement_multi_samples := 0
+var survey_isolated_kills := 0
+var survey_engaged_kills := 0
 var survey_strike_diagnostics: Array[Dictionary] = []
 
 func _init(auto_start: bool = true) -> void:
@@ -657,6 +668,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_room_view_modes.assign([survey_current_view_mode])
 	survey_view_switches = 0
 	survey_empty_melee_contacts = 0
+	survey_engagement_samples = 0
+	survey_engagement_alerted_sum = 0
+	survey_engagement_multi_samples = 0
+	survey_isolated_kills = 0
+	survey_engaged_kills = 0
 	survey_strike_diagnostics.clear()
 	survey_session = {
 		"format_version": SurveyReportScript.FORMAT_VERSION,
@@ -839,6 +855,27 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"shortcut_unlock_pos": Vector2.ZERO,
 		"shortcut_start_pos": Vector2.ZERO,
 	}
+
+# How many enemies are actually in the fight right now: alerted, alive, and close
+# enough to act on the player. Sampled per simulation tick, so it is weighted by world
+# time rather than by wall clock -- which is the right weighting, because a room the
+# player crosses slowly is a room they are spending time in.
+const ENGAGEMENT_RADIUS := 320.0
+
+func _engaged_enemy_count() -> int:
+	var count := 0
+	for enemy in enemies:
+		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+		if String(enemy.get("awareness", "idle")) != "alerted": continue
+		if Vector2(enemy["pos"]).distance_to(player_pos) > ENGAGEMENT_RADIUS: continue
+		count += 1
+	return count
+
+func _sample_engagement() -> void:
+	var engaged := _engaged_enemy_count()
+	survey_engagement_samples += 1
+	survey_engagement_alerted_sum += engaged
+	if engaged >= 2: survey_engagement_multi_samples += 1
 
 func _survey_take_spawn_slot(available: Array, role: String, player_start: Vector2) -> Vector2:
 	if available.is_empty(): return player_start + Vector2.UP * 420.0
@@ -1034,6 +1071,21 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	# worst band -- against 2.76 at four and 2.71 at five. Thin evidence (n=7) but it is
 	# the only evidence, it points one way, and a lower cap also keeps the crowding push
 	# from having to do as much work.
+	# A floor, independent of budget. The melee experiments are built from expensive
+	# bodies -- Ox 5, Duellist 4, Brute 4 -- so their base composition consumes the whole
+	# allowance and the loop below never ran once: Goring Reach shipped as a TWO enemy
+	# room at cost 8 against a budget of 8, and the tester flagged it in two consecutive
+	# surveys ("this was once again a 2 enemy room"). A room that small cannot answer the
+	# question the experiment exists to ask, which is how differentiated melee enemies
+	# interact with each other.
+	var minimum_bodies := 3 if pacing_phase == "respite" else 4
+	while enemies.size() < minimum_bodies and not reinforcements.is_empty() and attempts < 12:
+		attempts += 1
+		var filler := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
+		if _survey_plan_kind_count(enemies, String(filler["kind"])) >= 2: continue
+		if _survey_is_ranged_pressure(filler) and _survey_ranged_pressure_count(enemies) >= 2: continue
+		enemies.append(filler.duplicate())
+		cost += _survey_enemy_cost(String(filler["kind"]))
 	while cost < target_budget and enemies.size() < 5 and not reinforcements.is_empty() and attempts < 18:
 		attempts += 1
 		var option := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
@@ -1110,6 +1162,11 @@ func _capture_survey_room_entry() -> void:
 		"action_counts": survey_action_counts.duplicate(true),
 		"view_switches": survey_view_switches,
 		"empty_melee_contacts": survey_empty_melee_contacts,
+		"engagement_samples": survey_engagement_samples,
+		"engagement_alerted_sum": survey_engagement_alerted_sum,
+		"engagement_multi_samples": survey_engagement_multi_samples,
+		"isolated_kills": survey_isolated_kills,
+		"engaged_kills": survey_engaged_kills,
 		"stamina_spent": stamina_spent_total,
 		"stamina_depleted": stamina_depleted_total,
 		"stamina_overdraw": stamina_overdraw_total,
@@ -1214,6 +1271,11 @@ func _complete_survey_room(outcome: String) -> void:
 		"view_modes": survey_room_view_modes.duplicate(),
 		"view_switches": survey_view_switches - int(survey_room_entry.get("view_switches", survey_view_switches)),
 		"empty_melee_contacts": survey_empty_melee_contacts - int(survey_room_entry.get("empty_melee_contacts", survey_empty_melee_contacts)),
+		"engagement_samples": survey_engagement_samples - int(survey_room_entry.get("engagement_samples", survey_engagement_samples)),
+		"engagement_alerted_sum": survey_engagement_alerted_sum - int(survey_room_entry.get("engagement_alerted_sum", survey_engagement_alerted_sum)),
+		"engagement_multi_samples": survey_engagement_multi_samples - int(survey_room_entry.get("engagement_multi_samples", survey_engagement_multi_samples)),
+		"isolated_kills": survey_isolated_kills - int(survey_room_entry.get("isolated_kills", survey_isolated_kills)),
+		"engaged_kills": survey_engaged_kills - int(survey_room_entry.get("engaged_kills", survey_engaged_kills)),
 		"combat_time": simulation_time - float(survey_room_entry.get("time", simulation_time)),
 		"damage_dealt": damage_dealt - int(survey_room_entry.get("damage_dealt", damage_dealt)),
 		"damage_received": damage_received_total - int(survey_room_entry.get("damage_received", damage_received_total)),
@@ -3583,6 +3645,7 @@ func _simulate_until_ready() -> void:
 func _tick(dt: float) -> void:
 	_simulation_tick_index += 1
 	simulation_time += dt
+	if mode_id == ModeRulesScript.COMBAT_SURVEY: _sample_engagement()
 	_player_reaction_completed_this_tick = false
 	var player_dt := dt * _player_personal_tempo()
 	dodge_cooldown = maxf(0.0, dodge_cooldown - player_dt)
@@ -6574,6 +6637,19 @@ func _remove_dead_enemies() -> void:
 			living.append(enemy)
 		else:
 			enemies_defeated += 1
+			if mode_id == ModeRulesScript.COMBAT_SURVEY:
+				# Everything still standing, alerted and near the body that just fell. Zero
+				# means this one was fought alone, which is what "picked them off one by
+				# one" looks like in data.
+				var witnesses := 0
+				for other in enemies:
+					if int(other.get("id", -1)) == int(enemy.get("id", -2)): continue
+					if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
+					if String(other.get("awareness", "idle")) != "alerted": continue
+					if Vector2(other["pos"]).distance_to(Vector2(enemy["pos"])) > ENGAGEMENT_RADIUS: continue
+					witnesses += 1
+				if witnesses == 0: survey_isolated_kills += 1
+				else: survey_engaged_kills += 1
 			var kind := String(enemy["kind"])
 			carried_xp += _xp_for_enemy(kind)
 			defeated_areas[int(enemy.get("area_id", 0))] = true

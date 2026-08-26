@@ -1,6 +1,28 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.37` (Android version code `237`).
+Current prototype version: `0.2.38` (Android version code `238`).
+
+### v0.2.38: Measure the thing, stop guessing at it
+
+The `0.2.37` survey said the same thing in four separate notes — *"archer was too far from other enemies and was a non-factor"*, *"archers were non-factors at any point. I easily picked enemies off one by one"*, *"enemies being in different sides of the room in isolation makes them easy to beat"*, *"same problem. enemies in different corners... I did not need to fight mobs a single time so far."*
+
+Rooms 4 and 5 rated **1/1/1** despite carrying four and five enemies with two ranged each. Under G1's rule those should have been the good rooms.
+
+**Two explanations were tested against the 297-room archive. Both were confounds.**
+
+- *Split formations disperse the fight.* Across 51 rooms `split` averages **2.06** — above `frontline`'s 1.91. Arenas are flat at 1.88–2.06. The three-room read that suggested otherwise was noise.
+- *Spawn spread is the mechanism.* Mean pairwise slot distance correlates with fun at **r = −0.86** across 167 rooms, which looks decisive until it is controlled: **within pure-melee rooms the tight-versus-wide gap is +0.03**, and within ranged rooms `split` (2.65) ties `ranged_support` (2.61) despite being 25% wider. Formation was proxying for composition, exactly as role-diversity did in G1.
+
+So rather than ship a third guess, **the report now measures it**:
+
+- **Enemies engaged at once** — mean count of alive, alerted enemies within 320 units, sampled per simulation tick so it is weighted by world time rather than wall clock. Plus the share of combat spent with two or more.
+- **Kills made alone** — when an enemy falls, how many other alerted enemies were near it. Zero witnesses is what *"picked them off one by one"* looks like in data.
+
+Survey format bumped to 17.
+
+**And one thing that was provable.** All three melee experiments were permanently stuck at their base size: expensive bodies (Ox 5, Duellist 4, Brute 4) consumed the entire budget, so the reinforcement loop never ran once. Goring Reach shipped as a **two-enemy room** at cost 8 against a budget of 8, and the tester flagged it in two consecutive surveys — *"ox was fun! if he wasn't alone with only 1 other enemy"*. A room that small cannot answer the question the experiment exists to ask, which is how differentiated melee enemies interact **with each other**.
+
+A population floor now applies regardless of budget: four bodies, three in respite. Measured across 390 rooms: **mean 4.26 enemies, none below 3, and every melee experiment fields at least 4** (mean exactly 4.00).
 
 ### v0.2.37: Presence is not pressure
 

@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 16
+const FORMAT_VERSION := 17
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -146,6 +146,17 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
 		lines.append("View switches: %d" % int(room.get("view_switches", 0)))
 		lines.append("Empty melee contacts: %d" % int(room.get("empty_melee_contacts", 0)))
+		# Is this a room, or a queue of duels? Four separate 0.2.37 notes said the enemies
+		# were fought one at a time; nothing in the report could confirm it.
+		var engagement_samples := int(room.get("engagement_samples", 0))
+		if engagement_samples > 0:
+			var mean_engaged := float(room.get("engagement_alerted_sum", 0)) / float(engagement_samples)
+			var multi_share := 100.0 * float(room.get("engagement_multi_samples", 0)) / float(engagement_samples)
+			lines.append("Enemies engaged at once: mean %.2f; %.0f%% of combat with two or more" % [mean_engaged, multi_share])
+		var isolated := int(room.get("isolated_kills", 0))
+		var engaged := int(room.get("engaged_kills", 0))
+		if isolated + engaged > 0:
+			lines.append("Kills made alone: %d of %d" % [isolated, isolated + engaged])
 		var diagnostics: Array = room.get("strike_diagnostics", [])
 		lines.append("Strike diagnostics: %d" % diagnostics.size())
 		for diagnostic_value in diagnostics:
