@@ -219,7 +219,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.38"
+const GAME_VERSION := "0.2.39"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1083,6 +1083,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		attempts += 1
 		var filler := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
 		if _survey_plan_kind_count(enemies, String(filler["kind"])) >= 2: continue
+		if _survey_plan_role_count(enemies, String(filler["kind"])) >= 2: continue
 		if _survey_is_ranged_pressure(filler) and _survey_ranged_pressure_count(enemies) >= 2: continue
 		enemies.append(filler.duplicate())
 		cost += _survey_enemy_cost(String(filler["kind"]))
@@ -1093,6 +1094,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		var option_cost := _survey_enemy_cost(kind)
 		if cost + option_cost > target_budget: continue
 		if _survey_plan_kind_count(enemies, kind) >= 2: continue
+		if _survey_plan_role_count(enemies, kind) >= 2: continue
 		if _survey_is_ranged_pressure(option) and _survey_ranged_pressure_count(enemies) >= 2: continue
 		enemies.append(option.duplicate())
 		cost += option_cost
@@ -1111,6 +1113,19 @@ func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 
 func _survey_is_ranged_pressure(planned_enemy: Dictionary) -> bool:
 	return CombatCatalogScript.role(String(planned_enemy.get("kind", ""))) in ["ranged_pressure", "area_denial"]
+
+# Same-kind was already capped at two; same-ROLE was not, so a room could stack three
+# different flankers -- Hound, Knife and Bandit -- which is one problem asked three
+# times rather than three problems. The 0.2.38 survey rated exactly that room "crowded,
+# too hard... it didn't feel challenging, just tedious", while a four-enemy room of a
+# screen, a flanker, a frontliner and a knife rated a point higher at identical
+# engagement (2.33 versus 2.30 enemies engaged at once).
+func _survey_plan_role_count(enemies_plan: Array[Dictionary], kind: String) -> int:
+	var role := CombatCatalogScript.role(kind)
+	var result := 0
+	for planned_enemy in enemies_plan:
+		if CombatCatalogScript.role(String(planned_enemy.get("kind", ""))) == role: result += 1
+	return result
 
 func _survey_plan_kind_count(enemies_plan: Array[Dictionary], kind: String) -> int:
 	var result := 0
@@ -4441,7 +4456,13 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	var attributes := Dictionary(enemy.get("attributes", {}))
 	var properties := Dictionary(enemy.get("properties", {}))
 	var effective_defense := maxi(0, int(attributes.get("defense", 0)) + int(properties.get("armor", 0)) - defense_ignore)
-	var final_damage := maxi(1, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
+	# Floored the same way incoming damage is. 0.2.32 established that every connecting
+	# strike must be felt and replaced this exact `maxi(1, ...)` on the RECEIVING side;
+	# the dealing side kept it, so armour or a damage-reducing effect could still put a
+	# "-1" over an enemy the player cleanly hit. Nothing in the current roster reaches
+	# that floor -- player damage lands at 8-10 against everything measured -- but the
+	# guard costs nothing and closes the case rather than leaving it open.
+	var final_damage := maxi(MIN_FELT_DAMAGE, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
 	return {"damage": final_damage, "posture": posture_damage, "unaware": unaware, "aimed": aimed_contact}
 
 func _register_enemy_hit_awareness(enemy: Dictionary, contact_result: Dictionary, source_action: Dictionary = {}) -> void:

@@ -1,6 +1,29 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.38` (Android version code `238`).
+Current prototype version: `0.2.39` (Android version code `239`).
+
+### v0.2.39: Sameness, not crowding — and the melee experiment reports
+
+**G1's experiment has an answer, and it overturns the premise.** Melee-only rooms built from the *differentiated* roster now have three clean data points against 26 from the five oldest kinds in the same era:
+
+| melee-only rooms | mean fun | want again |
+|---|---|---|
+| differentiated roster — Shield, Duellist, Ox, Polearm | **2.67** | **2.33** |
+| the five oldest kinds — Boar, Hound, Knife, Bandit, Blade | **1.54** | **1.31** |
+| difference | **+1.13** | **+1.03** |
+
+So *"melee-only rooms are irredeemable"* was wrong. **Those five enemies were the problem**, and the archive could never separate the two because it had never once composed a melee room from anything else. That reframes what comes next: the answer may be reworking or retiring the oldest kinds rather than guaranteeing an archer in every room.
+
+**And the engagement telemetry earned its keep immediately.** Two rooms in the `0.2.38` survey had near-identical engagement and opposite verdicts:
+
+- Archer + Hound + Knife + Bandit — **2.33 engaged at once, 72% of combat with two or more** → *"felt busy… very difficult to find an opening, but it didn't feel challenging — just tedious"*, rated 2 and tagged **crowded, too hard**.
+- Shield + Duellist + Boar + Knife — **2.30 engaged, 73%** → rated 3, no complaint.
+
+**Crowding was never the variable. Sameness was.** The first room fielded a Hound, a Knife and a Bandit: three different kinds, all `flanker`, all answered the same way — one problem asked three times, which is precisely what §4.6 exists to forbid.
+
+- Same-*kind* was already capped at two. **Same-role now is too.** Verified across 390 generated rooms: maximum two enemies per role, zero exceptions, and population untouched at mean 4.22.
+
+**On the `-1` damage popups.** I could not reproduce one and will not claim otherwise: player damage measures 8–10 against every enemy in the roster, the Vanguard Advance deals 10–15, and incoming damage floors at `MIN_FELT_DAMAGE`. What I *did* find is the adjacent defect — `_resolve_player_physical_values` still floored at `maxi(1, ...)`, the exact thing `0.2.32` replaced on the receiving side and never fixed on the dealing side. Nothing in the current roster reaches that floor, but armour or a damage-reducing effect could, so it is now floored the same way. If a `-1` appears again it is on a path I have not found, and the next step is instrumenting rather than guessing.
 
 ### v0.2.38: Measure the thing, stop guessing at it
 

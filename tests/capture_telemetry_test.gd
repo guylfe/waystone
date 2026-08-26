@@ -1017,6 +1017,35 @@ func test_rooms_are_populated_enough_for_the_pressure_to_matter() -> void:
 	check(float(in_band) / float(total) > 0.55,
 		"most rooms should sit in the measured 4-5 band, got %.0f%%" % (100.0 * float(in_band) / float(total)))
 
+func test_a_room_never_asks_one_question_three_times() -> void:
+	# Same-kind was capped at two; same-ROLE was not, so a room could field a Hound, a
+	# Knife and a Bandit -- three different kinds, all flankers, all answered the same
+	# way. The 0.2.38 survey rated exactly that room "crowded, too hard... it didn't feel
+	# challenging, just tedious", while a four-enemy room of a screen, a flanker, a
+	# frontliner and a knife rated a point higher at *identical* engagement: 2.33 versus
+	# 2.30 enemies engaged at once. Crowding was never the variable; sameness was.
+	var state := survey_state()
+	for salt in range(6):
+		for room_number in range(1, 14):
+			var recipe := composition_for(state, room_number, salt)
+			var roles: Dictionary = {}
+			for entry in Array(recipe["enemies"]):
+				var role := CombatCatalogScript.role(String(Dictionary(entry).get("kind", "")))
+				roles[role] = int(roles.get(role, 0)) + 1
+			for role in roles.keys():
+				check(int(roles[role]) <= 2, "room %d fielded %d enemies in the %s role" % [room_number, int(roles[role]), role])
+
+func test_a_landed_blow_is_felt_in_both_directions() -> void:
+	# 0.2.32 established that every connecting strike must be felt, and replaced the
+	# maxi(1, ...) floor on damage RECEIVED. The dealing side kept its floor of 1, so
+	# armour or a damage-reducing effect could still put a "-1" over an enemy the player
+	# cleanly hit -- the same defect, unfixed on the other side.
+	var state := survey_state()
+	for kind in ["knight", "shield", "warden", "blade"]:
+		var enemy := state._make_enemy(kind, state.player_pos + Vector2.UP * 80.0, 999, 5)
+		var dealt := int(Dictionary(state._resolve_player_physical_values(enemy, 1, 1.0, {}))["damage"])
+		check(dealt >= state.MIN_FELT_DAMAGE, "a landed blow on a %s dealt %d" % [kind, dealt])
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1066,6 +1095,8 @@ func _init() -> void:
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
 	test_rooms_are_populated_enough_for_the_pressure_to_matter()
+	test_a_room_never_asks_one_question_three_times()
+	test_a_landed_blow_is_felt_in_both_directions()
 	test_the_ox_cannot_be_outrun_only_evaded()
 	test_the_ox_commits_from_beyond_any_other_reach()
 	test_a_charge_always_offers_a_decision_to_a_free_player()
