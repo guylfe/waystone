@@ -177,9 +177,13 @@ func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
 	var before := stamina.player_stamina
 	assert(stamina.request_sweeping_cut(Vector2.RIGHT, false))
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
-	# Exempt from STAMINA_COST_SCALE: the authored number is the literal cost.
-	assert(is_equal_approx(before - stamina.player_stamina, stamina.SWEEPING_CUT_STAMINA))
-	assert(stamina.SWEEPING_CUT_STAMINA > stamina.stamina_cost(18.0 + 16.0 + 22.0) * 1.4)
+	# No longer exempt from STAMINA_COST_SCALE. The surcharge that exemption bought is
+	# now carried by the authored number (86 raw, spending ~56), so a global re-tune of
+	# the price level moves the sweep with everything else instead of stranding it. The
+	# relationship this test actually cares about -- the sweep costs more than a combo
+	# outright -- is unchanged, and is now compared scaled against scaled.
+	assert(is_equal_approx(before - stamina.player_stamina, stamina.stamina_cost(stamina.SWEEPING_CUT_STAMINA)))
+	assert(stamina.stamina_cost(stamina.SWEEPING_CUT_STAMINA) > stamina.stamina_cost(18.0 + 16.0 + 22.0) * 1.4)
 	advance_until_ready(stamina)
 	assert(is_equal_approx(stamina.skill_cooldown, 0.0))
 	# A second sweep is reachable only by overdrawing, which empties the bar. Price
@@ -197,7 +201,12 @@ func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
 	recovery.player_weapon_art_library.assign(["prototype_sweeping_cut"])
 	recovery.player_equipped_weapon_art = "prototype_sweeping_cut"
 	assert(recovery.request_sweeping_cut(Vector2.RIGHT, false))
-	assert(is_equal_approx(recovery.skill_cooldown, recovery.SWEEP_COOLDOWN))
+	# SWEEP_COOLDOWN is gone: cooldowns are derived from the stamina price now, so the
+	# hand-authored 4.2s no longer exists to compare against. The sweep spends ~56 of a
+	# 100 pool, which at 24s per pool is 13.4s -- the finisher without the combo's time
+	# is a special attack, not a cheaper route to the same place.
+	assert(is_equal_approx(recovery.skill_cooldown, recovery._cooldown_for(recovery.stamina_cost(recovery.SWEEPING_CUT_STAMINA))))
+	assert(recovery.skill_cooldown > 12.0 and recovery.skill_cooldown < 15.0)
 
 	var rogue := fresh_state("rogue_acrobat")
 	assert(is_equal_approx(rogue.player_move_speed, rogue.MOVE_SPEED))

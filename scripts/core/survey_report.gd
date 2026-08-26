@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 17
+const FORMAT_VERSION := 18
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -109,6 +109,14 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Terminal combo recovery time: %.2fs" % float(room.get("terminal_combo_recovery_time", 0.0)))
 		lines.append("Direct attack button/key uses: %d" % int(room.get("direct_attack_uses", 0)))
 		lines.append("Dodge forms used: %s" % _action_usage_text(Dictionary(room.get("dodge_style_uses", {}))))
+		# Only for runs that actually hid. With no Stamina-mode cooldown, how fast
+		# concealment is re-entered is the whole question about whether hide-execute-hide
+		# has eaten the class -- and it was previously unmeasurable.
+		if int(room.get("stealth_entries", 0)) > 0:
+			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f stamina paid" % [
+				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
+				int(room.get("stealth_quick_reentries", 0)), float(room.get("stealth_hidden_time", 0.0)),
+				float(room.get("stealth_stamina_paid", 0.0))])
 		lines.append("Vulnerable Dodge recovery: %.2fs; damage received: %d" % [float(room.get("dodge_vulnerable_time", 0.0)), int(room.get("dodge_recovery_damage", 0))])
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))

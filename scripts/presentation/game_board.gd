@@ -1764,7 +1764,13 @@ func _handle_button(name: String) -> void:
 				selected_action = "" if selected_action == "skill" else "skill"
 		"rally":
 			selected_action = ""
-			_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
+			if state.loadout_id.begins_with("rogue_") and state.stealth_remaining > 0.0:
+				# Free and instant: it stops a cost rather than starting an action, so
+				# there is no streamed action to begin and no world time to spend.
+				state.request_end_stealth()
+				queue_redraw()
+			else:
+				_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
 		"advance":
 			var remaining := state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown
 			var stamina_locked := state.loadout_id == "warrior" and state.stamina_actions_locked()
@@ -2813,7 +2819,10 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	# already drops the block for exactly these action kinds, so painting the arc
 	# through an attack made the sprite contradict the rule -- the 0.2.30 survey read
 	# the Shield as "too aggressive" partly because its opening was invisible.
-	if kind == "shield" and String(action["kind"]) not in ["melee", "dodge_strike", "charge", "slam"]:
+	# Read from the simulation rather than copied. This list drifted once already: the
+	# sim added hit_reaction and stagger in 0.2.38 and the renderer kept four states, so
+	# a staggered Shield drew its guard back up while still resolving as open.
+	if kind == "shield" and String(action["kind"]) not in state.SHIELD_OPEN_ACTION_KINDS:
 		_draw_guard(pos, facing, radius, {"elapsed": 0.5, "startup": 0.0, "active_end": 1.0})
 	if String(action["kind"]) in ["melee", "dodge_strike"]: _draw_weapon(world_pos, action, false, world_radius)
 	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(world_pos, action, false)
@@ -4427,10 +4436,13 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		subtitle = "EXHAUSTED" if not art.is_empty() and state.stamina_actions_locked() else String(art_subtitles.get(state.player_equipped_weapon_art, "WEAPON ART")) if available else "COOLING" if not art.is_empty() else "LEARN THROUGH XP"
 	elif name == "rally":
 		if state.loadout_id.begins_with("rogue_"):
-			title = "STEALTH"
+			# Concealment is cancellable now, so while hidden the control is live and
+			# says so. Greying out an active toggle claims the player has no choice,
+			# when choosing when to stop paying is the whole point of a per-second drain.
 			var stealth_state := state.stealth_status()
-			available = stealth_state == "available"
-			subtitle = "CONCEAL" if available else "CONCEALED" if stealth_state == "active" else "NOTICED" if stealth_state == "noticed" else "COOLING" if stealth_state == "cooldown" else "LOCKED"
+			title = "END STEALTH" if stealth_state == "active" else "STEALTH"
+			available = stealth_state in ["available", "active"]
+			subtitle = "CONCEAL" if stealth_state == "available" else "STEP OUT" if stealth_state == "active" else "NOTICED" if stealth_state == "noticed" else "COOLING" if stealth_state == "cooldown" else "LOCKED"
 		else:
 			title = "RALLY"
 			available = state.rally_is_available()
@@ -4455,7 +4467,11 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		var stamina_locked := state.stamina_actions_locked() and (name == "skill" or (name == "advance" and state.loadout_id == "warrior"))
 		var remaining := state.player_exhaustion_remaining if stamina_locked else _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
-		var maximum := state.EXHAUSTION_DURATION if stamina_locked else defense_maximum if name == "defense" else 6.5 if name == "skill" else 12.0 if name == "rally" else 8.0 if state.loadout_id.begins_with("rogue_") else 6.0
+		# Cooldowns are derived from stamina now, so a literal maximum here would be
+		# wrong the moment an ability is repriced -- Sweeping Cut alone runs to 13.4s
+		# against the 6.5 this used to assume, which would draw the bar full from the
+		# first frame. Each cooldown records what it started at instead.
+		var maximum := state.EXHAUSTION_DURATION if stamina_locked else defense_maximum if name == "defense" else state.skill_cooldown_max if name == "skill" else (state.main_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else 12.0) if name == "rally" else (state.subclass_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.advance_cooldown_max)
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))

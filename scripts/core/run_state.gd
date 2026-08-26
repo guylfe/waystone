@@ -23,7 +23,6 @@ const DODGE_SPEED := 560.0
 const DODGE_COOLDOWN := 4.0
 const BLOCK_COOLDOWN := 3.5
 const ENDURE_COOLDOWN := 4.5
-const SWEEP_COOLDOWN := 4.2
 const NAV_CELL := 75.0
 const VISIBILITY_CELL := 50.0
 const SIGHT_RANGE := 520.0
@@ -72,6 +71,37 @@ const STAMINA_COST_SCALE := 0.65
 const STAMINA_REGEN_PER_SECOND := 28.0
 # Only a hit suppresses regeneration now, and only briefly.
 const STAMINA_REGEN_DELAY := 0.5
+# The single exchange rate between the two rule profiles. A cooldown is how long it
+# would take to earn an ability's price back as a share of the whole pool, so ONE
+# authored stamina number now sets both -- there is no second table to keep in sync,
+# and a global re-tune of STAMINA_COST_SCALE carries the cooldowns with it.
+#
+# 24s is not a guess. The six hand-authored pairs that already existed implied 20-33
+# seconds per 100 stamina (Advance 33.0, Execution 28.2, piercing shot 26.3, bow art
+# 24.0, Twin Fang 21.6, Drawing Cut 20.2, median 25), so the formula mostly codifies
+# what was there and repairs the three abilities that fell outside it entirely.
+#
+# The pool is the denominator deliberately. Under Recovery stamina is never spent and
+# never regenerated, so the +10 max stamina from `vigilance`, `fleetness` and
+# `observation` did nothing at all -- three track choices with a dead half. This gives
+# that half a job. The accepted consequence: max stamina buys burst depth under
+# Stamina (more actions before empty, prices unchanged) and sustain under Recovery
+# (every cooldown shorter, burst unchanged). The same stat reads differently in each
+# profile, which is a known divergence rather than an oversight.
+const COOLDOWN_SECONDS_PER_FULL_POOL := 24.0
+# Stealth is charged by the second rather than by the use, so a hide you cut short
+# costs less than one you sit in. That is the whole reason it is a drain and not a
+# cooldown: a cooldown rewards squeezing the most out of each activation, a drain
+# rewards striking quickly and getting out.
+const STEALTH_DRAIN_PER_SECOND := 10.0
+# The floor, and it is what makes cancellation safe to offer. Entering stealth fires a
+# one-shot at rogue rank 4 that turns every nearby alerted enemy `suspicious`, and
+# `execution_target_was_unaware` accepts anything that is not `alerted` -- so the
+# benefit is instantaneous while a purely proportional price is not. Without a floor a
+# quarter-second tap would buy the unaware-execution bonus for a rounding error, and
+# tapping would strictly beat hiding.
+const STEALTH_MINIMUM_STAMINA := 20.0
+const STEALTH_DURATION := 5.0
 # Back to 2.0 from the 1.2 that 0.2.17 adopted to offset the movement slow. The
 # 0.2.20 survey found exhaustion costing 2 damage across 8.33 seconds *despite*
 # an enemy being alerted for 100% of it, so there was no danger to offset. If the
@@ -194,6 +224,11 @@ const SHIELD_WARD_STATION := 104.0
 const SHIELD_STRIKE_WINDUP := 0.46
 const SHIELD_PATIENCE_MIN := 2.6
 const SHIELD_PATIENCE_MAX := 4.4
+# Exported because the renderer needs the same list. It previously kept its own copy
+# of four states while this one grew to six, so a staggered Shield drew its guard back
+# up while the simulation still treated it as open -- you hit a raised shield, which
+# the 0.2.38 survey reported. One list, one source.
+const SHIELD_OPEN_ACTION_KINDS := ["melee", "dodge_strike", "charge", "slam", "hit_reaction", "stagger"]
 const EXHAUSTED_MOVE_SCALE := 0.45
 const DODGE_STAMINA_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
@@ -217,9 +252,9 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
-const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "stealth", "take_aim", "potion", "consumable", "vault", "block", "endure"]
+const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.39"
+const GAME_VERSION := "0.2.40"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -281,6 +316,24 @@ var subclass_ability_cooldown := 0.0
 var weapon_sequence_cooldown := 0.0
 var stealth_remaining := 0.0
 var stealth_cooldown_pending := false
+# What this hide has cost so far. Accrues in BOTH profiles: Recovery never deducts it
+# but derives the cooldown from it, which is how a cancelled hide gets a short one.
+var stealth_stamina_paid := 0.0
+var _stealth_last_ended_at := -1.0
+# The last amount _spend_stamina actually priced, so a cooldown can be derived from
+# the cost sitting two lines above it instead of from a duplicated literal.
+var _last_stamina_spend := 0.0
+# What each cooldown started at, so the readiness bar is drawn against the real
+# maximum rather than against a hardcoded guess that derived values now break.
+var skill_cooldown_max := 6.5
+var advance_cooldown_max := 6.0
+var main_ability_cooldown_max := 12.0
+var subclass_ability_cooldown_max := 8.0
+var survey_stealth_entries_total := 0
+var survey_stealth_cancels_total := 0
+var survey_stealth_quick_reentries_total := 0
+var survey_stealth_hidden_time_total := 0.0
+var survey_stealth_stamina_paid_total := 0.0
 var assassination_window_remaining := 0.0
 var turnabout_remaining := 0.0
 # Counts down in world time from the moment a hit reaction begins, through the
@@ -557,6 +610,13 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	weapon_sequence_cooldown = 0.0
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
+	stealth_stamina_paid = 0.0
+	_stealth_last_ended_at = -1.0
+	_last_stamina_spend = 0.0
+	skill_cooldown_max = 6.5
+	advance_cooldown_max = 6.0
+	main_ability_cooldown_max = 12.0
+	subclass_ability_cooldown_max = 8.0
 	assassination_window_remaining = 0.0
 	turnabout_remaining = 0.0
 	player_hit_protection_remaining = 0.0
@@ -649,6 +709,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_threatened_time_total = 0.0
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
+	survey_stealth_entries_total = 0
+	survey_stealth_cancels_total = 0
+	survey_stealth_quick_reentries_total = 0
+	survey_stealth_hidden_time_total = 0.0
+	survey_stealth_stamina_paid_total = 0.0
 	terminal_combo_recovery_time_total = 0.0
 	direct_attack_uses_total = 0
 	dodge_style_uses_total.clear()
@@ -1211,6 +1276,11 @@ func _capture_survey_room_entry() -> void:
 		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total,
+		"stealth_entries": survey_stealth_entries_total,
+		"stealth_cancels": survey_stealth_cancels_total,
+		"stealth_quick_reentries": survey_stealth_quick_reentries_total,
+		"stealth_hidden_time": survey_stealth_hidden_time_total,
+		"stealth_stamina_paid": survey_stealth_stamina_paid_total,
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total,
 		"direct_attack_uses": direct_attack_uses_total,
 		"dodge_style_uses": dodge_style_uses_total.duplicate(true),
@@ -1335,6 +1405,11 @@ func _complete_survey_room(outcome: String) -> void:
 		"stamina_combo_starved_time_total": stamina_combo_starved_time_total - float(survey_room_entry.get("stamina_combo_starved_time_total", stamina_combo_starved_time_total)),
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total - float(survey_room_entry.get("exhaustion_threatened_time_total", exhaustion_threatened_time_total)),
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
+		"stealth_entries": survey_stealth_entries_total - int(survey_room_entry.get("stealth_entries", survey_stealth_entries_total)),
+		"stealth_cancels": survey_stealth_cancels_total - int(survey_room_entry.get("stealth_cancels", survey_stealth_cancels_total)),
+		"stealth_quick_reentries": survey_stealth_quick_reentries_total - int(survey_room_entry.get("stealth_quick_reentries", survey_stealth_quick_reentries_total)),
+		"stealth_hidden_time": survey_stealth_hidden_time_total - float(survey_room_entry.get("stealth_hidden_time", survey_stealth_hidden_time_total)),
+		"stealth_stamina_paid": survey_stealth_stamina_paid_total - float(survey_room_entry.get("stealth_stamina_paid", survey_stealth_stamina_paid_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
 		"dodge_style_uses": _survey_dodge_style_delta(),
@@ -1779,6 +1854,30 @@ func dodge_is_available() -> bool:
 func stamina_cost(amount: float) -> float:
 	return amount * STAMINA_COST_SCALE
 
+# A cooldown is the ability's price expressed as a share of the pool, times the one
+# global rate. See COOLDOWN_SECONDS_PER_FULL_POOL for why the pool is the denominator.
+func _cooldown_for(spend: float) -> float:
+	return spend / maxf(1.0, player_max_stamina) * COOLDOWN_SECONDS_PER_FULL_POOL
+
+func _cooldown_for_last_spend() -> float:
+	return _cooldown_for(_last_stamina_spend)
+
+func _begin_skill_cooldown(seconds: float) -> void:
+	skill_cooldown = seconds
+	skill_cooldown_max = maxf(0.0001, seconds)
+
+func _begin_advance_cooldown(seconds: float) -> void:
+	advance_cooldown = seconds
+	advance_cooldown_max = maxf(0.0001, seconds)
+
+func _begin_main_ability_cooldown(seconds: float) -> void:
+	main_ability_cooldown = seconds
+	main_ability_cooldown_max = maxf(0.0001, seconds)
+
+func _begin_subclass_cooldown(seconds: float) -> void:
+	subclass_ability_cooldown = seconds
+	subclass_ability_cooldown_max = maxf(0.0001, seconds)
+
 # `scaled = false` charges the authored number directly. Sweeping Cut uses it:
 # see the note on SWEEPING_CUT_STAMINA for why price parity with the combo could
 # not hold it in check.
@@ -1792,6 +1891,9 @@ func _combo_stamina_cost() -> float:
 	return 60.0 if player_weapon_frame == "twin_knives" else 54.0 if player_weapon_frame == "knife" else 56.0
 
 func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
+	# Priced in both profiles even though Recovery deducts nothing, because Recovery
+	# derives its cooldown from this number. One authored cost, two rule sets.
+	_last_stamina_spend = stamina_cost(raw_amount) if scaled else raw_amount
 	if not uses_stamina_rules(): return true
 	if raw_amount <= 0.0: return true
 	if not _can_commit_physical_action(): return false
@@ -1810,6 +1912,10 @@ func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
 
 func _regenerate_stamina(dt: float) -> void:
 	if not uses_stamina_rules() or player_overexertion_pending or dt <= 0.0: return
+	# Suspended while hidden. A 10/s drain against 28/s of regeneration is not a price,
+	# it is a slower profit -- hiding would still refill you. Concealment has to compete
+	# with dodging for the same pool or the drain means nothing.
+	if stealth_remaining > 0.0: return
 	var active_dt := dt
 	if player_stamina_regen_delay > 0.0:
 		var delayed := minf(player_stamina_regen_delay, active_dt)
@@ -2243,7 +2349,7 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 	player_action["execution_target_was_unaware"] = not execution_target.is_empty() and String(execution_target.get("awareness", "idle")) != "alerted"
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_execution")
-	skill_cooldown = 0.0 if uses_stamina_rules() else 5.5 * _skill_cooldown_multiplier
+	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_set_message("You commit to Execution.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
@@ -2270,7 +2376,7 @@ func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) ->
 	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_twin_fang")
-	skill_cooldown = 0.0 if uses_stamina_rules() else 4.5 * _skill_cooldown_multiplier
+	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 300.0)
 	_set_message("Twin Fang drives both blades through one opening.")
 	if simulate_immediately: _simulate_until_ready()
@@ -2285,7 +2391,7 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 	player_action = _action("bow_art", art_duration, player_facing)
 	player_action.merge({"startup": 0.54 if piercing else 0.28, "shot_spawned": false, "piercing": piercing}, true)
 	_annotate_player_action("bow_piercing_shot" if piercing else "bow_fan_shot")
-	skill_cooldown = 0.0 if uses_stamina_rules() else (6.5 if piercing else 5.0) * _skill_cooldown_multiplier
+	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 260.0)
 	_set_message("You prepare %s." % ("Piercing Shot" if piercing else "Fan Shot"))
 	if simulate_immediately: _simulate_until_ready()
@@ -2322,14 +2428,24 @@ func request_stealth(simulate_immediately: bool = true) -> bool:
 	else: _streamed_action_cpu_usec = 0
 	return true
 
+# Priced under Stamina for the first time. Vault, Take Aim and Stealth were the only
+# abilities in the file sitting on a cooldown with NO `uses_stamina_rules()` waiver and
+# no cost -- together 116 stamina of ability use against a 100 pool, free, every room.
+# 51 raw spends 33.2 and derives the 8.0s cooldown that was previously hand-authored;
+# the Acrobat's rank-4 discount moves the cost rather than the cooldown, so one number
+# still drives both profiles and the 4.8s falls out unchanged.
+const VAULT_STAMINA := 51.0
+const TAKE_AIM_STAMINA := 51.0
+
 func request_vault(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or subclass_ability_cooldown > 0.0001 or direction.length_squared() < 0.01: return false
+	var vault_stamina := VAULT_STAMINA * (0.6 if has_track_rank("acrobat", 4) else 1.0)
+	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(vault_stamina): return false
 	player_facing = direction.normalized()
 	var recovery := 0.10 if has_track_rank("acrobat", 1) else 0.20
 	player_action = _action("vault", 0.34 + recovery, player_facing)
 	player_action.merge({"speed": 582.0, "move_start": 0.0, "move_end": 0.34, "evade_start": 0.0, "evade_end": 0.34 + (0.06 if has_track_rank("acrobat", 2) else 0.0), "clean_dodge_triggered": false, "vault_crossed_ids": []}, true)
 	_annotate_player_action("acrobat_vault")
-	subclass_ability_cooldown = 4.8 if has_track_rank("acrobat", 4) else 8.0
+	_begin_subclass_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend())
 	_emit_sound(player_pos, 210.0)
 	_set_message("You Vault through the opening.")
 	if simulate_immediately: _simulate_until_ready()
@@ -2337,7 +2453,7 @@ func request_vault(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return true
 
 func request_take_aim(target_id: int, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or subclass_ability_cooldown > 0.0001: return false
+	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_stamina_rules()) or not _spend_stamina(TAKE_AIM_STAMINA): return false
 	var target := _enemy_by_id(target_id)
 	if target.is_empty() or not enemy_visible_to_player(target) or not is_visible(Vector2(target["pos"])): return false
 	player_facing = player_pos.direction_to(Vector2(target["pos"]))
@@ -2423,7 +2539,13 @@ func resume_combo_hold() -> bool:
 # Now it shares the finisher's geometry, damage and posture, costs exactly what
 # the whole combo costs, and serves its complete terminal recovery in both rule
 # profiles. What you buy is the *time* you skip, and you pay the full price for it.
-# Deliberately exempt from STAMINA_COST_SCALE, so this is the literal cost.
+# It is no longer exempt from STAMINA_COST_SCALE. The exemption held the price at 56
+# while everything around it scaled, which meant a global re-tune of the price level
+# would move every ability EXCEPT this one -- the real defect, and not one the number
+# itself caused. The authored cost is raised to 86 instead, so it still spends ~56 by
+# default and now travels with the scale like anything else. Its cooldown falls out of
+# that spend at 13.4s, up from a hand-authored 4.2: the finisher without the combo's
+# time is a special attack, not a cheaper way to reach the same place.
 #
 # The original reasoning -- charge the sword combo's full price for skipping the
 # combo's time -- assumed 1.9 saved seconds were worth about a combo's Stamina.
@@ -2432,10 +2554,10 @@ func resume_combo_hold() -> bool:
 # room played as five sweeps and one combo. Price parity cannot restrain an
 # action that refills faster than its advantage decays, so the sweep keeps the
 # full 56 while everything around it scales -- roughly one and a half combos.
-const SWEEPING_CUT_STAMINA := 56.0
+const SWEEPING_CUT_STAMINA := 86.0
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA, false):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -2463,7 +2585,7 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	# No attack cooldown under Stamina: commitment, recovery and cost govern it, as
 	# they govern every other physical attack. Recovery rules keep their own
 	# budgeting, which is the modes' actual difference. Matches Drawing Cut.
-	skill_cooldown = 0.0 if uses_stamina_rules() else SWEEP_COOLDOWN * _skill_cooldown_multiplier
+	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
 	if simulate_immediately: _simulate_until_ready()
@@ -2485,7 +2607,7 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	player_action["damage_max"] = int(player_action["damage_min"])
 	_apply_action_poise(player_action)
 	_annotate_player_action("prototype_drawing_cut")
-	skill_cooldown = 0.0 if uses_stamina_rules() else SWEEP_COOLDOWN * _skill_cooldown_multiplier
+	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 410.0)
 	_set_message("You draw through a narrow opening in one committed cut.")
 	if simulate_immediately: _simulate_until_ready()
@@ -2628,7 +2750,7 @@ func request_advance(direction: Vector2, continue_held: bool = false, simulate_i
 		"continue_held": continue_held, "impact_ids": [], "pass_mass": -1.0, "max_targets": 1,
 	}, true)
 	_apply_action_poise(player_action, 4.0)
-	advance_cooldown = 0.0 if uses_stamina_rules() else 6.0
+	_begin_advance_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("vanguard_advance")
 	_emit_sound(player_pos, 420.0)
 	_set_message("You commit to Advance.")
@@ -3315,6 +3437,13 @@ func _restore_at_waystone() -> void:
 	subclass_ability_cooldown = 0.0
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
+	stealth_stamina_paid = 0.0
+	_stealth_last_ended_at = -1.0
+	_last_stamina_spend = 0.0
+	skill_cooldown_max = 6.5
+	advance_cooldown_max = 6.0
+	main_ability_cooldown_max = 12.0
+	subclass_ability_cooldown_max = 8.0
 	assassination_window_remaining = 0.0
 	turnabout_remaining = 0.0
 	player_hit_protection_remaining = 0.0
@@ -3682,10 +3811,12 @@ func _tick(dt: float) -> void:
 	aimed_remaining = maxf(0.0, aimed_remaining - dt)
 	if aimed_remaining <= 0.0: aimed_enemy_id = -1
 	if stealth_remaining > 0.0:
-		stealth_remaining = maxf(0.0, stealth_remaining - dt)
-		if stealth_remaining <= 0.0 and stealth_cooldown_pending:
-			stealth_cooldown_pending = false
-			main_ability_cooldown = 12.0
+		_drain_stealth(dt)
+		# _drain_stealth can end the hide outright by emptying the pool, so re-check
+		# rather than running the duration clock on something already over.
+		if stealth_remaining > 0.0:
+			stealth_remaining = maxf(0.0, stealth_remaining - dt)
+			if stealth_remaining <= 0.0: _end_stealth("expired")
 	if player_posture_recovery_delay > 0.0:
 		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
 	if player_posture < player_posture_max and player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
@@ -3908,15 +4039,13 @@ func _update_player(dt: float) -> void:
 		"stealth":
 			if elapsed >= float(player_action.get("effect_start", 0.24)) and not bool(player_action.get("effect_done", false)):
 				player_action["effect_done"] = true
-				stealth_remaining = 5.0
-				stealth_cooldown_pending = true
+				_begin_stealth()
 				if has_track_rank("rogue", 4):
 					for enemy in _nearby_enemies(player_pos, ACTIVE_ENEMY_RADIUS):
 						if not _enemy_on_current_layer(enemy) or String(enemy.get("awareness", "idle")) != "alerted": continue
 						enemy["awareness"] = "suspicious"
 						enemy["last_known_player"] = player_pos
 						enemy["suspicious_remaining"] = maxf(float(enemy.get("suspicious_remaining", 0.0)), 2.6)
-				_add_effect("stealth", player_pos)
 				_set_message("You disappear from direct perception.")
 		"vault":
 			if elapsed >= float(player_action.get("move_start", 0.0)) and elapsed <= float(player_action.get("move_end", 0.34)):
@@ -4446,7 +4575,7 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 			posture_damage *= 2.0
 		aimed_enemy_id = -1
 		aimed_remaining = 0.0
-		subclass_ability_cooldown = 8.0
+		_begin_subclass_cooldown(0.0 if uses_stamina_rules() else _cooldown_for(stamina_cost(TAKE_AIM_STAMINA)))
 	var source_ability := String(source_action.get("ability_id", ""))
 	if turnabout_remaining > 0.0 and source_ability in ["basic_attack", "sword_combo", "knife_sequence"]:
 		explicit_bonus += 8
@@ -4516,19 +4645,69 @@ func _handle_player_contact_aftermath(enemy: Dictionary, contact_result: Diction
 	if has_track_rank("sharpshooter", 4) and bool(contact_result.get("aimed", false)) and subclass_ability_cooldown > 0.0:
 		subclass_ability_cooldown = 0.0
 	if has_track_rank("rogue", 5) and assassination_window_remaining > 0.0 and not _enemy_death_has_witness(enemy):
-		stealth_remaining = 5.0
-		stealth_cooldown_pending = true
-		main_ability_cooldown = 0.0
+		_begin_stealth()
+		# Rank 5 refunds the hide it just earned rather than charging for it twice.
+		_begin_main_ability_cooldown(0.0)
+		stealth_stamina_paid = 0.0
 		assassination_window_remaining = 0.0
-		_add_effect("stealth", player_pos)
+
+func _begin_stealth(duration: float = STEALTH_DURATION) -> void:
+	if stealth_remaining <= 0.0:
+		stealth_stamina_paid = 0.0
+		survey_stealth_entries_total += 1
+		# How fast concealment is re-entered is the measure of whether hide-execute-hide
+		# has become the whole class. With no Stamina-mode cooldown, `player_is_noticed()`
+		# is the only thing rationing it -- and rogue rank 4 removes even that.
+		if _stealth_last_ended_at >= 0.0 and simulation_time - _stealth_last_ended_at <= 3.0:
+			survey_stealth_quick_reentries_total += 1
+	stealth_remaining = duration
+	stealth_cooldown_pending = true
+	_add_effect("stealth", player_pos)
+
+func _drain_stealth(dt: float) -> void:
+	var charge := STEALTH_DRAIN_PER_SECOND * dt
+	stealth_stamina_paid += charge
+	survey_stealth_hidden_time_total += dt
+	if not uses_stamina_rules(): return
+	_spend_stamina(charge, false)
+	# Running the pool dry drops the veil. Exhaustion is a state you cannot hide in.
+	if player_stamina <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0:
+		_end_stealth("exhausted")
+
+func _end_stealth(reason: String) -> void:
+	if stealth_remaining <= 0.0 and not stealth_cooldown_pending: return
+	stealth_remaining = 0.0
+	stealth_cooldown_pending = false
+	# The floor, charged however the hide ended. See STEALTH_MINIMUM_STAMINA: the
+	# rank-4 awareness wipe is instantaneous while a proportional price is not, so
+	# without this a quarter-second tap would be the strictly better play.
+	var owed := maxf(0.0, STEALTH_MINIMUM_STAMINA - stealth_stamina_paid)
+	if owed > 0.0:
+		stealth_stamina_paid += owed
+		if uses_stamina_rules(): _spend_stamina(owed, false)
+	survey_stealth_stamina_paid_total += stealth_stamina_paid
+	if reason == "cancelled": survey_stealth_cancels_total += 1
+	_stealth_last_ended_at = simulation_time
+	# A full 5s hide pays 50, which derives 12.0s -- exactly the cooldown that shipped
+	# before this change. A hide cut short at 1.5s pays 20 (the floor) and derives 4.8s.
+	_begin_main_ability_cooldown(0.0 if uses_stamina_rules() else _cooldown_for(stealth_stamina_paid))
+	stealth_stamina_paid = 0.0
+
+# Free and instant: this stops a cost rather than performing an action, so there is
+# nothing to commit to and no world time to spend. Without it the drain is not a drain
+# -- you would pay the full 50 whether or not you needed five seconds, which is a
+# cooldown with extra steps.
+func request_end_stealth() -> bool:
+	if stealth_remaining <= 0.0: return false
+	_end_stealth("cancelled")
+	_set_message("You step back into the open.")
+	return true
 
 func _break_stealth_for_hostile_action() -> void:
 	if stealth_remaining <= 0.0: return
-	stealth_remaining = 0.0
-	stealth_cooldown_pending = false
-	main_ability_cooldown = 12.0
+	var remaining_action := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0))) / maxf(0.01, _player_personal_tempo())
+	_end_stealth("broken")
 	if has_track_rank("rogue", 5):
-		var remaining_action := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0))) / maxf(0.01, _player_personal_tempo())
 		assassination_window_remaining = maxf(2.0, remaining_action + 0.35)
 
 func _enemy_death_has_witness(victim: Dictionary) -> bool:
@@ -7237,6 +7416,16 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"subclass_ability_cooldown": subclass_ability_cooldown,
 		"weapon_sequence_cooldown": weapon_sequence_cooldown,
 		"terminal_combo_recoveries_total": terminal_combo_recoveries_total,
+		"survey_stealth_entries_total": survey_stealth_entries_total,
+		"survey_stealth_cancels_total": survey_stealth_cancels_total,
+		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
+		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
+		"survey_stealth_stamina_paid_total": survey_stealth_stamina_paid_total,
+		"stealth_stamina_paid": stealth_stamina_paid,
+		"skill_cooldown_max": skill_cooldown_max,
+		"advance_cooldown_max": advance_cooldown_max,
+		"main_ability_cooldown_max": main_ability_cooldown_max,
+		"subclass_ability_cooldown_max": subclass_ability_cooldown_max,
 		"terminal_combo_recovery_time_total": terminal_combo_recovery_time_total,
 		"direct_attack_uses_total": direct_attack_uses_total,
 		"dodge_style_uses_total": dodge_style_uses_total.duplicate(true),
@@ -7468,6 +7657,16 @@ func _build_save_payload() -> Dictionary:
 		"subclass_ability_cooldown": subclass_ability_cooldown,
 		"weapon_sequence_cooldown": weapon_sequence_cooldown,
 		"terminal_combo_recoveries_total": terminal_combo_recoveries_total,
+		"survey_stealth_entries_total": survey_stealth_entries_total,
+		"survey_stealth_cancels_total": survey_stealth_cancels_total,
+		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
+		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
+		"survey_stealth_stamina_paid_total": survey_stealth_stamina_paid_total,
+		"stealth_stamina_paid": stealth_stamina_paid,
+		"skill_cooldown_max": skill_cooldown_max,
+		"advance_cooldown_max": advance_cooldown_max,
+		"main_ability_cooldown_max": main_ability_cooldown_max,
+		"subclass_ability_cooldown_max": subclass_ability_cooldown_max,
 		"terminal_combo_recovery_time_total": terminal_combo_recovery_time_total,
 		"direct_attack_uses_total": direct_attack_uses_total,
 		"dodge_style_uses_total": dodge_style_uses_total.duplicate(true),
@@ -7848,6 +8047,16 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	stamina_combo_starved_time_total = float(payload.get("stamina_combo_starved_time_total", 0.0))
 	exhaustion_threatened_time_total = float(payload.get("exhaustion_threatened_time_total", 0.0))
 	terminal_combo_recoveries_total = int(payload.get("terminal_combo_recoveries_total", 0))
+	survey_stealth_entries_total = int(payload.get("survey_stealth_entries_total", 0))
+	survey_stealth_cancels_total = int(payload.get("survey_stealth_cancels_total", 0))
+	survey_stealth_quick_reentries_total = int(payload.get("survey_stealth_quick_reentries_total", 0))
+	survey_stealth_hidden_time_total = float(payload.get("survey_stealth_hidden_time_total", 0.0))
+	survey_stealth_stamina_paid_total = float(payload.get("survey_stealth_stamina_paid_total", 0.0))
+	stealth_stamina_paid = float(payload.get("stealth_stamina_paid", 0.0))
+	skill_cooldown_max = float(payload.get("skill_cooldown_max", 6.5))
+	advance_cooldown_max = float(payload.get("advance_cooldown_max", 6.0))
+	main_ability_cooldown_max = float(payload.get("main_ability_cooldown_max", 12.0))
+	subclass_ability_cooldown_max = float(payload.get("subclass_ability_cooldown_max", 8.0))
 	terminal_combo_recovery_time_total = float(payload.get("terminal_combo_recovery_time_total", 0.0))
 	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))
 	dodge_style_uses_total = Dictionary(payload.get("dodge_style_uses_total", {})).duplicate(true)

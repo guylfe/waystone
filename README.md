@@ -1,6 +1,36 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.39` (Android version code `239`).
+Current prototype version: `0.2.40` (Android version code `240`).
+
+### v0.2.40: One price, two rule sets
+
+Every ability had two numbers — a stamina cost and a cooldown — kept in sync by hand, and three abilities had only one of them. Now there is one authored number and the other is derived.
+
+```
+cooldown = (stamina actually spent / max stamina) x 24s
+```
+
+**The rate is not a guess.** The six hand-authored pairs that already existed implied 20–33 seconds per 100 stamina — Advance 33.0, Execution 28.2, piercing shot 26.3, bow art 24.0, Twin Fang 21.6, Drawing Cut 20.2, median 25. So the formula mostly *codifies* what was there and repairs the abilities that fell outside it. Most cooldowns move by under a second. Its best confirmation is elsewhere: a full stealth hide costs 50 stamina, which derives **12.0s — exactly the cooldown that shipped before the formula existed.**
+
+**The pool is the denominator on purpose.** Under Recovery, stamina is never spent and never regenerated, so the `+10` max stamina from `vigilance`, `fleetness` and `observation` did *nothing at all* — three track choices with a dead half. Now a deeper pool shortens every cooldown. The accepted consequence, recorded rather than overlooked: max stamina buys **burst depth** under Stamina (more actions before empty, prices unchanged) and **sustain** under Recovery (shorter cooldowns, burst unchanged). The same stat reads differently in each profile.
+
+**Three abilities were free in one profile and walled in the other.** Stealth, Vault and Take Aim were the only things in the file sitting on a cooldown with no `uses_stamina_rules()` waiver and no cost — together **116 stamina of ability use against a 100 pool, free, every room**. Nothing noticed for the whole life of the Rogue, because no test asserted that the two profiles cover the same abilities. One does now.
+
+**Sweeping Cut stops being a special case.** Its exemption from `STAMINA_COST_SCALE` held its price at 56 while everything around it scaled — so a global re-tune of the price level would have moved every ability *except* this one. That, not the number, was the defect. The authored cost carries the surcharge instead (56 → 86 raw, still spending ~56), and its cooldown derives at **13.4s, up from a hand-authored 4.2.** The finisher without the combo's time is a special attack, not a cheaper route to the same place.
+
+**Stealth is charged by the second, not by the use.** 10/s while hidden, with regeneration suspended — a 10/s drain against 28/s of regeneration is a slower profit, not a price, and concealment has to compete with dodging for the same pool or the drain means nothing. Exhaustion drops the veil. There is no Stamina-mode cooldown, matching every other ability.
+
+- **It is cancellable, and the button says so** — "END STEALTH" rather than greyed out. A drain you cannot stop is a fixed cost with extra steps: you would pay the full 50 whether or not you needed five seconds. Cancelling is free and instant, because it stops a cost rather than performing an action.
+- **A 20-stamina floor**, charged however the hide ends. Entering stealth fires a one-shot at rogue rank 4 that turns nearby alerted enemies `suspicious`, and `execution_target_was_unaware` accepts anything not `alerted` — so the benefit is instantaneous while a proportional price is not. Without a floor, a quarter-second tap would buy the unaware-execution bonus for a rounding error and tapping would strictly beat hiding.
+- **Consequence worth naming:** breaking stealth to attack is a hide cut short, so it now pays the floor rather than the full price — 4.8s of cooldown where it used to be 12.0. That is the intended reward for striking quickly, and **stealth telemetry now reports entries, cancellations, re-entries within 3 seconds, time hidden and stamina paid**, so the next survey can answer whether hide-execute-hide has eaten the class with a number instead of a feeling.
+
+**The Shield's guard drifted between two lists.** The simulation stopped it blocking in six states; the renderer drew the guard down in four. `hit_reaction` and `stagger` were added to the sim in `0.2.38` and never mirrored, so a staggered Shield drew its guard back up while still resolving as open — you hit a raised shield, which the `0.2.38` survey reported. The list is exported and the renderer reads it.
+
+The readiness bar was drawn against hardcoded maxima, which derived cooldowns break outright — Sweeping Cut's 13.4s against an assumed 6.5 would draw full from the first frame. Each cooldown records what it started at.
+
+**What the Rogue survey found, since it prompted all of this.** The first Acrobat run ever recorded, closing a long-owed item. The two melee-experiment rooms averaged **3.5 fun / 3.5 want** against **3.0 / 2.8** for the five rooms carrying ranged pressure — the reverse of the archive rule, which was measured entirely on Warriors. And engagement telemetry split the run without predicting it: the worst room ran 0.22 engaged and 3 of 3 kills alone, but so did the *second-best*, which was rated 4 fun / 5 tactical. Isolation you engineer is the reward; isolation the room hands you is the defect.
+
+One correction to the survey's own note: Execution was never free. It charges 30 raw, 19.5 scaled, and room 2's five executions and four short sequences reconcile to the reported 165.1 exactly.
 
 ### v0.2.39: Sameness, not crowding — and the melee experiment reports
 

@@ -156,7 +156,15 @@ func test_stealth_eligibility_breaks_and_alerts() -> void:
 	assert(state.request_attack(state.player_pos + Vector2.LEFT * 300.0, false))
 	while state.stealth_remaining > 0.0 and not state.is_player_ready(): state.advance_streamed_action_tick()
 	assert(state.stealth_remaining == 0.0)
-	assert(state.main_ability_cooldown > 11.0)
+	# Superseded deliberately. This asserted the flat 12.0s cooldown that every hide
+	# used to pay regardless of length. Stealth is charged by the second now, so a hide
+	# broken almost immediately -- which is what attacking out of concealment is --
+	# pays the STEALTH_MINIMUM_STAMINA floor rather than the full five seconds' worth.
+	# 20 of a 100 pool at 24s per pool is 4.8s. That the strike-and-vanish loop got
+	# cheaper under Recovery is the intended reward for striking quickly, and it is
+	# what the new stealth re-entry telemetry exists to check in play.
+	var floor_cooldown := RunStateScript.STEALTH_MINIMUM_STAMINA / state.player_max_stamina * RunStateScript.COOLDOWN_SECONDS_PER_FULL_POOL
+	assert(state.main_ability_cooldown > floor_cooldown - 0.5 and state.main_ability_cooldown < floor_cooldown + 1.5)
 
 	var alarm_state := fresh("rogue_acrobat")
 	var victim := alarm_state._make_enemy("knife", alarm_state.player_pos + Vector2.RIGHT * 80.0, 30)
