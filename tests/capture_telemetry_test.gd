@@ -1197,6 +1197,132 @@ func test_the_shield_opens_and_closes_on_one_list() -> void:
 	shield["action"] = {"kind": "idle", "elapsed": 0.0}
 	check(state._enemy_blocks_attack(shield), "a Shield at rest facing the player must block")
 
+# --- Formations ---------------------------------------------------------------------
+#
+# A formation is an authored arrangement, not a bag of coordinates. What was here
+# before named six fixed points per formation id and let every enemy pick its favourite
+# by role score, so `ranged_support` promised an escorted archer and delivered a
+# hexagon. These tests hold the properties the arrangement is supposed to guarantee.
+
+func generated_rooms(salts: int = 12) -> Array:
+	var rooms: Array = []
+	for salt in range(salts):
+		var state: RunState = RunStateScript.new(false)
+		state.start_run("warrior", "combat_survey", 7100 + salt, "encounter", "stamina")
+		for room_number in range(1, 12):
+			var layout := state._generate_survey_layout(room_number)
+			rooms.append({
+				"state": state,
+				"templates": Array(Dictionary(layout["encounters"])[0]),
+				"player_start": Vector2(layout["player_start"]),
+				"formation_ids": Array(state.survey_room_definition.get("formation_ids", [])),
+			})
+	return rooms
+
+func test_a_ranged_body_always_has_something_in_front_of_it() -> void:
+	# The whole point. "An archer that spawns next to me is just a blob I have to hit
+	# before fighting the rest of the room." Screening is a fact of the geometry now,
+	# not a score a placement function has to be lucky enough to satisfy.
+	var rear_total := 0
+	var unscreened := 0
+	for room_value in generated_rooms():
+		var room := Dictionary(room_value)
+		var state: RunState = room["state"]
+		var templates: Array = room["templates"]
+		var player_start: Vector2 = room["player_start"]
+		for candidate_value in templates:
+			var candidate := Dictionary(candidate_value)
+			if state._formation_band_for_kind(String(candidate["kind"])) != "rear": continue
+			rear_total += 1
+			var reach := Vector2(candidate["pos"]).distance_to(player_start)
+			var shielded := false
+			for other_value in templates:
+				var other := Dictionary(other_value)
+				if Vector2(other["pos"]) == Vector2(candidate["pos"]): continue
+				if state._formation_band_for_kind(String(other["kind"])) == "rear": continue
+				if Vector2(other["pos"]).distance_to(player_start) < reach - 20.0: shielded = true
+			if not shielded: unscreened += 1
+	check(rear_total > 60, "not enough ranged bodies generated to judge, got %d" % rear_total)
+	var rate := float(unscreened) / maxf(1.0, float(rear_total))
+	check(rate < 0.08, "%d of %d ranged bodies had nothing in front of them (%.1f%%)" % [unscreened, rear_total, rate * 100.0])
+
+func test_the_polearm_is_never_put_in_the_front_rank() -> void:
+	# `reach` holds at 200 against the frontline's 88, so a Polearm spawned in the van
+	# walks backwards the moment the player closes and takes the formation apart with
+	# it. A body has to be spawned where its own standing behaviour will keep it.
+	var state := survey_state()
+	check(state._formation_band_for_kind("polearm") == "mid", "the Polearm belongs behind the front rank")
+	check(state._formation_band_for_kind("shield") == "van", "the Shield belongs in front")
+	check(state._formation_band_for_kind("chanter") == "rear", "the Chanter belongs at the back")
+	check(state._formation_band_for_kind("earth_caster") == "rear", "movement denial belongs at the back")
+	check(state._formation_band_for_kind("ox") == "elite", "the Ox is heavy enough to be the centre of a room")
+	check(state._formation_band_for_kind("knight") == "elite", "the Knight is heavy enough to be the centre of a room")
+	check(state._formation_band_for_kind("hound") == "wing", "a flanker wants an angle, not depth")
+
+func test_the_library_stays_small_enough_to_measure() -> void:
+	# At roughly eleven rooms a run, seven formations reach a readable sample within a
+	# few runs. Twenty never would, and the entire reason for authoring formations is to
+	# find out which ones work. Add an eighth only by retiring one.
+	var state := survey_state()
+	var catalog := state._survey_formation_catalog()
+	check(catalog.size() <= 8, "the formation library has grown to %d; it stops being measurable" % catalog.size())
+	var seen: Dictionary = {}
+	for template_value in catalog:
+		var template := Dictionary(template_value)
+		check(not seen.has(String(template["id"])), "duplicate formation id %s" % String(template["id"]))
+		seen[String(template["id"])] = true
+		check(Array(template["slots"]).size() >= 5, "%s has too few slots to seat a room" % String(template["id"]))
+
+func test_every_formation_actually_gets_drawn() -> void:
+	# A formation that never appears cannot be evaluated -- the trap that left the
+	# Chanter unplayed for a whole version because its recipe needed a tier the run
+	# never reached.
+	var counts: Dictionary = {}
+	for room_value in generated_rooms():
+		for formation_id in Array(Dictionary(room_value)["formation_ids"]):
+			counts[String(formation_id)] = int(counts.get(String(formation_id), 0)) + 1
+	var state := survey_state()
+	for template_value in state._survey_formation_catalog():
+		var formation_id := String(Dictionary(template_value)["id"])
+		check(int(counts.get(formation_id, 0)) > 0, "%s is in the library but never drawn" % formation_id)
+
+func test_the_centred_elite_keeps_a_control_group() -> void:
+	# Without a control there is no way to tell whether Retinue is good or whether rooms
+	# containing an Ox are good. That confound is exactly what left "melee-only rooms are
+	# irredeemable" unfalsifiable for thirty runs.
+	var elite_rooms := 0
+	var centred := 0
+	for room_value in generated_rooms():
+		var room := Dictionary(room_value)
+		var state: RunState = room["state"]
+		var has_elite := false
+		for template_value in Array(room["templates"]):
+			if state._formation_band_for_kind(String(Dictionary(template_value)["kind"])) == "elite": has_elite = true
+		if not has_elite: continue
+		elite_rooms += 1
+		if Array(room["formation_ids"]).has("retinue"): centred += 1
+	check(elite_rooms >= 10, "not enough elite rooms to judge, got %d" % elite_rooms)
+	check(centred > 0, "the Retinue never drew despite %d elite rooms" % elite_rooms)
+	check(centred < elite_rooms, "every elite room was a Retinue -- the control group is gone")
+
+func test_a_room_never_asks_one_attack_three_times() -> void:
+	# Roles were not enough. The 0.2.40 Stamina run landed seven boar pounces and nine
+	# hound pounces in one room -- sixteen of twenty-eight attacks, "busy and monotonous"
+	# -- and the role cap waved them through, because Boar is frontline and Hound is
+	# flanker. The verb is what the player reads.
+	var offenders := 0
+	for room_value in generated_rooms(8):
+		var room := Dictionary(room_value)
+		var state: RunState = room["state"]
+		var techniques: Dictionary = {}
+		for template_value in Array(room["templates"]):
+			var technique := state._survey_primary_technique(String(Dictionary(template_value)["kind"]))
+			if technique.is_empty(): continue
+			techniques[technique] = int(techniques.get(technique, 0)) + 1
+		for technique in techniques:
+			if int(techniques[technique]) > 2: offenders += 1
+	check(offenders == 0, "%d rooms asked the same attack three or more times" % offenders)
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1253,6 +1379,11 @@ func _init() -> void:
 	test_sweeping_cut_is_no_longer_a_special_case()
 	test_a_deeper_pool_shortens_recovery_cooldowns()
 	test_the_shield_opens_and_closes_on_one_list()
+	test_a_ranged_body_always_has_something_in_front_of_it()
+	test_the_polearm_is_never_put_in_the_front_rank()
+	test_the_library_stays_small_enough_to_measure()
+	test_every_formation_actually_gets_drawn()
+	test_the_centred_elite_keeps_a_control_group()
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
 	test_rooms_are_populated_enough_for_the_pressure_to_matter()

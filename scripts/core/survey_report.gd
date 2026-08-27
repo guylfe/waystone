@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 18
+const FORMAT_VERSION := 19
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -154,6 +154,19 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
 		lines.append("View switches: %d" % int(room.get("view_switches", 0)))
 		lines.append("Empty melee contacts: %d" % int(room.get("empty_melee_contacts", 0)))
+		# Which arrangements built the room, so the archive can compare formations the
+		# way it compared non-melee counts -- and how long each ranged body lasted before
+		# the player was standing on top of it, which is the difference between a threat
+		# and a speed bump.
+		var reach_entries := Array(room.get("reach_times", []))
+		if not reach_entries.is_empty():
+			var reach_text: Array[String] = []
+			for entry_value in reach_entries:
+				var entry := Dictionary(entry_value)
+				reach_text.append("%s %.1fs" % [String(entry.get("kind", "?")).replace("_", " "), float(entry.get("at", 0.0))])
+			lines.append("Time to reach ranged: %s" % ", ".join(reach_text))
+		else:
+			lines.append("Time to reach ranged: none reached")
 		# Is this a room, or a queue of duels? Four separate 0.2.37 notes said the enemies
 		# were fought one at a time; nothing in the report could confirm it.
 		var engagement_samples := int(room.get("engagement_samples", 0))

@@ -157,6 +157,38 @@ const ANCHORED_ROLES := ["frontline", "screen", "reach"]
 # own commit band and would hold that spot without ever attacking. A role must be able
 # to act from the distance it is told to hold.
 const ROLE_HOLD_DISTANCE := {"frontline": 88.0, "screen": 78.0, "reach": 200.0}
+# Where a kind belongs in a formation, derived from its role rather than authored per
+# slot. Naming roles directly on slots conflates who an enemy is with where it stands,
+# and the Polearm is the proof: it is melee, but `reach` holds at 200 against the
+# frontline's 88, so a Polearm spawned in the van walks BACKWARDS the moment the player
+# closes and the formation dissolves in the first two seconds. A body has to be spawned
+# where its own standing behaviour will keep it.
+#
+#   van  -- wants contact and holds it: screen, frontline, breaker, boss
+#   wing -- wants an angle rather than depth: flanker
+#   mid  -- melee that fights over the front rank: reach
+#   rear -- everything that never wants to be reached at all
+const ROLE_FORMATION_BAND := {
+	"screen": "van", "frontline": "van", "breaker": "van", "boss": "van",
+	"flanker": "wing",
+	"reach": "mid",
+	"ranged_pressure": "rear", "area_denial": "rear", "movement_denial": "rear", "support": "rear",
+}
+# Where a body may go when its own band is full, in order of preference. `rear` never
+# falls forward past `mid`: the whole point of the change is that a caster cannot end
+# up in front, which is how the Chanter died three seconds into its only appearance.
+const BAND_FALLBACK := {
+	"elite": ["elite", "van", "mid"],
+	"van": ["van", "elite", "wing", "mid"],
+	"wing": ["wing", "van", "mid"],
+	"mid": ["mid", "rear", "van"],
+	"rear": ["rear", "mid"],
+}
+# Two groups placed independently are two sequential fights, which the archive rates
+# worse than one good one -- 0.2.40 room 6 ran 0.22 engaged with 3 of 3 kills made
+# alone and scored 2/2/2. A second group is only legal if reaching the first puts the
+# player inside its threat: close enough to be pursued, or with a clear shot.
+const GROUP_PURSUIT_REACH := 460.0
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
 # selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
@@ -254,7 +286,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.40"
+const GAME_VERSION := "0.2.41"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -329,6 +361,10 @@ var skill_cooldown_max := 6.5
 var advance_cooldown_max := 6.0
 var main_ability_cooldown_max := 12.0
 var subclass_ability_cooldown_max := 8.0
+# How long a ranged body survives before the player is standing on top of it. "An
+# archer that spawns next to me is just a blob I have to hit before fighting the rest
+# of the room" -- that is a claim about time, and until now it was unmeasurable.
+var survey_reach_times: Array[Dictionary] = []
 var survey_stealth_entries_total := 0
 var survey_stealth_cancels_total := 0
 var survey_stealth_quick_reentries_total := 0
@@ -709,6 +745,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_threatened_time_total = 0.0
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
+	survey_reach_times.clear()
 	survey_stealth_entries_total = 0
 	survey_stealth_cancels_total = 0
 	survey_stealth_quick_reentries_total = 0
@@ -828,8 +865,6 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	var composition := _survey_composition(room_rng, room_number, threat_band, pacing_phase)
 	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
 	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
-	var formation_options: Array = composition.get("formations", ["spread"])
-	var formation_id := String(formation_options[room_rng.randi_range(0, formation_options.size() - 1)])
 	var enemy_plan: Array = composition.get("enemies", [])
 	var layer := "survey_arena"
 	var center := Vector2(850.0, 700.0)
@@ -847,18 +882,24 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	for obstacle in obstacle_rects:
 		walls_for_layer.append(obstacle)
 		features.append({"kind": "ancient_ruin", "pos": obstacle.get_center(), "radius": maxf(obstacle.size.x, obstacle.size.y) * 0.48, "part_id": 0, "layer": layer})
-	var spawn_slots := _survey_formation_slots(formation_id)
-	var available_spawn_slots := spawn_slots.duplicate()
+	# Formation is now chosen from the roster's own bands rather than listed per recipe.
+	# Decoupling the two is what makes the experiment work: 0.2.40 rooms 1 and 2 held the
+	# same four enemies in different placements and rated 2/2/2 against 3/4/3 in both rule
+	# profiles -- the cleanest signal the archive has produced, and it happened by luck.
+	# This manufactures those matched pairs on purpose.
+	var placement := _survey_place_formations(enemy_plan, room_rng, player_start, obstacle_rects, threat_band)
+	var formation_ids: Array = placement["formation_ids"]
+	var formation_id := " + ".join(PackedStringArray(formation_ids))
 	var templates: Array[Dictionary] = []
 	var enemy_labels: Array[String] = []
 	var enemy_roles: Array[String] = []
-	for index in range(enemy_plan.size()):
-		var planned_enemy := Dictionary(enemy_plan[index])
+	for seat_value in Array(placement["seats"]):
+		var seat := Dictionary(seat_value)
+		var planned_enemy := Dictionary(seat["entry"])
 		var kind := String(planned_enemy["kind"])
 		var role := CombatCatalogScript.role(kind)
-		var slot := _survey_take_spawn_slot(available_spawn_slots, role, player_start)
-		var jitter := Vector2(room_rng.randf_range(-34.0, 34.0), room_rng.randf_range(-28.0, 28.0))
-		var spawn_position: Vector2 = slot + jitter
+		var jitter := Vector2(room_rng.randf_range(-22.0, 22.0), room_rng.randf_range(-18.0, 18.0))
+		var spawn_position: Vector2 = Vector2(seat["pos"]) + jitter
 		for obstacle in obstacle_rects:
 			if obstacle.grow(70.0).has_point(spawn_position):
 				var away := (spawn_position - obstacle.get_center()).normalized()
@@ -881,6 +922,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"room_seed": survey_room_seed,
 		"arena": arena_id,
 		"formation": formation_id,
+		"formation_ids": formation_ids,
 		"threat_tier": threat_tier,
 		"threat_band": threat_band,
 		"pacing_phase": pacing_phase,
@@ -942,27 +984,6 @@ func _sample_engagement() -> void:
 	survey_engagement_alerted_sum += engaged
 	if engaged >= 2: survey_engagement_multi_samples += 1
 
-func _survey_take_spawn_slot(available: Array, role: String, player_start: Vector2) -> Vector2:
-	if available.is_empty(): return player_start + Vector2.UP * 420.0
-	var chosen_index := 0
-	var chosen_score := -INF
-	for index in range(available.size()):
-		var slot := Vector2(available[index])
-		var distance := slot.distance_to(player_start)
-		var lateral := absf(slot.x - player_start.x)
-		var score := -absf(distance - 410.0)
-		match role:
-			"ranged_pressure", "area_denial": score = distance - lateral * 0.08
-			"flanker": score = lateral * 1.25 + distance * 0.18
-			"anchor": score = -absf(distance - 480.0) - lateral * 0.12
-			_: score = -absf(distance - 390.0) - lateral * 0.05
-		if score > chosen_score:
-			chosen_score = score
-			chosen_index = index
-	var chosen := Vector2(available[chosen_index])
-	available.remove_at(chosen_index)
-	return chosen
-
 func _survey_seed_for_room(room_number: int) -> int:
 	return absi(hash("waystone-survey:%d:%d:%d" % [SURVEY_GENERATOR_VERSION, run_seed, room_number]))
 
@@ -995,8 +1016,8 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		# fight", 0.2.35 room 2 -- and the archive has no rooms of two enemies at all, so
 		# that shape was below anything ever measured. Its best band is 4-5 enemies with
 		# 2-3 melee alongside the pressure.
-		{"id": "first_arrows", "label": "First Arrows", "family": "skirmish", "min_tier": 1, "phases": ["opening", "development", "respite"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "archer"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
-		{"id": "hunted", "label": "Hunted", "family": "pursuit", "min_tier": 1, "phases": ["contrast", "pressure", "development"], "formations": ["spread", "flanked"], "enemies": [{"kind": "archer"}, {"kind": "boar"}, {"kind": "knife"}], "reinforcements": [{"kind": "hound"}, {"kind": "bandit"}]},
+		{"id": "first_arrows", "label": "First Arrows", "family": "skirmish", "min_tier": 1, "phases": ["opening", "development", "respite"], "enemies": [{"kind": "archer"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
+		{"id": "hunted", "label": "Hunted", "family": "pursuit", "min_tier": 1, "phases": ["contrast", "pressure", "development"], "enemies": [{"kind": "archer"}, {"kind": "boar"}, {"kind": "knife"}], "reinforcements": [{"kind": "hound"}, {"kind": "bandit"}]},
 		# --- Melee experiments -------------------------------------------------------
 		# Deliberate, not filler. Every melee-only room in the archive was built from the
 		# five oldest kinds; the Shield and Duellist have never once appeared in one.
@@ -1006,28 +1027,28 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		#
 		# These are drawn from the differentiated roster and each asks three different
 		# questions: go around it, do not swing at it, get out of its line.
-		{"id": "warded_duel", "label": "Warded Duel", "family": "melee_experiment", "melee_experiment": true, "min_tier": 2, "phases": ["contrast", "opening", "development"], "formations": ["frontline", "flanked"], "enemies": [{"kind": "shield"}, {"kind": "duellist"}, {"kind": "boar"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
-		{"id": "goring_reach", "label": "Goring Reach", "family": "melee_experiment", "melee_experiment": true, "min_tier": 4, "phases": ["opening", "pressure", "climax"], "formations": ["frontline", "spread"], "enemies": [{"kind": "ox"}, {"kind": "polearm"}], "reinforcements": [{"kind": "duellist"}, {"kind": "hound"}]},
-		{"id": "heavy_press", "label": "Heavy Press", "family": "melee_experiment", "melee_experiment": true, "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "formations": ["surround", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "polearm"}, {"kind": "duellist"}], "reinforcements": [{"kind": "shield"}, {"kind": "bandit"}]},
-		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["opening", "development", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
-		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 2, "phases": ["pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
-		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 4, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
-		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 3, "phases": ["development", "pressure", "climax", "respite"], "formations": ["ranged_support", "flanked"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
-		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
-		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "formations": ["frontline", "split"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
-		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "warded_duel", "label": "Warded Duel", "family": "melee_experiment", "melee_experiment": true, "min_tier": 2, "phases": ["contrast", "opening", "development"], "enemies": [{"kind": "shield"}, {"kind": "duellist"}, {"kind": "boar"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
+		{"id": "goring_reach", "label": "Goring Reach", "family": "melee_experiment", "melee_experiment": true, "min_tier": 4, "phases": ["opening", "pressure", "climax"], "enemies": [{"kind": "ox"}, {"kind": "polearm"}], "reinforcements": [{"kind": "duellist"}, {"kind": "hound"}]},
+		{"id": "heavy_press", "label": "Heavy Press", "family": "melee_experiment", "melee_experiment": true, "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "enemies": [{"kind": "brute"}, {"kind": "polearm"}, {"kind": "duellist"}], "reinforcements": [{"kind": "shield"}, {"kind": "bandit"}]},
+		{"id": "screened_archer", "label": "Screened Archer", "family": "screened_ranged", "min_tier": 2, "phases": ["opening", "development", "pressure", "climax"], "enemies": [{"kind": "archer"}, {"kind": "shield"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "crossfire_chase", "label": "Crossfire Chase", "family": "crossfire", "min_tier": 2, "phases": ["pressure", "climax"], "enemies": [{"kind": "archer"}, {"kind": "archer"}, {"kind": "boar"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
+		{"id": "ice_displacement", "label": "Ice Displacement", "family": "area_denial", "min_tier": 4, "phases": ["contrast", "pressure", "climax"], "enemies": [{"kind": "ice_caster"}, {"kind": "blade"}, {"kind": "hound"}, {"kind": "knife"}], "reinforcements": [{"kind": "boar"}, {"kind": "bandit"}]},
+		{"id": "fire_pursuit", "label": "Fire Pursuit", "family": "area_denial", "min_tier": 3, "phases": ["development", "pressure", "climax", "respite"], "enemies": [{"kind": "fire_caster"}, {"kind": "boar"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "dual_elements", "label": "Dual Elements", "family": "caster_pair", "min_tier": 5, "phases": ["climax", "pressure", "contrast"], "enemies": [{"kind": "ice_caster"}, {"kind": "fire_caster"}, {"kind": "blade"}, {"kind": "hound"}], "reinforcements": [{"kind": "bandit"}, {"kind": "boar"}]},
+		{"id": "polearm_screen", "label": "Polearm Screen", "family": "anchor", "min_tier": 3, "phases": ["opening", "development", "contrast", "respite"], "enemies": [{"kind": "polearm"}, {"kind": "archer"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "brute_support", "label": "Brute Support", "family": "heavy_anchor", "min_tier": 5, "phases": ["contrast", "pressure", "climax"], "enemies": [{"kind": "brute"}, {"kind": "archer"}, {"kind": "knife"}], "reinforcements": [{"kind": "bandit"}, {"kind": "blade"}]},
 		# Kill-the-caster, priced. The Chanter hardens or hastens the bodies in front of
 		# it and hides behind them, so the room asks whether reaching it is worth what
 		# reaching it costs.
-		{"id": "chanted_line", "label": "Chanted Line", "family": "command", "min_tier": 4, "phases": ["development", "pressure", "climax"], "formations": ["flanked", "ranged_support"], "enemies": [{"kind": "chanter"}, {"kind": "brute"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
+		{"id": "chanted_line", "label": "Chanted Line", "family": "command", "min_tier": 4, "phases": ["development", "pressure", "climax"], "enemies": [{"kind": "chanter"}, {"kind": "brute"}, {"kind": "hound"}, {"kind": "blade"}], "reinforcements": [{"kind": "bandit"}, {"kind": "knife"}]},
 		# The two ranged enemies together, deliberately: the Archer punishes standing
 		# still and the Javelineer punishes running in a straight line, so between them
 		# both answers are spent and the Shield decides which one you are forced into.
-		{"id": "closing_lanes", "label": "Closing Lanes", "family": "lane_denial", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
+		{"id": "closing_lanes", "label": "Closing Lanes", "family": "lane_denial", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
 		# Ground that costs time, in front of an enemy you cannot afford to reach late.
-		{"id": "broken_ground", "label": "Broken Ground", "family": "area_denial", "min_tier": 4, "phases": ["development", "contrast", "respite"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "earth_caster"}, {"kind": "polearm"}, {"kind": "knife"}], "reinforcements": [{"kind": "archer"}, {"kind": "boar"}]},
+		{"id": "broken_ground", "label": "Broken Ground", "family": "area_denial", "min_tier": 4, "phases": ["development", "contrast", "respite"], "enemies": [{"kind": "earth_caster"}, {"kind": "polearm"}, {"kind": "knife"}], "reinforcements": [{"kind": "archer"}, {"kind": "boar"}]},
 		# The Duellist wants your attention on it. The Javelineer wants you to move.
-		{"id": "measured_guard", "label": "Measured Guard", "family": "skirmish", "min_tier": 4, "phases": ["opening", "contrast", "pressure"], "formations": ["spread", "flanked"], "enemies": [{"kind": "duellist"}, {"kind": "javelineer"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "bandit"}]},
+		{"id": "measured_guard", "label": "Measured Guard", "family": "skirmish", "min_tier": 4, "phases": ["opening", "contrast", "pressure"], "enemies": [{"kind": "duellist"}, {"kind": "javelineer"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "bandit"}]},
 		# High-tier respite and opening. Both phases previously topped out at min_tier 3,
 		# so a tier-6 "respite" could only be a tier-1 melee recipe it had already shown:
 		# the 0.2.30 run exhausted the eligible pool at room 12 and repeated, which the
@@ -1037,9 +1058,9 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		# Both are deliberately small. A respite is a light room, not a slow one, and
 		# neither is another melee crowd -- the same run rated melee-only rooms 1.7/5 for
 		# fun against 3.3 for rooms carrying ranged or area pressure.
-		{"id": "warded_caster", "label": "Warded Caster", "family": "warded", "min_tier": 4, "phases": ["respite", "contrast"], "formations": ["ranged_support", "split"], "enemies": [{"kind": "shield"}, {"kind": "fire_caster"}], "reinforcements": [{"kind": "polearm"}, {"kind": "hound"}]},
-		{"id": "outrider_line", "label": "Outrider Line", "family": "elite_charge", "min_tier": 4, "phases": ["opening", "development"], "formations": ["spread", "ranged_support"], "enemies": [{"kind": "ox"}, {"kind": "archer"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
-		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 5, "phases": ["pressure", "climax", "contrast"], "formations": ["ranged_support", "frontline"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
+		{"id": "warded_caster", "label": "Warded Caster", "family": "warded", "min_tier": 4, "phases": ["respite", "contrast"], "enemies": [{"kind": "shield"}, {"kind": "fire_caster"}], "reinforcements": [{"kind": "polearm"}, {"kind": "hound"}]},
+		{"id": "outrider_line", "label": "Outrider Line", "family": "elite_charge", "min_tier": 4, "phases": ["opening", "development"], "enemies": [{"kind": "ox"}, {"kind": "archer"}], "reinforcements": [{"kind": "knife"}, {"kind": "hound"}]},
+		{"id": "knight_command", "label": "Knight Command", "family": "heavy_anchor", "min_tier": 5, "phases": ["pressure", "climax", "contrast"], "enemies": [{"kind": "knight"}, {"kind": "archer"}, {"kind": "ice_caster"}, {"kind": "bandit"}], "reinforcements": [{"kind": "blade"}, {"kind": "hound"}]},
 	]
 
 # How many enemies in a recipe are not melee bodies. This is the single strongest
@@ -1149,6 +1170,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		var filler := Dictionary(reinforcements[room_rng.randi_range(0, reinforcements.size() - 1)])
 		if _survey_plan_kind_count(enemies, String(filler["kind"])) >= 2: continue
 		if _survey_plan_role_count(enemies, String(filler["kind"])) >= 2: continue
+		if _survey_plan_technique_count(enemies, String(filler["kind"])) >= 2: continue
 		if _survey_is_ranged_pressure(filler) and _survey_ranged_pressure_count(enemies) >= 2: continue
 		enemies.append(filler.duplicate())
 		cost += _survey_enemy_cost(String(filler["kind"]))
@@ -1160,6 +1182,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 		if cost + option_cost > target_budget: continue
 		if _survey_plan_kind_count(enemies, kind) >= 2: continue
 		if _survey_plan_role_count(enemies, kind) >= 2: continue
+		if _survey_plan_technique_count(enemies, kind) >= 2: continue
 		if _survey_is_ranged_pressure(option) and _survey_ranged_pressure_count(enemies) >= 2: continue
 		enemies.append(option.duplicate())
 		cost += option_cost
@@ -1185,6 +1208,24 @@ func _survey_is_ranged_pressure(planned_enemy: Dictionary) -> bool:
 # too hard... it didn't feel challenging, just tedious", while a four-enemy room of a
 # screen, a flanker, a frontliner and a knife rated a point higher at identical
 # engagement (2.33 versus 2.30 enemies engaged at once).
+# Two kinds can hold different roles and still ask the same question. The 0.2.40
+# Stamina run's room 3 landed seven boar pounces and nine hound pounces -- sixteen of
+# twenty-eight attacks -- and the note read "too many enemies doing the same thing,
+# busy and monotonous". Boar is `frontline` and Hound is `flanker`, so the role cap
+# waved them both through. The verb is what the player actually reads.
+func _survey_primary_technique(kind: String) -> String:
+	var plan := CombatCatalogScript.melee_attack_plan(kind)
+	if plan.is_empty(): return ""
+	return String(Dictionary(plan[0]).get("technique", ""))
+
+func _survey_plan_technique_count(enemies: Array, kind: String) -> int:
+	var technique := _survey_primary_technique(kind)
+	if technique.is_empty(): return 0
+	var count := 0
+	for entry in enemies:
+		if _survey_primary_technique(String(Dictionary(entry).get("kind", ""))) == technique: count += 1
+	return count
+
 func _survey_plan_role_count(enemies_plan: Array[Dictionary], kind: String) -> int:
 	var role := CombatCatalogScript.role(kind)
 	var result := 0
@@ -1204,20 +1245,294 @@ func _survey_ranged_pressure_count(enemies_plan: Array[Dictionary]) -> int:
 		if _survey_is_ranged_pressure(planned_enemy): result += 1
 	return result
 
-func _survey_formation_slots(formation_id: String) -> Array[Vector2]:
-	match formation_id:
-		"spread": return [Vector2(470, 410), Vector2(850, 330), Vector2(1230, 410), Vector2(560, 650), Vector2(1140, 650), Vector2(850, 560)]
-		"flanked": return [Vector2(420, 720), Vector2(1280, 720), Vector2(650, 360), Vector2(1050, 360), Vector2(540, 470), Vector2(1160, 470)]
-		"ranged_support": return [Vector2(700, 610), Vector2(1000, 610), Vector2(570, 340), Vector2(850, 280), Vector2(1130, 340), Vector2(850, 490)]
-		"surround": return [Vector2(510, 690), Vector2(1190, 690), Vector2(670, 380), Vector2(1030, 380), Vector2(560, 930), Vector2(1140, 930)]
-		"split": return [Vector2(520, 420), Vector2(630, 570), Vector2(1180, 420), Vector2(1070, 570), Vector2(480, 750), Vector2(1220, 750)]
-		_: return [Vector2(610, 460), Vector2(770, 390), Vector2(930, 390), Vector2(1090, 460), Vector2(690, 610), Vector2(1010, 610)]
+# The formation library. A formation is an authored ARRANGEMENT, not a bag of points.
+#
+# What was here before was six fixed coordinates per formation id, with every enemy
+# independently picking its favourite by role score. `ranged_support` promised an
+# archer supported by melee; what it actually was, was a hexagon, and nothing put a
+# body between the archer and the player. The name described an intention the code
+# never implemented -- the same defect as a role label with no behaviour under it.
+#
+# Slots are authored in formation-local space as (lateral, depth), where depth counts
+# AWAY from the player. A slot at depth 220 is 220 units further from the player than
+# the anchor, whatever direction the player is standing in, so screening is a fact of
+# the geometry rather than a score some placement function has to be lucky enough to
+# satisfy.
+#
+# The library is deliberately SIX. At roughly eleven rooms a run, six formations reach
+# fifty rooms each within a few runs, which is enough to compare them the way non-melee
+# count was compared in docs/survey-archive-findings.md. Twenty would never reach a
+# readable sample, and the entire reason for authoring formations is to find out which
+# ones work. Add a seventh only by retiring one.
+func _survey_formation_catalog() -> Array[Dictionary]:
+	return [
+		# You must go through them. The canonical answer to a reachable archer.
+		{"id": "screen_line", "label": "Screen Line", "slots": [
+			{"band": "van", "at": Vector2(-62.0, 0.0)},
+			{"band": "van", "at": Vector2(62.0, 0.0)},
+			{"band": "wing", "at": Vector2(-176.0, -24.0)},
+			{"band": "wing", "at": Vector2(176.0, -24.0)},
+			{"band": "mid", "at": Vector2(0.0, 112.0)},
+			{"band": "rear", "at": Vector2(0.0, 224.0)},
+		]},
+		# Two shooters wide of each other with the melee central, so closing on either
+		# one turns your back on the other.
+		{"id": "crossfire", "label": "Crossfire", "slots": [
+			{"band": "van", "at": Vector2(0.0, 0.0)},
+			{"band": "wing", "at": Vector2(-140.0, -20.0)},
+			{"band": "wing", "at": Vector2(140.0, -20.0)},
+			{"band": "mid", "at": Vector2(0.0, 118.0)},
+			{"band": "rear", "at": Vector2(-208.0, 132.0)},
+			{"band": "rear", "at": Vector2(208.0, 132.0)},
+		]},
+		# Depth on one bearing. The back ranks arrive while you are committed to the front.
+		{"id": "column", "label": "Column", "slots": [
+			{"band": "van", "at": Vector2(0.0, 0.0)},
+			{"band": "van", "at": Vector2(26.0, 72.0)},
+			{"band": "wing", "at": Vector2(-64.0, 34.0)},
+			{"band": "mid", "at": Vector2(-18.0, 152.0)},
+			{"band": "rear", "at": Vector2(0.0, 262.0)},
+			{"band": "rear", "at": Vector2(48.0, 330.0)},
+		]},
+		# Melee split wide with an open centre -- the lane is bait, and it ends at a caster.
+		{"id": "pincer", "label": "Pincer", "slots": [
+			{"band": "van", "at": Vector2(-118.0, 0.0)},
+			{"band": "van", "at": Vector2(118.0, 0.0)},
+			{"band": "wing", "at": Vector2(-198.0, -32.0)},
+			{"band": "wing", "at": Vector2(198.0, -32.0)},
+			{"band": "mid", "at": Vector2(0.0, 94.0)},
+			{"band": "rear", "at": Vector2(0.0, 196.0)},
+		]},
+		# Everything tight. The control condition: roughly what the old placement did.
+		{"id": "cluster", "label": "Cluster", "slots": [
+			{"band": "van", "at": Vector2(-42.0, 0.0)},
+			{"band": "van", "at": Vector2(42.0, 0.0)},
+			{"band": "wing", "at": Vector2(-74.0, -44.0)},
+			{"band": "wing", "at": Vector2(74.0, -44.0)},
+			{"band": "mid", "at": Vector2(0.0, 62.0)},
+			{"band": "rear", "at": Vector2(0.0, 116.0)},
+		]},
+		# The elite as the centre of the room rather than a member of it. Requires a body
+		# heavy enough to hold that place, so it is drawn only when one is present.
+		#
+		# The escorts sit WIDE and DEEPER rather than ringing the elite completely, for
+		# two reasons. The Ox runs its line until it hits something, and a full ring
+		# would have its own retinue standing in the lane -- the worst possible
+		# arrangement for the one enemy this formation exists to showcase. And placing
+		# them behind the elite makes the question interesting rather than procedural:
+		# commit to the big body and the escorts close at your back, clear the escorts
+		# first and you eat the elite the whole time.
+		{"id": "retinue", "label": "Retinue", "requires": "elite", "slots": [
+			{"band": "elite", "at": Vector2(0.0, 44.0)},
+			{"band": "wing", "at": Vector2(-152.0, 92.0)},
+			{"band": "wing", "at": Vector2(152.0, 92.0)},
+			{"band": "van", "at": Vector2(-92.0, 156.0)},
+			{"band": "van", "at": Vector2(92.0, 156.0)},
+			{"band": "rear", "at": Vector2(0.0, 254.0)},
+		]},
+		# One body forward of everything else. The direct test of whether a lone body in
+		# the open is a speed bump or a trigger -- "an archer that spawns next to me is
+		# just a blob I have to hit before fighting the rest of the room".
+		{"id": "picket", "label": "Picket", "slots": [
+			{"band": "wing", "at": Vector2(0.0, -96.0)},
+			{"band": "van", "at": Vector2(-58.0, 64.0)},
+			{"band": "van", "at": Vector2(58.0, 64.0)},
+			{"band": "wing", "at": Vector2(-168.0, 40.0)},
+			{"band": "mid", "at": Vector2(0.0, 158.0)},
+			{"band": "rear", "at": Vector2(0.0, 258.0)},
+		]},
+	]
+
+func _formation_band_for_role(role: String) -> String:
+	return String(ROLE_FORMATION_BAND.get(role, "van"))
+
+# Which bodies are big enough to be the centre of a room rather than a member of one.
+# Derived from mass rather than from a list, using the threshold that already decides
+# who keeps their attack through chip damage: HEAVY_TELEGRAPH_MASS selects Warden,
+# Brute, Knight and Ox, and excludes Shield (1.35), Boar (1.25) and Polearm (1.15).
+# One meaning for mass throughout, and no second roster to drift out of sync.
+# Called wherever the player's own damage lands. Records the first time each body was
+# reached, measured from the start of the room in world time.
+func _note_player_reached(enemy: Dictionary) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY or bool(enemy.get("survey_reached", false)): return
+	enemy["survey_reached"] = true
+	var kind := String(enemy.get("kind", ""))
+	if _formation_band_for_kind(kind) != "rear": return
+	survey_reach_times.append({"kind": kind, "at": simulation_time - float(survey_room_entry.get("time", 0.0))})
+
+func _formation_band_for_kind(kind: String) -> String:
+	if CombatCatalogScript.role(kind) == "boss" or _enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS: return "elite"
+	return _formation_band_for_role(CombatCatalogScript.role(kind))
+
+# Split the roster into groups so that every group gets a van before any group gets a
+# second, and the rear bodies are spread rather than pooled. A group of nothing but
+# casters is a group with no screen, which is the arrangement this whole change exists
+# to stop happening by accident.
+func _survey_group_roster(plan: Array, group_count: int) -> Array:
+	var order := {"elite": 0, "van": 1, "wing": 2, "mid": 3, "rear": 4}
+	var sorted_plan := plan.duplicate()
+	sorted_plan.sort_custom(func(a, b):
+		var band_a := _formation_band_for_kind(String(Dictionary(a)["kind"]))
+		var band_b := _formation_band_for_kind(String(Dictionary(b)["kind"]))
+		return int(order.get(band_a, 0)) < int(order.get(band_b, 0)))
+	var groups: Array = []
+	for _i in range(group_count): groups.append([])
+	for index in range(sorted_plan.size()):
+		Array(groups[index % group_count]).append(sorted_plan[index])
+	var populated: Array = []
+	for group in groups:
+		if not Array(group).is_empty(): populated.append(group)
+	return populated
+
+# Pick the template that can seat the most of this group in its own band, breaking ties
+# toward the one with the fewest wasted slots. A group of four should not be placed in
+# a six-slot Column with two empty ranks stretching it across the arena.
+func _survey_choose_formation(group: Array, room_rng: RandomNumberGenerator, used_ids: Dictionary) -> Dictionary:
+	var wanted: Dictionary = {}
+	for entry in group:
+		var band := _formation_band_for_kind(String(Dictionary(entry)["kind"]))
+		wanted[band] = int(wanted.get(band, 0)) + 1
+	# Two elite rooms in three centre the elite; the last third leaves it in an ordinary
+	# formation ON PURPOSE. Without that control there is no way to tell whether Retinue
+	# is good or whether rooms containing an Ox are good -- the same confound that left
+	# "melee-only rooms are irredeemable" unfalsifiable across thirty runs, because every
+	# melee-only room in the archive happened to be built from the five oldest kinds.
+	var wants_centre := int(wanted.get("elite", 0)) > 0 and room_rng.randf() < 0.65
+	var best: Dictionary = {}
+	var best_score := -INF
+	var catalog := _survey_formation_catalog()
+	for template_value in catalog:
+		var template := Dictionary(template_value)
+		var requirement := String(template.get("requires", ""))
+		if not requirement.is_empty() and int(wanted.get(requirement, 0)) <= 0: continue
+		if (not requirement.is_empty()) != wants_centre: continue
+		var supply: Dictionary = {}
+		for slot_value in Array(template["slots"]):
+			var band := String(Dictionary(slot_value)["band"])
+			supply[band] = int(supply.get(band, 0)) + 1
+		var seated := 0
+		for band in wanted:
+			seated += mini(int(wanted[band]), int(supply.get(band, 0)))
+		# Prefer variety: a formation already used in this room is a worse experiment
+		# than a second arrangement, because two identical groups measure one thing.
+		var score := float(seated) * 10.0 - absf(float(Array(template["slots"]).size() - group.size())) + room_rng.randf() * 2.0
+		if used_ids.has(String(template["id"])): score -= 6.0
+		if score > best_score:
+			best_score = score
+			best = template
+	return best
+
+# Seat one group. Bands fall back through BAND_FALLBACK when their own rank is full,
+# and `rear` never falls forward past `mid` -- a caster that ends up in front is the
+# failure this replaced.
+func _survey_seat_group(group: Array, template: Dictionary, anchor: Vector2, player_start: Vector2) -> Array:
+	var forward := (player_start - anchor)
+	forward = forward.normalized() if forward.length_squared() > 0.001 else Vector2.DOWN
+	var right := forward.rotated(PI * 0.5)
+	var free: Array = []
+	for slot_value in Array(template["slots"]):
+		var slot := Dictionary(slot_value)
+		free.append({"band": String(slot["band"]), "at": Vector2(slot["at"]), "depth": float(Vector2(slot["at"]).y)})
+	var seated: Array = []
+	var order := {"elite": 0, "rear": 1, "mid": 2, "van": 3, "wing": 4}
+	var seat_order := group.duplicate()
+	# Rear first, so the deepest slots go to the bodies that need them. Support is the
+	# strictest case: the Chanter's entire contribution is surviving long enough to
+	# chant, and it spent its only appearance dead three seconds in.
+	seat_order.sort_custom(func(a, b):
+		var band_a := _formation_band_for_kind(String(Dictionary(a)["kind"]))
+		var band_b := _formation_band_for_kind(String(Dictionary(b)["kind"]))
+		return int(order.get(band_a, 9)) < int(order.get(band_b, 9)))
+	for entry_value in seat_order:
+		var entry := Dictionary(entry_value)
+		var band := _formation_band_for_kind(String(entry["kind"]))
+		var chosen_index := -1
+		for candidate_band in Array(BAND_FALLBACK.get(band, [band])):
+			var deepest := -INF
+			for index in range(free.size()):
+				if String(Dictionary(free[index])["band"]) != String(candidate_band): continue
+				# Deepest first inside a band, so `support` takes the back of the rear.
+				var depth := float(Dictionary(free[index])["depth"])
+				if depth > deepest:
+					deepest = depth
+					chosen_index = index
+			if chosen_index >= 0: break
+		var local: Vector2 = Vector2(Dictionary(free[chosen_index])["at"]) if chosen_index >= 0 else Vector2(0.0, 180.0)
+		if chosen_index >= 0: free.remove_at(chosen_index)
+		seated.append({"entry": entry, "pos": anchor + right * local.x - forward * local.y})
+	return seated
+
+func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, player_start: Vector2, obstacle_rects: Array, threat_band: String) -> Dictionary:
+	# One group by default. Two groups placed independently are two sequential fights,
+	# and the archive rates those below one good one -- so a second group has to earn
+	# its place by interacting with the first, and a third needs a stress band behind it.
+	var group_count := 1
+	if plan.size() >= 4 and room_rng.randf() < 0.45: group_count = 2
+	if threat_band == "stress" and plan.size() >= 5 and room_rng.randf() < 0.30: group_count = 3
+	var groups := _survey_group_roster(plan, group_count)
+	var toward_arena := (Vector2(850.0, 700.0) - player_start).normalized()
+	var placed: Array = []
+	var used_ids: Dictionary = {}
+	var formation_ids: Array[String] = []
+	for group_index in range(groups.size()):
+		var group: Array = groups[group_index]
+		var template := _survey_choose_formation(group, room_rng, used_ids)
+		used_ids[String(template["id"])] = true
+		formation_ids.append(String(template["id"]))
+		var has_rear := false
+		for entry in group:
+			if _formation_band_for_kind(String(Dictionary(entry)["kind"])) == "rear": has_rear = true
+		var seated: Array = []
+		var anchor := player_start + toward_arena * 470.0
+		for attempt in range(14):
+			var spread := 0.0
+			if group_index == 1: spread = deg_to_rad(room_rng.randf_range(46.0, 104.0) - float(attempt) * 4.0) * (1.0 if room_rng.randf() < 0.5 else -1.0)
+			elif group_index == 2: spread = deg_to_rad(-(room_rng.randf_range(46.0, 104.0) - float(attempt) * 4.0))
+			else: spread = deg_to_rad(room_rng.randf_range(-26.0, 26.0))
+			var candidate := player_start + toward_arena.rotated(spread) * room_rng.randf_range(410.0, 560.0)
+			anchor = candidate
+			var record := {"anchor": anchor, "has_rear": has_rear}
+			var interacts := true
+			for other in placed:
+				if not _groups_interact(record, Dictionary(other), obstacle_rects): interacts = false
+			if interacts: break
+		seated = _survey_seat_group(group, template, anchor, player_start)
+		placed.append({"anchor": anchor, "has_rear": has_rear, "seats": seated})
+	var seats: Array = []
+	for record in placed:
+		for seat in Array(Dictionary(record).get("seats", [])): seats.append(seat)
+	return {"seats": seats, "formation_ids": formation_ids}
+
+func _segment_hits_rects(from_point: Vector2, to_point: Vector2, rects: Array) -> bool:
+	# Generation runs before the wall spatial index exists for this room, so line of
+	# sight is tested against the obstacle list directly rather than through
+	# _has_line_of_sight, which would silently answer using the PREVIOUS room's walls.
+	# Sampled rather than analytic: Rect2 has no segment test, and at these distances
+	# (a few hundred units against obstacles 90 units on their shortest side) twenty
+	# samples cannot step over one.
+	for rect_value in rects:
+		var rect: Rect2 = rect_value
+		for step in range(0, 21):
+			if rect.has_point(from_point.lerp(to_point, float(step) / 20.0)): return true
+	return false
+
+func _groups_interact(first: Dictionary, second: Dictionary, obstacle_rects: Array) -> bool:
+	var a := Vector2(first["anchor"])
+	var b := Vector2(second["anchor"])
+	if a.distance_to(b) <= GROUP_PURSUIT_REACH: return true
+	# Otherwise one of them must be able to shoot into the other's fight.
+	for pair in [[first, second], [second, first]]:
+		var shooter := Dictionary(pair[0])
+		if not bool(shooter.get("has_rear", false)): continue
+		if not _segment_hits_rects(Vector2(shooter["anchor"]), Vector2(Dictionary(pair[1])["anchor"]), obstacle_rects): return true
+	return false
 
 func _capture_survey_room_entry() -> void:
 	survey_room_view_modes.assign([survey_current_view_mode])
 	# Attack records are per room. The aggregate is computed when the room closes,
 	# so carrying the previous room's attacks in would blend two encounters.
 	survey_attack_records.clear()
+	survey_reach_times.clear()
 	exhausted_dodge_room_max_chain = 0
 	survey_room_entry = {
 		"time": simulation_time,
@@ -1405,6 +1720,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"stamina_combo_starved_time_total": stamina_combo_starved_time_total - float(survey_room_entry.get("stamina_combo_starved_time_total", stamina_combo_starved_time_total)),
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total - float(survey_room_entry.get("exhaustion_threatened_time_total", exhaustion_threatened_time_total)),
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
+		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
+		"reach_times": survey_reach_times.duplicate(true),
 		"stealth_entries": survey_stealth_entries_total - int(survey_room_entry.get("stealth_entries", survey_stealth_entries_total)),
 		"stealth_cancels": survey_stealth_cancels_total - int(survey_room_entry.get("stealth_cancels", survey_stealth_cancels_total)),
 		"stealth_quick_reentries": survey_stealth_quick_reentries_total - int(survey_room_entry.get("stealth_quick_reentries", survey_stealth_quick_reentries_total)),
@@ -4130,6 +4447,7 @@ func _resolve_advance_impact() -> void:
 		var damage := int(resolved["damage"])
 		enemy["hp"] = int(enemy["hp"]) - damage
 		damage_dealt += damage
+		_note_player_reached(enemy)
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
 		var posture_broken := _apply_posture_damage(enemy, float(resolved["posture"]), impact)
 		enemy["pos"] = _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"]))
@@ -4320,6 +4638,7 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		var posture := float(resolved["posture"])
 		enemy["hp"] = int(enemy["hp"]) - damage
 		damage_dealt += damage
+		_note_player_reached(enemy)
 		var posture_broken := _apply_posture_damage(enemy, posture, hit_point)
 		var reaction_applied := false
 		if not posture_broken: reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
@@ -4526,6 +4845,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			posture_damage = float(resolved["posture"])
 			enemy["hp"] = int(enemy["hp"]) - dealt
 			damage_dealt += dealt
+			_note_player_reached(enemy)
 			var posture_broken := _apply_posture_damage(enemy, posture_damage, hit_point)
 			var reaction_applied := false
 			if not posture_broken:
@@ -6572,6 +6892,7 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var posture := float(resolved["posture"])
 	enemy["hp"] = int(enemy["hp"]) - damage
 	damage_dealt += damage
+	_note_player_reached(enemy)
 	var posture_broken := _apply_posture_damage(enemy, posture, contact)
 	var reaction_applied := false
 	if not posture_broken:

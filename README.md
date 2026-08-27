@@ -1,6 +1,46 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.40` (Android version code `240`).
+Current prototype version: `0.2.41` (Android version code `241`).
+
+### v0.2.41: Formations — placement becomes an authored thing
+
+A "formation" used to be six fixed coordinates, with every enemy independently picking its favourite by role score:
+
+```gdscript
+"ranged_support": return [Vector2(700, 610), Vector2(1000, 610), Vector2(570, 340), ...]
+```
+
+`ranged_support` *promised* an archer supported by melee. What it was, was a hexagon — nothing put a body between the archer and the player. A name describing an intention the code never implemented, which is the same defect as a role label with no behaviour under it.
+
+**A formation is now an arrangement.** Slots are authored in formation-local `(lateral, depth)` where depth counts *away from the player*, and the whole shape is rotated to face the player's entry point. A slot at depth 220 sits 220 units behind the front rank whichever way the player is standing, so **screening is a fact of the geometry** rather than a score a placement function has to be lucky enough to satisfy. Across 330 generated rooms, ranged bodies with nothing in front of them fell to **1.2%**.
+
+**Seven formations, and the number is a constraint rather than a preference.** At ~11 rooms a run, seven reach a readable sample within a few runs; twenty never would, and the entire point of authoring formations is to find out which ones work. A test fails if the library reaches nine.
+
+| | what it tests |
+|---|---|
+| **Screen Line** | melee abreast, ranged directly behind |
+| **Crossfire** | two shooters wide, melee central — closing on one turns your back on the other |
+| **Column** | depth on one bearing; the back ranks arrive while you are committed to the front |
+| **Pincer** | melee split wide, open centre — the lane is bait and it ends at a caster |
+| **Cluster** | everything tight: the control condition, roughly what the old placement did |
+| **Picket** | one body forward of everything else — is a lone body a trigger or a speed bump? |
+| **Retinue** | the elite as the centre of the room rather than a member of it |
+
+**Bands, not roles, decide where a body stands.** Naming roles on slots conflates who an enemy is with where it belongs, and the Polearm is the proof: it is melee, but `reach` holds at **200** against the frontline's **88**, so a Polearm spawned in the van walks *backwards* the moment the player closes and takes the formation apart with it. A body has to be spawned where its own standing behaviour will keep it. `van` / `wing` / `mid` / `rear` / `elite`, derived from role — and `rear` never falls forward past `mid`, because a caster ending up in front is the failure this replaced. `support` and `movement_denial` had no placement case at all before, so the Chanter was spawned at frontline distance with 40 HP; it was the first thing engaged in its only appearance and died three seconds in.
+
+**Elites are derived from mass, not listed.** `HEAVY_TELEGRAPH_MASS` already selects Warden, Brute, Knight and Ox while excluding Shield, Boar and Polearm, so mass keeps one meaning throughout and there is no second roster to drift. Retinue seats escorts **wide and deeper** rather than ringing the elite: a full ring would put the Ox's own retinue in its charge lane, the worst possible arrangement for the enemy the formation exists to showcase — and placing them behind makes the question interesting rather than procedural. Commit to the big body and they close at your back; clear them first and you eat the elite the whole time.
+
+**Two elite rooms in three centre the elite, and the last third is a control on purpose.** If every elite room were a Retinue there would be no way to tell whether the arrangement is good or whether rooms containing an Ox are good. That is precisely the confound that left *"melee-only rooms are irredeemable"* unfalsifiable across thirty runs, because every melee-only room in the archive happened to be built from the five oldest kinds.
+
+**Formation is now chosen from the roster's own bands rather than listed per recipe**, and all 19 recipe `formations` lists are gone. Decoupling them is what makes the experiment work: `0.2.40` rooms 1 and 2 held the **same four enemies** in different placements and rated **2/2/2 against 3/4/3 in both rule profiles** — the cleanest signal the archive has produced, and it happened by luck. This manufactures those matched pairs deliberately.
+
+**A second group has to earn its place.** Two groups placed independently are two sequential fights, which the archive rates below one good one — `0.2.40` room 6 ran 0.22 engaged with 3 of 3 kills made alone and scored 2/2/2. A second group is legal only if reaching the first puts the player inside its threat: within pursuit range, or with a clear shot. One group stays the default at 53% of rooms, two at 43%, three only under a stress band.
+
+**Roles were not enough to stop repetition.** The `0.2.40` Stamina run landed seven boar pounces and nine hound pounces in one room — sixteen of twenty-eight attacks, *"too many enemies doing the same thing, busy and monotonous"* — and the `0.2.39` role cap waved them through, because Boar is `frontline` and Hound is `flanker`. **Primary attack technique is now capped at two per room** alongside kind and role. The verb is what the player actually reads.
+
+**New telemetry: `Time to reach ranged`.** Seconds from room start until the player first landed a hit on each rear body. *"An archer that spawns next to me is just a blob I have to hit before fighting the rest of the room"* is a claim about time, and it was unmeasurable until now. Formation ids are reported per room so the archive can compare arrangements the way it compared non-melee counts.
+
+**What the matched-seed A/B found**, since it prompted the change. Seed `1787785767017` run under both rule profiles: fun 3.00 against 2.80, tactical interest 2.40 against **2.80**, want-again 2.20 against **2.60**, damage received 86 against **231**. Stamina did *not* reduce attacking — 31 combos against 27 — it made the same play far more expensive, and the run ended at room 6 rather than room 11. It also made the worst room worse: room 3 fell to 2/1/2 as engagement rose from 1.13 to 2.39 and combat time from 15s to 36s. **Stamina does not create composition problems; it extends exposure to them.** The pair is only cleanly controlled for rooms 1 and 2, where the profiles were indistinguishable at 10 damage each, so the resource-model question stays open.
 
 ### v0.2.40: One price, two rule sets
 
