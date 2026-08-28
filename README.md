@@ -1,6 +1,29 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.41` (Android version code `241`).
+Current prototype version: `0.2.42` (Android version code `242`).
+
+### v0.2.42: Bodies inside walls — the `0.2.41` regression
+
+The `0.2.41` survey ended after two rooms, both scored 1/1/1 and tagged `empty`: *"one of them got stuck in a wall unable to find me and I was not able to hit it so I had to end the run."* The strike log shows it exactly — a Boar at `(681.6, 688.6)`, inside `Rect2(680, 430, 95, 305)`, logging `move@0.01` at one position forever, every swing at it reading `overlap=true occluded=true TRUE MISS`. In range, and unreachable through the slab.
+
+**Two fixups that undid each other.** Clearing a body off an obstacle was a single pass over the obstacle list, so in `split_approach` — two 95×305 slabs standing 150 units apart — a body shoved clear of the left one landed against the right, and the loop had already passed the left, so nothing looked again. Then the 360-unit minimum distance from the player ran *afterwards* and could shove a cleared body straight back into the slab it had just been moved out of, with no re-check at all.
+
+**Both defects predate formations.** What `0.2.41` changed is how often they fire: authored offsets have no idea where the walls are, while the six hand-picked slots they replaced had been chosen to dodge them. I replaced a set of coordinates that was implicitly wall-aware with a system that was not, and did not notice because nothing asserted it.
+
+The two rules now run **to convergence** in one place, and if they have no fixed point the body is swept out to the nearest clear standing room rather than left inside geometry it can neither be hit through nor path out of. **Anchors are also chosen with the arena in view** — a formation is scored by how many of its seats would land in geometry before it is placed, which stops a whole group being dropped onto a slab and then torn apart body by body.
+
+Measured over 1151 spawns across 275 generated rooms:
+
+| | `0.2.41` | `0.2.42` |
+|---|---|---|
+| inside a wall | **7** (all `split_approach`) | **0** |
+| clipping a wall | 24 (2.1%) | **0** |
+| inside contact range | 0 | 0 |
+| ranged bodies unscreened | 1.2% | **0.0%** |
+
+Screening improved as a side effect: anchors that avoid geometry also stop a slab standing in for the screen.
+
+**A test was defined and never called.** `test_a_room_never_asks_one_attack_three_times` — the attack-technique cap from `0.2.41` — was written into the file but never added to `_init`, so it had never run once. That is the trap `CLAUDE.md` records about this suite in a new costume: a test that cannot fail is not a test. It is registered now, alongside a regression test asserting no body spawns inside, clipping, or too close to the player.
 
 ### v0.2.41: Formations — placement becomes an authored thing
 

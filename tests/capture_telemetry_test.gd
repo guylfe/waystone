@@ -1323,6 +1323,42 @@ func test_a_room_never_asks_one_attack_three_times() -> void:
 			if int(techniques[technique]) > 2: offenders += 1
 	check(offenders == 0, "%d rooms asked the same attack three or more times" % offenders)
 
+func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
+	# The 0.2.41 regression, and the worst kind: a Boar stood inside a slab in
+	# `split_approach`, unhittable through the wall and unable to path out, logging
+	# `move@0.01` forever at one position. Both rooms of that survey scored 1/1/1.
+	#
+	# The cause was two fixups that undid each other. Pushing clear of an obstacle was a
+	# single pass, so a body shoved off the left slab landed against the right one and
+	# nothing looked again; then the 360-unit minimum distance from the player ran
+	# afterwards and could shove a cleared body straight back in. Both predate
+	# formations -- what changed is how often they fire, because authored offsets have no
+	# idea where the walls are while the six hand-picked slots they replaced had been
+	# chosen to dodge them.
+	var total := 0
+	var inside := 0
+	var clipping := 0
+	var too_close := 0
+	for salt in range(10):
+		var state: RunState = RunStateScript.new(false)
+		state.start_run("warrior", "combat_survey", 8300 + salt, "encounter", "stamina")
+		for room_number in range(1, 12):
+			var layout := state._generate_survey_layout(room_number)
+			var walls: Array = Array(Dictionary(layout["layer_walls"])["survey_arena"])
+			var player_start: Vector2 = layout["player_start"]
+			for template_value in Array(Dictionary(layout["encounters"])[0]):
+				var position := Vector2(Dictionary(template_value)["pos"])
+				total += 1
+				if position.distance_to(player_start) < 355.0: too_close += 1
+				for wall_value in walls:
+					var wall: Rect2 = wall_value
+					if wall.has_point(position): inside += 1
+					elif wall.grow(28.0).has_point(position): clipping += 1
+	check(total > 300, "not enough spawns generated to judge, got %d" % total)
+	check(inside == 0, "%d of %d bodies spawned inside a wall" % [inside, total])
+	check(clipping == 0, "%d of %d bodies spawned clipping a wall" % [clipping, total])
+	check(too_close == 0, "%d of %d bodies spawned inside contact range, denying the opening stealth decision" % [too_close, total])
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1384,6 +1420,8 @@ func _init() -> void:
 	test_the_library_stays_small_enough_to_measure()
 	test_every_formation_actually_gets_drawn()
 	test_the_centred_elite_keeps_a_control_group()
+	test_a_room_never_asks_one_attack_three_times()
+	test_no_body_is_ever_spawned_inside_the_geometry()
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
 	test_rooms_are_populated_enough_for_the_pressure_to_matter()

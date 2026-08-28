@@ -286,7 +286,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.41"
+const GAME_VERSION := "0.2.42"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -899,19 +899,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		var kind := String(planned_enemy["kind"])
 		var role := CombatCatalogScript.role(kind)
 		var jitter := Vector2(room_rng.randf_range(-22.0, 22.0), room_rng.randf_range(-18.0, 18.0))
-		var spawn_position: Vector2 = Vector2(seat["pos"]) + jitter
-		for obstacle in obstacle_rects:
-			if obstacle.grow(70.0).has_point(spawn_position):
-				var away := (spawn_position - obstacle.get_center()).normalized()
-				if away.is_zero_approx(): away = Vector2.UP
-				spawn_position = obstacle.get_center() + away * (maxf(obstacle.size.x, obstacle.size.y) * 0.72 + 90.0)
-		# Survey rooms must permit an opening stealth decision. Keep every body out
-		# of immediate-contact range and face it into the arena rather than directly
-		# at the player; the first player noise or crossed sightline still alerts it.
-		var from_player := spawn_position - player_start
-		if from_player.length() < 360.0:
-			var safe_direction := from_player.normalized() if from_player.length_squared() > 0.001 else Vector2.UP
-			spawn_position = player_start + safe_direction * 360.0
+		var spawn_position := _survey_settle_spawn(Vector2(seat["pos"]) + jitter, obstacle_rects, player_start)
 		var initial_facing := (spawn_position - player_start).normalized()
 		templates.append({"kind": kind, "role": role, "pos": spawn_position, "facing": initial_facing, "layer": layer})
 		enemy_labels.append(kind.replace("_", " ").capitalize())
@@ -1360,6 +1348,69 @@ func _note_player_reached(enemy: Dictionary) -> void:
 	if _formation_band_for_kind(kind) != "rear": return
 	survey_reach_times.append({"kind": kind, "at": simulation_time - float(survey_room_entry.get("time", 0.0))})
 
+# Both fixups that used to live inline in the assembly loop, run to convergence.
+#
+# They were a single pass each, in the wrong order, and they undid one another.
+# `split_approach` stands two 95x305 slabs 150 units apart: a body shoved clear of the
+# left one lands against the right, and the loop had already passed the left, so
+# nothing looked again. Then the 360-unit minimum distance from the player ran
+# AFTERWARDS and could shove a cleared body straight back into the slab it had just
+# been moved out of, with no re-check at all.
+#
+# Both defects predate formations. What 0.2.41 changed is how often they fire: authored
+# offsets have no idea where the walls are, while the six hand-picked slots they
+# replaced had been chosen to dodge them. The 0.2.41 survey found a Boar standing
+# inside a wall -- unhittable, unable to path, `move@0.01` forever at one position --
+# and both rooms scored 1/1/1.
+func _survey_settle_spawn(position: Vector2, obstacle_rects: Array, player_start: Vector2) -> Vector2:
+	var result := position
+	for _pass in range(8):
+		var moved := false
+		for obstacle_value in obstacle_rects:
+			var obstacle: Rect2 = obstacle_value
+			if not obstacle.grow(70.0).has_point(result): continue
+			var away := result - obstacle.get_center()
+			if away.is_zero_approx(): away = Vector2.UP
+			result = obstacle.get_center() + away.normalized() * (maxf(obstacle.size.x, obstacle.size.y) * 0.72 + 90.0)
+			moved = true
+		# Survey rooms must permit an opening stealth decision, so nothing starts inside
+		# immediate contact range.
+		var from_player := result - player_start
+		if from_player.length() < 360.0:
+			var safe_direction := from_player.normalized() if from_player.length_squared() > 0.001 else Vector2.UP
+			result = player_start + safe_direction * 360.0
+			moved = true
+		if not moved: return result
+	# Still contested after eight passes, which means the two rules have no fixed point
+	# here. Sweep for the nearest clear standing room rather than leaving a body inside
+	# geometry it can neither be hit through nor path out of.
+	for radius: float in [380.0, 450.0, 530.0, 620.0]:
+		for step in range(24):
+			var candidate := player_start + Vector2.UP.rotated(TAU * float(step) / 24.0) * radius
+			var clear := true
+			for obstacle_value in obstacle_rects:
+				if Rect2(obstacle_value).grow(70.0).has_point(candidate): clear = false
+			if clear: return candidate
+	return result
+
+# How many of a template's seats would land in geometry if it were anchored here. The
+# anchor was previously chosen with no knowledge of the arena at all, so a whole
+# formation could be dropped onto a slab and then torn apart body by body by the
+# push-out above.
+func _formation_blocked_seats(template: Dictionary, anchor: Vector2, player_start: Vector2, obstacle_rects: Array) -> int:
+	var forward := (player_start - anchor)
+	forward = forward.normalized() if forward.length_squared() > 0.001 else Vector2.DOWN
+	var right := forward.rotated(PI * 0.5)
+	var blocked := 0
+	for slot_value in Array(template["slots"]):
+		var local := Vector2(Dictionary(slot_value)["at"])
+		var world := anchor + right * local.x - forward * local.y
+		for obstacle_value in obstacle_rects:
+			if Rect2(obstacle_value).grow(70.0).has_point(world):
+				blocked += 1
+				break
+	return blocked
+
 func _formation_band_for_kind(kind: String) -> String:
 	if CombatCatalogScript.role(kind) == "boss" or _enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS: return "elite"
 	return _formation_band_for_role(CombatCatalogScript.role(kind))
@@ -1484,18 +1535,25 @@ func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, play
 			if _formation_band_for_kind(String(Dictionary(entry)["kind"])) == "rear": has_rear = true
 		var seated: Array = []
 		var anchor := player_start + toward_arena * 470.0
-		for attempt in range(14):
+		var best_penalty := INF
+		for attempt in range(18):
 			var spread := 0.0
 			if group_index == 1: spread = deg_to_rad(room_rng.randf_range(46.0, 104.0) - float(attempt) * 4.0) * (1.0 if room_rng.randf() < 0.5 else -1.0)
 			elif group_index == 2: spread = deg_to_rad(-(room_rng.randf_range(46.0, 104.0) - float(attempt) * 4.0))
 			else: spread = deg_to_rad(room_rng.randf_range(-26.0, 26.0))
 			var candidate := player_start + toward_arena.rotated(spread) * room_rng.randf_range(410.0, 560.0)
-			anchor = candidate
-			var record := {"anchor": anchor, "has_rear": has_rear}
+			var record := {"anchor": candidate, "has_rear": has_rear}
 			var interacts := true
 			for other in placed:
 				if not _groups_interact(record, Dictionary(other), obstacle_rects): interacts = false
-			if interacts: break
+			# Seats in geometry cost far more than a missed interaction: a body inside a
+			# slab cannot be reached, cannot path, and ends the room.
+			var penalty := float(_formation_blocked_seats(template, candidate, player_start, obstacle_rects)) * 10.0
+			if not interacts: penalty += 3.0
+			if penalty < best_penalty:
+				best_penalty = penalty
+				anchor = candidate
+			if penalty <= 0.0: break
 		seated = _survey_seat_group(group, template, anchor, player_start)
 		placed.append({"anchor": anchor, "has_rear": has_rear, "seats": seated})
 	var seats: Array = []
