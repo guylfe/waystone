@@ -1,6 +1,30 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.42` (Android version code `242`).
+Current prototype version: `0.2.43` (Android version code `243`).
+
+### v0.2.43: The floor is a disc, and placement did not know it
+
+*"An archer was out of bounds. Another placement bug."* Correct, and a different one — `0.2.42` fixed bodies standing **inside** geometry, and this is bodies standing **outside the world**. The room it happened in had no obstacles at all (`open_ring`), so nothing in the settling loop ever ran.
+
+**The arithmetic was never going to fit.** An anchor is drawn 410–560 units from a player who already stands 380 from the centre, and a rear slot sits up to 330 further out again. The floor is a disc of radius **650**. Nothing anywhere clamped to it, so a body could be seated **975** from the middle — 325 units past the rim, which is where your Archer was.
+
+It was in every arena, not just the empty one:
+
+| | `0.2.42` | `0.2.43` |
+|---|---|---|
+| off the floor | **78** of 1151 (6.8%) | **0** |
+| furthest from centre | **975** | **570** |
+| inside a wall | 0 | 0 |
+| clipping a wall | 0 | 0 |
+| inside contact range | 0 | 0 |
+
+570 is exactly the radius less the margin, which is the clamp doing its job rather than a coincidence.
+
+**The clamp runs inside the convergence loop**, not after it — a body pulled back onto the floor can land on a slab, and that has to be resolved rather than shipped. That is precisely the mistake `0.2.42` was about, one rule further out, and putting the new rule outside the loop would have rebuilt it.
+
+**Anchors are scored on the floor as well as on the walls.** Clamping is a backstop; scoring is what keeps it rare, because a formation whose seats all need dragging inward arrives squashed against the rim instead of arranged. `_formation_blocked_seats` becomes `_formation_misplaced_seats` and counts both failures.
+
+The arena's dimensions are now three named constants used by the layout, the settling and the anchor scoring alike, rather than a `650.0` literal in the floor shape that no other code had ever read.
 
 ### v0.2.42: Bodies inside walls — the `0.2.41` regression
 

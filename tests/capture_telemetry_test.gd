@@ -1339,6 +1339,7 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 	var inside := 0
 	var clipping := 0
 	var too_close := 0
+	var off_floor := 0
 	for salt in range(10):
 		var state: RunState = RunStateScript.new(false)
 		state.start_run("warrior", "combat_survey", 8300 + salt, "encounter", "stamina")
@@ -1350,6 +1351,11 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 				var position := Vector2(Dictionary(template_value)["pos"])
 				total += 1
 				if position.distance_to(player_start) < 355.0: too_close += 1
+				# The floor is a disc and placement did not know it. Anchors are drawn up
+				# to 560 units from a player already 380 from the centre, and a rear slot
+				# sits up to 330 further out again -- 975 from the middle of a 650 floor,
+				# which is how an Archer ended up outside the world in 0.2.42.
+				if position.distance_to(RunStateScript.SURVEY_ARENA_CENTER) > RunStateScript.SURVEY_ARENA_RADIUS: off_floor += 1
 				for wall_value in walls:
 					var wall: Rect2 = wall_value
 					if wall.has_point(position): inside += 1
@@ -1358,6 +1364,7 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 	check(inside == 0, "%d of %d bodies spawned inside a wall" % [inside, total])
 	check(clipping == 0, "%d of %d bodies spawned clipping a wall" % [clipping, total])
 	check(too_close == 0, "%d of %d bodies spawned inside contact range, denying the opening stealth decision" % [too_close, total])
+	check(off_floor == 0, "%d of %d bodies spawned off the arena floor entirely" % [off_floor, total])
 
 func _init() -> void:
 	test_charges_produce_capture_records()

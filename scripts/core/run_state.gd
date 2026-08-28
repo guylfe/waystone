@@ -189,6 +189,14 @@ const BAND_FALLBACK := {
 # alone and scored 2/2/2. A second group is only legal if reaching the first puts the
 # player inside its threat: close enough to be pursued, or with a clear shot.
 const GROUP_PURSUIT_REACH := 460.0
+# The survey arena is a disc, and nothing in placement knew it. Anchors are drawn up to
+# 560 units from a player who already stands 380 from the centre, and a rear slot sits
+# up to 330 further out again -- so a body could be seated 975 units from the middle of
+# a floor with a 650 radius, which is what put an Archer outside the world in the
+# 0.2.42 survey. Margin keeps a body clear of the rim rather than balanced on it.
+const SURVEY_ARENA_CENTER := Vector2(850.0, 700.0)
+const SURVEY_ARENA_RADIUS := 650.0
+const SURVEY_ARENA_MARGIN := 80.0
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
 # selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
@@ -286,7 +294,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.42"
+const GAME_VERSION := "0.2.43"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -867,7 +875,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
 	var enemy_plan: Array = composition.get("enemies", [])
 	var layer := "survey_arena"
-	var center := Vector2(850.0, 700.0)
+	var center := SURVEY_ARENA_CENTER
 	var player_start := Vector2(850.0, 1080.0)
 	var walls_for_layer: Array[Rect2] = []
 	var features: Array[Dictionary] = []
@@ -933,7 +941,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"route_recipe": [],
 		"run_graph": {"nodes": [0], "edges": []},
 		"locale_catalog": {},
-		"floor_shapes": [{"kind": "circle", "center": center, "radius": 650.0, "part_id": 0, "layer": layer}],
+		"floor_shapes": [{"kind": "circle", "center": center, "radius": SURVEY_ARENA_RADIUS, "part_id": 0, "layer": layer}],
 		"terrain_features": features,
 		"pickups": [],
 		"waystones": [],
@@ -1380,6 +1388,14 @@ func _survey_settle_spawn(position: Vector2, obstacle_rects: Array, player_start
 			var safe_direction := from_player.normalized() if from_player.length_squared() > 0.001 else Vector2.UP
 			result = player_start + safe_direction * 360.0
 			moved = true
+		# Inside the loop rather than after it: a body pulled back onto the floor can land
+		# on a slab, and that has to be resolved rather than shipped. This is the same
+		# mistake the wall fix was about, one rule further out.
+		var from_centre := result - SURVEY_ARENA_CENTER
+		if from_centre.length() > SURVEY_ARENA_RADIUS - SURVEY_ARENA_MARGIN:
+			var inward := from_centre.normalized() if from_centre.length_squared() > 0.001 else Vector2.UP
+			result = SURVEY_ARENA_CENTER + inward * (SURVEY_ARENA_RADIUS - SURVEY_ARENA_MARGIN)
+			moved = true
 		if not moved: return result
 	# Still contested after eight passes, which means the two rules have no fixed point
 	# here. Sweep for the nearest clear standing room rather than leaving a body inside
@@ -1387,17 +1403,19 @@ func _survey_settle_spawn(position: Vector2, obstacle_rects: Array, player_start
 	for radius: float in [380.0, 450.0, 530.0, 620.0]:
 		for step in range(24):
 			var candidate := player_start + Vector2.UP.rotated(TAU * float(step) / 24.0) * radius
-			var clear := true
+			var clear := candidate.distance_to(SURVEY_ARENA_CENTER) <= SURVEY_ARENA_RADIUS - SURVEY_ARENA_MARGIN
 			for obstacle_value in obstacle_rects:
 				if Rect2(obstacle_value).grow(70.0).has_point(candidate): clear = false
 			if clear: return candidate
 	return result
 
-# How many of a template's seats would land in geometry if it were anchored here. The
-# anchor was previously chosen with no knowledge of the arena at all, so a whole
-# formation could be dropped onto a slab and then torn apart body by body by the
-# push-out above.
-func _formation_blocked_seats(template: Dictionary, anchor: Vector2, player_start: Vector2, obstacle_rects: Array) -> int:
+# How many of a template's seats would be misplaced if it were anchored here -- in
+# geometry, or off the floor entirely. The anchor was previously chosen with no
+# knowledge of the arena at all, so a whole formation could be dropped onto a slab, or
+# past the rim, and then dragged back body by body by the settling above. Clamping is a
+# backstop; scoring is what keeps it rare, because a formation whose seats all need
+# pulling in arrives squashed against the edge.
+func _formation_misplaced_seats(template: Dictionary, anchor: Vector2, player_start: Vector2, obstacle_rects: Array) -> int:
 	var forward := (player_start - anchor)
 	forward = forward.normalized() if forward.length_squared() > 0.001 else Vector2.DOWN
 	var right := forward.rotated(PI * 0.5)
@@ -1405,6 +1423,9 @@ func _formation_blocked_seats(template: Dictionary, anchor: Vector2, player_star
 	for slot_value in Array(template["slots"]):
 		var local := Vector2(Dictionary(slot_value)["at"])
 		var world := anchor + right * local.x - forward * local.y
+		if world.distance_to(SURVEY_ARENA_CENTER) > SURVEY_ARENA_RADIUS - SURVEY_ARENA_MARGIN:
+			blocked += 1
+			continue
 		for obstacle_value in obstacle_rects:
 			if Rect2(obstacle_value).grow(70.0).has_point(world):
 				blocked += 1
@@ -1521,7 +1542,7 @@ func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, play
 	if plan.size() >= 4 and room_rng.randf() < 0.45: group_count = 2
 	if threat_band == "stress" and plan.size() >= 5 and room_rng.randf() < 0.30: group_count = 3
 	var groups := _survey_group_roster(plan, group_count)
-	var toward_arena := (Vector2(850.0, 700.0) - player_start).normalized()
+	var toward_arena := (SURVEY_ARENA_CENTER - player_start).normalized()
 	var placed: Array = []
 	var used_ids: Dictionary = {}
 	var formation_ids: Array[String] = []
@@ -1548,7 +1569,7 @@ func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, play
 				if not _groups_interact(record, Dictionary(other), obstacle_rects): interacts = false
 			# Seats in geometry cost far more than a missed interaction: a body inside a
 			# slab cannot be reached, cannot path, and ends the room.
-			var penalty := float(_formation_blocked_seats(template, candidate, player_start, obstacle_rects)) * 10.0
+			var penalty := float(_formation_misplaced_seats(template, candidate, player_start, obstacle_rects)) * 10.0
 			if not interacts: penalty += 3.0
 			if penalty < best_penalty:
 				best_penalty = penalty
