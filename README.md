@@ -1,6 +1,32 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.46` (Android version code `246`).
+Current prototype version: `0.2.47` (Android version code `247`).
+
+### v0.2.47: A projectile hits whoever it hits
+
+The first of the caster programme's shared systems. Everything downstream reads from these, and they are cheap to get wrong.
+
+**One rule, not two branches.** Projectile resolution was split by allegiance: a friendly shot tested against enemies only, a hostile shot against the player only. Neither could ever reach the other side. It is now a single path that finds whatever the shot reaches **first along its step**, so a body that walks into the lane in front of its own side takes the arrow meant for someone behind it.
+
+This is safe rather than chaotic because `_archer_has_clear_lane()` already refuses a shot with an ally on the firing line — archers aim around their own people. **Friendly fire therefore only happens when something changes *after* commitment**: a shot gets bent, or a body walks into it.
+
+**Elevation is a gameplay property.** It existed only in the renderer — 10 for arrows, 18 for firebolts — and meant nothing to the simulation. A projectile above the ground band now passes over everything standing on the ground, and that check is **friend-blind**: taken literally, an airborne javelin cannot hit the player either, because the player is grounded too. That is what makes airborne enemies work later rather than merely permitting them — the high phase has to genuinely exist for anything to be in it.
+
+**Arrows stay flat. Javelins arc**, high early to clear the melee beside the thrower, descending late so they still reach:
+
+| fraction of range | 10% | 25% | **38%** | 50% | 75% | 90% |
+|---|---|---|---|---|---|---|
+| elevation | 44 | 71 | **78** | 74 | 43 | 18 |
+
+Against a ground band of 26, the javelin is airborne from roughly 5% to 85% of its flight. Measured: an ally 160 units from the thrower is **cleared untouched** while the player at 600 takes the spear; an ally at 500 **takes it in the back**. *"Clears my allies, spears the player"* falls out of the geometry rather than out of a flag.
+
+That also gives the two ranged enemies a third axis of difference, on top of speed and lead.
+
+**Attribution: the player did the geometry, so the player gets the credit** — a stray kill counts in `damage_dealt` — but not the damage bonus. A strong player does not make a Javelineer's throw hit its own side harder than it hits them.
+
+**One thing the design did not anticipate.** Enemy projectiles author damage on the *player-facing* scale, where `DAMAGE_HEALTH_COST` turns a javelin's `3` into `17`; enemy health is in raw points. Passing the authored number straight through would have floored a javelin to **5 against a Blade's 35** — a scratch. Strays run through the same curve instead, so the shot means the same thing to whoever it reaches: **17 of 35, half a Blade's health.** "Hits whoever it hits" has to include how hard, or the rule is systemic in name only.
+
+**New telemetry:** `Shots that struck their own side`, per room. Friendly fire is supposed to be rare and conditional, so the question of whether it ever actually happens in play needs an answer rather than an assumption.
 
 ### v0.2.46: The custom room
 

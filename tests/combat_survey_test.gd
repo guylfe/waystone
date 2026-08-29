@@ -56,7 +56,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Stamina:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Stamina depleted:" in report and "Stamina overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 21" in report and "Presentation version: 7" in report and "Combat rules: Recovery" in report)
+	assert("Report format: 22" in report and "Presentation version: 7" in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Stamina regeneration delay:" in report)

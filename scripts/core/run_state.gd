@@ -202,6 +202,25 @@ const SURVEY_ARENA_MARGIN := 80.0
 const NON_COMMITTAL_ACTION_KINDS := ["idle", "move", "hit_reaction", "stagger", "evade", "chant", "parry_stance"]
 # How far a spotter's shout carries. Suspicion, not alert: neighbours turn and look.
 const SPOTTER_ROUSE_RADIUS := 320.0
+# Elevation existed only in the renderer -- 10 for arrows, 18 for firebolts -- and meant
+# nothing to the simulation. It is a gameplay property now, and it is FRIEND-BLIND: while
+# a shot is above this it passes over everything standing on the ground, the player
+# included. Taken literally that is what "a thrown weapon is airborne" means, and it is
+# what produces "clears my allies, spears the player" out of geometry rather than out of
+# a friend/foe flag. It is also what makes airborne enemies work later rather than merely
+# permitting them: the high phase has to genuinely exist for anything to be in it.
+const PROJECTILE_GROUND_ELEVATION := 26.0
+
+# Arrows stay flat, which gives the two ranged enemies a third axis of difference on top
+# of speed and lead. Javelins arc: high early to clear the melee standing near the
+# thrower, descending late so they still reach at the far end. The peak sits at roughly
+# 38% of range rather than the midpoint, because the bodies to clear are the near ones.
+func _projectile_elevation(projectile: Dictionary) -> float:
+	if String(projectile.get("elevation_profile", "flat")) != "arc":
+		return float(projectile.get("elevation", 10.0))
+	var span := maxf(1.0, float(projectile.get("max_range", 600.0)))
+	var travelled := clampf(float(projectile.get("travelled", 0.0)) / span, 0.0, 1.0)
+	return float(projectile.get("elevation_peak", 78.0)) * sin(PI * pow(travelled, 0.72))
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
 # selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
@@ -299,7 +318,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.46"
+const GAME_VERSION := "0.2.47"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -386,6 +405,9 @@ var subclass_ability_cooldown_max := 8.0
 # A bow run produced `Strike diagnostics: 0` in every room, because the strike log is
 # built from a melee sector and a projectile has none. The Sharpshooter was the class we
 # could see least, and the one carrying an open "might be too strong" against it.
+# Friendly fire only happens when something changed after commitment, so counting it is
+# how we find out whether that ever actually occurs in play rather than on paper.
+var survey_stray_projectile_hits := 0
 var survey_shots_fired := 0
 var survey_shots_hit := 0
 var survey_shots_blocked := 0
@@ -788,6 +810,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	survey_reach_times.clear()
+	survey_stray_projectile_hits = 0
 	survey_shots_fired = 0
 	survey_shots_hit = 0
 	survey_shots_blocked = 0
@@ -1922,6 +1945,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
 		"reach_times": survey_reach_times.duplicate(true),
+		"stray_projectile_hits": survey_stray_projectile_hits,
 		"shots_fired": survey_shots_fired,
 		"shots_hit": survey_shots_hit,
 		"shots_blocked": survey_shots_blocked,
@@ -6932,6 +6956,11 @@ func _spawn_javelin(enemy: Dictionary) -> void:
 	var direction := Vector2(Dictionary(enemy.get("action", {})).get("direction", Vector2(enemy["facing"]))).normalized()
 	if direction.length_squared() < 0.001: direction = _javelin_lead(enemy)
 	projectiles.append({
+		# The one projectile in the game that arcs. High early so it clears whatever is
+		# standing beside the thrower, descending late so it still reaches -- which is the
+		# Javelineer's whole shape as a lane denier rather than a second archer.
+		"elevation_profile": "arc",
+		"elevation_peak": 78.0,
 		"pos": origin + direction * 44.0,
 		"vel": direction * JAVELIN_SPEED,
 		"radius": JAVELIN_RADIUS,
@@ -7167,32 +7196,78 @@ func _update_projectiles(dt: float) -> void:
 		var finish := start + Vector2(projectile["vel"]) * dt
 		projectile["pos"] = finish
 		projectile["travelled"] = float(projectile.get("travelled", 0.0)) + start.distance_to(finish)
-		if bool(projectile.get("friendly", false)):
-			var explode := not _inside_world(finish, float(projectile["radius"])) or _point_in_wall(finish) or float(projectile["travelled"]) >= float(projectile.get("max_range", INF))
-			var hit_ids: Array = projectile.get("hit_ids", [])
+		# One rule for every shot in the game rather than two branches split by whose it
+		# is. This is safe because `_archer_has_clear_lane()` already refuses a shot with an
+		# ally on the firing line -- archers aim around their own people -- so friendly fire
+		# happens only when something changes AFTER commitment: a shot is bent, or a body
+		# walks into the line.
+		var source_id := int(projectile.get("source_id", -1))
+		var spent := not _inside_world(finish, float(projectile["radius"])) or _point_in_wall(finish) or float(projectile["travelled"]) >= float(projectile.get("max_range", INF))
+		var hit_ids: Array = projectile.get("hit_ids", [])
+		# Above the ground band it passes over everyone, which is the whole point of the
+		# javelin's arc and the reason the check is not conditioned on allegiance.
+		if not spent and _projectile_elevation(projectile) <= PROJECTILE_GROUND_ELEVATION:
+			var nearest_enemy: Dictionary = {}
+			var nearest_order := INF
 			for enemy in _nearby_enemies(start, start.distance_to(finish) + 100.0):
-				if not _enemy_on_current_layer(enemy): continue
-				if hit_ids.has(int(enemy.get("id", -1))): continue
+				if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
+				var enemy_id := int(enemy.get("id", -1))
+				if enemy_id == source_id or hit_ids.has(enemy_id): continue
 				if _segment_distance_to_point(start, finish, Vector2(enemy["pos"])) > float(enemy["radius"]) + float(projectile["radius"]): continue
+				var order := start.distance_to(Vector2(enemy["pos"]))
+				if order < nearest_order:
+					nearest_order = order
+					nearest_enemy = enemy
+			var player_order := INF
+			if source_id != 0 and _segment_distance_to_point(start, finish, player_pos) <= PLAYER_RADIUS + float(projectile["radius"]):
+				player_order = start.distance_to(player_pos)
+			# Whatever it reaches first along this step, so a body that steps into the lane
+			# in front of its own side takes the shot meant for someone behind it.
+			if player_order < nearest_order:
+				_resolve_incoming_hit(source_id, int(projectile["damage"]), "firebolt" if projectile_kind == "firebolt" else "arrow", -Vector2(projectile["vel"]).normalized())
+				continue
+			if not nearest_enemy.is_empty():
 				if projectile_kind == "firebomb":
-					explode = true
-					break
-				hit_ids.append(int(enemy["id"]))
-				_damage_enemy_from_player_projectile(enemy, projectile, Vector2(enemy["pos"]))
-				if not bool(projectile.get("piercing", false)):
-					explode = true
-					break
-			projectile["hit_ids"] = hit_ids
-			if projectile_kind == "firebomb" and explode: _spawn_player_fire(finish if _inside_world(finish, 1.0) and not _point_in_wall(finish) else start)
-			if explode: continue
-			survivors.append(projectile)
-			continue
-		if not _inside_world(finish, float(projectile["radius"])) or _point_in_wall(finish): continue
-		if _segment_distance_to_point(start, finish, player_pos) <= PLAYER_RADIUS + float(projectile["radius"]):
-			_resolve_incoming_hit(int(projectile["source_id"]), int(projectile["damage"]), "firebolt" if projectile_kind == "firebolt" else "arrow", -Vector2(projectile["vel"]).normalized())
-			continue
+					spent = true
+				else:
+					hit_ids.append(int(nearest_enemy["id"]))
+					if source_id == 0: _damage_enemy_from_player_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
+					else: _damage_enemy_from_stray_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
+					if not bool(projectile.get("piercing", false)): spent = true
+		projectile["hit_ids"] = hit_ids
+		if projectile_kind == "firebomb" and spent: _spawn_player_fire(finish if _inside_world(finish, 1.0) and not _point_in_wall(finish) else start)
+		if spent: continue
 		survivors.append(projectile)
 	projectiles = survivors
+
+# An enemy's shot that reached another enemy: bent by something, or walked into. The
+# player takes the credit, because they did the geometry -- but not the damage bonus.
+# This is the projectile's own authored number, so a strong player does not make a
+# Javelineer's throw hit its own side harder than it hits them.
+func _damage_enemy_from_stray_projectile(enemy: Dictionary, projectile: Dictionary, contact: Vector2) -> void:
+	if int(enemy.get("hp", 0)) <= 0: return
+	var flight := Vector2(projectile.get("vel", Vector2.ZERO))
+	if flight.length_squared() > 0.001 and _enemy_blocks_incoming(enemy, -flight.normalized()):
+		_add_effect("block", contact)
+		return
+	# Through the same curve the player's own hits are scaled by. An enemy projectile
+	# authors its damage on the player-facing scale -- a javelin is 3, which becomes 17 --
+	# and enemy health is in raw points, so passing the authored number straight through
+	# would floor a javelin to 5 against a Blade's 35. "Hits whoever it hits" has to mean
+	# the same shot means the same thing to whoever it reaches, or the rule is systemic in
+	# name only. The victim's own armour still applies.
+	var authored := int(projectile.get("damage", 0))
+	var defence := int(Dictionary(enemy.get("attributes", {})).get("defense", 0)) + int(Dictionary(enemy.get("properties", {})).get("armor", 0))
+	var damage := maxi(MIN_FELT_DAMAGE, int(DAMAGE_HEALTH_COST.get(authored, authored * 5)) - defence)
+	enemy["hp"] = int(enemy["hp"]) - damage
+	damage_dealt += damage
+	survey_stray_projectile_hits += 1
+	_note_player_reached(enemy)
+	_add_effect("hurt", contact, damage)
+	_apply_posture_damage(enemy, float(projectile.get("posture", 0.0)), contact)
+	enemy["awareness"] = "alerted"
+	enemy["alert_remaining"] = 3.0
+	enemy["last_known_player"] = player_pos
 
 func _damage_enemy_from_consumable(enemy: Dictionary, damage: int, posture: float, contact: Vector2) -> void:
 	_damage_enemy_from_player_projectile(enemy, {"damage": damage, "posture": posture, "kind": "consumable", "ability_id": "consumable"}, contact)

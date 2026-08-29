@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 21
+const FORMAT_VERSION := 22
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -117,6 +117,10 @@ static func build_text(session: Dictionary) -> String:
 		# Only for runs that actually hid. With no Stamina-mode cooldown, how fast
 		# concealment is re-entered is the whole question about whether hide-execute-hide
 		# has eaten the class -- and it was previously unmeasurable.
+		if int(room.get("stray_projectile_hits", 0)) > 0:
+			# Friendly fire only happens when something changed after the shot was
+			# committed, so this counts whether that ever actually occurs in play.
+			lines.append("Shots that struck their own side: %d" % int(room.get("stray_projectile_hits", 0)))
 		if int(room.get("stealth_entries", 0)) > 0:
 			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f stamina paid" % [
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
