@@ -10,75 +10,70 @@ func _initialize() -> void:
 
 	# --- the custom room picker -------------------------------------------------------
 	# Built so a new enemy can be judged the moment it exists rather than waited for. The
-	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it, and its
-	# first appearance was a room it died three seconds into.
+	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it.
+	#
+	# The room is a list of slots, not a tally per kind. Counting made duplicates a number
+	# to cycle through and removal an afterthought -- undoing one mis-tap cost three more
+	# taps, and three-to-two was impossible.
 	board.setup_mode = "combat_survey"
 	board.setup_stage = "options"
 	board.setup_dev_section = "custom"
 	board._layout()
-	# The root screen offers three buttons and nothing else. Every control that used to
-	# share it with them is what made taps land on the wrong thing.
-	var options_class_rect: Rect2 = board._setup_class_rect("warrior")
-	assert(options_class_rect.size.y > 0.0)
-	for other in [board.dev_section_rects["survey"], board.survey_profile_rects["encounter"], board.combat_rule_rects["recovery"]]:
-		assert(not options_class_rect.intersects(Rect2(other)))
-	# The first version of this button was laid out on top of the seed field, which is a
-	# real LineEdit node and draws over anything the canvas paints beneath it -- so the
-	# control existed, worked, and was invisible. Overlap is the assertion, not presence.
 	assert(board.custom_open_rect.size.x > 0.0)
 	assert(not board.custom_open_rect.intersects(Rect2(board.seed_input.position, board.seed_input.size)))
 	assert(not board.custom_open_rect.intersects(board.start_rect))
 	assert(board.dev_section_rects.has("survey") and board.dev_section_rects.has("custom"))
-	# Two extra rows can push the start button off the bottom, which would make Dev
-	# unstartable rather than merely ugly.
 	assert(board.start_rect.end.y <= board.safe_layout_rect.end.y + 1.0)
+	var options_class_rect: Rect2 = board._setup_class_rect("warrior")
+	assert(options_class_rect.size.y > 0.0)
+	for other in [board.dev_section_rects["survey"], board.survey_profile_rects["encounter"], board.combat_rule_rects["recovery"]]:
+		assert(not options_class_rect.intersects(Rect2(other)))
+
 	board.custom_room_open = true
+	board.custom_page = "room"
 	board._layout()
 	board._sync_setup_controls()
-	# The seed field is a node and paints over the canvas, so the picker is only actually
-	# on top if the field is hidden while it is up.
 	assert(not board.seed_input.visible)
-	assert(board.custom_kind_rects.has("ox"))
-	assert(board.custom_formation_rects.has("retinue"))
-	var ox_rect: Rect2 = board.custom_kind_rects["ox"]
-	for expected in [1, 2, 3, 0]:
-		board._handle_custom_room_press(ox_rect.get_center())
-		assert(int(board.custom_room_counts.get("ox", 0)) == expected)
-	# Undoing a mis-tap is one tap, not three. Cycling through a single target made the
-	# most common correction on the screen the most expensive action on it.
-	var remove_point := Vector2(ox_rect.end.x - board._custom_remove_width(ox_rect) * 0.5, ox_rect.get_center().y)
-	board._handle_custom_room_press(ox_rect.position + Vector2(6, ox_rect.size.y * 0.5))
-	assert(int(board.custom_room_counts.get("ox", 0)) == 1)
-	board._handle_custom_room_press(remove_point)
-	assert(not board.custom_room_counts.has("ox"))
-	# And it steps down one at a time rather than clearing the lot.
-	for _add in range(3): board._handle_custom_room_press(ox_rect.position + Vector2(6, ox_rect.size.y * 0.5))
-	assert(int(board.custom_room_counts.get("ox", 0)) == 3)
-	board._handle_custom_room_press(remove_point)
-	assert(int(board.custom_room_counts.get("ox", 0)) == 2)
-	board.custom_room_counts.clear()
-	# A tap always changes something. The cap used to freeze every chip below three once
-	# six bodies were picked, so a full room could not be emptied -- "chosen enemies can't
-	# be de-selected by tapping them again".
-	board.custom_room_counts.clear()
-	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar"]:
-		var chip: Rect2 = board.custom_kind_rects[kind]
-		board._handle_custom_room_press(chip.position + Vector2(6, chip.size.y * 0.5))
-	assert(board._custom_room_total() == 6)
-	# A seventh cannot be added, and removal still works at the cap.
-	var blade_chip: Rect2 = board.custom_kind_rects["bandit"]
-	board._handle_custom_room_press(blade_chip.position + Vector2(6, blade_chip.size.y * 0.5))
-	assert(board._custom_room_total() == 6)
-	var ox_chip: Rect2 = board.custom_kind_rects["ox"]
-	board._handle_custom_room_press(Vector2(ox_chip.end.x - board._custom_remove_width(ox_chip) * 0.5, ox_chip.get_center().y))
-	assert(board._custom_room_total() == 5)
-	board.custom_room_counts.clear()
-	# Six bodies is the ceiling: the largest formation seats six, and a seventh would
-	# stand outside the arrangement under test.
-	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar", "bandit"]:
-		if board.custom_kind_rects.has(kind):
-			board._handle_custom_room_press(Rect2(board.custom_kind_rects[kind]).get_center())
-	assert(board._custom_room_total() <= 6)
+
+	# Add opens the kind page; choosing appends.
+	assert(board.custom_add_rect.size.x > 0.0)
+	board._handle_custom_room_press(board.custom_add_rect.get_center())
+	assert(board.custom_page == "kind")
+	board._handle_custom_room_press(Rect2(board.custom_kind_rects["ox"]).get_center())
+	assert(board.custom_page == "room")
+	assert(String(board.custom_room_roster[0]) == "ox")
+	assert(board.custom_room_roster.size() == 1)
+
+	# Tapping a filled slot reopens the list and replaces that slot rather than appending.
+	board._handle_custom_room_press(Rect2(board.custom_slot_rects[0]).get_center())
+	assert(board.custom_page == "kind")
+	assert(board.custom_editing_slot == 0)
+	board._handle_custom_room_press(Rect2(board.custom_kind_rects["polearm"]).get_center())
+	assert(board.custom_room_roster.size() == 1)
+	assert(String(board.custom_room_roster[0]) == "polearm")
+
+	# Remove is one visible tap, at any size of room.
+	for kind in ["hound", "blade"]:
+		board._handle_custom_room_press(board.custom_add_rect.get_center())
+		board._handle_custom_room_press(Rect2(board.custom_kind_rects[kind]).get_center())
+	assert(board.custom_room_roster.size() == 3)
+	board._handle_custom_room_press(Rect2(board.custom_remove_rects[1]).get_center())
+	assert(board.custom_room_roster.size() == 2)
+	assert(String(board.custom_room_roster[0]) == "polearm" and String(board.custom_room_roster[1]) == "blade")
+
+	# Duplicates are separate slots rather than a count.
+	for _copy in range(2):
+		board._handle_custom_room_press(board.custom_add_rect.get_center())
+		board._handle_custom_room_press(Rect2(board.custom_kind_rects["hound"]).get_center())
+	assert(board.custom_room_roster.size() == 4)
+
+	# Six is the ceiling, and the add button disappears rather than failing silently.
+	for _copy in range(2):
+		board._handle_custom_room_press(board.custom_add_rect.get_center())
+		board._handle_custom_room_press(Rect2(board.custom_kind_rects["knife"]).get_center())
+	assert(board.custom_room_roster.size() == 6)
+	assert(board.custom_add_rect.size.x <= 0.0)
+
 	board._handle_custom_room_press(Rect2(board.custom_formation_rects["retinue"]).get_center())
 	board._handle_custom_room_press(Rect2(board.custom_hp_rects[25]).get_center())
 	board._handle_custom_room_press(Rect2(board.custom_xp_rects[400]).get_center())
@@ -95,7 +90,7 @@ func _initialize() -> void:
 	assert(board.state.carried_xp >= 400)
 	board.setup_stage = "root"
 	board.setup_dev_section = "survey"
-	board.custom_room_counts.clear()
+	board.custom_room_roster.clear()
 	board.custom_room_formation = ""
 	board.custom_room_hp = 1.0
 	board.custom_room_xp = 0

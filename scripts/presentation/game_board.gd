@@ -128,7 +128,15 @@ var setup_class_rects: Dictionary = {}
 var setup_dev_section := "survey"
 var dev_section_rects: Dictionary = {}
 var custom_room_open := false
-var custom_room_counts: Dictionary = {}
+# The room is a list of slots, in order, not a tally per kind. Counting made duplicates
+# a number to cycle through and removal an afterthought; a roster makes "three Hounds"
+# three rows you can delete one at a time, and it keeps the order the player chose.
+var custom_room_roster: Array[String] = []
+var custom_page := "room"
+var custom_editing_slot := -1
+var custom_slot_rects: Dictionary = {}
+var custom_remove_rects: Dictionary = {}
+var custom_add_rect := Rect2()
 var custom_room_formation := ""
 var custom_room_hp := 1.0
 var custom_room_xp := 0
@@ -1170,6 +1178,8 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 					return
 		if custom_open_rect.has_point(position) and _custom_section_active():
 			custom_room_open = true
+			custom_page = "room"
+			custom_editing_slot = -1
 			_layout()
 			return
 		if setup_mode == "combat_survey":
@@ -1975,25 +1985,40 @@ func _restart() -> void:
 	queue_redraw()
 
 func _handle_custom_room_press(position: Vector2) -> void:
-	for kind in custom_kind_rects:
-		if not Rect2(custom_kind_rects[kind]).has_point(position): continue
-		# One target per kind, cycling 1 -> 2 -> 3 -> none. A separate remove control
-		# would double the number of things to hit on a phone for no extra expressiveness.
-		var rect := Rect2(custom_kind_rects[kind])
-		var current := int(custom_room_counts.get(kind, 0))
-		var next_count := current
-		# Removal is one tap, always. Cycling 1-2-3-none through a single target made the
-		# most common correction -- undoing a mis-tap -- the most expensive action on the
-		# screen: three more taps to clear one body you did not mean to add.
-		if current > 0 and position.x >= rect.end.x - _custom_remove_width(rect):
-			next_count = current - 1
-		elif current >= 3:
-			next_count = 0
-		elif _custom_room_total() < 6:
-			next_count = current + 1
-		if next_count <= 0: custom_room_counts.erase(kind)
-		else: custom_room_counts[kind] = next_count
-		queue_redraw()
+	if custom_page == "kind":
+		for kind in custom_kind_rects:
+			if not Rect2(custom_kind_rects[kind]).has_point(position): continue
+			# Chosen from the add button appends; chosen from an existing row replaces it,
+			# which is the whole reason tapping a filled slot reopens this page.
+			if custom_editing_slot >= 0 and custom_editing_slot < custom_room_roster.size():
+				custom_room_roster[custom_editing_slot] = String(kind)
+			elif custom_room_roster.size() < 6:
+				custom_room_roster.append(String(kind))
+			custom_editing_slot = -1
+			custom_page = "room"
+			_layout()
+			return
+		if custom_done_rect.has_point(position) or not custom_panel_rect.has_point(position):
+			# Backing out of the kind page cancels the edit rather than the room.
+			custom_editing_slot = -1
+			custom_page = "room"
+			_layout()
+		return
+	for index in custom_remove_rects:
+		if Rect2(custom_remove_rects[index]).has_point(position):
+			custom_room_roster.remove_at(int(index))
+			_layout()
+			return
+	for index in custom_slot_rects:
+		if Rect2(custom_slot_rects[index]).has_point(position):
+			custom_editing_slot = int(index)
+			custom_page = "kind"
+			_layout()
+			return
+	if custom_add_rect.has_point(position) and custom_room_roster.size() < 6:
+		custom_editing_slot = -1
+		custom_page = "kind"
+		_layout()
 		return
 	for formation in custom_formation_rects:
 		if Rect2(custom_formation_rects[formation]).has_point(position):
@@ -2011,14 +2036,13 @@ func _handle_custom_room_press(position: Vector2) -> void:
 			queue_redraw()
 			return
 	if custom_clear_rect.has_point(position):
-		custom_room_counts.clear()
+		custom_room_roster.clear()
 		custom_room_formation = ""
-		queue_redraw()
+		_layout()
 		return
 	if custom_done_rect.has_point(position) or not custom_panel_rect.has_point(position):
 		custom_room_open = false
 		_layout()
-
 func _start_run() -> void:
 	var entered_seed := seed_input.text.strip_edges()
 	var chosen_seed := -1
@@ -2032,9 +2056,7 @@ func _start_run() -> void:
 	seed_input.release_focus()
 	# Written before start_run, because the first room is generated inside it.
 	var roster: Array[String] = []
-	if _custom_section_active():
-		for kind in custom_room_counts:
-			for _copy in range(int(custom_room_counts[kind])): roster.append(String(kind))
+	if _custom_section_active(): roster.assign(custom_room_roster)
 	state.custom_room_kinds = roster
 	state.custom_room_formation = custom_room_formation
 	state.custom_room_hp_percent = custom_room_hp
@@ -4663,11 +4685,17 @@ func _draw_button(name: String, rect: Rect2) -> void:
 
 # Laid out against the whole safe area rather than the setup column, because the point of
 # the overlay is the room the panel does not have.
+# Two pages. The room page shows what has been chosen and lets it be edited; the kind
+# page is a full screen of enemies, which is what it needs to be readable rather than
+# twenty-one chips squeezed in beside the formation, health and XP rows.
 func _layout_custom_room_panel() -> void:
 	custom_kind_rects.clear()
 	custom_formation_rects.clear()
 	custom_hp_rects.clear()
 	custom_xp_rects.clear()
+	custom_slot_rects.clear()
+	custom_remove_rects.clear()
+	custom_add_rect = Rect2()
 	if not custom_room_open:
 		custom_panel_rect = Rect2()
 		return
@@ -4676,33 +4704,44 @@ func _layout_custom_room_panel() -> void:
 	var pad := 12.0
 	var left := custom_panel_rect.position.x + pad
 	var width := custom_panel_rect.size.x - pad * 2.0
-	var y := custom_panel_rect.position.y + 54.0
-	var columns := 3 if custom_panel_rect.size.x < 620.0 else 5
-	var kinds := _custom_room_kind_list()
-	var chip_w := (width - float(columns - 1) * 6.0) / float(columns)
-	var chip_h := clampf(custom_panel_rect.size.y * 0.055, 34.0, 46.0)
-	for index in range(kinds.size()):
-		var row := index / columns
-		var column := index % columns
-		custom_kind_rects[String(kinds[index])] = Rect2(left + float(column) * (chip_w + 6.0), y + float(row) * (chip_h + 6.0), chip_w, chip_h)
-	y += float(ceili(float(kinds.size()) / float(columns))) * (chip_h + 6.0) + 16.0
+	var row_h := clampf(custom_panel_rect.size.y * 0.058, 38.0, 50.0)
+	var y := custom_panel_rect.position.y + 58.0
+	if custom_page == "kind":
+		var kinds := _custom_room_kind_list()
+		var columns := 2 if custom_panel_rect.size.x < 520.0 else 3
+		var chip_w := (width - float(columns - 1) * 6.0) / float(columns)
+		for index in range(kinds.size()):
+			custom_kind_rects[String(kinds[index])] = Rect2(left + float(index % columns) * (chip_w + 6.0), y + float(index / columns) * (row_h + 6.0), chip_w, row_h)
+		custom_done_rect = Rect2(left, custom_panel_rect.end.y - 60.0, width, 48.0)
+		custom_clear_rect = Rect2()
+		return
+	# Room page: one row per chosen body, each with its own remove control, then the add
+	# button, then the room's other settings.
+	for index in range(custom_room_roster.size()):
+		var slot := Rect2(left, y, width, row_h)
+		custom_slot_rects[index] = Rect2(slot.position, Vector2(slot.size.x - 96.0, slot.size.y))
+		custom_remove_rects[index] = Rect2(slot.end.x - 92.0, slot.position.y, 92.0, slot.size.y)
+		y += row_h + 6.0
+	if custom_room_roster.size() < 6:
+		custom_add_rect = Rect2(left, y, width, row_h)
+		y += row_h + 14.0
+	else:
+		y += 8.0
 	var formations := _custom_room_formation_list()
 	var fcols := 4
 	var fw := (width - 18.0) / float(fcols)
 	for index in range(formations.size()):
-		custom_formation_rects[String(formations[index])] = Rect2(left + float(index % fcols) * (fw + 6.0), y + float(index / fcols) * (chip_h + 6.0), fw, chip_h)
-	y += float(ceili(float(formations.size()) / float(fcols))) * (chip_h + 6.0) + 16.0
+		custom_formation_rects[String(formations[index])] = Rect2(left + float(index % fcols) * (fw + 6.0), y + float(index / fcols) * (row_h + 6.0), fw, row_h)
+	y += float(ceili(float(formations.size()) / float(fcols))) * (row_h + 6.0) + 14.0
 	var qw := (width - 18.0) / 4.0
 	for index in range(4):
-		custom_hp_rects[[25, 50, 75, 100][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, chip_h)
-	y += chip_h + 10.0
+		custom_hp_rects[[25, 50, 75, 100][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, row_h)
+	y += row_h + 8.0
 	for index in range(4):
-		custom_xp_rects[[0, 200, 400, 800][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, chip_h)
-	y += chip_h + 14.0
+		custom_xp_rects[[0, 200, 400, 800][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, row_h)
 	var half := (width - 8.0) * 0.5
-	custom_clear_rect = Rect2(left, y, half, 48.0)
-	custom_done_rect = Rect2(left + half + 8.0, y, half, 48.0)
-
+	custom_clear_rect = Rect2(left, custom_panel_rect.end.y - 60.0, half, 48.0)
+	custom_done_rect = Rect2(left + half + 8.0, custom_panel_rect.end.y - 60.0, half, 48.0)
 func _custom_section_active() -> bool:
 	return setup_mode == "combat_survey" and setup_dev_section == "custom"
 
@@ -4720,16 +4759,8 @@ func _custom_room_formation_list() -> Array[String]:
 	for template in state._survey_formation_catalog(): ids.append(String(Dictionary(template)["id"]))
 	return ids
 
-# Wide enough to hit on a phone even in the five-column layout, and never more than a
-# third of the chip so the label keeps its room.
-func _custom_remove_width(rect: Rect2) -> float:
-	return minf(maxf(38.0, rect.size.x * 0.28), rect.size.x * 0.34)
-
 func _custom_room_total() -> int:
-	var total := 0
-	for kind in custom_room_counts: total += int(custom_room_counts[kind])
-	return total
-
+	return custom_room_roster.size()
 func _custom_room_label(kind: String) -> String:
 	if kind == state.CUSTOM_RANDOM: return "RANDOM"
 	if kind == state.CUSTOM_RANDOM_NEW: return "RANDOM NEW"
@@ -4738,24 +4769,36 @@ func _custom_room_label(kind: String) -> String:
 func _draw_custom_room_panel() -> void:
 	draw_rect(custom_panel_rect, Color(0.02, 0.05, 0.06, 0.97))
 	draw_rect(custom_panel_rect, Color("c9a3e6"), false, 2.0)
-	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 26), "CUSTOM ROOM", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 18, Color("eef0e9"))
-	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 44), "TAP A NAME TO ADD · TAP ITS COUNT TO REMOVE ONE", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
-	var picked := _custom_room_total()
-	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(-14, 26), "%d / 6" % picked, HORIZONTAL_ALIGNMENT_RIGHT, custom_panel_rect.size.x, 16, Color("c9a3e6") if picked > 0 else Color("8b9aa0"))
-	for kind in custom_kind_rects:
-		var rect := Rect2(custom_kind_rects[kind])
-		var count := int(custom_room_counts.get(kind, 0))
-		draw_rect(rect, Color("1d3038") if count > 0 else Color("142025"))
-		draw_rect(rect, Color("c9a3e6") if count > 0 else Color("3b494f"), false, 2.0)
-		var remove_width := _custom_remove_width(rect)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.64), _custom_room_label(String(kind)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - remove_width - 6.0, 11, Color("eef0e9") if count > 0 else Color("8b9aa0"))
-		if count > 0:
-			# The count IS the remove button, so the affordance and the state are the same
-			# pixels -- there is nothing to learn beyond "tap the number to take one back".
-			var remove_rect := Rect2(rect.end.x - remove_width, rect.position.y + 3.0, remove_width - 3.0, rect.size.y - 6.0)
-			draw_rect(remove_rect, Color("2a1a2e"))
-			draw_rect(remove_rect, Color("c9a3e6"), false, 1.0)
-			draw_string(ThemeDB.fallback_font, remove_rect.position + Vector2(0, remove_rect.size.y * 0.70), "%d  −" % count, HORIZONTAL_ALIGNMENT_CENTER, remove_rect.size.x, 12, Color("c9a3e6"))
+	var picked := custom_room_roster.size()
+	if custom_page == "kind":
+		var title := "CHOOSE AN ENEMY" if custom_editing_slot < 0 else "REPLACE SLOT %d" % (custom_editing_slot + 1)
+		draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 30), title, HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 18, Color("eef0e9"))
+		draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 48), "RANDOM RE-ROLLS EACH ROOM · RANDOM NEW PICKS ONE NOT YET USED", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
+		for kind in custom_kind_rects:
+			var rect := Rect2(custom_kind_rects[kind])
+			draw_rect(rect, Color("142025"))
+			draw_rect(rect, Color("3b494f"), false, 2.0)
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), _custom_room_label(String(kind)), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("eef0e9"))
+		draw_rect(custom_done_rect, Color("17272d"))
+		draw_rect(custom_done_rect, Color("718087"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "BACK", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("d7dddd"))
+		return
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 30), "CUSTOM ROOM", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 18, Color("eef0e9"))
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(-14, 30), "%d / 6" % picked, HORIZONTAL_ALIGNMENT_RIGHT, custom_panel_rect.size.x, 16, Color("c9a3e6") if picked > 0 else Color("8b9aa0"))
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 48), "TAP A NAME TO REPLACE IT · REMOVE TAKES IT OUT", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
+	for index in custom_slot_rects:
+		var rect := Rect2(custom_slot_rects[index])
+		draw_rect(rect, Color("1d3038"))
+		draw_rect(rect, Color("c9a3e6"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, rect.size.y * 0.64), "%d.  %s" % [int(index) + 1, _custom_room_label(String(custom_room_roster[int(index)]))], HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 20, 13, Color("eef0e9"))
+		var remove := Rect2(custom_remove_rects[index])
+		draw_rect(remove, Color("2a1a1c"))
+		draw_rect(remove, Color("ee6645"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, remove.position + Vector2(0, remove.size.y * 0.64), "REMOVE", HORIZONTAL_ALIGNMENT_CENTER, remove.size.x, 12, Color("ee6645"))
+	if custom_add_rect.size.x > 0.0:
+		draw_rect(custom_add_rect, Color("142025"))
+		draw_rect(custom_add_rect, Color("58d2cf"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, custom_add_rect.position + Vector2(0, custom_add_rect.size.y * 0.64), "+  ADD ENEMY", HORIZONTAL_ALIGNMENT_CENTER, custom_add_rect.size.x, 14, Color("58d2cf"))
 	for formation in custom_formation_rects:
 		var rect := Rect2(custom_formation_rects[formation])
 		var selected := custom_room_formation == String(formation)
@@ -4781,7 +4824,6 @@ func _draw_custom_room_panel() -> void:
 	draw_rect(custom_done_rect, Color("24433f"))
 	draw_rect(custom_done_rect, Color("58d2cf"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "BACK", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))
-
 func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	var title := "REJUVENATE" if slot_id == "healing" else "—"
 	var subtitle := "%d / %d" % [state.potions, state.healing_capacity()] if slot_id == "healing" else "EMPTY"

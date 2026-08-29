@@ -1,6 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.51` (Android version code `251`).
+Current prototype version: `0.2.52` (Android version code `252`).
+
+### v0.2.52: The room is a list, not a tally
+
+The picker counted bodies per kind, so duplicates were a number to cycle through and removal was whatever fell out of that cycle. Two revisions tried to fix removal inside that model and both were bad: three taps to undo a mis-tap in the first, a clear-instead-of-add surprise in the second.
+
+**The model was the problem.** The room is a list of slots now.
+
+- **`+ ADD ENEMY`** opens a full page of kinds; choosing one appends it.
+- **Tapping a chosen enemy** reopens that page and **replaces** that slot.
+- **`REMOVE`** sits beside every slot. One tap, always visible, at any size of room.
+- **Duplicates are separate rows**, so three Hounds are three lines you can delete one at a time — and the order you picked is the order you see.
+- At six the add button **disappears** rather than failing silently.
+
+Splitting the kind list onto its own page is what makes it readable: twenty-one enemies had been squeezed in beside the formation, health and XP rows, and now they get the screen.
+
+This is the third revision of this control in three versions. The first two were attempts to make removal cheap inside a model where the count was the only state — which it could not be, because the thing being removed was never represented. A slot is.
 
 ### v0.2.51: Removal is one tap
 
