@@ -44,15 +44,33 @@ func _initialize() -> void:
 	for expected in [1, 2, 3, 0]:
 		board._handle_custom_room_press(ox_rect.get_center())
 		assert(int(board.custom_room_counts.get("ox", 0)) == expected)
+	# Undoing a mis-tap is one tap, not three. Cycling through a single target made the
+	# most common correction on the screen the most expensive action on it.
+	var remove_point := Vector2(ox_rect.end.x - board._custom_remove_width(ox_rect) * 0.5, ox_rect.get_center().y)
+	board._handle_custom_room_press(ox_rect.position + Vector2(6, ox_rect.size.y * 0.5))
+	assert(int(board.custom_room_counts.get("ox", 0)) == 1)
+	board._handle_custom_room_press(remove_point)
+	assert(not board.custom_room_counts.has("ox"))
+	# And it steps down one at a time rather than clearing the lot.
+	for _add in range(3): board._handle_custom_room_press(ox_rect.position + Vector2(6, ox_rect.size.y * 0.5))
+	assert(int(board.custom_room_counts.get("ox", 0)) == 3)
+	board._handle_custom_room_press(remove_point)
+	assert(int(board.custom_room_counts.get("ox", 0)) == 2)
+	board.custom_room_counts.clear()
 	# A tap always changes something. The cap used to freeze every chip below three once
 	# six bodies were picked, so a full room could not be emptied -- "chosen enemies can't
 	# be de-selected by tapping them again".
 	board.custom_room_counts.clear()
 	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar"]:
-		board._handle_custom_room_press(Rect2(board.custom_kind_rects[kind]).get_center())
+		var chip: Rect2 = board.custom_kind_rects[kind]
+		board._handle_custom_room_press(chip.position + Vector2(6, chip.size.y * 0.5))
 	assert(board._custom_room_total() == 6)
-	board._handle_custom_room_press(Rect2(board.custom_kind_rects["ox"]).get_center())
-	assert(not board.custom_room_counts.has("ox"))
+	# A seventh cannot be added, and removal still works at the cap.
+	var blade_chip: Rect2 = board.custom_kind_rects["bandit"]
+	board._handle_custom_room_press(blade_chip.position + Vector2(6, blade_chip.size.y * 0.5))
+	assert(board._custom_room_total() == 6)
+	var ox_chip: Rect2 = board.custom_kind_rects["ox"]
+	board._handle_custom_room_press(Vector2(ox_chip.end.x - board._custom_remove_width(ox_chip) * 0.5, ox_chip.get_center().y))
 	assert(board._custom_room_total() == 5)
 	board.custom_room_counts.clear()
 	# Six bodies is the ceiling: the largest formation seats six, and a seventh would

@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.50` (Android version code `250`).
+Current prototype version: `0.2.51` (Android version code `251`).
+
+### v0.2.51: Removal is one tap
+
+The picker cycled `1 → 2 → 3 → none` through a single hit target per kind. That made the **most common correction on the screen the most expensive action on it**: undoing one mis-tap took three more taps, and there was no way to go from three to two at all.
+
+It was a false economy — I traded one extra hit region per chip for a worse version of the thing you do most.
+
+**The count is now the remove button.** Tapping a kind's name adds one; tapping its count takes one back. Affordance and state are the same pixels, so there is nothing to learn beyond *"tap the number to take one back"*. The remove zone is at least 38px wide and never more than a third of the chip, so it stays hittable in the five-column layout without crowding the label.
+
+The cap behaves plainly again as a result: a seventh body is simply refused rather than clearing the chip, because there is now an obvious way to make room. The header shows `N / 6`.
 
 ### v0.2.50: The picker actually covers the screen
 

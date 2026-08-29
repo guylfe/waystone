@@ -1979,13 +1979,18 @@ func _handle_custom_room_press(position: Vector2) -> void:
 		if not Rect2(custom_kind_rects[kind]).has_point(position): continue
 		# One target per kind, cycling 1 -> 2 -> 3 -> none. A separate remove control
 		# would double the number of things to hit on a phone for no extra expressiveness.
+		var rect := Rect2(custom_kind_rects[kind])
 		var current := int(custom_room_counts.get(kind, 0))
-		var next_count := current + 1
-		# Six is the ceiling because the largest formation seats six. When adding another
-		# would break it the tap CLEARS instead, so a full room can always be emptied --
-		# the previous version froze every chip below three once six were picked, which is
-		# what "chosen enemies can't be de-selected by tapping them again" was.
-		if next_count > 3 or _custom_room_total() + 1 > 6: next_count = 0
+		var next_count := current
+		# Removal is one tap, always. Cycling 1-2-3-none through a single target made the
+		# most common correction -- undoing a mis-tap -- the most expensive action on the
+		# screen: three more taps to clear one body you did not mean to add.
+		if current > 0 and position.x >= rect.end.x - _custom_remove_width(rect):
+			next_count = current - 1
+		elif current >= 3:
+			next_count = 0
+		elif _custom_room_total() < 6:
+			next_count = current + 1
 		if next_count <= 0: custom_room_counts.erase(kind)
 		else: custom_room_counts[kind] = next_count
 		queue_redraw()
@@ -4715,6 +4720,11 @@ func _custom_room_formation_list() -> Array[String]:
 	for template in state._survey_formation_catalog(): ids.append(String(Dictionary(template)["id"]))
 	return ids
 
+# Wide enough to hit on a phone even in the five-column layout, and never more than a
+# third of the chip so the label keeps its room.
+func _custom_remove_width(rect: Rect2) -> float:
+	return minf(maxf(38.0, rect.size.x * 0.28), rect.size.x * 0.34)
+
 func _custom_room_total() -> int:
 	var total := 0
 	for kind in custom_room_counts: total += int(custom_room_counts[kind])
@@ -4729,15 +4739,23 @@ func _draw_custom_room_panel() -> void:
 	draw_rect(custom_panel_rect, Color(0.02, 0.05, 0.06, 0.97))
 	draw_rect(custom_panel_rect, Color("c9a3e6"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 26), "CUSTOM ROOM", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 18, Color("eef0e9"))
-	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 44), "TAP TO ADD · AGAIN TO CYCLE 1-2-3-NONE · MAX 6", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 44), "TAP A NAME TO ADD · TAP ITS COUNT TO REMOVE ONE", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
+	var picked := _custom_room_total()
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(-14, 26), "%d / 6" % picked, HORIZONTAL_ALIGNMENT_RIGHT, custom_panel_rect.size.x, 16, Color("c9a3e6") if picked > 0 else Color("8b9aa0"))
 	for kind in custom_kind_rects:
 		var rect := Rect2(custom_kind_rects[kind])
 		var count := int(custom_room_counts.get(kind, 0))
 		draw_rect(rect, Color("1d3038") if count > 0 else Color("142025"))
 		draw_rect(rect, Color("c9a3e6") if count > 0 else Color("3b494f"), false, 2.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.64), _custom_room_label(String(kind)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 26, 11, Color("eef0e9") if count > 0 else Color("8b9aa0"))
+		var remove_width := _custom_remove_width(rect)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.64), _custom_room_label(String(kind)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - remove_width - 6.0, 11, Color("eef0e9") if count > 0 else Color("8b9aa0"))
 		if count > 0:
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x - 20, rect.size.y * 0.64), "x%d" % count, HORIZONTAL_ALIGNMENT_LEFT, 20, 12, Color("c9a3e6"))
+			# The count IS the remove button, so the affordance and the state are the same
+			# pixels -- there is nothing to learn beyond "tap the number to take one back".
+			var remove_rect := Rect2(rect.end.x - remove_width, rect.position.y + 3.0, remove_width - 3.0, rect.size.y - 6.0)
+			draw_rect(remove_rect, Color("2a1a2e"))
+			draw_rect(remove_rect, Color("c9a3e6"), false, 1.0)
+			draw_string(ThemeDB.fallback_font, remove_rect.position + Vector2(0, remove_rect.size.y * 0.70), "%d  −" % count, HORIZONTAL_ALIGNMENT_CENTER, remove_rect.size.x, 12, Color("c9a3e6"))
 	for formation in custom_formation_rects:
 		var rect := Rect2(custom_formation_rects[formation])
 		var selected := custom_room_formation == String(formation)
