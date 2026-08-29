@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 19
+const FORMAT_VERSION := 20
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -167,6 +167,10 @@ static func build_text(session: Dictionary) -> String:
 			lines.append("Time to reach ranged: %s" % ", ".join(reach_text))
 		else:
 			lines.append("Time to reach ranged: none reached")
+		# A bow run used to produce no attack record of any kind, because the strike log is
+		# a melee sector and a projectile has none.
+		if int(room.get("shots_fired", 0)) > 0:
+			lines.append("Shots: %d fired, %d hit, %d stopped by a guard" % [int(room.get("shots_fired", 0)), int(room.get("shots_hit", 0)), int(room.get("shots_blocked", 0))])
 		# Is this a room, or a queue of duels? Four separate 0.2.37 notes said the enemies
 		# were fought one at a time; nothing in the report could confirm it.
 		var engagement_samples := int(room.get("engagement_samples", 0))

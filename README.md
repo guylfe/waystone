@@ -1,6 +1,28 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.44` (Android version code `244`).
+Current prototype version: `0.2.45` (Android version code `245`).
+
+### v0.2.45: Speed stops buying everything
+
+Eight changes from one Acrobat run, most of them the Rogue paying for advantages it was never charged for.
+
+**Concealment could be entered in front of something already swinging at you.** `_enemy_has_eyes_on_player` was an instantaneous cone-and-line-of-sight test, and an Archer sees 620 less 14 per point of stealth — **522 units against a Rogue** — so one could put an arrow into you from beyond that and still fail the test *while the shot was in the air*. Room 3 measured the cost precisely: **12 stealth entries, 4.58s hidden, 265 stamina paid.** Twenty-two stamina per entry for 0.38 seconds of concealment.
+
+A committed hostile action now counts as eyes on you regardless of cone or range, as does having seen you within the last half-second of world time. If something is mid-swing or mid-shot at you, it knows where you are.
+
+**A spotter now rouses its neighbours** — to suspicion, not alert. They turn toward where you were seen and search, which keeps concealment playable instead of ending the fight the instant one body glances the right way.
+
+**Execution was the only player attack in the file that made no sound at all.** Every other one emits, from the knife sequence's 260 to the sweep's 470; Execution emitted nothing. So a room could be cleared one body at a time with nobody ever reacting — room 4 ran six executions, **four of four kills made alone, zero damage taken, 0.04 mean engagement.** It now emits on impact rather than on commitment, which matters because the wind-up is 1.16s and waking the victim inside its own execution defeats the point. **Its cost is also doubled, 30 → 60 raw**, spending 39 where it spent 19.5.
+
+**The knife no longer interrupts with its opening cuts.** *"Knowing my attack is faster than everyone else and staggers them immediately made melee combat trivial."* Weight earns the right to cut a committed attack down; speed does not. Phases 1 and 2 no longer apply a hit reaction — posture still accumulates, so a full sequence still adds to a break, and the later phases and Execution keep their teeth. The sword is untouched.
+
+**The Ox runs its line through its own side.** Its stated trait is that it runs until it hits something, and the one thing it reliably failed to run through was its allies. Restricted to `unstoppable` — the Ox alone today, because if every charger ploughed through, formations would dissolve on contact and the arrangement would stop meaning anything. No slowdown on the pass, and credit goes to the player who chose the ground. Measured: **355 units travelled through an ally that took 7 on the way past.**
+
+**The bow leaves a record.** A Sharpshooter run produced `Strike diagnostics: 0` in every room, because the strike log is built from a melee sector and a projectile has none — the class we could see least was the one carrying an open "might be too strong" against it. Rooms now report **shots fired, hit, and blocked by a guard**.
+
+**Formations bias toward coverage.** One reporting run gave column four rooms, cluster and crossfire and retinue one each, and screen_line none. Selection now prefers the least-used formation so far in the run, within the set the roster's bands can host — so one run covers the library instead of four rooms of one arrangement.
+
+`docs/survey-archive-findings.md` records a caveat that has already misled this analysis twice: **rooms are rated in isolation, and a journey has pacing.** Two respite rooms scored 2/2/2 and were read as composition failures. *"Not every room has to be engaging if it isn't meant to."* Respite scores are uninterpretable until the same room is rated inside a sequence.
 
 ### v0.2.44: Concealment that conceals, and a screen that screens
 

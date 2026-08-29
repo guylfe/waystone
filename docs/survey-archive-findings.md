@@ -18,6 +18,23 @@ these numbers is in the scratch directory referenced by the commit that added th
 
 ---
 
+## Rooms are rated in isolation; a journey has pacing
+
+**Read every rating with this caveat or the analysis will chase the wrong defects.** The
+Combat Survey presents rooms one after another and asks for a score on each as a thing in
+itself. A journey will not: rooms will sit in sequence, and some of them exist to be a
+breather between two that are not.
+
+This has already misled the analysis twice. Two separate respite rooms scored 2/2/2 and
+were read here as failures of composition -- `0.2.40` room 6 and `0.2.44` room 6, both
+three-body rooms. The correction, from the tester: *"Not every room has to be engaging if
+it isn't meant to. I just didn't know its purpose. What we are rating right now is each
+room in isolation, this is different than how we'd have them in journeys."*
+
+So: a low score on a `respite` room is not evidence of anything until the same room is
+rated inside a sequence. Weight `opening`, `pressure` and `climax` rooms when judging
+composition, and treat `respite` scores as uninterpretable for now.
+
 ## 1. The one variable that matters
 
 | non-melee enemies in the room | rooms | mean fun |

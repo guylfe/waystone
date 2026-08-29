@@ -197,6 +197,11 @@ const GROUP_PURSUIT_REACH := 460.0
 const SURVEY_ARENA_CENTER := Vector2(850.0, 700.0)
 const SURVEY_ARENA_RADIUS := 650.0
 const SURVEY_ARENA_MARGIN := 80.0
+# Actions that leave an enemy uncommitted. Anything NOT on this list is a body that has
+# thrown itself at the player and therefore knows exactly where they are.
+const NON_COMMITTAL_ACTION_KINDS := ["idle", "move", "hit_reaction", "stagger", "evade", "chant", "parry_stance"]
+# How far a spotter's shout carries. Suspicion, not alert: neighbours turn and look.
+const SPOTTER_ROUSE_RADIUS := 320.0
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
 # selects Warden, Brute, Knight and Ox and excludes Shield (1.35), Boar (1.25) and
 # Polearm (1.15) -- the previous hardcoded list plus the Ox, which had been in
@@ -294,7 +299,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.44"
+const GAME_VERSION := "0.2.45"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -360,6 +365,10 @@ var stealth_cooldown_pending := false
 # but derives the cooldown from it, which is how a cancelled hide gets a short one.
 var stealth_stamina_paid := 0.0
 var _stealth_last_ended_at := -1.0
+# How often each arrangement has been drawn this run. Left to chance, one run gave
+# column four rooms and screen_line none -- and the whole reason for authoring
+# formations was to find out which ones work, which needs each of them played.
+var _formation_use_counts: Dictionary = {}
 # Why the last hide ended. "expired" is the only outcome the player paid for in full.
 var stealth_last_end_reason := ""
 # The last amount _spend_stamina actually priced, so a cooldown can be derived from
@@ -374,6 +383,12 @@ var subclass_ability_cooldown_max := 8.0
 # How long a ranged body survives before the player is standing on top of it. "An
 # archer that spawns next to me is just a blob I have to hit before fighting the rest
 # of the room" -- that is a claim about time, and until now it was unmeasurable.
+# A bow run produced `Strike diagnostics: 0` in every room, because the strike log is
+# built from a melee sector and a projectile has none. The Sharpshooter was the class we
+# could see least, and the one carrying an open "might be too strong" against it.
+var survey_shots_fired := 0
+var survey_shots_hit := 0
+var survey_shots_blocked := 0
 var survey_reach_times: Array[Dictionary] = []
 var survey_stealth_entries_total := 0
 var survey_stealth_cancels_total := 0
@@ -658,6 +673,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	stealth_cooldown_pending = false
 	stealth_stamina_paid = 0.0
 	_stealth_last_ended_at = -1.0
+	_formation_use_counts.clear()
 	_last_stamina_spend = 0.0
 	skill_cooldown_max = 6.5
 	advance_cooldown_max = 6.0
@@ -756,6 +772,9 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
 	survey_reach_times.clear()
+	survey_shots_fired = 0
+	survey_shots_hit = 0
+	survey_shots_blocked = 0
 	survey_stealth_entries_total = 0
 	survey_stealth_cancels_total = 0
 	survey_stealth_quick_reentries_total = 0
@@ -1351,6 +1370,15 @@ func _formation_band_for_role(role: String) -> String:
 # One meaning for mass throughout, and no second roster to drift out of sync.
 # Called wherever the player's own damage lands. Records the first time each body was
 # reached, measured from the start of the room in world time.
+# Every path where the player's own damage lands. An action carrying `impact_sound`
+# announces itself here, once, on contact.
+func _on_player_hit_landed(enemy: Dictionary) -> void:
+	var loudness := float(player_action.get("impact_sound", 0.0))
+	if loudness > 0.0 and not bool(player_action.get("impact_sound_done", false)):
+		player_action["impact_sound_done"] = true
+		_emit_sound(player_pos, loudness)
+	_note_player_reached(enemy)
+
 func _note_player_reached(enemy: Dictionary) -> void:
 	if mode_id != ModeRulesScript.COMBAT_SURVEY or bool(enemy.get("survey_reached", false)): return
 	enemy["survey_reached"] = true
@@ -1491,6 +1519,12 @@ func _survey_choose_formation(group: Array, room_rng: RandomNumberGenerator, use
 		# than a second arrangement, because two identical groups measure one thing.
 		var score := float(seated) * 10.0 - absf(float(Array(template["slots"]).size() - group.size())) + room_rng.randf() * 2.0
 		if used_ids.has(String(template["id"])): score -= 6.0
+		# Coverage, not assignment. Pinning a formation to a room index would weld it to
+		# that room's tier and pacing, so crossfire would always draw room 1's easy roster
+		# and the comparison would be worthless. Biasing toward the least-played
+		# arrangement keeps band-compatibility as the filter and rosters varied, while
+		# turning "four columns and no screen line" into roughly two of each.
+		score -= float(_formation_use_counts.get(String(template["id"]), 0)) * 4.5
 		if score > best_score:
 			best_score = score
 			best = template
@@ -1552,6 +1586,7 @@ func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, play
 		var group: Array = groups[group_index]
 		var template := _survey_choose_formation(group, room_rng, used_ids)
 		used_ids[String(template["id"])] = true
+		_formation_use_counts[String(template["id"])] = int(_formation_use_counts.get(String(template["id"]), 0)) + 1
 		formation_ids.append(String(template["id"]))
 		var has_rear := false
 		for entry in group:
@@ -1803,6 +1838,9 @@ func _complete_survey_room(outcome: String) -> void:
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
 		"reach_times": survey_reach_times.duplicate(true),
+		"shots_fired": survey_shots_fired,
+		"shots_hit": survey_shots_hit,
+		"shots_blocked": survey_shots_blocked,
 		"stealth_entries": survey_stealth_entries_total - int(survey_room_entry.get("stealth_entries", survey_stealth_entries_total)),
 		"stealth_cancels": survey_stealth_cancels_total - int(survey_room_entry.get("stealth_cancels", survey_stealth_cancels_total)),
 		"stealth_quick_reentries": survey_stealth_quick_reentries_total - int(survey_room_entry.get("stealth_quick_reentries", survey_stealth_quick_reentries_total)),
@@ -2731,7 +2769,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	_set_message("The Knife sequence begins. Hold to continue cutting.")
 
 func request_execution(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(30.0): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(EXECUTION_STAMINA): return false
 	player_facing = direction.normalized()
 	var execution_damage := _player_physical_damage(8)
 	player_action = _melee_action(1.16, 0.34, 0.45, 92.0, execution_damage, player_facing, "knife_falling_cut", "sweep")
@@ -2747,6 +2785,15 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 	player_action["execution_target_was_unaware"] = not execution_target.is_empty() and String(execution_target.get("awareness", "idle")) != "alerted"
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_execution")
+	# It was the only player attack in the file that made no sound at all -- every other
+	# one emits, from the knife sequence's 260 to the sweep's 470. So a room could be
+	# cleared one body at a time with nobody ever reacting: 0.2.44 room 4 ran six
+	# executions, four of four kills made alone, zero damage taken, 0.04 mean engagement.
+	#
+	# Carried on the action and emitted when the blow LANDS. Emitting it at request time
+	# announced the approach instead: the victim woke during the 1.16s wind-up and walked
+	# out of its own execution.
+	player_action["impact_sound"] = 260.0
 	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_set_message("You commit to Execution.")
 	if simulate_immediately: _simulate_until_ready()
@@ -2809,6 +2856,13 @@ func _enemy_has_eyes_on_player(enemy: Dictionary) -> bool:
 	var offset := player_pos - enemy_pos
 	var distance := offset.length()
 	if offset.length_squared() < 0.001: return true
+	# Something mid-swing or mid-shot at the player knows precisely where they are,
+	# whatever its facing has drifted to and whatever its notice range says. An Archer
+	# sees 620 less 14 per point of stealth -- 522 against a Rogue -- so one could put an
+	# arrow into the player from beyond that and still fail the cone test while the shot
+	# was in the air. That is the 0.2.44 report: "an archer shot me and I was able to
+	# stealth as it was doing it, meaning he was aware of my exact location."
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) not in NON_COMMITTAL_ACTION_KINDS: return true
 	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	var within_cone := distance <= 105.0 or (distance <= _enemy_vision_range(enemy) and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
 	return within_cone and _has_line_of_sight(enemy_pos, player_pos)
@@ -2981,6 +3035,10 @@ func resume_combo_hold() -> bool:
 # action that refills faster than its advantage decays, so the sweep keeps the
 # full 56 while everything around it scales -- roughly one and a half combos.
 const SWEEPING_CUT_STAMINA := 86.0
+# Doubled from 30. A silent, cheap, high-damage opener with no wind-up was worth
+# spamming; noise alone might have restrained it, but the price is the part that makes
+# choosing it a decision rather than a default.
+const EXECUTION_STAMINA := 60.0
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA):
@@ -3865,6 +3923,7 @@ func _restore_at_waystone() -> void:
 	stealth_cooldown_pending = false
 	stealth_stamina_paid = 0.0
 	_stealth_last_ended_at = -1.0
+	_formation_use_counts.clear()
 	_last_stamina_spend = 0.0
 	skill_cooldown_max = 6.5
 	advance_cooldown_max = 6.0
@@ -4556,7 +4615,7 @@ func _resolve_advance_impact() -> void:
 		var damage := int(resolved["damage"])
 		enemy["hp"] = int(enemy["hp"]) - damage
 		damage_dealt += damage
-		_note_player_reached(enemy)
+		_on_player_hit_landed(enemy)
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
 		var posture_broken := _apply_posture_damage(enemy, float(resolved["posture"]), impact)
 		enemy["pos"] = _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"]))
@@ -4747,10 +4806,10 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		var posture := float(resolved["posture"])
 		enemy["hp"] = int(enemy["hp"]) - damage
 		damage_dealt += damage
-		_note_player_reached(enemy)
+		_on_player_hit_landed(enemy)
 		var posture_broken := _apply_posture_damage(enemy, posture, hit_point)
 		var reaction_applied := false
-		if not posture_broken: reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
+		if not posture_broken and _player_hit_can_interrupt(): reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
 		pending_awareness.append({"enemy": enemy, "result": resolved})
 		for blade in range(blade_count):
 			var blade_offset := player_facing.rotated(PI * 0.5) * (float(blade) - 0.5 * float(blade_count - 1)) * 8.0
@@ -4954,10 +5013,10 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			posture_damage = float(resolved["posture"])
 			enemy["hp"] = int(enemy["hp"]) - dealt
 			damage_dealt += dealt
-			_note_player_reached(enemy)
+			_on_player_hit_landed(enemy)
 			var posture_broken := _apply_posture_damage(enemy, posture_damage, hit_point)
 			var reaction_applied := false
-			if not posture_broken:
+			if not posture_broken and _player_hit_can_interrupt():
 				reaction_applied = _apply_enemy_hit_reaction(enemy, posture_damage, awareness_before, action_before, hit_point, player_action)
 			if enemy_committed and int(track_property_ranks.get("openings_composure", 0)) > 0:
 				dodge_cooldown = maxf(0.0, dodge_cooldown - 0.25)
@@ -5291,6 +5350,16 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	_set_message("The %s loses its footing." % kind)
 	return true
 
+# "Knowing my attack is faster than everyone else and staggers them immediately made
+# melee combat trivial." Weight earns the right to cut a committed attack down; speed
+# does not. The knife's opening cuts no longer interrupt -- posture still accumulates,
+# so a full sequence still adds up to a break, and the later phases and Execution keep
+# their teeth. This is the one place the Rogue's speed is allowed to cost it something.
+func _player_hit_can_interrupt() -> bool:
+	if player_weapon_frame not in ["knife", "twin_knives"]: return true
+	if String(player_action.get("kind", "idle")) != "combo": return true
+	return int(player_action.get("phase_index", 0)) >= 2
+
 func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_before: String, action_before: Dictionary, contact: Vector2 = Vector2.INF, source_action: Dictionary = {}) -> bool:
 	if int(enemy.get("hp", 0)) <= 0: return false
 	if not bool(source_action.get("allow_hit_reaction", true)): return false
@@ -5406,9 +5475,11 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 	var execution_holds_unaware := String(player_action.get("ability_id", "")) == "knife_execution" and int(player_action.get("execution_target_id", -1)) == int(enemy.get("id", -2)) and float(player_action.get("elapsed", 0.0)) <= float(player_action.get("active_end", 0.0)) and not Array(player_action.get("hit_ids", [])).has(int(enemy.get("id", -2)))
 	var sees_player := not execution_holds_unaware and stealth_remaining <= 0.0 and within_cone and _sample_enemy_player_los(enemy, enemy_pos, dt)
 	if sees_player:
+		var already_alerted := String(enemy.get("awareness", "idle")) == "alerted"
 		enemy["awareness"] = "alerted"
 		enemy["alert_remaining"] = 3.0
 		enemy["last_known_player"] = player_pos
+		if not already_alerted: _rouse_neighbours(enemy)
 		return
 	var sound_sequence := int(last_sound.get("sequence", 0))
 	if sound_sequence > int(enemy.get("heard_sound_sequence", 0)):
@@ -5428,6 +5499,42 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 		if float(enemy["suspicious_remaining"]) <= 0.0:
 			enemy["awareness"] = "idle"
 		enemy["action"] = _idle_action()
+
+# "If an enemy notices me, the natural way to work is that enemies around that enemy
+# become alerted as well." Suspicion rather than alert: they turn toward where the
+# player was seen and search, which keeps concealment playable instead of ending the
+# fight the instant one body glances the right way.
+# "Might be a good idea to have ox ram through allies. It getting stuck behind other
+# enemies is anticlimactic, and having him possibly attack its friends could provide
+# tactical fun." Its stated trait is that it runs its line until it hits something, and
+# the one thing it reliably failed to run through was its own side.
+#
+# Restricted to `unstoppable`, which is the Ox alone today. If every charger ploughed
+# through its allies, formations would dissolve on contact and the arrangement would
+# stop meaning anything -- which is the whole point of authoring them. No slowdown on
+# the pass either: unstoppable should mean it. Credit goes to the player, who chose the
+# ground this happens on.
+func _gore_allies_in_path(charger: Dictionary, origin: Vector2, finish: Vector2, action: Dictionary) -> void:
+	var gored: Array = action.get("gored_ids", [])
+	var charger_id := int(charger.get("id", -2))
+	var reach := float(charger.get("radius", ENEMY_RADIUS))
+	for other in _nearby_enemies(origin, origin.distance_to(finish) + reach + 90.0):
+		var other_id := int(other.get("id", -1))
+		if other_id == charger_id or gored.has(other_id): continue
+		if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
+		if _segment_distance_to_point(origin, finish, Vector2(other["pos"])) > reach + float(other.get("radius", ENEMY_RADIUS)): continue
+		gored.append(other_id)
+		_damage_enemy_from_consumable(other, int(action.get("damage_max", action.get("damage", 10))), 4.0, Vector2(other["pos"]))
+	action["gored_ids"] = gored
+
+func _rouse_neighbours(spotter: Dictionary) -> void:
+	for other in _nearby_enemies(Vector2(spotter["pos"]), SPOTTER_ROUSE_RADIUS):
+		if int(other.get("id", -1)) == int(spotter.get("id", -2)): continue
+		if int(other.get("hp", 0)) <= 0 or not _enemy_on_current_layer(other): continue
+		if String(other.get("awareness", "idle")) == "alerted": continue
+		other["awareness"] = "suspicious"
+		other["suspicious_remaining"] = maxf(float(other.get("suspicious_remaining", 0.0)), 3.0)
+		other["last_known_player"] = player_pos
 
 func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) -> bool:
 	# Perception does not need to repeat an identical wall query at combat's
@@ -5623,7 +5730,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				_resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 			var charge_origin := Vector2(enemy["pos"])
-			enemy["pos"] = _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
+			var ploughs_through := bool(action.get("unstoppable", false))
+			enemy["pos"] = _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]), ploughs_through)
+			if ploughs_through: _gore_allies_in_path(enemy, charge_origin, Vector2(enemy["pos"]), action)
 			if Vector2(enemy["pos"]).is_equal_approx(charge_origin):
 				# Released before the action is replaced -- afterwards the charge
 				# dictionary and its record are already gone.
@@ -6852,6 +6961,7 @@ func _spawn_bow_projectile(action: Dictionary) -> void:
 		"full_draw": bool(action.get("full_draw", false)),
 		"layer": current_layer,
 	})
+	survey_shots_fired += 1
 	_break_stealth_for_hostile_action()
 	_emit_sound(player_pos, 430.0)
 
@@ -6863,6 +6973,7 @@ func _spawn_bow_art_projectiles(piercing: bool, direction: Vector2) -> void:
 		for offset in [-0.16, 0.0, 0.16]:
 			var ray := base.rotated(float(offset))
 			projectiles.append({"pos": player_pos + ray * 34.0, "vel": ray * 720.0, "radius": 7.0, "damage": 6, "posture": 0.7, "kind": "fan_arrow", "friendly": true, "aimed_projectile": true, "source_id": 0, "travelled": 0.0, "max_range": 380.0 * _aimed_projectile_range_multiplier(), "piercing": false, "hit_ids": [], "layer": current_layer})
+	survey_shots_fired += 1
 	_break_stealth_for_hostile_action()
 	_emit_sound(player_pos, 520.0)
 
@@ -7009,6 +7120,7 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var flight := Vector2(projectile.get("vel", Vector2.ZERO))
 	if flight.length_squared() > 0.001 and _enemy_blocks_incoming(enemy, -flight.normalized()):
 		_add_effect("block", contact)
+		survey_shots_blocked += 1
 		enemy["last_known_player"] = player_pos
 		if String(enemy.get("awareness", "idle")) != "alerted":
 			enemy["awareness"] = "suspicious"
@@ -7025,12 +7137,13 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 		"allow_hit_reaction": projectile_kind != "player_arrow" or draw_ratio >= 0.72,
 		"ranged_draw_ratio": draw_ratio,
 	}
+	survey_shots_hit += 1
 	var resolved := _resolve_player_physical_values(enemy, int(projectile.get("damage", 0)), float(projectile.get("posture", 0.0)), source_action)
 	var damage := int(resolved["damage"])
 	var posture := float(resolved["posture"])
 	enemy["hp"] = int(enemy["hp"]) - damage
 	damage_dealt += damage
-	_note_player_reached(enemy)
+	_on_player_hit_landed(enemy)
 	var posture_broken := _apply_posture_damage(enemy, posture, contact)
 	var reaction_applied := false
 	if not posture_broken:
@@ -7558,18 +7671,21 @@ func _displace_light_bodies(position: Vector2, radius: float, local_enemies: Arr
 		enemy["pos"] = _move_actor(enemy_pos, away.normalized() * overlap, float(enemy["radius"]), int(enemy["id"]))
 		_update_enemy_bucket_membership(enemy)
 
-func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int) -> Vector2:
+func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false) -> Vector2:
 	# Both axis candidates share the same nearby geometry. Querying the spatial
 	# buckets twice was a major dense-crowd movement cost with no behavior gain.
 	var query_padding := delta.length() + 8.0
 	var local_walls := _nearby_walls(origin, radius + query_padding)
 	var local_enemies := _nearby_enemies(origin, radius + delta.length() + 80.0)
+	# An unstoppable charge is stopped by geometry, never by a body.
+	var no_bodies: Array[Dictionary] = []
+	var blocking_bodies := no_bodies if ignore_bodies else local_enemies
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, local_enemies):
+	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, local_enemies):
+	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.y = candidate.y
 	if actor_id == 0: _displace_light_bodies(result, radius, local_enemies)
 	return result

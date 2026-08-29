@@ -1374,6 +1374,10 @@ func hidden_trial(awareness: String) -> Dictionary:
 	foe["last_known_player"] = state.player_pos
 	foe["alert_remaining"] = 3.0
 	foe["suspicious_remaining"] = 6.0
+	# Explicit, because "alerted" alone stopped meaning "can see you" in 0.2.44 -- the
+	# gate is eyes on the player now, so a test about refusal has to put eyes on them.
+	# Suspicious enemies never reach the gate at all, so this only binds the alerted case.
+	foe["facing"] = Vector2.LEFT
 	state.enemies.assign([foe])
 	state._invalidate_active_enemy_cache()
 	var entered := state.request_stealth(false)
