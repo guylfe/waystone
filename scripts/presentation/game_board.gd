@@ -116,6 +116,15 @@ var combat_rule_rects: Dictionary = {}
 # the same condition the simulation uses to decide whether a room is custom.
 # Dev holds the two testing instruments. Survey draws its rooms; Custom is the same
 # machinery with the roster and arrangement specified by hand.
+# Two screens, not one. Everything used to be laid out at once -- three mode chips, a
+# class list, a profile pair, a rules pair, a seed field and a start button -- and the
+# class rects were computed by their own function anchored independently of _layout().
+# Once the mode stack moved up to make room, the two overlapped in portrait and the class
+# handler, which runs first, swallowed every tap meant for the rows beneath it. Splitting
+# the screen removes the collision by construction rather than by arithmetic.
+var setup_stage := "root"
+var setup_back_rect := Rect2()
+var setup_class_rects: Dictionary = {}
 var setup_dev_section := "survey"
 var dev_section_rects: Dictionary = {}
 var custom_room_open := false
@@ -819,65 +828,54 @@ func _layout() -> void:
 	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
 	var setup_gap := clampf(minf(layout_size.x, layout_size.y) * 0.018, 8.0, 20.0)
-	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.44, 580.0)
-	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5 if portrait else safe_layout_rect.end.x - setup_width - 24.0
-	if portrait:
-		# Dev carries two more rows than the other modes -- the section pair and, in Custom,
-		# the configure button -- so its stack starts higher or the start button walks off
-		# the bottom of a phone.
-		var setup_center_y := layout_origin.y + layout_size.y * (0.42 if setup_mode == "combat_survey" else 0.57)
-		var option_width := (setup_width - setup_gap * 2.0) / 3.0
-		progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
-		progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
-		progression_rects["combat_survey"] = Rect2(setup_left + (option_width + setup_gap) * 2.0, setup_center_y, option_width, 74.0)
-		var profile_width := (setup_width - setup_gap) * 0.5
-		var row := setup_center_y + 84.0
-		if setup_mode == "combat_survey":
-			dev_section_rects["survey"] = Rect2(setup_left, row, profile_width, 48.0)
-			dev_section_rects["custom"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 48.0)
-			row += 58.0
-		survey_profile_rects["encounter"] = Rect2(setup_left, row, profile_width, 48.0)
-		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 48.0)
-		combat_rule_rects["recovery"] = Rect2(setup_left, row + 58.0, profile_width, 48.0)
-		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, row + 58.0, profile_width, 48.0)
-		row += 116.0
-		# Placed BEFORE the seed field, because the seed field is a real LineEdit node and
-		# draws over anything the canvas paints underneath it -- which is exactly how the
-		# first version of this button ended up invisible.
-		if _custom_section_active():
-			custom_open_rect = Rect2(setup_left, row, setup_width, 46.0)
-			row += 56.0
-		else:
-			custom_open_rect = Rect2()
-		seed_input.position = Vector2(setup_left, row)
-		seed_input.size = Vector2(setup_width, 58.0)
-		start_rect = Rect2(setup_left, seed_input.position.y + 68.0, setup_width, 72.0)
-	else:
-		var setup_top := layout_origin.y + 78.0
-		var mode_height := clampf((layout_size.y * 0.48 - setup_gap * 2.0) / 3.0, 50.0, 64.0)
+	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.52, 620.0)
+	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5
+	setup_class_rects.clear()
+	if setup_stage == "root":
+		# Three buttons and nothing else. Any additional control on this screen is another
+		# chance to overlap something.
+		seed_input.visible = false
+		setup_back_rect = Rect2()
+		custom_open_rect = Rect2()
+		start_rect = Rect2()
+		var button_height := clampf(layout_size.y * 0.13, 76.0, 132.0)
+		var stack_height := button_height * 3.0 + setup_gap * 2.0
+		var stack_top := layout_origin.y + (layout_size.y - stack_height) * 0.5
 		for index in range(3):
 			var mode_id: String = ["expedition", "campaign_lab", "combat_survey"][index]
-			progression_rects[mode_id] = Rect2(setup_left, setup_top + float(index) * (mode_height + setup_gap), setup_width, mode_height)
-		var profile_top := setup_top + 3.0 * (mode_height + setup_gap)
-		var profile_width := (setup_width - setup_gap) * 0.5
-		var row := profile_top
+			progression_rects[mode_id] = Rect2(setup_left, stack_top + float(index) * (button_height + setup_gap), setup_width, button_height)
+	else:
+		seed_input.visible = true
+		var row := layout_origin.y + 74.0
+		setup_back_rect = Rect2(setup_left, layout_origin.y + 16.0, clampf(setup_width * 0.32, 96.0, 160.0), 44.0)
+		var class_height := clampf(layout_size.y * 0.052, 44.0, 62.0)
+		var choices := CombatCatalogScript.loadout_ids()
+		for index in range(choices.size()):
+			setup_class_rects[String(choices[index])] = Rect2(setup_left, row + float(index) * (class_height + 6.0), setup_width, class_height)
+		row += float(choices.size()) * (class_height + 6.0) + 12.0
+		var half := (setup_width - setup_gap) * 0.5
+		var option_height := clampf(layout_size.y * 0.045, 40.0, 52.0)
 		if setup_mode == "combat_survey":
-			dev_section_rects["survey"] = Rect2(setup_left, row, profile_width, 42.0)
-			dev_section_rects["custom"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 42.0)
-			row += 50.0
-		survey_profile_rects["encounter"] = Rect2(setup_left, row, profile_width, 42.0)
-		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 42.0)
-		combat_rule_rects["recovery"] = Rect2(setup_left, row + 50.0, profile_width, 42.0)
-		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, row + 50.0, profile_width, 42.0)
-		row += 100.0
+			dev_section_rects["survey"] = Rect2(setup_left, row, half, option_height)
+			dev_section_rects["custom"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
+			row += option_height + 8.0
+			survey_profile_rects["encounter"] = Rect2(setup_left, row, half, option_height)
+			survey_profile_rects["attrition"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
+			row += option_height + 8.0
+			combat_rule_rects["recovery"] = Rect2(setup_left, row, half, option_height)
+			combat_rule_rects["stamina"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
+			row += option_height + 8.0
+		# Before the seed field, never under it: seed_input is a real LineEdit node and
+		# paints over anything the canvas draws beneath it.
 		if _custom_section_active():
-			custom_open_rect = Rect2(setup_left, row, setup_width, 42.0)
-			row += 50.0
+			custom_open_rect = Rect2(setup_left, row, setup_width, option_height)
+			row += option_height + 8.0
 		else:
 			custom_open_rect = Rect2()
 		seed_input.position = Vector2(setup_left, row)
-		seed_input.size = Vector2(setup_width, 50.0)
-		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, safe_layout_rect.end.y - seed_input.position.y - 68.0))
+		seed_input.size = Vector2(setup_width, clampf(layout_size.y * 0.05, 44.0, 56.0))
+		row += seed_input.size.y + 10.0
+		start_rect = Rect2(setup_left, row, setup_width, clampf(minf(layout_size.y * 0.07, safe_layout_rect.end.y - row - 8.0), 44.0, 72.0))
 	_layout_custom_room_panel()
 	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
@@ -1135,16 +1133,32 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		if archive_button_rect.has_point(position):
 			_build_survey_archive_overlay()
 			return
+		# The overlay eats every press while it is up, so a stray tap cannot reach the
+		# screen behind it.
+		if custom_room_open:
+			_handle_custom_room_press(position)
+			return
+		if setup_stage == "root":
+			# Three buttons, and nothing else can be hit. Choosing a path is the only
+			# decision this screen offers.
+			for mode in progression_rects:
+				if Rect2(progression_rects[mode]).has_point(position):
+					setup_mode = String(mode)
+					if setup_mode != "combat_survey": setup_combat_rules = "stamina"
+					setup_stage = "options"
+					_layout()
+					return
+			return
+		if setup_back_rect.has_point(position):
+			setup_stage = "root"
+			seed_input.release_focus()
+			_layout()
+			return
 		for choice in CombatCatalogScript.loadout_ids():
 			if _setup_class_rect(choice).has_point(position):
 				setup_loadout = choice
 				queue_redraw()
 				return
-		# The overlay eats every press while it is up, so a stray tap cannot start a run
-		# from behind it.
-		if custom_room_open:
-			_handle_custom_room_press(position)
-			return
 		if setup_mode == "combat_survey":
 			for section in dev_section_rects:
 				if Rect2(dev_section_rects[section]).has_point(position):
@@ -1155,12 +1169,6 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			custom_room_open = true
 			_layout()
 			return
-		for mode in progression_rects:
-			if Rect2(progression_rects[mode]).has_point(position):
-				setup_mode = String(mode)
-				if setup_mode != "combat_survey": setup_combat_rules = "stamina"
-				_layout()
-				return
 		if setup_mode == "combat_survey":
 			for profile in survey_profile_rects:
 				if Rect2(survey_profile_rects[profile]).has_point(position):
@@ -1550,15 +1558,37 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if playing or event.echo: return
 	if not state.run_active:
+		# The keyboard has to obey the same two screens as the touch path, or Enter starts
+		# a run from a screen that never offered a class, a rule set or a room spec.
+		if custom_room_open:
+			if event.keycode == KEY_ESCAPE:
+				custom_room_open = false
+				_layout()
+			return
+		if setup_stage == "root":
+			match event.keycode:
+				KEY_TAB:
+					var modes := ["expedition", "campaign_lab", "combat_survey"]
+					setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
+					if setup_mode != "combat_survey": setup_combat_rules = "stamina"
+				KEY_ENTER:
+					setup_stage = "options"
+					_layout()
+				_: return
+			queue_redraw()
+			return
 		match event.keycode:
 			KEY_1: setup_loadout = "warrior"
 			KEY_2: setup_loadout = "rogue_acrobat"
 			KEY_3: setup_loadout = "rogue_sharpshooter"
-			KEY_TAB:
-				var modes := ["expedition", "campaign_lab", "combat_survey"]
-				setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
-				if setup_mode != "combat_survey": setup_combat_rules = "stamina"
+			KEY_ESCAPE:
+				setup_stage = "root"
+				seed_input.release_focus()
 				_layout()
+			KEY_TAB:
+				if setup_mode == "combat_survey":
+					setup_dev_section = "custom" if setup_dev_section == "survey" else "survey"
+					_layout()
 			KEY_ENTER: _start_run()
 			_: return
 		queue_redraw()
@@ -4252,10 +4282,20 @@ func _draw_setup() -> void:
 	var body_font := maxi(14, int(title_font * 0.44))
 	var heading_x := layout.position.x if portrait else layout.position.x + 24.0
 	var heading_width := layout.size.x if portrait else minf(layout.size.x * 0.42, 520.0)
-	draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
-	draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.23 if portrait else 0.17)), "Choose a prototype class and rule set", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
-	if desktop_controls and portrait:
-		draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
+	# The title only belongs on the root screen. On the options screen everything above the
+	# class list is spoken for by the back button, and a heading drawn at 0.16 of the height
+	# would sit straight on top of it -- the same collision this restructure exists to end.
+	if setup_stage == "root":
+		draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
+		draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.23 if portrait else 0.17)), "Choose a path", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
+		if desktop_controls and portrait:
+			draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
+	else:
+		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else "DEV · SURVEY ROOMS" if setup_dev_section == "survey" else "DEV · CUSTOM ROOM"
+		draw_rect(setup_back_rect, Color("17272d"))
+		draw_rect(setup_back_rect, Color("718087"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, 14, Color("d7dddd"))
+		draw_string(ThemeDB.fallback_font, Vector2(setup_back_rect.end.x + 14.0, setup_back_rect.position.y + setup_back_rect.size.y * 0.68), heading, HORIZONTAL_ALIGNMENT_LEFT, layout.size.x, 16, Color("f2e7c8"))
 	for choice in CombatCatalogScript.loadout_ids():
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
@@ -4308,6 +4348,9 @@ func _draw_setup() -> void:
 	draw_rect(archive_button_rect, Color("10191e"))
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
+	if setup_stage == "root":
+		if custom_room_open: _draw_custom_room_panel()
+		return
 	if custom_room_open: _draw_custom_room_panel()
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
@@ -4321,17 +4364,10 @@ func _draw_survey_end_button() -> void:
 	var label := "END RUN"
 	draw_string(ThemeDB.fallback_font, survey_end_rect.position + Vector2(0, survey_end_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, survey_end_rect.size.x, maxi(8, int(survey_end_rect.size.y * 0.26)), Color("f0d2cf"))
 
+# Read from what _layout() produced. This used to compute its own geometry, which is how
+# it came to overlap the rows beneath it -- two sources of truth for one screen.
 func _setup_class_rect(choice: String) -> Rect2:
-	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
-	var portrait := layout.size.y >= layout.size.x
-	var total_width := minf(layout.size.x * 0.84, 760.0) if portrait else minf(layout.size.x * 0.42, 520.0)
-	var choices := CombatCatalogScript.loadout_ids()
-	var index := maxi(0, choices.find(choice))
-	var gap := 10.0
-	var height := clampf(layout.size.y * 0.052, 48.0, 66.0)
-	var left := layout.position.x + (layout.size.x - total_width) * 0.5 if portrait else layout.position.x + 24.0
-	var top := layout.position.y + layout.size.y * 0.305 if portrait else layout.position.y + 110.0
-	return Rect2(Vector2(left, top + float(index) * (height + gap)), Vector2(total_width, height))
+	return Rect2(setup_class_rects.get(choice, Rect2()))
 
 func _upgrade_leave_rect() -> Rect2:
 	return Rect2(Vector2(board_rect.get_center().x - 80.0, board_rect.end.y - 72.0), Vector2(160.0, 48.0))

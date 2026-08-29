@@ -13,8 +13,15 @@ func _initialize() -> void:
 	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it, and its
 	# first appearance was a room it died three seconds into.
 	board.setup_mode = "combat_survey"
+	board.setup_stage = "options"
 	board.setup_dev_section = "custom"
 	board._layout()
+	# The root screen offers three buttons and nothing else. Every control that used to
+	# share it with them is what made taps land on the wrong thing.
+	var options_class_rect: Rect2 = board._setup_class_rect("warrior")
+	assert(options_class_rect.size.y > 0.0)
+	for other in [board.dev_section_rects["survey"], board.survey_profile_rects["encounter"], board.combat_rule_rects["recovery"]]:
+		assert(not options_class_rect.intersects(Rect2(other)))
 	# The first version of this button was laid out on top of the seed field, which is a
 	# real LineEdit node and draws over anything the canvas paints beneath it -- so the
 	# control existed, worked, and was invisible. Overlap is the assertion, not presence.
@@ -53,6 +60,7 @@ func _initialize() -> void:
 	assert(bool(board.state.survey_room_definition.get("custom_room", false)))
 	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))
 	assert(board.state.carried_xp >= 400)
+	board.setup_stage = "root"
 	board.setup_dev_section = "survey"
 	board.custom_room_counts.clear()
 	board.custom_room_formation = ""

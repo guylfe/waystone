@@ -1,6 +1,21 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.48` (Android version code `248`).
+Current prototype version: `0.2.49` (Android version code `249`).
+
+### v0.2.49: Two screens
+
+The setup screen was drawing everything at once — three mode chips, a class list, a profile pair, a rule pair, a seed field and a start button — and **a lot of it had stopped being clickable.**
+
+**The cause was two sources of truth for one screen.** `_setup_class_rect()` computed the class list's geometry itself, anchored at 0.305 of the layout height, entirely independently of `_layout()`. When `0.2.48` moved the mode stack up to 0.42 to make room for Dev's extra rows, the two overlapped in portrait — and because the class handler runs first in the press chain, it swallowed every tap meant for the rows underneath. Nothing was broken in isolation; the collision was the bug.
+
+**Now it is two screens.**
+
+- **Root** — `EXPEDITION`, `CAMPAIGN`, `DEV`. Three buttons and nothing else, so there is nothing left to collide with.
+- **Options** — chosen path's settings, with a `BACK` button: the class list for every path, and for Dev the `SURVEY ROOMS` / `CUSTOM ROOMS` pair plus profile and rule set. In Custom Rooms, `CUSTOM ROOM · OFF` opens the picker.
+
+`_setup_class_rect()` now reads what `_layout()` produced instead of recomputing it, which removes the possibility of the two disagreeing rather than fixing one instance of them disagreeing. The test asserts the class rect does not intersect the dev, profile or rule rows — the exact overlap that caused this.
+
+**The keyboard follows the same two screens.** `Enter` on root advances to options rather than starting a run that never offered a class or a rule set; `Escape` goes back; `Tab` cycles paths on root and toggles Survey/Custom in Dev.
 
 ### v0.2.48: Dev holds the instruments
 
