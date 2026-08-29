@@ -34,12 +34,27 @@ func _initialize() -> void:
 	assert(board.start_rect.end.y <= board.safe_layout_rect.end.y + 1.0)
 	board.custom_room_open = true
 	board._layout()
+	board._sync_setup_controls()
+	# The seed field is a node and paints over the canvas, so the picker is only actually
+	# on top if the field is hidden while it is up.
+	assert(not board.seed_input.visible)
 	assert(board.custom_kind_rects.has("ox"))
 	assert(board.custom_formation_rects.has("retinue"))
 	var ox_rect: Rect2 = board.custom_kind_rects["ox"]
 	for expected in [1, 2, 3, 0]:
 		board._handle_custom_room_press(ox_rect.get_center())
 		assert(int(board.custom_room_counts.get("ox", 0)) == expected)
+	# A tap always changes something. The cap used to freeze every chip below three once
+	# six bodies were picked, so a full room could not be emptied -- "chosen enemies can't
+	# be de-selected by tapping them again".
+	board.custom_room_counts.clear()
+	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar"]:
+		board._handle_custom_room_press(Rect2(board.custom_kind_rects[kind]).get_center())
+	assert(board._custom_room_total() == 6)
+	board._handle_custom_room_press(Rect2(board.custom_kind_rects["ox"]).get_center())
+	assert(not board.custom_room_counts.has("ox"))
+	assert(board._custom_room_total() == 5)
+	board.custom_room_counts.clear()
 	# Six bodies is the ceiling: the largest formation seats six, and a seventh would
 	# stand outside the arrangement under test.
 	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar", "bandit"]:

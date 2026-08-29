@@ -1,6 +1,20 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.49` (Android version code `249`).
+Current prototype version: `0.2.50` (Android version code `250`).
+
+### v0.2.50: The picker actually covers the screen
+
+Three faults in the custom room, all of them the same shape: something from the screen underneath was still live.
+
+**Chosen enemies could not be de-selected.** The six-body cap froze the tap: a chip below three counted `current + 1`, saw the room was full, and put the count back where it was. So once six bodies were picked every chip below three did nothing at all, and the only removable ones were those already at three. **A tap now always changes something** — when adding another would break the cap it clears that kind instead, so a full room can always be emptied.
+
+**The picker had the previous screen's buttons underneath it.** `_draw_setup()` drew the panel and then carried on drawing the start button and the archive button on top of it, and `seed_input` — a real `LineEdit` node — painted over everything regardless. The picker now **replaces** the screen: `_draw_setup()` returns immediately after drawing the panel, and the seed field is hidden while it is up. `_sync_setup_controls()` had to learn the same rule, because it was re-showing the field independently.
+
+**The archive button was reachable through the panel.** It was hit-tested *before* the overlay guard, in a corner the picker covers, so a tap there opened the archive from underneath. The overlay guard now comes first.
+
+**Every menu screen has a way back.** Options has `BACK`; the picker's `DONE` is now `BACK`, since its choices apply as they are made and there was never anything to confirm. The root screen is the root.
+
+The test asserts the seed field is hidden while the picker is open, and that a full room can be emptied by tapping.
 
 ### v0.2.49: Two screens
 

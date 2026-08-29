@@ -247,7 +247,9 @@ func _on_seed_submitted(_text: String) -> void:
 	if not state.run_active: _start_run()
 
 func _sync_setup_controls() -> void:
-	if seed_input != null: seed_input.visible = not state.run_active
+	# Not merely "no run yet": the field is a real node, so it paints over the picker and
+	# over the root screen unless it is hidden for both.
+	if seed_input != null: seed_input.visible = not state.run_active and setup_stage != "root" and not custom_room_open
 	_sync_survey_overlay()
 
 func _create_survey_overlay() -> void:
@@ -831,7 +833,7 @@ func _layout() -> void:
 	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.52, 620.0)
 	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5
 	setup_class_rects.clear()
-	if setup_stage == "root":
+	if setup_stage == "root" or custom_room_open:
 		# Three buttons and nothing else. Any additional control on this screen is another
 		# chance to overlap something.
 		seed_input.visible = false
@@ -1130,13 +1132,14 @@ func _gui_input(event: InputEvent) -> void:
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	if not state.run_active:
-		if archive_button_rect.has_point(position):
-			_build_survey_archive_overlay()
-			return
-		# The overlay eats every press while it is up, so a stray tap cannot reach the
-		# screen behind it.
+		# The overlay eats every press while it is up, so nothing behind it is reachable.
+		# This has to come before the archive button, which sits in a corner the picker
+		# covers -- otherwise a tap there opens the archive from underneath the panel.
 		if custom_room_open:
 			_handle_custom_room_press(position)
+			return
+		if archive_button_rect.has_point(position):
+			_build_survey_archive_overlay()
 			return
 		if setup_stage == "root":
 			# Three buttons, and nothing else can be hit. Choosing a path is the only
@@ -1978,10 +1981,11 @@ func _handle_custom_room_press(position: Vector2) -> void:
 		# would double the number of things to hit on a phone for no extra expressiveness.
 		var current := int(custom_room_counts.get(kind, 0))
 		var next_count := current + 1
-		# Six is the ceiling because the largest formation seats six. A seventh body would
-		# fall to the overflow slot and stand outside the arrangement being tested.
-		if next_count > 3: next_count = 0
-		elif _custom_room_total() >= 6: next_count = current
+		# Six is the ceiling because the largest formation seats six. When adding another
+		# would break it the tap CLEARS instead, so a full room can always be emptied --
+		# the previous version froze every chip below three once six were picked, which is
+		# what "chosen enemies can't be de-selected by tapping them again" was.
+		if next_count > 3 or _custom_room_total() + 1 > 6: next_count = 0
 		if next_count <= 0: custom_room_counts.erase(kind)
 		else: custom_room_counts[kind] = next_count
 		queue_redraw()
@@ -4276,6 +4280,12 @@ func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, mark + Vector2(-32, -30), "%d XP" % int(state.lost_xp.get("amount", 0)), HORIZONTAL_ALIGNMENT_CENTER, 64, maxi(10, int(13 * world_scale)), Color("e9f4b1"))
 
 func _draw_setup() -> void:
+	# The picker replaces the screen rather than floating over it. Drawing the setup
+	# controls afterwards left the start button and the archive button painted on top of
+	# the panel, and the seed field -- a real node -- on top of everything.
+	if custom_room_open:
+		_draw_custom_room_panel()
+		return
 	var layout := safe_layout_rect if safe_layout_rect.size.x > 0.0 else Rect2(Vector2.ZERO, size)
 	var portrait := layout.size.y >= layout.size.x
 	var title_font := maxi(28, int(minf(layout.size.x, layout.size.y) * 0.055))
@@ -4348,10 +4358,7 @@ func _draw_setup() -> void:
 	draw_rect(archive_button_rect, Color("10191e"))
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
-	if setup_stage == "root":
-		if custom_room_open: _draw_custom_room_panel()
-		return
-	if custom_room_open: _draw_custom_room_panel()
+	if setup_stage == "root": return
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
@@ -4755,7 +4762,7 @@ func _draw_custom_room_panel() -> void:
 	draw_string(ThemeDB.fallback_font, custom_clear_rect.position + Vector2(0, custom_clear_rect.size.y * 0.64), "CLEAR", HORIZONTAL_ALIGNMENT_CENTER, custom_clear_rect.size.x, 14, Color("eef0e9"))
 	draw_rect(custom_done_rect, Color("24433f"))
 	draw_rect(custom_done_rect, Color("58d2cf"), false, 2.0)
-	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "DONE", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))
+	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "BACK", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))
 
 func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	var title := "REJUVENATE" if slot_id == "healing" else "—"
