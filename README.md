@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.47` (Android version code `247`).
+Current prototype version: `0.2.48` (Android version code `248`).
+
+### v0.2.48: Dev holds the instruments
+
+The main menu is **Expedition · Campaign · Dev**, and Dev holds the two testing instruments: **Survey Rooms** and **Custom Rooms**.
+
+**The custom room button shipped invisible in `0.2.46`.** It was laid out at `start_rect.position.y - 56`, which put it directly on top of the seed field — and `seed_input` is a real `LineEdit` node, so it paints over anything the canvas draws underneath. The control existed and worked and could not be seen, in either orientation.
+
+The fix is the menu rather than a nudged rectangle: Dev's own section row gives the picker somewhere to live, and the configure button is now placed **before** the seed field in the stack instead of under it. The test asserts non-overlap against the seed field and the start button rather than mere presence, because presence was never the problem.
+
+Dev's stack carries two more rows than the other modes, so it starts higher on the screen — otherwise the start button walks off the bottom of a phone. That is asserted too.
 
 ### v0.2.47: A projectile hits whoever it hits
 

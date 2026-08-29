@@ -114,6 +114,10 @@ var combat_rule_rects: Dictionary = {}
 #
 # There is no separate on/off switch: picking at least one enemy IS the switch, which is
 # the same condition the simulation uses to decide whether a room is custom.
+# Dev holds the two testing instruments. Survey draws its rooms; Custom is the same
+# machinery with the roster and arrangement specified by hand.
+var setup_dev_section := "survey"
+var dev_section_rects: Dictionary = {}
 var custom_room_open := false
 var custom_room_counts: Dictionary = {}
 var custom_room_formation := ""
@@ -761,6 +765,7 @@ func _layout() -> void:
 	loadout_rects.clear()
 	upgrade_rects.clear()
 	progression_rects.clear()
+	dev_section_rects.clear()
 	survey_profile_rects.clear()
 	combat_rule_rects.clear()
 	var names := ["defense", "skill", "rally", "advance", "adopted"]
@@ -817,17 +822,34 @@ func _layout() -> void:
 	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.44, 580.0)
 	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5 if portrait else safe_layout_rect.end.x - setup_width - 24.0
 	if portrait:
-		var setup_center_y := layout_origin.y + layout_size.y * (0.50 if setup_mode == "combat_survey" else 0.57)
+		# Dev carries two more rows than the other modes -- the section pair and, in Custom,
+		# the configure button -- so its stack starts higher or the start button walks off
+		# the bottom of a phone.
+		var setup_center_y := layout_origin.y + layout_size.y * (0.42 if setup_mode == "combat_survey" else 0.57)
 		var option_width := (setup_width - setup_gap * 2.0) / 3.0
 		progression_rects["expedition"] = Rect2(setup_left, setup_center_y, option_width, 74.0)
 		progression_rects["campaign_lab"] = Rect2(setup_left + option_width + setup_gap, setup_center_y, option_width, 74.0)
 		progression_rects["combat_survey"] = Rect2(setup_left + (option_width + setup_gap) * 2.0, setup_center_y, option_width, 74.0)
 		var profile_width := (setup_width - setup_gap) * 0.5
-		survey_profile_rects["encounter"] = Rect2(setup_left, setup_center_y + 84.0, profile_width, 48.0)
-		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, setup_center_y + 84.0, profile_width, 48.0)
-		combat_rule_rects["recovery"] = Rect2(setup_left, setup_center_y + 142.0, profile_width, 48.0)
-		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, setup_center_y + 142.0, profile_width, 48.0)
-		seed_input.position = Vector2(setup_left, setup_center_y + (200.0 if setup_mode == "combat_survey" else 142.0))
+		var row := setup_center_y + 84.0
+		if setup_mode == "combat_survey":
+			dev_section_rects["survey"] = Rect2(setup_left, row, profile_width, 48.0)
+			dev_section_rects["custom"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 48.0)
+			row += 58.0
+		survey_profile_rects["encounter"] = Rect2(setup_left, row, profile_width, 48.0)
+		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 48.0)
+		combat_rule_rects["recovery"] = Rect2(setup_left, row + 58.0, profile_width, 48.0)
+		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, row + 58.0, profile_width, 48.0)
+		row += 116.0
+		# Placed BEFORE the seed field, because the seed field is a real LineEdit node and
+		# draws over anything the canvas paints underneath it -- which is exactly how the
+		# first version of this button ended up invisible.
+		if _custom_section_active():
+			custom_open_rect = Rect2(setup_left, row, setup_width, 46.0)
+			row += 56.0
+		else:
+			custom_open_rect = Rect2()
+		seed_input.position = Vector2(setup_left, row)
 		seed_input.size = Vector2(setup_width, 58.0)
 		start_rect = Rect2(setup_left, seed_input.position.y + 68.0, setup_width, 72.0)
 	else:
@@ -838,14 +860,24 @@ func _layout() -> void:
 			progression_rects[mode_id] = Rect2(setup_left, setup_top + float(index) * (mode_height + setup_gap), setup_width, mode_height)
 		var profile_top := setup_top + 3.0 * (mode_height + setup_gap)
 		var profile_width := (setup_width - setup_gap) * 0.5
-		survey_profile_rects["encounter"] = Rect2(setup_left, profile_top, profile_width, 42.0)
-		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, profile_top, profile_width, 42.0)
-		combat_rule_rects["recovery"] = Rect2(setup_left, profile_top + 50.0, profile_width, 42.0)
-		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, profile_top + 50.0, profile_width, 42.0)
-		seed_input.position = Vector2(setup_left, profile_top + (100.0 if setup_mode == "combat_survey" else 50.0))
+		var row := profile_top
+		if setup_mode == "combat_survey":
+			dev_section_rects["survey"] = Rect2(setup_left, row, profile_width, 42.0)
+			dev_section_rects["custom"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 42.0)
+			row += 50.0
+		survey_profile_rects["encounter"] = Rect2(setup_left, row, profile_width, 42.0)
+		survey_profile_rects["attrition"] = Rect2(setup_left + profile_width + setup_gap, row, profile_width, 42.0)
+		combat_rule_rects["recovery"] = Rect2(setup_left, row + 50.0, profile_width, 42.0)
+		combat_rule_rects["stamina"] = Rect2(setup_left + profile_width + setup_gap, row + 50.0, profile_width, 42.0)
+		row += 100.0
+		if _custom_section_active():
+			custom_open_rect = Rect2(setup_left, row, setup_width, 42.0)
+			row += 50.0
+		else:
+			custom_open_rect = Rect2()
+		seed_input.position = Vector2(setup_left, row)
 		seed_input.size = Vector2(setup_width, 50.0)
 		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, safe_layout_rect.end.y - seed_input.position.y - 68.0))
-	custom_open_rect = Rect2(setup_left, start_rect.position.y - 56.0, setup_width, 46.0) if setup_mode == "combat_survey" else Rect2()
 	_layout_custom_room_panel()
 	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
@@ -1113,7 +1145,13 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		if custom_room_open:
 			_handle_custom_room_press(position)
 			return
-		if custom_open_rect.has_point(position) and setup_mode == "combat_survey":
+		if setup_mode == "combat_survey":
+			for section in dev_section_rects:
+				if Rect2(dev_section_rects[section]).has_point(position):
+					setup_dev_section = String(section)
+					_layout()
+					return
+		if custom_open_rect.has_point(position) and _custom_section_active():
 			custom_room_open = true
 			_layout()
 			return
@@ -1955,7 +1993,7 @@ func _start_run() -> void:
 	seed_input.release_focus()
 	# Written before start_run, because the first room is generated inside it.
 	var roster: Array[String] = []
-	if setup_mode == "combat_survey":
+	if _custom_section_active():
 		for kind in custom_room_counts:
 			for _copy in range(int(custom_room_counts[kind])): roster.append(String(kind))
 	state.custom_room_kinds = roster
@@ -4229,11 +4267,20 @@ func _draw_setup() -> void:
 		var selected: bool = setup_mode == String(mode)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN LAB" if String(mode) == "campaign_lab" else "COMBAT SURVEY"
-		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "ENDLESS • ROOM LOGS"
+		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN" if String(mode) == "campaign_lab" else "DEV"
+		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "TESTING INSTRUMENTS"
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	if setup_mode == "combat_survey":
+		for section in dev_section_rects:
+			var rect := Rect2(dev_section_rects[section])
+			var selected := setup_dev_section == String(section)
+			draw_rect(rect, Color("17272d"))
+			draw_rect(rect, Color("c9a3e6") if selected else Color("45545a"), false, 2.0)
+			var label := "SURVEY ROOMS" if String(section) == "survey" else "CUSTOM ROOMS"
+			var subtitle := "GENERATED • RATED • ARCHIVED" if String(section) == "survey" else "PICK ROSTER • FORMATION • HEALTH"
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
 		for profile in survey_profile_rects:
 			var rect := Rect2(survey_profile_rects[profile])
 			var selected := setup_survey_profile == String(profile)
@@ -4252,7 +4299,7 @@ func _draw_setup() -> void:
 			var subtitle := "ABILITY COOLDOWNS • NO STAMINA" if String(rule) == "recovery" else "ACTION STAMINA • EXHAUSTION"
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
-	if setup_mode == "combat_survey":
+	if _custom_section_active():
 		var picked := _custom_room_total()
 		draw_rect(custom_open_rect, Color("17272d"))
 		draw_rect(custom_open_rect, Color("c9a3e6") if picked > 0 else Color("45545a"), false, 2.0)
@@ -4607,6 +4654,9 @@ func _layout_custom_room_panel() -> void:
 	var half := (width - 8.0) * 0.5
 	custom_clear_rect = Rect2(left, y, half, 48.0)
 	custom_done_rect = Rect2(left + half + 8.0, y, half, 48.0)
+
+func _custom_section_active() -> bool:
+	return setup_mode == "combat_survey" and setup_dev_section == "custom"
 
 func _custom_room_kind_list() -> Array[String]:
 	var kinds: Array[String] = []

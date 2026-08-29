@@ -13,6 +13,18 @@ func _initialize() -> void:
 	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it, and its
 	# first appearance was a room it died three seconds into.
 	board.setup_mode = "combat_survey"
+	board.setup_dev_section = "custom"
+	board._layout()
+	# The first version of this button was laid out on top of the seed field, which is a
+	# real LineEdit node and draws over anything the canvas paints beneath it -- so the
+	# control existed, worked, and was invisible. Overlap is the assertion, not presence.
+	assert(board.custom_open_rect.size.x > 0.0)
+	assert(not board.custom_open_rect.intersects(Rect2(board.seed_input.position, board.seed_input.size)))
+	assert(not board.custom_open_rect.intersects(board.start_rect))
+	assert(board.dev_section_rects.has("survey") and board.dev_section_rects.has("custom"))
+	# Two extra rows can push the start button off the bottom, which would make Dev
+	# unstartable rather than merely ugly.
+	assert(board.start_rect.end.y <= board.safe_layout_rect.end.y + 1.0)
 	board.custom_room_open = true
 	board._layout()
 	assert(board.custom_kind_rects.has("ox"))
@@ -41,6 +53,7 @@ func _initialize() -> void:
 	assert(bool(board.state.survey_room_definition.get("custom_room", false)))
 	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))
 	assert(board.state.carried_xp >= 400)
+	board.setup_dev_section = "survey"
 	board.custom_room_counts.clear()
 	board.custom_room_formation = ""
 	board.custom_room_hp = 1.0
