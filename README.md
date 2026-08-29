@@ -1,6 +1,37 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.43` (Android version code `243`).
+Current prototype version: `0.2.44` (Android version code `244`).
+
+### v0.2.44: Concealment that conceals, and a screen that screens
+
+Three defects, reported in one sentence: *"if I go into stealth when enemies are already looking for me but can't see me they can still see me... they don't follow me or run after me but they do strike me when they get into distance."* All three had one cause.
+
+**Pursuit read the player's true position.** `sees_player` correctly refuses to *acquire* a hidden player — it requires `stealth_remaining <= 0.0`. But `_pursuit_target` and `_choose_enemy_action` both open with `var target := player_pos`, with no reference to stealth or `last_known_player`. So for the three seconds of `alert_remaining`, an alerted enemy tracked a hidden player **exactly**. That is "they can still see me". When the alert lapsed they dropped to suspicious and walked to a stale position — "they don't follow me" — while anything still inside its alert window struck on contact. Both halves of the sentence, one bug.
+
+**While the player is hidden, every awake enemy now behaves as merely suspicious**: it goes to the last place it knew of and searches there. `last_known_player` is already frozen while hidden, because nothing refreshes it without sight.
+
+**The vanish was itself visible.** The veil landed at `effect_start = 0.24` into a 0.40s action, so a quarter-second of world time was spent fully exposed — and an enemy that acquired you inside that window then tracked you through the hide. The entry gate says you may only start hiding when unseen, so the action must not be the thing that gets you seen. It lands on commit now; the 0.40s is still spent.
+
+| trial, suspicious enemy at 300 units | `0.2.43` | `0.2.44` |
+|---|---|---|
+| hidden for | 0.80s | **5.00s** |
+| ended by | `broken` | **`expired`** |
+| damage taken while hidden | 7 | **0** |
+
+**And being hunted is not the same as being seen.** `player_is_noticed()` returned true for *any* living alerted enemy on the layer — no facing, no distance, no line of sight — so one enemy that had lost you across the room locked the ability out for the rest of the fight. It now means what it says: an alerted enemy with the player inside its cone and a clear line, or close enough that facing stops mattering.
+
+| alerted enemy | can you hide? |
+|---|---|
+| facing you at 300 | no |
+| back turned at 300 | **yes** |
+| far and turned away | **yes** |
+| on top of you at 80 | no |
+
+The vision range is one shared helper now, so the gate and the awareness update cannot drift apart — the mistake the Shield's guard list already made once.
+
+**The screen now screens arrows.** *"Shield wasn't defended whatsoever from arrows"* — the frontal guard was melee-only, because `_damage_enemy_from_player_projectile` never consulted it. A screen that stops one damage type is not a screen, and it deleted the counter-play the role exists to sell. Blocking is judged on the shot's own travel rather than on where the player stands, so a projectile that has been redirected is answered on the line it actually arrives on. Going around it still works: an arrow from behind lands for full.
+
+`stealth_last_end_reason` records how each hide finished. `expired` is the only outcome the player paid full price for, and the `0.2.43` survey's *3 entries, 0.02s hidden, 60 stamina paid* would have said so on its face.
 
 ### v0.2.43: The floor is a disc, and placement did not know it
 

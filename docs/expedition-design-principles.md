@@ -285,6 +285,31 @@ This dependency is part of the design principle: multiplying unproven content ma
 
 ---
 
+## 9. Open questions
+
+### Do enemies move before you find them?
+
+**Unresolved, and it needs an answer before the expedition layer is built on top of the
+combat loop.** Today a survey room is static: bodies are placed when the room is
+generated and stand there until the player crosses a sightline or makes a noise. That is
+defensible for a combat instrument, where the arrangement *is* the experiment and drift
+would make formations unmeasurable. It is not obviously right for an expedition, where a
+place the player has not reached yet is supposed to feel inhabited rather than staged.
+
+The question is really three:
+
+1. **Do they move at all before discovery** — patrol routes, idle drift, or nothing?
+2. **If they move, does the authored arrangement survive it?** `0.2.41` made placement an
+   authored thing precisely so that composition could be attributed to a formation. A
+   patrol that has wandered by the time the player arrives destroys that attribution, so
+   an expedition that moves its enemies needs a different evaluation instrument than the
+   Combat Survey.
+3. **Does the player's approach change what they find** — does arriving late, loudly, or
+   from another direction meet a different arrangement?
+
+Raised while fixing stealth in `0.2.44`, where the answer decides whether "the enemy goes
+to your last known position" is a full behaviour or only the visible half of one.
+
 ## Source documents
 
 This consolidation is derived from the existing accepted project record:

@@ -140,6 +140,11 @@ func test_stealth_eligibility_breaks_and_alerts() -> void:
 	var alerted := state._make_enemy("knife", state.player_pos + Vector2.RIGHT * 180.0, 30)
 	alerted["layer"] = state.current_layer
 	alerted["awareness"] = "alerted"
+	# Facing matters now. Being alerted no longer blocks the hide on its own -- "if they
+	# are looking for me but can't see me, I can stealth; it's only when they are looking
+	# and I'm in their line of sight that I can't." At 180 units this one has to actually
+	# be looking at the player for the refusal this test is about to happen at all.
+	alerted["facing"] = Vector2.LEFT
 	var idle := state._make_enemy("knife", state.player_pos + Vector2.DOWN * 220.0, 30)
 	idle["layer"] = state.current_layer
 	state.enemies.assign([alerted, idle])

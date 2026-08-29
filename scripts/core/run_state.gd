@@ -294,7 +294,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.43"
+const GAME_VERSION := "0.2.44"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -360,6 +360,8 @@ var stealth_cooldown_pending := false
 # but derives the cooldown from it, which is how a cancelled hide gets a short one.
 var stealth_stamina_paid := 0.0
 var _stealth_last_ended_at := -1.0
+# Why the last hide ended. "expired" is the only outcome the player paid for in full.
+var stealth_last_end_reason := ""
 # The last amount _spend_stamina actually priced, so a cooldown can be derived from
 # the cost sitting two lines above it instead of from a duplicated literal.
 var _last_stamina_spend := 0.0
@@ -2794,12 +2796,35 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 	else: _streamed_action_cpu_usec = 0
 	return true
 
+# How far a kind can see, shared so the gate below and the awareness update cannot
+# drift apart -- the mistake the Shield's guard list already made once.
+func _enemy_vision_range(enemy: Dictionary) -> float:
+	var far := String(enemy.get("kind", "")) in ["archer", "ice_caster", "fire_caster", "warden", "werewolf"]
+	return (620.0 if far else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
+
+# Eyes on the player right now: inside the cone (or close enough that facing stops
+# mattering) with a clear line.
+func _enemy_has_eyes_on_player(enemy: Dictionary) -> bool:
+	var enemy_pos := Vector2(enemy["pos"])
+	var offset := player_pos - enemy_pos
+	var distance := offset.length()
+	if offset.length_squared() < 0.001: return true
+	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
+	var within_cone := distance <= 105.0 or (distance <= _enemy_vision_range(enemy) and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
+	return within_cone and _has_line_of_sight(enemy_pos, player_pos)
+
+# "Looking for me but cannot see me" has to remain a hideable situation -- that is the
+# whole shape of the ability. This used to return true for ANY living alerted enemy on
+# the layer, with no facing, no distance and no line of sight, so one enemy that had
+# lost you across the room locked the hide out for the rest of the fight.
 func player_is_noticed() -> bool:
 	_refresh_active_enemy_cache()
 	for index in _streamed_enemy_indices:
 		if index < 0 or index >= enemies.size(): continue
 		var enemy: Dictionary = enemies[index]
-		if _enemy_on_current_layer(enemy) and int(enemy.get("hp", 0)) > 0 and String(enemy.get("awareness", "idle")) == "alerted": return true
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
+		if String(enemy.get("awareness", "idle")) != "alerted": continue
+		if _enemy_has_eyes_on_player(enemy): return true
 	return false
 
 func stealth_status() -> String:
@@ -2816,7 +2841,12 @@ func request_stealth(simulate_immediately: bool = true) -> bool:
 		if status == "noticed": _set_message("An enemy knows where you are. Vanish is required.")
 		return false
 	player_action = _action("stealth", 0.40, player_facing)
-	player_action["effect_start"] = 0.24
+	# The veil lands on commit rather than 0.24s in. It used to fire late, which meant
+	# the act of hiding was itself fully visible: an enemy could acquire you during your
+	# own vanish, and then track you through it. The entry gate says you may only start
+	# hiding when unseen, so the action must not be the thing that gets you seen. The
+	# 0.40s of world time is still spent.
+	player_action["effect_start"] = 0.0
 	player_action["effect_done"] = false
 	_annotate_player_action("rogue_stealth")
 	_set_message("You begin slipping from notice.")
@@ -5085,6 +5115,7 @@ func _end_stealth(reason: String) -> void:
 		stealth_stamina_paid += owed
 		if uses_stamina_rules(): _spend_stamina(owed, false)
 	survey_stealth_stamina_paid_total += stealth_stamina_paid
+	stealth_last_end_reason = reason
 	if reason == "cancelled": survey_stealth_cancels_total += 1
 	_stealth_last_ended_at = simulation_time
 	# A full 5s hide pays 50, which derives 12.0s -- exactly the cooldown that shipped
@@ -5122,6 +5153,13 @@ func _enemy_death_has_witness(victim: Dictionary) -> bool:
 	return false
 
 func _enemy_blocks_attack(enemy: Dictionary) -> bool:
+	return _enemy_blocks_incoming(enemy, player_pos - Vector2(enemy["pos"]))
+
+# Split out so a projectile can ask the same question. The guard was melee-only, so a
+# Shieldbearer walked into arrows with no defence at all -- "shield wasn't defended
+# whatsoever from arrows". A screen that only screens one damage type is not a screen,
+# and it removes the counter-play the role exists to sell: go around it.
+func _enemy_blocks_incoming(enemy: Dictionary, toward_source: Vector2) -> bool:
 	if String(enemy["kind"]) != "shield": return false
 	# The guard cannot be up while the sword is out. Its own strike, and the long
 	# recovery after it, is the opening a screen is supposed to sell you -- blocking
@@ -5133,8 +5171,7 @@ func _enemy_blocks_attack(enemy: Dictionary) -> bool:
 	# guard it could not possibly be holding. The 0.2.34 lengthening made this worse by
 	# putting more of its life into states that were not on this list.
 	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) in ["melee", "dodge_strike", "charge", "slam", "hit_reaction", "stagger"]: return false
-	var incoming := player_pos - Vector2(enemy["pos"])
-	return _within_arc(Vector2(enemy["facing"]), incoming, deg_to_rad(72.0))
+	return _within_arc(Vector2(enemy["facing"]), toward_source, deg_to_rad(72.0))
 
 # The Duellist's answer to being swung at. Where the Bandit slips sideways and
 # ripostes, this one plants and catches the blade: no damage to either side, and the
@@ -5363,7 +5400,7 @@ func _update_enemy_awareness(enemy: Dictionary, dt: float) -> void:
 	var offset := player_pos - enemy_pos
 	var distance := offset.length()
 	var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
-	var vision_range := (620.0 if String(enemy["kind"]) in ["archer", "ice_caster", "fire_caster", "warden", "werewolf"] else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
+	var vision_range := _enemy_vision_range(enemy)
 	var within_cone := distance <= 105.0 or (distance <= vision_range and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
 	if not within_cone: enemy["los_refresh_remaining"] = 0.0
 	var execution_holds_unaware := String(player_action.get("ability_id", "")) == "knife_execution" and int(player_action.get("execution_target_id", -1)) == int(enemy.get("id", -2)) and float(player_action.get("elapsed", 0.0)) <= float(player_action.get("active_end", 0.0)) and not Array(player_action.get("hit_ids", [])).has(int(enemy.get("id", -2)))
@@ -5462,7 +5499,19 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			elif _streamed_enemy_indices.size() > 8 and (_simulation_tick_index + int(enemy["id"])) % 4 != 0:
 				enemies[index] = enemy
 				continue
-			elif awareness == "suspicious":
+			elif awareness == "suspicious" or stealth_remaining > 0.0:
+				# Concealment used to do nothing once an enemy was already alerted.
+				# `sees_player` correctly refuses to ACQUIRE a hidden player, but pursuit
+				# and attack selection both read `player_pos` directly, so for the three
+				# seconds of `alert_remaining` an alerted enemy tracked a hidden player
+				# exactly -- "they can still see me". Then the alert lapsed and they
+				# walked to a stale position instead, which is the other half of the same
+				# report: "they don't follow me, but they do strike me".
+				#
+				# While the player is hidden every awake enemy behaves as though it is
+				# merely suspicious: it goes to the last place it knew of and searches
+				# there. `last_known_player` is already frozen while hidden, because
+				# nothing refreshes it without sight.
 				var target := Vector2(enemy.get("last_known_player", enemy["spawn_pos"]))
 				if Vector2(enemy["pos"]).distance_to(target) > 45.0:
 					enemy["action"] = _enemy_move_action(enemy, target, 0.40)
@@ -6955,6 +7004,16 @@ func _damage_enemy_from_consumable(enemy: Dictionary, damage: int, posture: floa
 
 func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Dictionary, contact: Vector2) -> void:
 	if int(enemy.get("hp", 0)) <= 0: return
+	# Taken from the shot's own travel rather than from where the player stands, so a
+	# projectile that has been redirected is judged on the line it actually arrives on.
+	var flight := Vector2(projectile.get("vel", Vector2.ZERO))
+	if flight.length_squared() > 0.001 and _enemy_blocks_incoming(enemy, -flight.normalized()):
+		_add_effect("block", contact)
+		enemy["last_known_player"] = player_pos
+		if String(enemy.get("awareness", "idle")) != "alerted":
+			enemy["awareness"] = "suspicious"
+			enemy["suspicious_remaining"] = maxf(float(enemy.get("suspicious_remaining", 0.0)), 2.6)
+		return
 	var awareness_before := String(enemy.get("awareness", "idle"))
 	var action_before := Dictionary(enemy.get("action", _idle_action())).duplicate(true)
 	var projectile_kind := String(projectile.get("kind", "projectile"))

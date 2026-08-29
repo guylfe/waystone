@@ -1366,6 +1366,89 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 	check(too_close == 0, "%d of %d bodies spawned inside contact range, denying the opening stealth decision" % [too_close, total])
 	check(off_floor == 0, "%d of %d bodies spawned off the arena floor entirely" % [off_floor, total])
 
+func hidden_trial(awareness: String) -> Dictionary:
+	var state := rogue_state("stamina")
+	var foe := state._make_enemy("knife", state.player_pos + Vector2(300, 0), 30)
+	foe["layer"] = state.current_layer
+	foe["awareness"] = awareness
+	foe["last_known_player"] = state.player_pos
+	foe["alert_remaining"] = 3.0
+	foe["suspicious_remaining"] = 6.0
+	state.enemies.assign([foe])
+	state._invalidate_active_enemy_cache()
+	var entered := state.request_stealth(false)
+	var hp := state.player_hp
+	var began := -1
+	for tick in range(600):
+		state._tick(0.0125)
+		if began < 0 and state.stealth_remaining > 0.0: began = tick
+		if began >= 0 and state.stealth_remaining <= 0.0: break
+	return {"entered": entered, "held": state.survey_stealth_hidden_time_total, "reason": state.stealth_last_end_reason, "damage": hp - state.player_hp}
+
+func test_concealment_survives_an_enemy_that_is_already_hunting() -> void:
+	# The 0.2.43 report: "if I go into stealth when enemies are already looking for me
+	# but can't see me they can still see me... they don't follow me or run after me but
+	# they do strike me when they get into distance." Three defects, one cause -- pursuit
+	# and attack selection read `player_pos` directly, so concealment did nothing at all
+	# once an enemy was awake. It measured 0.02s hidden across three entries and 60
+	# stamina paid for it.
+	var result := hidden_trial("suspicious")
+	check(bool(result["entered"]), "a hunting enemy that cannot see the player must not block the hide")
+	check(float(result["held"]) > 4.5, "the hide lasted %.2fs against a hunting enemy, not its full duration" % float(result["held"]))
+	check(String(result["reason"]) == "expired", "the hide ended as %s rather than expiring" % String(result["reason"]))
+	check(int(result["damage"]) == 0, "a hidden player took %d damage from an enemy that cannot see them" % int(result["damage"]))
+
+func test_an_enemy_that_can_see_you_refuses_the_hide() -> void:
+	# You may vanish when they cannot see you directly, not in front of them. Entering
+	# used to be allowed here and bought nothing but a floor charge, because the veil
+	# landed 0.24s into the action and they had already acquired you inside it.
+	var result := hidden_trial("alerted")
+	check(not bool(result["entered"]), "stealth should be refused while an enemy has eyes on the player")
+
+func test_the_screen_screens_arrows_too() -> void:
+	# "Shield wasn't defended whatsoever from arrows." The guard was melee-only, so a
+	# Shieldbearer walked into archery with no defence -- and a screen that stops one
+	# damage type is not a screen. Going around it is still the answer.
+	for from_front in [true, false]:
+		var state := rogue_state("stamina")
+		var foe := state._make_enemy("shield", state.player_pos + Vector2(260, 0), 50)
+		foe["layer"] = state.current_layer
+		foe["awareness"] = "alerted"
+		foe["action"] = {"kind": "idle", "elapsed": 0.0}
+		state.enemies.assign([foe])
+		state._invalidate_active_enemy_cache()
+		var before := int(foe["hp"])
+		state._spawn_player_projectile("player_arrow", Vector2.RIGHT)
+		for tick in range(120):
+			state._tick(0.0125)
+			foe["facing"] = Vector2.LEFT if from_front else Vector2.RIGHT
+			if int(Dictionary(state.enemies[0])["hp"]) < before: break
+		var took := before - int(Dictionary(state.enemies[0])["hp"])
+		if from_front: check(took == 0, "a raised shield took %d from an arrow to the face" % took)
+		else: check(took > 0, "an arrow from behind the shield was blocked anyway")
+
+func test_only_eyes_on_you_refuse_the_hide() -> void:
+	# "If they are looking for me but can't see me, I can stealth. It's only when they
+	# are looking and I'm in their line of sight that I can't." This returned true for
+	# ANY living alerted enemy on the layer -- no facing, no distance, no line of sight --
+	# so one enemy that had lost the player across the room locked the ability out for
+	# the rest of the fight.
+	for trial in [{"facing": Vector2.LEFT, "gap": 300.0, "blocked": true, "label": "facing the player"},
+			{"facing": Vector2.RIGHT, "gap": 300.0, "blocked": false, "label": "back turned"},
+			{"facing": Vector2.RIGHT, "gap": 600.0, "blocked": false, "label": "far and turned away"},
+			{"facing": Vector2.RIGHT, "gap": 80.0, "blocked": true, "label": "close enough that facing stops mattering"}]:
+		var state := rogue_state("stamina")
+		var foe := state._make_enemy("knife", state.player_pos + Vector2(float(trial["gap"]), 0), 30)
+		foe["layer"] = state.current_layer
+		foe["awareness"] = "alerted"
+		foe["alert_remaining"] = 3.0
+		foe["facing"] = Vector2(trial["facing"])
+		state.enemies.assign([foe])
+		state._invalidate_active_enemy_cache()
+		var refused := not state.request_stealth(false)
+		check(refused == bool(trial["blocked"]),
+			"an alerted enemy %s should%s have refused the hide" % [String(trial["label"]), "" if bool(trial["blocked"]) else " not"])
+
 func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
@@ -1429,6 +1512,10 @@ func _init() -> void:
 	test_the_centred_elite_keeps_a_control_group()
 	test_a_room_never_asks_one_attack_three_times()
 	test_no_body_is_ever_spawned_inside_the_geometry()
+	test_concealment_survives_an_enemy_that_is_already_hunting()
+	test_an_enemy_that_can_see_you_refuses_the_hide()
+	test_only_eyes_on_you_refuse_the_hide()
+	test_the_screen_screens_arrows_too()
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
 	test_rooms_are_populated_enough_for_the_pressure_to_matter()
