@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 20
+const FORMAT_VERSION := 21
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -69,6 +69,11 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Recipe family: %s" % String(room.get("recipe_family", "unknown")))
 		lines.append("Composition cost: %d" % int(room.get("composition_cost", 0)))
 		lines.append("Ranged pressure: %d" % int(room.get("ranged_pressure_count", 0)))
+		if bool(room.get("custom_room", false)):
+			# Tagged rather than filed separately: a conditional estimate does not care how
+			# a room came to exist, but these are picked on a hunch and carry a hand-set
+			# health, so both confounders are recorded where an analysis can filter on them.
+			lines.append("Custom room: yes (entry HP %d%%)" % roundi(100.0 * float(room.get("entry_hp_percent", 1.0))))
 		lines.append("Arena: %s" % String(room.get("arena", "unknown")))
 		lines.append("Formation: %s" % String(room.get("formation", "unknown")))
 		lines.append("Enemies: %s" % ", ".join(PackedStringArray(room.get("enemy_labels", []))))

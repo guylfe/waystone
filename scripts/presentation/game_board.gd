@@ -108,6 +108,25 @@ var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var survey_profile_rects: Dictionary = {}
 var combat_rule_rects: Dictionary = {}
+# The custom room picker. A full-screen overlay rather than another row in the setup
+# panel, which is already carrying three mode chips, two profiles, two rule sets, a seed
+# field and a start button -- twenty-one enemy chips would not fit beside them on a phone.
+#
+# There is no separate on/off switch: picking at least one enemy IS the switch, which is
+# the same condition the simulation uses to decide whether a room is custom.
+var custom_room_open := false
+var custom_room_counts: Dictionary = {}
+var custom_room_formation := ""
+var custom_room_hp := 1.0
+var custom_room_xp := 0
+var custom_open_rect := Rect2()
+var custom_panel_rect := Rect2()
+var custom_kind_rects: Dictionary = {}
+var custom_formation_rects: Dictionary = {}
+var custom_hp_rects: Dictionary = {}
+var custom_xp_rects: Dictionary = {}
+var custom_clear_rect := Rect2()
+var custom_done_rect := Rect2()
 var archive_button_rect := Rect2()
 var survey_end_rect := Rect2()
 var map_open := false
@@ -826,6 +845,8 @@ func _layout() -> void:
 		seed_input.position = Vector2(setup_left, profile_top + (100.0 if setup_mode == "combat_survey" else 50.0))
 		seed_input.size = Vector2(setup_width, 50.0)
 		start_rect = Rect2(setup_left, seed_input.position.y + 58.0, setup_width, minf(64.0, safe_layout_rect.end.y - seed_input.position.y - 68.0))
+	custom_open_rect = Rect2(setup_left, start_rect.position.y - 56.0, setup_width, 46.0) if setup_mode == "combat_survey" else Rect2()
+	_layout_custom_room_panel()
 	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
 		var overlay_margin := Vector2(maxf(12.0, layout_size.x * 0.04), maxf(12.0, layout_size.y * 0.035))
@@ -1087,6 +1108,15 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 				setup_loadout = choice
 				queue_redraw()
 				return
+		# The overlay eats every press while it is up, so a stray tap cannot start a run
+		# from behind it.
+		if custom_room_open:
+			_handle_custom_room_press(position)
+			return
+		if custom_open_rect.has_point(position) and setup_mode == "combat_survey":
+			custom_room_open = true
+			_layout()
+			return
 		for mode in progression_rects:
 			if Rect2(progression_rects[mode]).has_point(position):
 				setup_mode = String(mode)
@@ -1873,6 +1903,45 @@ func _restart() -> void:
 	_sync_setup_controls()
 	queue_redraw()
 
+func _handle_custom_room_press(position: Vector2) -> void:
+	for kind in custom_kind_rects:
+		if not Rect2(custom_kind_rects[kind]).has_point(position): continue
+		# One target per kind, cycling 1 -> 2 -> 3 -> none. A separate remove control
+		# would double the number of things to hit on a phone for no extra expressiveness.
+		var current := int(custom_room_counts.get(kind, 0))
+		var next_count := current + 1
+		# Six is the ceiling because the largest formation seats six. A seventh body would
+		# fall to the overflow slot and stand outside the arrangement being tested.
+		if next_count > 3: next_count = 0
+		elif _custom_room_total() >= 6: next_count = current
+		if next_count <= 0: custom_room_counts.erase(kind)
+		else: custom_room_counts[kind] = next_count
+		queue_redraw()
+		return
+	for formation in custom_formation_rects:
+		if Rect2(custom_formation_rects[formation]).has_point(position):
+			custom_room_formation = String(formation)
+			queue_redraw()
+			return
+	for percent in custom_hp_rects:
+		if Rect2(custom_hp_rects[percent]).has_point(position):
+			custom_room_hp = float(percent) / 100.0
+			queue_redraw()
+			return
+	for amount in custom_xp_rects:
+		if Rect2(custom_xp_rects[amount]).has_point(position):
+			custom_room_xp = int(amount)
+			queue_redraw()
+			return
+	if custom_clear_rect.has_point(position):
+		custom_room_counts.clear()
+		custom_room_formation = ""
+		queue_redraw()
+		return
+	if custom_done_rect.has_point(position) or not custom_panel_rect.has_point(position):
+		custom_room_open = false
+		_layout()
+
 func _start_run() -> void:
 	var entered_seed := seed_input.text.strip_edges()
 	var chosen_seed := -1
@@ -1884,6 +1953,15 @@ func _start_run() -> void:
 		chosen_seed = int(entered_seed)
 	setup_seed_error = ""
 	seed_input.release_focus()
+	# Written before start_run, because the first room is generated inside it.
+	var roster: Array[String] = []
+	if setup_mode == "combat_survey":
+		for kind in custom_room_counts:
+			for _copy in range(int(custom_room_counts[kind])): roster.append(String(kind))
+	state.custom_room_kinds = roster
+	state.custom_room_formation = custom_room_formation
+	state.custom_room_hp_percent = custom_room_hp
+	state.custom_room_xp = custom_room_xp
 	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
@@ -4174,9 +4252,16 @@ func _draw_setup() -> void:
 			var subtitle := "ABILITY COOLDOWNS • NO STAMINA" if String(rule) == "recovery" else "ACTION STAMINA • EXHAUSTION"
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
+	if setup_mode == "combat_survey":
+		var picked := _custom_room_total()
+		draw_rect(custom_open_rect, Color("17272d"))
+		draw_rect(custom_open_rect, Color("c9a3e6") if picked > 0 else Color("45545a"), false, 2.0)
+		var custom_label := "CUSTOM ROOM · OFF" if picked == 0 else "CUSTOM ROOM · %d ENEMIES" % picked
+		draw_string(ThemeDB.fallback_font, custom_open_rect.position + Vector2(0, custom_open_rect.size.y * 0.66), custom_label, HORIZONTAL_ALIGNMENT_CENTER, custom_open_rect.size.x, 13, Color("eef0e9") if picked > 0 else Color("9fb2b7"))
 	draw_rect(archive_button_rect, Color("10191e"))
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
+	if custom_room_open: _draw_custom_room_panel()
 	draw_rect(start_rect, Color("24433f"))
 	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
 	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
@@ -4480,6 +4565,111 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	if desktop_controls:
 		var shortcuts := {"defense": "[2 / B]", "skill": "[3 / Q]", "rally": "[4]", "advance": "[5 / E]", "adopted": "[6]", "wait": "[SPACE]"}
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.91), String(shortcuts[name]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(title_font * 0.48)), Color("718087"))
+
+# Laid out against the whole safe area rather than the setup column, because the point of
+# the overlay is the room the panel does not have.
+func _layout_custom_room_panel() -> void:
+	custom_kind_rects.clear()
+	custom_formation_rects.clear()
+	custom_hp_rects.clear()
+	custom_xp_rects.clear()
+	if not custom_room_open:
+		custom_panel_rect = Rect2()
+		return
+	var inset := 16.0
+	custom_panel_rect = Rect2(safe_layout_rect.position + Vector2(inset, inset), safe_layout_rect.size - Vector2(inset, inset) * 2.0)
+	var pad := 12.0
+	var left := custom_panel_rect.position.x + pad
+	var width := custom_panel_rect.size.x - pad * 2.0
+	var y := custom_panel_rect.position.y + 54.0
+	var columns := 3 if custom_panel_rect.size.x < 620.0 else 5
+	var kinds := _custom_room_kind_list()
+	var chip_w := (width - float(columns - 1) * 6.0) / float(columns)
+	var chip_h := clampf(custom_panel_rect.size.y * 0.055, 34.0, 46.0)
+	for index in range(kinds.size()):
+		var row := index / columns
+		var column := index % columns
+		custom_kind_rects[String(kinds[index])] = Rect2(left + float(column) * (chip_w + 6.0), y + float(row) * (chip_h + 6.0), chip_w, chip_h)
+	y += float(ceili(float(kinds.size()) / float(columns))) * (chip_h + 6.0) + 16.0
+	var formations := _custom_room_formation_list()
+	var fcols := 4
+	var fw := (width - 18.0) / float(fcols)
+	for index in range(formations.size()):
+		custom_formation_rects[String(formations[index])] = Rect2(left + float(index % fcols) * (fw + 6.0), y + float(index / fcols) * (chip_h + 6.0), fw, chip_h)
+	y += float(ceili(float(formations.size()) / float(fcols))) * (chip_h + 6.0) + 16.0
+	var qw := (width - 18.0) / 4.0
+	for index in range(4):
+		custom_hp_rects[[25, 50, 75, 100][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, chip_h)
+	y += chip_h + 10.0
+	for index in range(4):
+		custom_xp_rects[[0, 200, 400, 800][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, chip_h)
+	y += chip_h + 14.0
+	var half := (width - 8.0) * 0.5
+	custom_clear_rect = Rect2(left, y, half, 48.0)
+	custom_done_rect = Rect2(left + half + 8.0, y, half, 48.0)
+
+func _custom_room_kind_list() -> Array[String]:
+	var kinds: Array[String] = []
+	kinds.append(state.CUSTOM_RANDOM)
+	kinds.append(state.CUSTOM_RANDOM_NEW)
+	for kind in CombatCatalogScript.enemy_kinds():
+		if String(kind) in ["warden", "werewolf"]: continue
+		kinds.append(String(kind))
+	return kinds
+
+func _custom_room_formation_list() -> Array[String]:
+	var ids: Array[String] = [""]
+	for template in state._survey_formation_catalog(): ids.append(String(Dictionary(template)["id"]))
+	return ids
+
+func _custom_room_total() -> int:
+	var total := 0
+	for kind in custom_room_counts: total += int(custom_room_counts[kind])
+	return total
+
+func _custom_room_label(kind: String) -> String:
+	if kind == state.CUSTOM_RANDOM: return "RANDOM"
+	if kind == state.CUSTOM_RANDOM_NEW: return "RANDOM NEW"
+	return kind.replace("_", " ").to_upper()
+
+func _draw_custom_room_panel() -> void:
+	draw_rect(custom_panel_rect, Color(0.02, 0.05, 0.06, 0.97))
+	draw_rect(custom_panel_rect, Color("c9a3e6"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 26), "CUSTOM ROOM", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 18, Color("eef0e9"))
+	draw_string(ThemeDB.fallback_font, custom_panel_rect.position + Vector2(14, 44), "TAP TO ADD · AGAIN TO CYCLE 1-2-3-NONE · MAX 6", HORIZONTAL_ALIGNMENT_LEFT, custom_panel_rect.size.x - 28, 11, Color("9fb2b7"))
+	for kind in custom_kind_rects:
+		var rect := Rect2(custom_kind_rects[kind])
+		var count := int(custom_room_counts.get(kind, 0))
+		draw_rect(rect, Color("1d3038") if count > 0 else Color("142025"))
+		draw_rect(rect, Color("c9a3e6") if count > 0 else Color("3b494f"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(4, rect.size.y * 0.64), _custom_room_label(String(kind)), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 26, 11, Color("eef0e9") if count > 0 else Color("8b9aa0"))
+		if count > 0:
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x - 20, rect.size.y * 0.64), "x%d" % count, HORIZONTAL_ALIGNMENT_LEFT, 20, 12, Color("c9a3e6"))
+	for formation in custom_formation_rects:
+		var rect := Rect2(custom_formation_rects[formation])
+		var selected := custom_room_formation == String(formation)
+		draw_rect(rect, Color("1d3038") if selected else Color("142025"))
+		draw_rect(rect, Color("58d2cf") if selected else Color("3b494f"), false, 2.0)
+		var label := "ANY" if String(formation).is_empty() else String(formation).replace("_", " ").to_upper()
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 11, Color("eef0e9") if selected else Color("8b9aa0"))
+	for percent in custom_hp_rects:
+		var rect := Rect2(custom_hp_rects[percent])
+		var selected := absf(custom_room_hp - float(percent) / 100.0) < 0.01
+		draw_rect(rect, Color("1d3038") if selected else Color("142025"))
+		draw_rect(rect, Color("ee6645") if selected else Color("3b494f"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), "HP %d%%" % int(percent), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("eef0e9") if selected else Color("8b9aa0"))
+	for amount in custom_xp_rects:
+		var rect := Rect2(custom_xp_rects[amount])
+		var selected := custom_room_xp == int(amount)
+		draw_rect(rect, Color("1d3038") if selected else Color("142025"))
+		draw_rect(rect, Color("d7aa58") if selected else Color("3b494f"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), "XP %d" % int(amount), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("eef0e9") if selected else Color("8b9aa0"))
+	draw_rect(custom_clear_rect, Color("2a1a1c"))
+	draw_rect(custom_clear_rect, Color("ee6645"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, custom_clear_rect.position + Vector2(0, custom_clear_rect.size.y * 0.64), "CLEAR", HORIZONTAL_ALIGNMENT_CENTER, custom_clear_rect.size.x, 14, Color("eef0e9"))
+	draw_rect(custom_done_rect, Color("24433f"))
+	draw_rect(custom_done_rect, Color("58d2cf"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "DONE", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))
 
 func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	var title := "REJUVENATE" if slot_id == "healing" else "—"

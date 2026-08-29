@@ -443,6 +443,14 @@ static func loadout_profile(id: String) -> Dictionary:
 static func role(id: String) -> String:
 	return String(Dictionary(ARCHETYPES.get(id, {})).get("role", "frontline"))
 
+# Every enemy kind the catalog knows, for the custom room's picker. Sorted so the
+# grid is stable between sessions rather than following dictionary insertion order.
+static func enemy_kinds() -> Array[String]:
+	var kinds: Array[String] = []
+	for id in ARCHETYPES: kinds.append(String(id))
+	kinds.sort()
+	return kinds
+
 static func archetype(id: String) -> Dictionary:
 	return _profile_with_defaults(Dictionary(ARCHETYPES.get(id, ARCHETYPES["blade"])))
 

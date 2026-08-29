@@ -1,6 +1,24 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.45` (Android version code `245`).
+Current prototype version: `0.2.46` (Android version code `246`).
+
+### v0.2.46: The custom room
+
+A room built by hand rather than drawn — pick the roster, pick the arrangement, set the health and the build, and fight it immediately.
+
+**The problem it solves has already cost a version.** The Chanter sat unplayed from `0.2.33` through `0.2.39` because its recipe needed a tier the runs never reached, and its first appearance was a room it died three seconds into. Four elemental casters are next; building them and then hoping to meet them repeats exactly that.
+
+**It is not a separate mode.** A custom room is a Combat Survey room whose roster and formation are specified instead of drawn, so the report, the archive, the ratings prompt and the character sheet all work unchanged — and a custom room can be compared against a generated one without a second instrument. Picking at least one enemy *is* the switch; there is no separate toggle.
+
+- **Enemy chips**, one target per kind, cycling 1 → 2 → 3 → none. Six is the ceiling, because the largest formation seats six and a seventh body would stand outside the arrangement under test.
+- **`RANDOM`** and **`RANDOM NEW`** — the latter picks a kind not yet used this session, re-rolled per room, which is the direct answer to a body never being drawn.
+- **Formation**: any of the seven, or `ANY`. A named formation forces one group rather than two copies of itself.
+- **Entry health** as a percentage of max, set per room. Low health is the strongest single thing we know of for how a room reads — *"the low HP helped"*, *"being on the verge of death is a great lock-in catalyst"* — so replaying one composition at 25% against 100% is one control changed rather than a fresh run.
+- **XP**, spent through the character sheet you already use. That is what "pick by hand" costs: no bespoke track picker, just enough to buy the build being tested.
+
+The picker is a full-screen overlay rather than another row in the setup panel, which is already carrying three mode chips, two profiles, two rule sets, a seed field and a start button.
+
+**Custom rooms are tagged, not segregated.** The first instinct was a separate archive, and it was wrong: a conditional estimate — *how does a pincer rate* — does not care how the room came to exist, so filing them apart would throw away usable data. What does bite is that these are chosen on a hunch and carry a hand-set health, so `custom_room` and `entry_hp_percent` are recorded on every room and any analysis can filter on them.
 
 ### v0.2.45: Speed stops buying everything
 

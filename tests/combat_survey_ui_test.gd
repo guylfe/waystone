@@ -7,6 +7,48 @@ func _initialize() -> void:
 	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
 	board.visual = board.state.snapshot(true)
 	board._sync_setup_controls()
+
+	# --- the custom room picker -------------------------------------------------------
+	# Built so a new enemy can be judged the moment it exists rather than waited for. The
+	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it, and its
+	# first appearance was a room it died three seconds into.
+	board.setup_mode = "combat_survey"
+	board.custom_room_open = true
+	board._layout()
+	assert(board.custom_kind_rects.has("ox"))
+	assert(board.custom_formation_rects.has("retinue"))
+	var ox_rect: Rect2 = board.custom_kind_rects["ox"]
+	for expected in [1, 2, 3, 0]:
+		board._handle_custom_room_press(ox_rect.get_center())
+		assert(int(board.custom_room_counts.get("ox", 0)) == expected)
+	# Six bodies is the ceiling: the largest formation seats six, and a seventh would
+	# stand outside the arrangement under test.
+	for kind in ["ox", "polearm", "hound", "blade", "knife", "boar", "bandit"]:
+		if board.custom_kind_rects.has(kind):
+			board._handle_custom_room_press(Rect2(board.custom_kind_rects[kind]).get_center())
+	assert(board._custom_room_total() <= 6)
+	board._handle_custom_room_press(Rect2(board.custom_formation_rects["retinue"]).get_center())
+	board._handle_custom_room_press(Rect2(board.custom_hp_rects[25]).get_center())
+	board._handle_custom_room_press(Rect2(board.custom_xp_rects[400]).get_center())
+	assert(board.custom_room_formation == "retinue")
+	assert(absf(board.custom_room_hp - 0.25) < 0.01)
+	assert(board.custom_room_xp == 400)
+	board._handle_custom_room_press(Rect2(board.custom_done_rect).get_center())
+	assert(not board.custom_room_open)
+	board._start_run()
+	assert(board.state._custom_room_active())
+	assert(String(board.state.survey_room_definition.get("formation", "")) == "retinue")
+	assert(bool(board.state.survey_room_definition.get("custom_room", false)))
+	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))
+	assert(board.state.carried_xp >= 400)
+	board.custom_room_counts.clear()
+	board.custom_room_formation = ""
+	board.custom_room_hp = 1.0
+	board.custom_room_xp = 0
+
+	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
+	board.visual = board.state.snapshot(true)
+	board._sync_setup_controls()
 	assert(board.state.survey_room_number == 1)
 	assert(not board.survey_overlay.visible)
 	for enemy in board.state.enemies: enemy["hp"] = 0

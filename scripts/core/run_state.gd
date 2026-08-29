@@ -299,7 +299,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.45"
+const GAME_VERSION := "0.2.46"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -598,6 +598,22 @@ var _next_combo_instance_id := 1
 var survey_profile := "encounter"
 var combat_rules := "stamina"
 var survey_room_number := 0
+# A custom room is a Combat Survey room whose roster and arrangement are chosen rather
+# than drawn. It is deliberately NOT a separate mode: keeping it inside the survey means
+# the report, the archive, the ratings prompt and the character sheet all work unchanged,
+# and a custom room can be compared against a generated one without a second instrument.
+#
+# `kinds` may hold literal enemy ids and two tokens: CUSTOM_RANDOM picks any kind,
+# CUSTOM_RANDOM_NEW picks one not yet used in this session -- which is the answer to the
+# Chanter spending a whole version unplayed because nothing ever drew it.
+const CUSTOM_RANDOM := "__random__"
+const CUSTOM_RANDOM_NEW := "__random_new__"
+var custom_room_kinds: Array[String] = []
+var custom_room_formation := ""
+var custom_room_hp_percent := 1.0
+var custom_room_xp := 0
+var custom_room_used_kinds: Dictionary = {}
+var custom_room_last_roster: Array[String] = []
 var survey_room_seed := 0
 var survey_feedback_pending := false
 var survey_run_ending := false
@@ -786,6 +802,12 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	dodge_vulnerable_time_total = 0.0
 	dodge_recovery_damage_total = 0
 	survey_room_number = 1 if mode_id == ModeRulesScript.COMBAT_SURVEY else 0
+	custom_room_used_kinds.clear()
+	custom_room_last_roster.clear()
+	# Granted once, and spent through the character sheet the player already uses. That
+	# is what "pick by hand" costs: no bespoke track picker, just enough XP to buy the
+	# build being tested.
+	if _custom_room_active(): carried_xp += custom_room_xp
 	survey_room_seed = 0
 	survey_feedback_pending = false
 	survey_run_ending = false
@@ -891,7 +913,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	room_rng.seed = survey_room_seed
 	var pacing_phase := _survey_pacing_phase(room_number)
 	var threat_band := _survey_threat_band(pacing_phase, room_rng)
-	var composition := _survey_composition(room_rng, room_number, threat_band, pacing_phase)
+	var composition := _custom_room_composition(room_rng) if _custom_room_active() else _survey_composition(room_rng, room_number, threat_band, pacing_phase)
 	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
 	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
 	var enemy_plan: Array = composition.get("enemies", [])
@@ -916,7 +938,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	# same four enemies in different placements and rated 2/2/2 against 3/4/3 in both rule
 	# profiles -- the cleanest signal the archive has produced, and it happened by luck.
 	# This manufactures those matched pairs on purpose.
-	var placement := _survey_place_formations(enemy_plan, room_rng, player_start, obstacle_rects, threat_band)
+	var placement := _survey_place_formations(enemy_plan, room_rng, player_start, obstacle_rects, threat_band, custom_room_formation if _custom_room_active() else "")
 	var formation_ids: Array = placement["formation_ids"]
 	var formation_id := " + ".join(PackedStringArray(formation_ids))
 	var templates: Array[Dictionary] = []
@@ -933,6 +955,12 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		templates.append({"kind": kind, "role": role, "pos": spawn_position, "facing": initial_facing, "layer": layer})
 		enemy_labels.append(kind.replace("_", " ").capitalize())
 		enemy_roles.append("%s: %s" % [kind.replace("_", " ").capitalize(), role.replace("_", " ")])
+	# Set per room rather than once, so replaying the same composition at a different
+	# health is one control changed rather than a fresh run. Low health is the strongest
+	# single thing we know of for how a room reads -- "the low HP helped", "being on the
+	# verge of death is a great lock-in catalyst" -- so it has to be settable directly.
+	if _custom_room_active():
+		player_hp = clampi(roundi(float(player_max_hp) * custom_room_hp_percent), 1, player_max_hp)
 	var threat_tier := 1 + int(floor(float(room_number - 1) * 0.5))
 	survey_room_definition = {
 		"room_number": room_number,
@@ -940,6 +968,13 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"arena": arena_id,
 		"formation": formation_id,
 		"formation_ids": formation_ids,
+		# Tagged rather than kept in a separate archive. A conditional estimate -- how does
+		# a pincer rate -- does not care how the room came to exist, so segregating these
+		# would throw away usable data. What DOES bite is that custom rooms are chosen on a
+		# hunch and carry a hand-set health, so both are recorded and any analysis can
+		# filter on them.
+		"custom_room": _custom_room_active(),
+		"entry_hp_percent": custom_room_hp_percent if _custom_room_active() else -1.0,
 		"threat_tier": threat_tier,
 		"threat_band": threat_band,
 		"pacing_phase": pacing_phase,
@@ -1099,6 +1134,49 @@ func _recipe_non_melee_count(recipe: Dictionary) -> int:
 	for entry in Array(recipe.get("enemies", [])):
 		if CombatCatalogScript.role(String(Dictionary(entry).get("kind", ""))) in NON_MELEE_ROLES: count += 1
 	return count
+
+func _custom_room_active() -> bool:
+	return mode_id == ModeRulesScript.COMBAT_SURVEY and not custom_room_kinds.is_empty()
+
+func _custom_selectable_kinds() -> Array[String]:
+	var kinds: Array[String] = []
+	for kind in CombatCatalogScript.enemy_kinds():
+		if String(kind) in ["warden", "werewolf"]: continue
+		kinds.append(String(kind))
+	kinds.sort()
+	return kinds
+
+# Re-rolled per room, so a spec holding RANDOM produces a different body each time it is
+# played rather than one body forever.
+func _custom_resolve_kind(token: String, room_rng: RandomNumberGenerator) -> String:
+	var pool := _custom_selectable_kinds()
+	if token == CUSTOM_RANDOM_NEW:
+		var unused: Array[String] = []
+		for kind in pool:
+			if not custom_room_used_kinds.has(kind): unused.append(kind)
+		if not unused.is_empty(): pool = unused
+	elif token != CUSTOM_RANDOM:
+		return token
+	if pool.is_empty(): return "blade"
+	return String(pool[room_rng.randi_range(0, pool.size() - 1)])
+
+func _custom_room_composition(room_rng: RandomNumberGenerator) -> Dictionary:
+	var enemies: Array[Dictionary] = []
+	var labels: Array[String] = []
+	var cost := 0
+	for token in custom_room_kinds:
+		var kind := _custom_resolve_kind(String(token), room_rng)
+		custom_room_used_kinds[kind] = true
+		labels.append(kind)
+		enemies.append({"kind": kind})
+		cost += _survey_enemy_cost(kind)
+	custom_room_last_roster.assign(labels)
+	return {
+		"id": "custom_room", "label": "Custom Room", "family": "custom",
+		"min_tier": 1, "phases": ["opening"], "enemies": enemies, "reinforcements": [],
+		"cost": cost, "ranged_pressure_count": _recipe_non_melee_count({"enemies": enemies}),
+		"melee_experiment": false,
+	}
 
 func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, threat_band: String, pacing_phase: String) -> Dictionary:
 	var tier := 1 + int(floor(float(room_number - 1) * 0.5))
@@ -1489,7 +1567,10 @@ func _survey_group_roster(plan: Array, group_count: int) -> Array:
 # Pick the template that can seat the most of this group in its own band, breaking ties
 # toward the one with the fewest wasted slots. A group of four should not be placed in
 # a six-slot Column with two empty ranks stretching it across the arena.
-func _survey_choose_formation(group: Array, room_rng: RandomNumberGenerator, used_ids: Dictionary) -> Dictionary:
+func _survey_choose_formation(group: Array, room_rng: RandomNumberGenerator, used_ids: Dictionary, forced_formation: String = "") -> Dictionary:
+	if not forced_formation.is_empty():
+		for template_value in _survey_formation_catalog():
+			if String(Dictionary(template_value)["id"]) == forced_formation: return Dictionary(template_value)
 	var wanted: Dictionary = {}
 	for entry in group:
 		var band := _formation_band_for_kind(String(Dictionary(entry)["kind"]))
@@ -1570,13 +1651,16 @@ func _survey_seat_group(group: Array, template: Dictionary, anchor: Vector2, pla
 		seated.append({"entry": entry, "pos": anchor + right * local.x - forward * local.y})
 	return seated
 
-func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, player_start: Vector2, obstacle_rects: Array, threat_band: String) -> Dictionary:
+func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, player_start: Vector2, obstacle_rects: Array, threat_band: String, forced_formation: String = "") -> Dictionary:
 	# One group by default. Two groups placed independently are two sequential fights,
 	# and the archive rates those below one good one -- so a second group has to earn
 	# its place by interacting with the first, and a third needs a stress band behind it.
 	var group_count := 1
-	if plan.size() >= 4 and room_rng.randf() < 0.45: group_count = 2
-	if threat_band == "stress" and plan.size() >= 5 and room_rng.randf() < 0.30: group_count = 3
+	# A named formation means one arrangement, not two copies of it. Splitting a forced
+	# spec across groups would answer a different question than the one being asked.
+	if forced_formation.is_empty():
+		if plan.size() >= 4 and room_rng.randf() < 0.45: group_count = 2
+		if threat_band == "stress" and plan.size() >= 5 and room_rng.randf() < 0.30: group_count = 3
 	var groups := _survey_group_roster(plan, group_count)
 	var toward_arena := (SURVEY_ARENA_CENTER - player_start).normalized()
 	var placed: Array = []
@@ -1584,7 +1668,7 @@ func _survey_place_formations(plan: Array, room_rng: RandomNumberGenerator, play
 	var formation_ids: Array[String] = []
 	for group_index in range(groups.size()):
 		var group: Array = groups[group_index]
-		var template := _survey_choose_formation(group, room_rng, used_ids)
+		var template := _survey_choose_formation(group, room_rng, used_ids, forced_formation)
 		used_ids[String(template["id"])] = true
 		_formation_use_counts[String(template["id"])] = int(_formation_use_counts.get(String(template["id"]), 0)) + 1
 		formation_ids.append(String(template["id"]))
