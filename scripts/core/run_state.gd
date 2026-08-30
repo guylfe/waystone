@@ -352,10 +352,10 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # Player actions that are a swing at something -- what a Bandit reads to know it is
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.56"
+const GAME_VERSION := "0.2.57"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -6083,6 +6083,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "earth_wall" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_raise_earth_wall(Vector2(enemy["pos"]), int(enemy["id"]))
+		elif kind == "cold_front" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_spawn_cold_front(enemy, Vector2(action.get("target", player_pos)))
+		elif kind == "frost_lance" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_spawn_frost_lance(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
 		elif kind == "ice_cone" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_ice_cone(enemy, Vector2(action["direction"]))
@@ -6409,12 +6415,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(duellist_intent["distance"])), 0.40)
 	elif enemy_kind == "ice_caster":
 		if distance <= 310.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("ice_cone", 2.42, direction)
-			enemy["action"]["startup"] = 1.16
+			# Close in, the front: wide and repeating, so backing off is not enough.
+			enemy["action"] = _action("cold_front", 2.34, direction)
+			enemy["action"]["startup"] = 1.12
+			enemy["action"]["target"] = player_pos + player_facing * 40.0
 		elif distance <= 650.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("ice_hex", 2.62, direction)
-			enemy["action"]["startup"] = 1.30
-			enemy["action"]["target"] = player_pos + player_facing * 20.0
+			enemy["action"] = _action("frost_lance", 1.66, direction)
+			enemy["action"]["startup"] = 0.78
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "fire_caster":
 		if distance <= 250.0:
@@ -7158,6 +7165,23 @@ func _javelin_lead(enemy: Dictionary) -> Vector2:
 	if lead.length_squared() < 0.001: lead = Vector2.DOWN
 	return lead
 
+# The moment, not the condition: fast, aimed, and answerable by moving. It carries most
+# of the element's frost, so evading it is the difference between being slowed and not.
+func _spawn_frost_lance(enemy: Dictionary, direction: Vector2) -> void:
+	projectiles.append({
+		"pos": Vector2(enemy["pos"]) + direction * 40.0,
+		"vel": direction.normalized() * 610.0,
+		"radius": 11.0,
+		"damage": 3,
+		"kind": "frost_lance",
+		"launch_direction": direction,
+		"turn_rate": 0.0,
+		"max_track_angle": 0.0,
+		"source_id": int(enemy["id"]),
+		"layer": String(enemy.get("layer", current_layer)),
+	})
+	_set_message("A lance of ice is loosed.")
+
 func _spawn_javelin(enemy: Dictionary) -> void:
 	var origin := Vector2(enemy["pos"])
 	# The line committed to at the announcement. It does not re-aim: an early read
@@ -7342,6 +7366,21 @@ func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
 func _spawn_player_fire(pos: Vector2) -> void:
 	hazards.append({"kind": "player_fire", "pos": pos, "radius": 124.0, "elapsed": 0.0, "trigger_at": 0.16, "duration": 0.56, "damage": 20, "posture": 2.8, "source_id": 0, "triggered": false, "friendly": true, "layer": current_layer})
 
+# Ice decides EVADABILITY: a threat that is a moment, versus a threat that is a condition
+# of being there. The front is the second -- wide, slow and repeating, so leaving it is a
+# journey rather than a sidestep. It never kills; it decides who does.
+const COLD_FRONT_TICKS := 4
+const COLD_FRONT_INTERVAL := 0.46
+
+func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
+	hazards.append({
+		"kind": "cold_front", "pos": target, "radius": 268.0,
+		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
+		"damage": 1, "ticks_done": 0, "next_tick": 0.70,
+		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
+	})
+	_set_message("The air goes bitter and still.")
+
 func _spawn_hex(enemy: Dictionary, target: Vector2, hazard_kind: String = "hex") -> void:
 	var ice := hazard_kind == "ice_hex"
 	hazards.append({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 3 if ice else 2, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
@@ -7374,6 +7413,18 @@ func _update_hazards(dt: float) -> void:
 				for enemy in _nearby_enemies(Vector2(hazard["pos"]), float(hazard["radius"]) + 70.0):
 					if _enemy_on_current_layer(enemy) and Vector2(enemy["pos"]).distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + float(enemy["radius"]):
 						_damage_enemy_from_consumable(enemy, int(hazard["damage"]), float(hazard.get("posture", 0.0)), Vector2(hazard["pos"]))
+			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
+			continue
+		if kind == "cold_front":
+			# Ticks repeatedly instead of resolving once, which is what makes it a place
+			# rather than a moment. Small frost each time, so standing in it is the mistake
+			# rather than being caught by it.
+			if float(hazard["elapsed"]) >= float(hazard.get("next_tick", 0.0)) and int(hazard.get("ticks_done", 0)) < COLD_FRONT_TICKS:
+				hazard["ticks_done"] = int(hazard.get("ticks_done", 0)) + 1
+				hazard["next_tick"] = float(hazard["elapsed"]) + COLD_FRONT_INTERVAL
+				_add_effect("ice", Vector2(hazard["pos"]))
+				if player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + PLAYER_RADIUS:
+					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos)
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
 		# One cone, two elements. The shape is the same question -- are you in front of it
@@ -7445,7 +7496,8 @@ func _update_projectiles(dt: float) -> void:
 			# Whatever it reaches first along this step, so a body that steps into the lane
 			# in front of its own side takes the shot meant for someone behind it.
 			if player_order < nearest_order:
-				_resolve_incoming_hit(source_id, int(projectile["damage"]), "fireball" if projectile_kind == "firebolt" else "arrow", -Vector2(projectile["vel"]).normalized())
+				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "arrow"
+				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized())
 				continue
 			if not nearest_enemy.is_empty():
 				if projectile_kind == "firebomb":
@@ -7594,7 +7646,11 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	# The frost pays out on the next hit and is spent doing it. Without that release the
 	# slow compounds into a spiral with no way out; with it, being frosted is a warning
 	# that the next mistake costs double rather than a sentence.
-	var frost_standing := player_frost_fraction()
+	# Frost never amplifies frost. Cold Front ticks four times, so without this the second
+	# tick is amplified by the first, and ice quietly becomes the hardest-hitting element
+	# in the game -- measured at 46 damage from a single front. "Ice never kills you; it
+	# decides who does" only holds if the thing it makes deadlier is somebody else.
+	var frost_standing := 0.0 if ("ice" in source_name.to_lower() or "frost" in source_name.to_lower() or "cold" in source_name.to_lower()) else player_frost_fraction()
 	if frost_standing > 0.0:
 		damage_received = int(round(float(damage_received) * (1.0 + FROST_DAMAGE_AMPLIFY * frost_standing)))
 		player_conditions.erase("frost")
@@ -7677,8 +7733,12 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 const CONDITION_BUILDUP_BY_SOURCE := {
 	"fire breath": 11.0,
 	"fireball": 3.0,
-	"frost lance": 11.0,
-	"cold front": 2.6,
+	# Tuned so frost is reachable within a fight but never from one ability alone. The
+	# Warrior's threshold is 23.7, so a lance plus a full front (13.0 + 13.6) crosses it
+	# and so does a second lance -- while either on its own leaves the player cold but
+	# not slowed. The element is supposed to compound, not to land.
+	"frost lance": 13.0,
+	"cold front": 3.4,
 }
 
 func _apply_source_condition_to_player(source_name: String) -> void:

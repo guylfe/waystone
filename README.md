@@ -1,6 +1,20 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.56` (Android version code `256`).
+Current prototype version: `0.2.57` (Android version code `257`).
+
+### v0.2.57: Ice decides evadability
+
+Both of Ice's abilities replaced. It had a cone and a delayed hex; it now has a **moment** and a **condition of being there**.
+
+**Frost Lance** — a fast aimed projectile carrying most of the element's frost. Answerable by moving, so evading it is the difference between being slowed and not.
+
+**Cold Front** — a wide zone that ticks four times over nearly two seconds. Leaving it is a journey rather than a sidestep, and each tick loads only a little frost, so *standing in it* is the mistake rather than being caught by it.
+
+**Frost is reachable in a fight but never from one ability.** The Warrior's threshold is 23.7; a lance charges to 0.55 without slowing anything, and a second crosses it and drops tempo to 0.660. The element compounds rather than lands.
+
+**One thing this exposed: frost was amplifying frost.** Cold Front ticks four times, so the second tick was amplified by the first, then the third by the second — a single front measured **46 damage**, which would have made ice the hardest-hitting element in the game. Frost now never amplifies a frost source. *"Ice never kills you; it decides who does"* only holds if the thing it makes deadlier is somebody else. The same front now costs 20, while a frosted player still takes 20 from an arrow that would otherwise deal 13.
+
+That is the whole point of the element: it is dangerous specifically *beside* a heavy ally rather than anywhere, which keeps it out of Fire's territory.
 
 ### v0.2.56: Fire decides near or far
 

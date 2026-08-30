@@ -3032,7 +3032,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) == "slam":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, float(action.get("reach", 205.0)), Color.TRANSPARENT, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 		else: draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
-	elif String(action["kind"]) in ["hex", "ice_hex"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 12.0, Color("8edcff") if String(action["kind"]) == "ice_hex" else Color("b57bea"))
+	elif String(action["kind"]) in ["hex", "ice_hex", "cold_front"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0 if String(action["kind"]) == "cold_front" else 12.0, Color("b57bea") if String(action["kind"]) == "hex" else Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
 	if awareness in ["suspicious", "alerted"]:
 		var marker := "?" if awareness == "suspicious" else "!"
@@ -3484,7 +3484,7 @@ func _draw_hazard(hazard: Dictionary) -> void:
 		return
 	var fill_color := Color(0.55, 0.25, 0.70, 0.08 + progress * 0.12)
 	var edge_color := Color("b57bea")
-	if kind == "ice_hex":
+	if kind == "ice_hex" or kind == "cold_front":
 		fill_color = Color(0.28, 0.70, 0.92, 0.10 + progress * 0.18)
 		edge_color = Color("9be7ff")
 	elif kind in ["fire_breath", "player_fire"]:
@@ -3735,6 +3735,8 @@ func _phase(action: Dictionary) -> String:
 		if String(action.get("label", "")) == "firebolt": return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
 		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
+	if kind == "cold_front": return "THE AIR STILLS" if elapsed < float(action.get("startup", 1.12)) else "FREEZING"
+	if kind == "frost_lance": return "CONDENSING" if elapsed < float(action.get("startup", 0.78)) else "LOOSED"
 	if kind == "ice_cone": return "GATHERING FROST" if elapsed < float(action.get("startup", 0.58)) else "CASTING"
 	if kind == "fire_breath": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.74)) else "BREATHING FIRE"
 	if kind == "charge":
