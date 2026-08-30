@@ -342,6 +342,30 @@ const ARCHETYPES := {
 # Thrusts and the smash extend their own geometry through the active window, so
 # that plant rule does not apply to them and travel runs to contact.
 const MELEE_ATTACK_PLANS := {
+	# Every caster carries one. Same numbers for all five, deliberately: this is the weapon
+	# the class does not train with, so it should not develop personality per element. One
+	# damage, a wind-up longer than a Blade's, and a recovery long enough that throwing it
+	# is a real decision rather than something to do between spells.
+	#
+	# 168 reach is the point. A caster is not free to stand next to -- you have to commit
+	# through the poke rather than idle at contact range -- but it costs almost nothing to
+	# be hit by, so committing is the right answer nearly every time. It buys the caster a
+	# beat, not a fight.
+	"ice_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+	],
+	"fire_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+	],
+	"earth_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+	],
+	"air_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+	],
+	"chanter": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+	],
 	"blade": [
 		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "f_rad": 0.50, "advance_distance": 58.0, "advance_end": 0.31, "damage": 2},
 	],

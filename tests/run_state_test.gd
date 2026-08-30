@@ -79,6 +79,7 @@ func _init() -> void:
 	test_shield_front_arc()
 	test_new_enemy_roles()
 	test_air_caster_gale_and_windstep()
+	test_casters_carry_staves()
 	test_back_half_expedition_roles()
 	test_progressive_expedition_rooms()
 	test_required_passages_have_generous_clearance()
@@ -1609,6 +1610,64 @@ func test_air_caster_gale_and_windstep() -> void:
 	for tick in range(12):
 		walled._update_enemies(walled.SIM_DT, tick % 2 == 0)
 	assert(Vector2(blocked["pos"]).distance_to(held) < 40.0)
+
+# Every caster carries a staff and, until 0.2.59, none of them could use it. The frame had
+# named `staff_strike` as its basic technique since the catalog was written, with no
+# geometry and no attack plan behind it -- so a caster you reached was a stationary object
+# and getting past a screen cost nothing once you were through.
+func test_casters_carry_staves() -> void:
+	var state: RunState = RunStateScript.new()
+	state.start_run("warrior", "combat_survey", 5150, "encounter", "recovery")
+	state.walls.clear()
+	state.barriers.clear()
+	for kind in ["ice_caster", "fire_caster", "earth_caster", "air_caster", "chanter"]:
+		assert(CombatCatalogScript.has_melee_attack_plan(String(kind)))
+		var option: Dictionary = Array(CombatCatalogScript.melee_attack_plan(String(kind)))[0]
+		assert(String(option["technique"]) == "staff_poke")
+		# One damage, and every other melee body in the game does more. "Worst weapon in
+		# the game" is a claim the numbers have to actually make.
+		assert(int(option["damage"]) == 1)
+		# ...but it has reach, which is the only thing it has: a caster is not free to
+		# stand next to, it just costs almost nothing to walk through.
+		assert(float(option["reach"]) > 150.0)
+	# The technique has real geometry rather than falling back to the default cut.
+	assert(String(AttackGeometryScript.technique("staff_poke")["motion"]) == "thrust")
+	assert(AttackGeometryScript.label("staff_poke") != AttackGeometryScript.label("diagonal_cut"))
+
+	# The Chanter is the case that mattered most: it shipped with no attack at all and
+	# walked backwards forever, which is an absence rather than a price.
+	state.enemies.clear()
+	var chanter := state._make_enemy("chanter", state.player_pos + Vector2.UP * 90.0, 6)
+	state.enemies = [chanter]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._choose_enemy_action(chanter)
+	assert(String(Dictionary(chanter["action"])["technique_id"]) == "staff_poke")
+
+	# It is gated: having thrown one, the caster goes back to what it is for rather than
+	# poking on a loop. A caster that fences is not a caster.
+	state._choose_enemy_action(chanter)
+	# .get, because the fallback is a move action and a move action has no technique.
+	assert(String(Dictionary(chanter["action"]).get("technique_id", "")) != "staff_poke")
+
+	# Ice answers contact range with the front while it has one, and with the staff once
+	# the front is spent -- which is also why the front now carries a cooldown at all.
+	state.enemies.clear()
+	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2.UP * 120.0, 6)
+	state.enemies = [ice]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["kind"]) == "cold_front")
+	assert(float(ice["shot_cooldown"]) > 0.0)
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["technique_id"]) == "staff_poke")
+
+	# Beyond arm's length the staff is not an option and the element resumes.
+	ice["pos"] = state.player_pos + Vector2.UP * 420.0
+	ice["neutral_cooldown"] = 0.0
+	state._choose_enemy_action(ice)
+	assert(String(Dictionary(ice["action"])["kind"]) == "frost_lance")
 
 func test_back_half_expedition_roles() -> void:
 	var state: RunState = RunStateScript.new()

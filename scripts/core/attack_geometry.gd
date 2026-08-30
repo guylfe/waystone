@@ -17,6 +17,15 @@ const TECHNIQUES := {
 	"broad_sweep": {"motion": "arc", "start_angle": -1.396, "end_angle": 1.396, "inner_radius": 29.0, "radius": 7.0, "multi": true, "label": "Broad sweep"},
 	"heavy_cleave": {"motion": "arc", "start_angle": -1.658, "end_angle": 1.658, "inner_radius": 34.0, "radius": 10.0, "multi": true, "label": "Heavy cleave"},
 	"heavy_chop": {"motion": "arc", "start_angle": -0.50, "end_angle": 0.20, "inner_radius": 32.0, "radius": 9.0, "multi": false, "label": "Heavy chop"},
+	# The staff frame has named `staff_strike` as its basic technique since the catalog was
+	# written, and it had no geometry and no attack plan behind it -- which is the same
+	# defect E2 was about: a name with nothing under it. A caster reached was simply a
+	# stationary object.
+	#
+	# Long and thin. A staff has REACH, which is the only thing it has: a caster does not
+	# want you close and the poke says so, rather than being a scaled-down sword. It is the
+	# worst melee attack in the game and is meant to read that way at a glance.
+	"staff_poke": {"motion": "thrust", "radius": 5.0, "multi": false, "label": "Staff poke"},
 	"thrust": {"motion": "thrust", "radius": 10.0, "multi": false, "label": "Thrust"},
 	"rapier_thrust": {"motion": "thrust", "radius": 6.0, "multi": false, "label": "Rapier thrust"},
 	"driving_cut": {"motion": "thrust", "radius": 8.0, "multi": false, "label": "Driving cut"},

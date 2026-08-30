@@ -1,6 +1,24 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.58` (Android version code `258`).
+Current prototype version: `0.2.59` (Android version code `259`).
+
+## v0.2.59 — the casters carry staves
+
+Every caster in the game is holding a staff. None of them could use it.
+
+The `staff` weapon frame has named `staff_strike` as its basic technique since the catalog was first written, and there was no geometry entry and no attack plan behind that name — so the frame described a weapon that did not exist. This is the same defect Milestone E2 was about: a label with nothing under it is a lie the code tells about itself. The Chanter is the sharpest case. It shipped with no attack at all and a comment saying that was its price for being worth reaching, but a unit that walks backwards forever and never contests anything is not paying a price, it is absent.
+
+The practical consequence was that reaching a caster was a formality rather than a decision. That undercuts the formation work from 0.2.41 directly: screening only means something if getting past the screen still costs you something.
+
+So all five casters — Fire, Ice, Earth, Air and the Chanter — now carry one melee attack, and it is the same attack for all of them. Identical numbers on purpose: this is the weapon the class does not train with, and it should not develop personality per element the way the spells do.
+
+**The staff poke** is one damage. Every other melee body in the game does more, which is what makes "the worst weapon in the game" a claim the numbers actually make rather than a description. Its wind-up is longer than a Blade's and its recovery is long enough that throwing it is a real commitment. What it does have is 168 units of reach, and that reach is the whole point: a caster is no longer free to stand next to. You have to commit through the poke rather than idle at contact range — but since being hit by it costs almost nothing, committing is the right answer nearly every time. It buys the caster a beat, not a fight.
+
+It is drawn without a spearhead, as a plain capped stick, because the drawing should not promise a point the damage number does not deliver.
+
+It is gated on the caster's real verbs being unavailable, and it sits above the ranged verb in the decision rather than below it — a caster does not line up a frost lance at someone standing in its face. Ordering it the other way would have left the poke as code that never runs.
+
+That gating required a change worth naming separately: **the Ice Caster's Cold Front and the Fire Caster's Fire Breath now carry cooldowns**, 3.4 and 3.0 seconds. They had none. At contact range both casters simply repeated their close AoE forever, which is not a decision the caster makes — it is weather. Now the front goes up, and while it is recovering the caster has a stick.
 
 ## v0.2.58 — the fourth element
 

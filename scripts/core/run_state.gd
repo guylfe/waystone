@@ -355,7 +355,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.58"
+const GAME_VERSION := "0.2.59"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -6376,12 +6376,14 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(brute_intent["distance"])), 0.78)
 	elif enemy_kind == "chanter":
-		# Order of business for a support unit: get behind something, then work. It has
-		# no attack at all -- if you reach it, it is finished, which is the price it pays
-		# for being worth reaching.
+		# Order of business for a support unit: get behind something, then work. Reaching it
+		# still finishes it -- that is the price it pays for being worth reaching -- but as
+		# of 0.2.59 it is no longer literally defenceless, because "walks backward forever
+		# and never contests anything" was not a price, it was an absence.
 		var chant_allies := _chant_targets(enemy)
 		if not _chanter_is_screened(enemy, chant_allies) or distance < 240.0:
-			enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
+			if distance <= STAFF_POKE_RANGE * 0.72 and _try_staff_poke(enemy, distance, direction): pass
+			else: enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
 		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and not chant_allies.is_empty():
 			var chant := _choose_chant(chant_allies)
 			enemy["action"] = _action("chant", CHANT_STARTUP + 0.46, direction)
@@ -6420,6 +6422,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["move_end"] = 0.58
 			enemy["action"]["speed"] = 1250.0
 			enemy["pounce_cooldown"] = 4.60
+		elif distance <= STAFF_POKE_RANGE and _try_staff_poke(enemy, distance, direction): pass
 		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("gale", 1.64, direction)
 			enemy["action"]["startup"] = 0.80
@@ -6429,9 +6432,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["shot_cooldown"] = 5.20
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "earth_caster":
+		# The poke is checked first only at contact range, which STAFF_POKE_RANGE already
+		# enforces -- beyond it the call returns false and the ground work proceeds.
 		# It never aims at where you are. Ground you are standing on is ground you have
 		# already spent; the cut that matters is between you and where you want to be.
-		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if _try_staff_poke(enemy, distance, direction): pass
+		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# Slow or block -- the element's decision. The wall goes up when the player is
 			# far enough away for cutting the retreat to mean something; up close there is
 			# no retreat to cut, so the ground opens instead.
@@ -6456,19 +6462,23 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(duellist_intent["distance"])), 0.40)
 	elif enemy_kind == "ice_caster":
-		if distance <= 310.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+		if distance <= 310.0 and float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# Close in, the front: wide and repeating, so backing off is not enough.
 			enemy["action"] = _action("cold_front", 2.34, direction)
 			enemy["action"]["startup"] = 1.12
 			enemy["action"]["target"] = player_pos + player_facing * 40.0
+			enemy["shot_cooldown"] = 3.40
+		elif _try_staff_poke(enemy, distance, direction): pass
 		elif distance <= 650.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("frost_lance", 1.66, direction)
 			enemy["action"]["startup"] = 0.78
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "fire_caster":
-		if distance <= 250.0:
+		if distance <= 250.0 and float(enemy.get("shot_cooldown", 0.0)) <= 0.0:
 			enemy["action"] = _action("fire_breath", 1.82, direction)
 			enemy["action"]["startup"] = 0.74
+			enemy["shot_cooldown"] = 3.00
+		elif _try_staff_poke(enemy, distance, direction): pass
 		elif distance <= 670.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("shoot", 1.58, direction)
 			enemy["action"]["startup"] = 0.64
@@ -6530,6 +6540,27 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			var move_target := player_pos if distance > 520.0 else Vector2(enemy["pos"]) - direction * 240.0
 			enemy["action"] = _enemy_move_action(enemy, move_target, 0.56)
+
+# A caster reached used to be a stationary object: every one of them either retreated,
+# cast something it could not cast at that range, or simply stood there. That made closing
+# on a caster a formality rather than a decision, which is the opposite of what the
+# formation work in 0.2.41 was for -- screening only means something if getting past the
+# screen still costs you.
+#
+# The answer is one weak melee attack, shared by all five, gated on the caster's real verbs
+# being unavailable. It is not an attack a caster wants to make.
+const STAFF_POKE_RANGE := 176.0
+const STAFF_POKE_COOLDOWN := 2.30
+
+func _try_staff_poke(enemy: Dictionary, distance: float, direction: Vector2) -> bool:
+	if distance > STAFF_POKE_RANGE: return false
+	if float(enemy.get("neutral_cooldown", 0.0)) > 0.0: return false
+	if not _has_line_of_sight(Vector2(enemy["pos"]), player_pos): return false
+	var poke := _plan_option(String(enemy["kind"]), "staff_poke")
+	if poke.is_empty(): return false
+	enemy["action"] = _intent_melee_action(poke, direction)
+	enemy["neutral_cooldown"] = STAFF_POKE_COOLDOWN
+	return true
 
 func _plan_option(kind: String, technique: String) -> Dictionary:
 	for option_value in CombatCatalogScript.melee_attack_plan(kind):

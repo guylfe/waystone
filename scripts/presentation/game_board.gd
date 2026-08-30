@@ -3203,7 +3203,12 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 	draw_line(weapon_start, weapon_end, color, width)
 	if view_mode == "isometric" and visual_lift.length_squared() > 1.0:
 		draw_line(_world_to_screen(Vector2(sample["weapon_start"])), weapon_start, Color(color, 0.22), maxf(1.0, width * 0.28))
-	if technique == "thrust":
+	if technique == "staff_poke":
+		# No spearhead. It is a stick, and the drawing should not promise a point that the
+		# damage number does not deliver -- a caster's poke has to read as feeble on sight.
+		var cap := maxf(3.0, world_scale * 4.0)
+		draw_circle(weapon_end, cap, color)
+	elif technique == "thrust":
 		var tip := maxf(5.0, world_scale * 8.0)
 		draw_colored_polygon(PackedVector2Array([weapon_end + screen_direction * tip, weapon_end - screen_direction * tip * 0.65 + side * tip * 0.55, weapon_end - screen_direction * tip * 0.65 - side * tip * 0.55]), color)
 	elif technique == "forward_smash":
