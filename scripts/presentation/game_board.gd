@@ -2271,6 +2271,23 @@ func _draw_world() -> void:
 		if String(hazard.get("layer", state.current_layer)) != state.current_layer: continue
 		if not _world_point_on_camera(Vector2(hazard["pos"]), float(hazard.get("radius", 100.0))): continue
 		if state.is_visible(Vector2(hazard["pos"]), visible): _draw_hazard(hazard)
+	for segment in Array(visual.get("barriers", [])):
+		if String(segment.get("layer", state.current_layer)) != state.current_layer: continue
+		var centre := Vector2(segment["pos"])
+		if not _world_point_on_camera(centre, float(segment.get("half_length", 30.0)) + 40.0): continue
+		var axis := Vector2(segment.get("axis", Vector2.RIGHT)).normalized()
+		var reach := float(segment.get("half_length", 28.0))
+		var a := _world_to_screen(centre - axis * reach)
+		var b := _world_to_screen(centre + axis * reach)
+		var lowered := bool(segment.get("lowered", false))
+		var integrity := clampf(float(segment.get("hp", 10.0)) / 10.0, 0.15, 1.0)
+		# A lowered segment is drawn as a scar on the ground rather than removed: the gap
+		# is information -- it is where an enemy is -- and hiding it would make the wall
+		# read as randomly broken instead of as pressure you can see.
+		var thickness := maxf(2.0, float(segment.get("thickness", 17.0)) * world_scale * (0.35 if lowered else 1.0))
+		draw_line(a, b, Color(0.42, 0.32, 0.20, 0.45 if lowered else 0.95 * integrity), thickness)
+		if not lowered:
+			draw_line(a, b, Color(0.74, 0.58, 0.34, 0.85 * integrity), maxf(1.0, thickness * 0.35))
 	if view_mode == "isometric":
 		_draw_isometric_solids(visible, discovered)
 	else:

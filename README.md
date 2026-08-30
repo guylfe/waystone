@@ -1,6 +1,26 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.54` (Android version code `254`).
+Current prototype version: `0.2.55` (Android version code `255`).
+
+### v0.2.55: Barriers, and Earth's wall
+
+The third shared system, shipping with the first thing that makes one — a barrier has no observable behaviour until something raises it.
+
+**Barriers live outside `walls`**, so the cached navigation grid is never touched. That is correct rather than a concealed shortcut: `_navigation_direction()` is only ever called from enemy movement, and **a barrier never blocks enemies** — so a grid ignorant of it is right. The player does not use the A* grid at all.
+
+**The wall blocks the player and projectiles, never bodies.** Six segments, 340 units, raised perpendicular across the player's escape heading at ~170 units — their movement direction if moving, otherwise straight away from the caster. Straight rather than curved, so the ends stay a real option. Measured: 172 units out, on the escape side, blocking the player and an arrow lane while enemies walk through.
+
+**It feeds `_archer_has_clear_lane()`**, so a ranged enemy repositions rather than firing into it — turning *"your arrows are wasted"* into *"you made the archer spend time walking"*.
+
+**Segments lower near a living body and rise again when clear**, and never rise underneath the player. Ratcheting permanently open would put the gap wherever an enemy passed *earlier* rather than where the danger *is*, and the wall would decay fastest under exactly the pressure it exists to create. Because it sits in the escape direction, pursuers reach it from the player's side: **the gap opens where the threat is, and the way out runs through it.**
+
+**Breakable.** A high-impact blow (≥ 3.5 posture) shatters a segment outright; lighter attacks chip. Earth is the element you answer with your weapon rather than your feet, and breaking costs an action — which is time, the thing the wall was taxing. Three priced options: around, through the gap, or through the wall.
+
+**Earth now chooses between two verbs.** The wall goes up at range, where cutting the retreat means something; up close there is no retreat to cut, so the ground opens instead. `sunder` slows, the wall blocks.
+
+An arcing javelin **sails over** a raised segment, because elevation is checked before the barrier — the same friend-blind rule from `0.2.47` doing double duty rather than a special case.
+
+A lowered segment is drawn as a scar rather than erased: the gap is information — it marks where an enemy is — and hiding it would make the wall read as randomly broken instead of as pressure you can see.
 
 ### v0.2.54: Burn charges for acting, frost charges for being hit
 

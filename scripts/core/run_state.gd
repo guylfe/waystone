@@ -227,6 +227,26 @@ const FROST_MAX_SLOW := 0.34
 # consumes the frost, so a frosted player is in danger rather than in a death spiral.
 const FROST_DAMAGE_AMPLIFY := 0.55
 const FROST_FULL_DURATION := 6.0
+# Barriers live OUTSIDE `walls`, so the cached navigation grid is never touched. That is
+# safe rather than a concealed bug: `_navigation_direction()` is only ever called from
+# enemy movement, and a barrier never blocks enemies -- so a grid ignorant of it is
+# correct. The player does not use the A* grid at all.
+const EARTH_WALL_SEGMENTS := 6
+const EARTH_WALL_SPAN := 340.0
+const EARTH_WALL_STANDOFF := 170.0
+const EARTH_WALL_DURATION := 4.5
+const EARTH_WALL_THICKNESS := 17.0
+const EARTH_WALL_SEGMENT_HP := 10.0
+# A high-impact blow destroys a segment outright; anything lighter chips. Earth is the
+# element you answer with your weapon rather than your feet, and breaking costs an action
+# -- which is time, the thing the wall was taxing in the first place.
+const EARTH_WALL_SHATTER_IMPACT := 3.5
+# Segments lower near a living enemy and rise again when it is clear. Ratcheting
+# permanently open would put the gap wherever an enemy passed EARLIER rather than where
+# the danger is, and the wall would decay fastest under exactly the pressure it exists to
+# create. Because it is placed in the escape direction, pursuers reach it from the
+# player's side: the gap opens where the threat is, and the way out runs through it.
+const EARTH_WALL_LOWER_RANGE := 90.0
 
 # Arrows stay flat, which gives the two ranged enemies a third axis of difference on top
 # of speed and lead. Javelins arc: high early to clear the melee standing near the
@@ -332,10 +352,10 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # Player actions that are a swing at something -- what a Bandit reads to know it is
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex", "earth_wall"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.54"
+const GAME_VERSION := "0.2.55"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -445,6 +465,7 @@ var aimed_enemy_id := -1
 var aimed_remaining := 0.0
 var bow_followup_ready := false
 var bow_followup_consumed := false
+var barriers: Array[Dictionary] = []
 var player_condition_buildup: Dictionary = {}
 # How much of the frost still stands, 0..1. Read by tempo, by the damage amplifier and by
 # the meter, so all three agree by construction.
@@ -757,6 +778,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
 	player_conditions.clear()
+	barriers.clear()
 	_player_burn_debt = 0.0
 	bow_followup_ready = false
 	bow_followup_consumed = false
@@ -4091,6 +4113,7 @@ func _restore_at_waystone() -> void:
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
 	player_conditions.clear()
+	barriers.clear()
 	_player_burn_debt = 0.0
 	rally_remaining = 0.0
 	rally_end_after_action = false
@@ -5126,6 +5149,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 	var action_reach := float(player_action.get("reach", player_attack_reach))
 	var sample: Dictionary = AttackGeometryScript.pose(sampled_action, player_pos, player_facing, _nearby_walls(player_pos, action_reach + 90.0))
 	_survey_update_strike_probe(sample, elapsed)
+	_strike_barriers(sample, float(player_action.get("posture_damage", 1.0)))
 	var hit_ids: Array = player_action["hit_ids"]
 	var contacts: Array[Dictionary] = []
 	var pending_awareness: Array[Dictionary] = []
@@ -5706,6 +5730,102 @@ func _gore_allies_in_path(charger: Dictionary, origin: Vector2, finish: Vector2,
 		_damage_enemy_from_consumable(other, int(action.get("damage_max", action.get("damage", 10))), 4.0, Vector2(other["pos"]))
 	action["gored_ids"] = gored
 
+# Straight rather than an arc, so the ends stay a real option. Perpendicular to the
+# player's escape heading -- their movement direction if moving, otherwise straight away
+# from the caster -- and placed ahead of them, so it cuts retreat rather than shielding it.
+#
+# The asymmetry is free: an enemy caster placing it behind the player leaves its own
+# archers on the far side, while an Elementalist placing it toward the threat gates them.
+# One rule, opposite value, decided entirely by where it goes.
+func _raise_earth_wall(origin: Vector2, source_id: int) -> void:
+	var heading := Vector2(player_action.get("direction", Vector2.ZERO))
+	if String(player_action.get("kind", "idle")) != "move" or heading.length_squared() < 0.001:
+		heading = player_pos - origin
+	if heading.length_squared() < 0.001: heading = Vector2.DOWN
+	heading = heading.normalized()
+	var centre := player_pos + heading * EARTH_WALL_STANDOFF
+	var axis := heading.rotated(PI * 0.5)
+	var segment_span := EARTH_WALL_SPAN / float(EARTH_WALL_SEGMENTS)
+	for index in range(EARTH_WALL_SEGMENTS):
+		var offset := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
+		barriers.append({
+			"pos": centre + axis * offset,
+			"axis": axis,
+			"half_length": segment_span * 0.5,
+			"thickness": EARTH_WALL_THICKNESS,
+			"hp": EARTH_WALL_SEGMENT_HP,
+			"remaining": EARTH_WALL_DURATION,
+			"lowered": false,
+			"source_id": source_id,
+			"layer": current_layer,
+		})
+	_add_effect("earth_wall", centre)
+	_set_message("The ground heaves into a wall.")
+
+func _barrier_blocks(segment: Dictionary, point: Vector2, radius: float) -> bool:
+	if bool(segment.get("lowered", false)) or float(segment.get("hp", 0.0)) <= 0.0: return false
+	if String(segment.get("layer", current_layer)) != current_layer: return false
+	var axis := Vector2(segment["axis"])
+	var offset := point - Vector2(segment["pos"])
+	var along := clampf(offset.dot(axis), -float(segment["half_length"]), float(segment["half_length"]))
+	return (Vector2(segment["pos"]) + axis * along).distance_to(point) <= float(segment["thickness"]) + radius
+
+# The player is stopped by a barrier; enemies never are. That is the whole asymmetry, and
+# it is why the navigation grid can stay ignorant of the thing.
+func _point_in_barrier(point: Vector2, radius: float = 0.0) -> bool:
+	for segment in barriers:
+		if _barrier_blocks(segment, point, radius): return true
+	return false
+
+func _segment_crosses_barrier(from_point: Vector2, to_point: Vector2) -> bool:
+	for step in range(0, 13):
+		if _point_in_barrier(from_point.lerp(to_point, float(step) / 12.0)): return true
+	return false
+
+func _update_barriers(dt: float) -> void:
+	if barriers.is_empty(): return
+	var survivors: Array[Dictionary] = []
+	for segment in barriers:
+		segment["remaining"] = float(segment.get("remaining", 0.0)) - dt
+		if float(segment["remaining"]) <= 0.0 or float(segment.get("hp", 0.0)) <= 0.0: continue
+		var near_enemy := false
+		for enemy in _nearby_enemies(Vector2(segment["pos"]), EARTH_WALL_LOWER_RANGE + float(segment["half_length"])):
+			if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+			if _barrier_blocks(segment, Vector2(enemy["pos"]), EARTH_WALL_LOWER_RANGE):
+				near_enemy = true
+				break
+		if near_enemy:
+			segment["lowered"] = true
+		elif bool(segment.get("lowered", false)):
+			# Never rise underneath the player -- being pushed out of a wall you were
+			# standing in is the one outcome this must not produce.
+			segment["lowered"] = _barrier_blocks({"pos": segment["pos"], "axis": segment["axis"], "half_length": segment["half_length"], "thickness": segment["thickness"], "hp": 1.0, "lowered": false, "layer": segment["layer"]}, player_pos, PLAYER_RADIUS)
+		survivors.append(segment)
+	barriers = survivors
+
+# Earth is answered with the weapon. A high-impact blow takes a segment out in one; a
+# light one chips, so the choice between going around, through the gap, or through the
+# wall is priced rather than free.
+func _strike_barriers(sample: Dictionary, impact: float) -> void:
+	if barriers.is_empty(): return
+	for segment in barriers:
+		if bool(segment.get("lowered", false)) or float(segment.get("hp", 0.0)) <= 0.0: continue
+		var axis := Vector2(segment["axis"])
+		var hit := false
+		for step: float in [-1.0, 0.0, 1.0]:
+			var point := Vector2(segment["pos"]) + axis * (step * float(segment["half_length"]))
+			if AttackGeometryScript.hits_circle(sample, point, float(segment["thickness"])):
+				hit = true
+				break
+		if not hit: continue
+		if impact >= EARTH_WALL_SHATTER_IMPACT:
+			segment["hp"] = 0.0
+			_add_effect("posture_break", Vector2(segment["pos"]))
+			_set_message("The wall shatters.")
+		else:
+			segment["hp"] = maxf(0.0, float(segment["hp"]) - 3.0)
+			_add_effect("hurt", Vector2(segment["pos"]), 0)
+
 func _rouse_neighbours(spotter: Dictionary) -> void:
 	for other in _nearby_enemies(Vector2(spotter["pos"]), SPOTTER_ROUSE_RADIUS):
 		if int(other.get("id", -1)) == int(spotter.get("id", -2)): continue
@@ -5728,6 +5848,7 @@ func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) 
 	return bool(enemy.get("player_los", false))
 
 func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
+	_update_barriers(dt)
 	_refresh_active_enemy_cache()
 	# Which casters are still standing. Anything sustained by a Chanter that is no
 	# longer alive ends this tick -- collected here rather than through a death hook so
@@ -5959,6 +6080,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind in ["hex", "ice_hex"] and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_hex(enemy, Vector2(action["target"]), "ice_hex" if kind == "ice_hex" else "hex")
+		elif kind == "earth_wall" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_raise_earth_wall(Vector2(enemy["pos"]), int(enemy["id"]))
 		elif kind == "ice_cone" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_ice_cone(enemy, Vector2(action["direction"]))
@@ -6260,10 +6384,18 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# It never aims at where you are. Ground you are standing on is ground you have
 		# already spent; the cut that matters is between you and where you want to be.
 		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("sunder", 1.72, direction)
-			enemy["action"]["startup"] = 0.92
-			enemy["action"]["target"] = _sunder_target(enemy)
-			enemy["shot_cooldown"] = 4.20
+			# Slow or block -- the element's decision. The wall goes up when the player is
+			# far enough away for cutting the retreat to mean something; up close there is
+			# no retreat to cut, so the ground opens instead.
+			if barriers.is_empty() and distance >= 300.0:
+				enemy["action"] = _action("earth_wall", 1.94, direction)
+				enemy["action"]["startup"] = 1.10
+				enemy["shot_cooldown"] = 6.40
+			else:
+				enemy["action"] = _action("sunder", 1.72, direction)
+				enemy["action"]["startup"] = 0.92
+				enemy["action"]["target"] = _sunder_target(enemy)
+				enemy["shot_cooldown"] = 4.20
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "duellist":
@@ -6612,7 +6744,9 @@ func _archer_has_clear_lane(archer: Dictionary) -> bool:
 		var closest := Geometry2D.get_closest_point_to_segment(Vector2(ally["pos"]), origin, player_pos)
 		if closest.distance_to(Vector2(ally["pos"])) <= float(ally.get("radius", ENEMY_RADIUS)) + 12.0:
 			return false
-	return true
+	# A wall in the lane turns "your arrows are wasted" into "you made the archer spend
+	# time walking", which is the point of a barrier that stops shots but not bodies.
+	return not _segment_crosses_barrier(origin, player_pos)
 
 func _heavy_intercept_target(_enemy: Dictionary) -> Vector2:
 	# Slow heavies aim for the player's lane instead of following the exact current
@@ -7281,6 +7415,9 @@ func _update_projectiles(dt: float) -> void:
 		var hit_ids: Array = projectile.get("hit_ids", [])
 		# Above the ground band it passes over everyone, which is the whole point of the
 		# javelin's arc and the reason the check is not conditioned on allegiance.
+		# A raised segment stops a shot at ground level. An arcing javelin sails over it,
+		# which is the same friend-blind elevation rule doing double duty.
+		if not spent and _projectile_elevation(projectile) <= PROJECTILE_GROUND_ELEVATION and _segment_crosses_barrier(start, finish): spent = true
 		if not spent and _projectile_elevation(projectile) <= PROJECTILE_GROUND_ELEVATION:
 			var nearest_enemy: Dictionary = {}
 			var nearest_order := INF
@@ -7873,6 +8010,9 @@ func _crowd_separation_direction(enemy: Dictionary, nearby: Array[Dictionary] = 
 
 func _position_blocked_with_context(position: Vector2, radius: float, actor_id: int, local_walls: Array[Rect2], local_enemies: Array[Dictionary]) -> bool:
 	if not _inside_world(position, radius): return true
+	# Barriers stop the player alone. Enemies walk through, which is why the navigation
+	# grid can stay ignorant of them.
+	if actor_id == 0 and _point_in_barrier(position, radius): return true
 	for wall in local_walls:
 		if _circle_intersects_rect(position, radius, wall): return true
 	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true
@@ -8224,6 +8364,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"walls": [] if lightweight else walls.duplicate(),
 		"projectiles": projectiles.duplicate(true),
 		"hazards": hazards.duplicate(true),
+		"barriers": barriers.duplicate(true),
 		"effects": effects.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,
@@ -8465,6 +8606,7 @@ func _build_save_payload() -> Dictionary:
 		"enemies": enemies.duplicate(true),
 		"projectiles": projectiles.duplicate(true),
 		"hazards": hazards.duplicate(true),
+		"barriers": barriers.duplicate(true),
 		"effects": effects.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,
@@ -8719,6 +8861,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		enemies.assign(Array(payload.get("enemies", enemies)).duplicate(true))
 		projectiles.assign(Array(payload.get("projectiles", [])).duplicate(true))
 		hazards.assign(Array(payload.get("hazards", [])).duplicate(true))
+		barriers.assign(Array(payload.get("barriers", [])).duplicate(true))
 		effects.assign(Array(payload.get("effects", [])).duplicate(true))
 	dodge_cooldown = float(payload.get("dodge_cooldown", 0.0))
 	block_cooldown = float(payload.get("block_cooldown", 0.0))
