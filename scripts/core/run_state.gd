@@ -210,6 +210,23 @@ const SPOTTER_ROUSE_RADIUS := 320.0
 # a friend/foe flag. It is also what makes airborne enemies work later rather than merely
 # permitting them: the high phase has to genuinely exist for anything to be in it.
 const PROJECTILE_GROUND_ELEVATION := 26.0
+# Fire charges you for ACTING. Burn ticks in world seconds, and world time only advances
+# while the player is committed to something -- so standing still and thinking is free,
+# and a held combo is expensive. That is the whole identity of the element: every other
+# threat in the game punishes the wrong action, and this one punishes duration.
+const BURN_DAMAGE_PER_SECOND := 11.0
+# Rolling smothers it, the way it does everywhere else. This matters beyond flavour:
+# Dodge is the one action exhaustion never takes away, so being on fire and winded still
+# leaves something executable rather than being a death sentence with no input.
+const BURN_DODGE_RELIEF := 1.6
+# Frost slows the WHOLE action -- wind-up, active window and recovery -- by scaling
+# personal tempo, which is one number already plumbed through all three. They cannot
+# drift apart because there is nothing to drift.
+const FROST_MAX_SLOW := 0.34
+# ...and makes the next hit land harder, which is the release valve: the amplified blow
+# consumes the frost, so a frosted player is in danger rather than in a death spiral.
+const FROST_DAMAGE_AMPLIFY := 0.55
+const FROST_FULL_DURATION := 6.0
 
 # Arrows stay flat, which gives the two ranged enemies a third axis of difference on top
 # of speed and lead. Javelins arc: high early to clear the melee standing near the
@@ -318,7 +335,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.53"
+const GAME_VERSION := "0.2.54"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -429,8 +446,24 @@ var aimed_remaining := 0.0
 var bow_followup_ready := false
 var bow_followup_consumed := false
 var player_condition_buildup: Dictionary = {}
+# How much of the frost still stands, 0..1. Read by tempo, by the damage amplifier and by
+# the meter, so all three agree by construction.
+func player_frost_fraction() -> float:
+	return clampf(float(player_conditions.get("frost", 0.0)) / FROST_FULL_DURATION, 0.0, 1.0)
+
+func player_burn_fraction() -> float:
+	return clampf(float(player_conditions.get("burning", 0.0)) / 4.0, 0.0, 1.0)
+
+func player_condition_charge(condition_id: String) -> float:
+	var threshold := _condition_threshold(condition_id, int(player_attributes.get("resistance", 5)))
+	return clampf(float(player_condition_buildup.get(condition_id, 0.0)) / maxf(1.0, threshold), 0.0, 1.0)
 var player_conditions: Dictionary = {}
 var _condition_tick_accumulator := 0.0
+# Burn is charged per world-second but health is an integer, so the fraction is carried
+# rather than rounded away -- otherwise a short action would cost nothing at all.
+var _player_burn_debt := 0.0
+var survey_burn_damage_total := 0
+var survey_frost_amplified_hits := 0
 var rally_remaining := 0.0
 var rally_end_after_action := false
 var rally_break_extension_used := false
@@ -724,6 +757,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
 	player_conditions.clear()
+	_player_burn_debt = 0.0
 	bow_followup_ready = false
 	bow_followup_consumed = false
 	_condition_tick_accumulator = 0.0
@@ -811,6 +845,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	terminal_combo_recoveries_total = 0
 	survey_reach_times.clear()
 	survey_stray_projectile_hits = 0
+	survey_burn_damage_total = 0
+	survey_frost_amplified_hits = 0
 	survey_shots_fired = 0
 	survey_shots_hit = 0
 	survey_shots_blocked = 0
@@ -1946,6 +1982,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
 		"reach_times": survey_reach_times.duplicate(true),
 		"stray_projectile_hits": survey_stray_projectile_hits,
+		"burn_damage": survey_burn_damage_total,
+		"frost_amplified_hits": survey_frost_amplified_hits,
 		"shots_fired": survey_shots_fired,
 		"shots_hit": survey_shots_hit,
 		"shots_blocked": survey_shots_blocked,
@@ -2343,7 +2381,10 @@ func _tempo_from_attributes(attributes: Dictionary) -> float:
 	return clampf(1.0 + 0.03 * (float(attributes.get("speed", 5)) - 5.0), 0.76, 1.30)
 
 func _player_personal_tempo() -> float:
-	return _tempo_from_attributes(player_attributes) * (0.85 if float(player_conditions.get("frost", 0.0)) > 0.0 else 1.0)
+	# Proportional to what is left rather than a flat 0.85 while any frost stands. A meter
+	# the player can watch draining is legible; a binary modifier is the Captain's x1.14
+	# aura again, which 0.2.33 deleted for being imperceptible.
+	return _tempo_from_attributes(player_attributes) * (1.0 - FROST_MAX_SLOW * player_frost_fraction())
 
 func uses_stamina_rules() -> bool:
 	return combat_rules == "stamina"
@@ -3213,6 +3254,12 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	# a hit must always leave one executable response -- outranks the lockout, so
 	# the Dodge stays reachable and pays in debt instead of Stamina.
 	var desperate := uses_stamina_rules() and not _can_commit_physical_action()
+	# Rolling smothers fire. Checked before the stamina gate so a winded player still has
+	# the one answer to burning that exhaustion cannot take away.
+	if float(player_conditions.get("burning", 0.0)) > 0.0:
+		player_conditions["burning"] = maxf(0.0, float(player_conditions["burning"]) - BURN_DODGE_RELIEF)
+		if float(player_conditions["burning"]) <= 0.0: player_conditions.erase("burning")
+		player_condition_buildup["burning"] = 0.0
 	if not desperate and not _spend_stamina(DODGE_STAMINA_COST):
 		return false
 	_break_player_combo()
@@ -4044,6 +4091,7 @@ func _restore_at_waystone() -> void:
 	aimed_remaining = 0.0
 	player_condition_buildup.clear()
 	player_conditions.clear()
+	_player_burn_debt = 0.0
 	rally_remaining = 0.0
 	rally_end_after_action = false
 	rally_break_extension_used = false
@@ -4519,6 +4567,20 @@ func apply_enemy_condition_buildup(enemy: Dictionary, condition_id: String, amou
 
 func _update_conditions(dt: float) -> void:
 	var ongoing_tick := false
+	# Charged in world time, which is the point: this is a cost on acting, not on existing.
+	if float(player_conditions.get("burning", 0.0)) > 0.0 and player_hp > 0:
+		var burn_damage := BURN_DAMAGE_PER_SECOND * dt
+		_player_burn_debt += burn_damage
+		if _player_burn_debt >= 1.0:
+			var applied := int(floor(_player_burn_debt))
+			_player_burn_debt -= float(applied)
+			player_hp = maxi(0, player_hp - applied)
+			damage_received_total += applied
+			survey_burn_damage_total += applied
+			survey_last_damage_source = "burning"
+			if player_hp <= 0:
+				_begin_death()
+				return
 	for condition_id in player_condition_buildup.keys():
 		player_condition_buildup[condition_id] = maxf(0.0, float(player_condition_buildup[condition_id]) - dt * 0.75)
 	for condition_id in player_conditions.keys():
@@ -4531,9 +4593,10 @@ func _update_conditions(dt: float) -> void:
 		if float(player_conditions.get("poison", 0.0)) > 0.0:
 			player_hp = maxi(0, player_hp - 3)
 			survey_last_damage_source = "poison"
-		if float(player_conditions.get("burning", 0.0)) > 0.0:
-			player_hp = maxi(0, player_hp - 6)
-			survey_last_damage_source = "burning"
+		# Burning is charged per world-second above, not in this once-a-second sweep. Both
+		# were running, so fire cost 27 health across two seconds while reporting 21 --
+		# the meter and the damage disagreeing is exactly the kind of invisible combat
+		# maths the design refuses.
 		if player_hp <= 0: _begin_death()
 	_refresh_active_enemy_cache()
 	for index in _streamed_enemy_indices:
@@ -6402,6 +6465,10 @@ func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted
 		record["interrupted_at_f"] = float(action.get("elapsed", 0.0)) / maxf(0.001, float(action.get("startup", 0.30)))
 	if String(record.get("resolution", "")).is_empty(): record["resolution"] = "miss"
 	record["enemy"] = String(enemy.get("kind", "unknown"))
+	# f_observed = response_at / startup measures PLAYER RESPONSE LATENCY, and frost slows
+	# the player's whole action. So a frosted player reads as a late player, and without
+	# this every frosted room would quietly lie about capture timing.
+	record["player_frost"] = player_frost_fraction()
 	record["arena"] = String(survey_room_definition.get("arena", "unknown"))
 	var startup := maxf(0.001, float(action.get("startup", 0.30)))
 	# -1 means the player never committed anything while the attack ran.
@@ -7378,6 +7445,16 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	var interrupted_kind := String(player_action.get("kind", "idle"))
 	var interrupted_action := player_action.duplicate(true)
 	var damage_received := mitigated_damage
+	# The frost pays out on the next hit and is spent doing it. Without that release the
+	# slow compounds into a spiral with no way out; with it, being frosted is a warning
+	# that the next mistake costs double rather than a sentence.
+	var frost_standing := player_frost_fraction()
+	if frost_standing > 0.0:
+		damage_received = int(round(float(damage_received) * (1.0 + FROST_DAMAGE_AMPLIFY * frost_standing)))
+		player_conditions.erase("frost")
+		player_condition_buildup["frost"] = 0.0
+		survey_frost_amplified_hits += 1
+		_add_effect("condition", impact, 0, {"condition": "frost_shatter"})
 	var was_protected := player_hit_protection_remaining > 0.0
 	survey_last_damage_source = source_name
 	player_hp = maxi(0, player_hp - damage_received)

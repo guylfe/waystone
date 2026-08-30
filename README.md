@@ -1,6 +1,26 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.53` (Android version code `253`).
+Current prototype version: `0.2.54` (Android version code `254`).
+
+### v0.2.54: Burn charges for acting, frost charges for being hit
+
+The second shared system. Buildup already existed — `player_condition_buildup` accumulated to a threshold and triggered a state — but what the triggered state *did* was a flat timer: `frost` was six seconds of a blanket `×0.85` tempo, and `burning` was six damage a second on a wall-clock tick.
+
+**Burn ticks in world seconds**, and world time only advances while the player is committed to something. Standing still and thinking is free; a held combo is expensive. That is the element's identity: everything else in the game punishes the wrong action, and fire punishes *duration*. Measured: 2.0 seconds of committed time costs 21 health.
+
+**Rolling smothers it**, and the relief is applied *before* the stamina gate — Dodge is the one action exhaustion never takes away, so being on fire and winded leaves something executable rather than being a sentence with no input.
+
+**Frost slows the whole action, proportionally.** It scales `_player_personal_tempo()`, which is one number feeding wind-up, active window and recovery alike — they cannot drift apart because there is nothing to drift. Tempo runs `1.000` clean, `0.830` at half frost, `0.660` at full.
+
+**And it pays out on the hit that consumes it.** An arrow that lands for 13 lands for 20 against full frost, and the frost is spent doing it. That release is what stops the slow compounding into a spiral: being frosted means the next mistake costs double, not that there is no way back.
+
+**Both have meters**, drawn under the stamina bar — charge faint, the lit condition solid, so the bar reads as *building* then *burning*. An invisible tempo modifier is the Captain's `×1.14` aura, which `0.2.33` deleted for being imperceptible.
+
+**Capture records store the player's frost at commit.** `f_observed = response_at / startup` measures *player response latency*, and frost slows the player's whole action — so a frosted player reads as a late player, and without this every frosted room would quietly lie about capture timing.
+
+**One bug found in the process:** burn was being charged twice, by the new per-world-second tick and by a legacy once-a-second sweep that was still in place. Fire cost 27 health across two seconds while reporting 21. The meter and the damage disagreeing is exactly the invisible combat maths the design refuses, so the legacy tick is gone.
+
+New telemetry: `Elements: N burn damage; M hits amplified by frost`.
 
 ### v0.2.53: Levels, not XP
 

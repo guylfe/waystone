@@ -3403,6 +3403,7 @@ func _draw_player_health_bar(header_font: int) -> void:
 		draw_rect(stamina_bar, Color("243038"))
 		draw_rect(stamina_bar, Color("718087"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, stamina_bar.position + Vector2(0.0, stamina_height * 0.79), "RECOVERY RULES  •  STAMINA INACTIVE", HORIZONTAL_ALIGNMENT_CENTER, width, maxi(10, int(stamina_height * 0.64)), Color("aeb9bd"))
+	_draw_condition_meters(Rect2(stamina_bar.position + Vector2(0.0, stamina_bar.size.y + 5.0), Vector2(width, stamina_bar.size.y * 0.62)))
 	var posture := float(visual.get("player_posture", state.player_posture))
 	var posture_max := maxf(1.0, float(visual.get("player_posture_max", state.player_posture_max)))
 	var posture_height := clampf(height * 0.48, 9.0, 13.0)
@@ -4834,6 +4835,35 @@ func _draw_custom_room_panel() -> void:
 	draw_rect(custom_done_rect, Color("24433f"))
 	draw_rect(custom_done_rect, Color("58d2cf"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "BACK", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))
+# Burn and frost have to be visible or they are the Captain's x1.14 aura again -- an
+# effect the player feels the consequences of and cannot see the cause of, which 0.2.33
+# deleted for exactly that reason. Charge is drawn faint, the lit condition solid, so the
+# meter reads as "building" then "burning" rather than as one ambiguous bar.
+func _draw_condition_meters(area: Rect2) -> void:
+	if area.size.y < 6.0: return
+	var rows := [
+		{"charge": state.player_condition_charge("burning"), "active": state.player_burn_fraction(), "color": Color("ee6645"), "label": "BURNING"},
+		{"charge": state.player_condition_charge("frost"), "active": state.player_frost_fraction(), "color": Color("70bddd"), "label": "FROST"},
+	]
+	var visible_rows: Array = []
+	for row in rows:
+		if float(Dictionary(row)["charge"]) > 0.01 or float(Dictionary(row)["active"]) > 0.01: visible_rows.append(row)
+	if visible_rows.is_empty(): return
+	var height := area.size.y / float(visible_rows.size())
+	for index in range(visible_rows.size()):
+		var row := Dictionary(visible_rows[index])
+		var rect := Rect2(area.position + Vector2(0.0, float(index) * height), Vector2(area.size.x, height - 2.0))
+		var tint: Color = row["color"]
+		draw_rect(rect, Color(tint.r * 0.16, tint.g * 0.16, tint.b * 0.16))
+		var charge := float(row["charge"])
+		if charge > 0.0:
+			draw_rect(Rect2(rect.position, Vector2(rect.size.x * charge, rect.size.y)), Color(tint.r, tint.g, tint.b, 0.34))
+		var active := float(row["active"])
+		if active > 0.0:
+			draw_rect(Rect2(rect.position, Vector2(rect.size.x * active, rect.size.y)), tint)
+		draw_rect(rect, tint, false, 1.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.80), String(row["label"]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(rect.size.y * 0.72)), Color("f4f7f7"))
+
 func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	var title := "REJUVENATE" if slot_id == "healing" else "—"
 	var subtitle := "%d / %d" % [state.potions, state.healing_capacity()] if slot_id == "healing" else "EMPTY"
