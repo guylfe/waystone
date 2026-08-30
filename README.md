@@ -1,6 +1,25 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.55` (Android version code `255`).
+Current prototype version: `0.2.56` (Android version code `256`).
+
+### v0.2.56: Fire decides near or far
+
+Both of Fire's abilities replaced, not tuned. It had a ring around the caster and a bolt; it now has a cone and a ball, and they differ in **which meter they load** rather than only in reach.
+
+**Fire Breath** — a close cone. A ring centred on the caster asks *"are you close?"*, which the player answers by backing off — the same answer every close threat in the game already has. A cone asks *"are you in front of it?"*, so the answer is to leave the arc, which is a different decision and one the caster's own facing telegraphs.
+
+**Fireball** — the ranged shot, now harder-hitting and barely kindling.
+
+| | damage | burn charge |
+|---|---|---|
+| Fire Breath | 13 | **0.53** |
+| Fireball | **16** | 0.14 |
+
+Near or far is only a real choice if the two differ in *what they cost you*. Buildup is authored per source now rather than inferred from the ability's name, so each element's pair can be weighted deliberately — the same table already carries Ice's.
+
+Fire is the element that actually kills things, which is why it will be the Elementalist's first unlocked ability: the class has to be playable before it becomes a control caster.
+
+The cone hazard is shared with Ice rather than duplicated — the shape asks the same question and only the meter differs.
 
 ### v0.2.55: Barriers, and Earth's wall
 

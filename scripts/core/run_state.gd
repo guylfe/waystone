@@ -352,10 +352,10 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # Player actions that are a swing at something -- what a Bandit reads to know it is
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex", "earth_wall"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.55"
+const GAME_VERSION := "0.2.56"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -6086,9 +6086,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "ice_cone" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_ice_cone(enemy, Vector2(action["direction"]))
-		elif kind == "fire_circle" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+		elif kind == "fire_breath" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
-			_spawn_fire_circle(enemy)
+			_spawn_fire_breath(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
 		if elapsed + 0.00001 >= float(action["duration"]):
 			if kind in ["melee", "charge"]: _finalise_capture_record(enemy, action)
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
@@ -6417,13 +6417,13 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["target"] = player_pos + player_facing * 20.0
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "fire_caster":
-		if distance <= 180.0:
-			enemy["action"] = _action("fire_circle", 1.78, direction)
-			enemy["action"]["startup"] = 0.68
+		if distance <= 250.0:
+			enemy["action"] = _action("fire_breath", 1.82, direction)
+			enemy["action"]["startup"] = 0.74
 		elif distance <= 670.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			enemy["action"] = _action("shoot", 1.58, direction)
 			enemy["action"]["startup"] = 0.64
-			enemy["action"]["label"] = "firebolt"
+			enemy["action"]["label"] = "fireball"
 		else:
 			var fire_target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 210.0 if distance < 480.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
@@ -7235,7 +7235,10 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 		"pos": Vector2(enemy["pos"]) + direction * 42.0,
 		"vel": direction * (465.0 if firebolt else 700.0),
 		"radius": 13.0 if firebolt else 9.0,
-		"damage": 3 if firebolt else 2,
+		# The ball hits harder than the breath and barely kindles; the breath buries you in
+		# burn for moderate damage. Near or far is a real choice only if the two differ in
+		# what they cost you, not just in reach.
+		"damage": 4 if firebolt else 2,
 		"kind": "firebolt" if firebolt else "arrow",
 		# Fireballs retain their launch vector for their entire flight. The fields
 		# remain on the projectile for older-save compatibility and future variants.
@@ -7348,9 +7351,13 @@ func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
 	hazards.append({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 3, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("A fan of ice surges forward.")
 
-func _spawn_fire_circle(enemy: Dictionary) -> void:
-	hazards.append({"kind": "fire_circle", "pos": Vector2(enemy["pos"]), "radius": 152.0, "elapsed": 0.0, "trigger_at": 0.64, "duration": 0.98, "damage": 3, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
-	_set_message("Fire gathers around the caster.")
+# A cone, not a ring. A ring centred on the caster asks "are you close?", which the
+# player answers by backing off -- the same answer every close threat already has. A cone
+# asks "are you in front of it?", so the answer is to leave the arc, which is a different
+# decision and one the caster's own facing telegraphs.
+func _spawn_fire_breath(enemy: Dictionary, direction: Vector2) -> void:
+	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 3, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	_set_message("The caster breathes fire.")
 
 func _update_hazards(dt: float) -> void:
 	var survivors: Array[Dictionary] = []
@@ -7369,15 +7376,17 @@ func _update_hazards(dt: float) -> void:
 						_damage_enemy_from_consumable(enemy, int(hazard["damage"]), float(hazard.get("posture", 0.0)), Vector2(hazard["pos"]))
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
-		if kind == "ice_cone":
+		# One cone, two elements. The shape is the same question -- are you in front of it
+		# -- and only the meter it loads differs.
+		if kind == "ice_cone" or kind == "fire_breath":
 			var progress := clampf(float(hazard["elapsed"]) / float(hazard["trigger_at"]), 0.0, 1.0)
 			var origin := Vector2(hazard["pos"])
 			var offset := player_pos - origin
 			var inside_cone := offset.length() <= float(hazard["radius"]) * progress + PLAYER_RADIUS and _within_arc(Vector2(hazard["direction"]), offset, float(hazard["half_angle"]))
 			if not bool(hazard["triggered"]) and inside_cone and _has_line_of_sight(origin, player_pos):
 				hazard["triggered"] = true
-				_add_effect("ice", player_pos)
-				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "ice cone", origin - player_pos)
+				_add_effect("fire" if kind == "fire_breath" else "ice", player_pos)
+				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "fire breath" if kind == "fire_breath" else "ice cone", origin - player_pos)
 		elif kind == "sundered_ground":
 			# It never resolves a hit. The cost of this ground is the time it takes to
 			# cross, which _terrain_speed_scale collects, and in frozen time that is the
@@ -7436,7 +7445,7 @@ func _update_projectiles(dt: float) -> void:
 			# Whatever it reaches first along this step, so a body that steps into the lane
 			# in front of its own side takes the shot meant for someone behind it.
 			if player_order < nearest_order:
-				_resolve_incoming_hit(source_id, int(projectile["damage"]), "firebolt" if projectile_kind == "firebolt" else "arrow", -Vector2(projectile["vel"]).normalized())
+				_resolve_incoming_hit(source_id, int(projectile["damage"]), "fireball" if projectile_kind == "firebolt" else "arrow", -Vector2(projectile["vel"]).normalized())
 				continue
 			if not nearest_enemy.is_empty():
 				if projectile_kind == "firebomb":
@@ -7661,10 +7670,22 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	_add_effect("posture_break" if posture_broken else "interrupt", impact, 0, {"direction": (player_pos - impact).normalized(), "strength": 1.65 if posture_broken else 1.3})
 	_set_message("Your posture breaks." if posture_broken else "The %s breaks your commitment." % source_name)
 
+# Each element's two abilities differ in WHICH meter they load, not just how hard. Fire
+# decides near or far: the breath buries you in burn for moderate damage, the ball hits
+# harder and barely kindles. Ice decides evadability: the lance is dodgeable and dumps
+# frost, the front is hard to leave and trickles it.
+const CONDITION_BUILDUP_BY_SOURCE := {
+	"fire breath": 11.0,
+	"fireball": 3.0,
+	"frost lance": 11.0,
+	"cold front": 2.6,
+}
+
 func _apply_source_condition_to_player(source_name: String) -> void:
 	var lowered := source_name.to_lower()
-	if "ice" in lowered or "frost" in lowered: apply_player_condition_buildup("frost", 4.0)
-	elif "fire" in lowered or "burn" in lowered: apply_player_condition_buildup("burning", 4.0)
+	var authored := float(CONDITION_BUILDUP_BY_SOURCE.get(lowered, 4.0))
+	if "ice" in lowered or "frost" in lowered or "cold" in lowered: apply_player_condition_buildup("frost", authored)
+	elif "fire" in lowered or "burn" in lowered: apply_player_condition_buildup("burning", authored)
 
 func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 	if not bool(player_action.get("clean_dodge_triggered", false)):

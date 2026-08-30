@@ -3487,7 +3487,7 @@ func _draw_hazard(hazard: Dictionary) -> void:
 	if kind == "ice_hex":
 		fill_color = Color(0.28, 0.70, 0.92, 0.10 + progress * 0.18)
 		edge_color = Color("9be7ff")
-	elif kind in ["fire_circle", "player_fire"]:
+	elif kind in ["fire_breath", "player_fire"]:
 		fill_color = Color(0.92, 0.25, 0.08, 0.10 + progress * 0.20)
 		edge_color = Color("ff9b4f")
 	var sector := _project_world_sector(world_center, float(hazard["radius"]), -PI * 0.5, TAU * maxf(0.002, progress), 32)
@@ -3736,7 +3736,7 @@ func _phase(action: Dictionary) -> String:
 		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
 	if kind == "ice_cone": return "GATHERING FROST" if elapsed < float(action.get("startup", 0.58)) else "CASTING"
-	if kind == "fire_circle": return "KINDLING" if elapsed < float(action.get("startup", 0.58)) else "ERUPTING"
+	if kind == "fire_breath": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.74)) else "BREATHING FIRE"
 	if kind == "charge":
 		if elapsed < float(action.get("startup", 0.4)): return "CROUCHING"
 		if elapsed < float(action.get("active_end", 0.8)): return "POUNCING" if String(action.get("label", "")) == "pounce" else "CHARGING"
