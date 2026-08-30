@@ -78,6 +78,7 @@ func _init() -> void:
 	test_lightweight_timeline_snapshots()
 	test_shield_front_arc()
 	test_new_enemy_roles()
+	test_air_caster_gale_and_windstep()
 	test_back_half_expedition_roles()
 	test_progressive_expedition_rooms()
 	test_required_passages_have_generous_clearance()
@@ -1481,7 +1482,7 @@ func test_new_enemy_roles() -> void:
 	# Fire and Ice already use it. The Ice Caster carries the behaviour it stood for.
 	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2(0, -400), 7)
 	state._choose_enemy_action(ice)
-	assert(String(Dictionary(ice["action"])["kind"]) == "ice_hex")
+	assert(String(Dictionary(ice["action"])["kind"]) == "frost_lance")
 	var brute := state._make_enemy("brute", state.player_pos + Vector2(0, -140), 16)
 	state._choose_enemy_action(brute)
 	assert(String(Dictionary(brute["action"])["kind"]) == "melee")
@@ -1512,27 +1513,132 @@ func test_new_enemy_roles() -> void:
 	state._update_enemies(state.SIM_DT)
 	assert(not state._enemy_has_chant(blade, "haste"))
 
+# Air. The fourth element, and the only genuinely new enemy kind in the caster programme:
+# Fire and Ice were rewrites and Earth already existed. Its two verbs are Gale, which
+# decides where things go, and Windstep, which decides where IT goes.
+func test_air_caster_gale_and_windstep() -> void:
+	var state: RunState = RunStateScript.new()
+	# The survey arena rather than a generated expedition room: the gale pushes bodies, and
+	# _move_actor refuses any landing off the floor, so the test needs a floor it can
+	# actually be pushed across.
+	state.start_run("warrior", "combat_survey", 4114, "encounter", "recovery")
+	state.walls.clear()
+	state.barriers.clear()
+	state.enemies.clear()
+	var air := state._make_enemy("air_caster", state.player_pos + Vector2.UP * 420.0, 6)
+	state.enemies = [air]
+	state._invalidate_active_enemy_cache()
+	state._choose_enemy_action(air)
+	assert(String(Dictionary(air["action"])["kind"]) == "gale")
+	# Placed between the caster and the player rather than on the player, so the same cast
+	# both shoves the player back AND spoils anything crossing that space on the way through.
+	var centre := Vector2(Dictionary(air["action"])["target"])
+	assert(centre.distance_to(state.player_pos) > 60.0 and centre.distance_to(state.player_pos) < centre.distance_to(Vector2(air["pos"])) + 1.0)
+
+	# Everything light near the point goes AWAY from it -- the player included. The wind
+	# does not take sides.
+	var light := state._make_enemy("hound", centre + Vector2.RIGHT * 60.0, 5)
+	var heavy := state._make_enemy("ox", centre + Vector2.LEFT * 60.0, 30)
+	state.enemies = [air, light, heavy]
+	state._invalidate_active_enemy_cache()
+	# The spatial buckets are only rebuilt on demand, and _nearby_enemies reads them
+	# without forcing it -- the live loop refreshes first, so a test poking the state
+	# directly has to do the same or it queries the previous room.
+	state._build_enemy_spatial_index()
+	var light_before := Vector2(light["pos"]).distance_to(centre)
+	var heavy_before := Vector2(heavy["pos"]).distance_to(centre)
+	var player_before := state.player_pos.distance_to(centre)
+	state._resolve_gale(centre)
+	assert(Vector2(light["pos"]).distance_to(centre) > light_before + 40.0)
+	# ...and anything heavy does not, gated on the same PUSHABLE_MASS line that already
+	# decides who the player can shove, so "heavy" means one thing across the whole game.
+	assert(is_equal_approx(Vector2(heavy["pos"]).distance_to(centre), heavy_before))
+	assert(state.player_pos.distance_to(centre) > player_before + 30.0)
+
+	# A shot crossing the point has its VELOCITY turned, not its position: offsetting the
+	# position would leave the heading intact and the arrow would arrive in the same place
+	# merely late. Off-axis, because the push is radial -- a shot travelling exactly along
+	# the radius is slowed rather than bent, which is what an outward wind does and not a
+	# case worth special-casing away.
+	state.projectiles.clear()
+	state.projectiles.append({"pos": centre + Vector2.RIGHT * 80.0, "vel": Vector2.DOWN * 600.0, "kind": "arrow", "elevation_profile": "flat", "elevation": 0.0})
+	state._resolve_gale(centre)
+	assert(Vector2(state.projectiles[0]["vel"]).normalized().dot(Vector2.DOWN) < 0.9)
+
+	# A javelin loses more, because it has more to lose: it flies on direction AND loft, so
+	# the gale strips the loft too and it comes down short and off-line into the melee it
+	# was thrown over.
+	state.projectiles.clear()
+	state.projectiles.append({"pos": centre + Vector2.RIGHT * 80.0, "vel": Vector2.DOWN * 520.0, "kind": "javelin", "elevation_profile": "arc", "elevation": 70.0})
+	state._resolve_gale(centre)
+	assert(String(state.projectiles[0]["elevation_profile"]) == "flat")
+	assert(float(state.projectiles[0]["elevation"]) < state.PROJECTILE_GROUND_ELEVATION)
+
+	# Cornered, it steps instead. Over bodies, and it is untouchable while it is gone --
+	# but only while it is gone, so an early swing or a wait for the landing both beat it.
+	air["pos"] = state.player_pos + Vector2.UP * 120.0
+	air["shot_cooldown"] = 0.0
+	air["pounce_cooldown"] = 0.0
+	state.enemies = [air]
+	state._invalidate_active_enemy_cache()
+	state._choose_enemy_action(air)
+	assert(String(Dictionary(air["action"])["kind"]) == "windstep")
+	air["action"]["elapsed"] = 0.10
+	assert(not state._enemy_evades_attack(air))
+	air["action"]["elapsed"] = 0.40
+	assert(state._enemy_evades_attack(air))
+	var start := Vector2(air["pos"])
+	for tick in range(24):
+		state._update_enemies(state.SIM_DT, tick % 2 == 0)
+		if String(Dictionary(air["action"])["kind"]) != "windstep": break
+	assert(Vector2(air["pos"]).distance_to(state.player_pos) > start.distance_to(state.player_pos) + 200.0)
+
+	# A barrier stops it. Earth would be worthless against Air otherwise -- the step moves
+	# it through the crowd, not through the world.
+	var walled: RunState = RunStateScript.new()
+	walled.start_run("warrior", "combat_survey", 4114, "encounter", "recovery")
+	walled.walls.clear()
+	walled.enemies.clear()
+	var blocked := walled._make_enemy("air_caster", walled.player_pos + Vector2.UP * 120.0, 6)
+	walled.enemies = [blocked]
+	walled._invalidate_active_enemy_cache()
+	walled._choose_enemy_action(blocked)
+	assert(String(Dictionary(blocked["action"])["kind"]) == "windstep")
+	walled.barriers.append({"pos": Vector2(blocked["pos"]) + Vector2.UP * 60.0, "axis": Vector2.RIGHT, "half_length": 400.0, "thickness": 20.0, "hp": 10.0, "remaining": 9.0, "lowered": false, "source_id": 0, "layer": walled.current_layer})
+	var held := Vector2(blocked["pos"])
+	for tick in range(12):
+		walled._update_enemies(walled.SIM_DT, tick % 2 == 0)
+	assert(Vector2(blocked["pos"]).distance_to(held) < 40.0)
+
 func test_back_half_expedition_roles() -> void:
 	var state: RunState = RunStateScript.new()
 	state.walls.clear()
 	var ice := state._make_enemy("ice_caster", state.player_pos + Vector2.UP * 400.0, 8)
 	state._choose_enemy_action(ice)
-	assert(String(Dictionary(ice["action"])["kind"]) == "ice_hex")
-	assert(float(Dictionary(ice["action"])["startup"]) >= 1.29)
-	assert(Vector2(Dictionary(ice["action"])["target"]).distance_to(state.player_pos) <= 21.0)
+	# A lance at range: a single dodgeable shot that charges frost hard, so distance is
+	# answered by reading one projectile rather than by leaving a zone.
+	assert(String(Dictionary(ice["action"])["kind"]) == "frost_lance")
+	assert(float(Dictionary(ice["action"])["startup"]) >= 0.70)
 	ice["pos"] = state.player_pos + Vector2.UP * 250.0
 	state._choose_enemy_action(ice)
-	assert(String(Dictionary(ice["action"])["kind"]) == "ice_cone")
-	assert(float(Dictionary(ice["action"])["startup"]) >= 1.15)
+	# Close in, the front instead: wide and repeating, so backing off is not enough.
+	assert(String(Dictionary(ice["action"])["kind"]) == "cold_front")
+	assert(float(Dictionary(ice["action"])["startup"]) >= 1.10)
 	var fire := state._make_enemy("fire_caster", state.player_pos + Vector2.UP * 400.0, 8)
 	state._choose_enemy_action(fire)
-	assert(String(Dictionary(fire["action"])["kind"]) == "shoot" and String(Dictionary(fire["action"])["label"]) == "firebolt")
+	assert(String(Dictionary(fire["action"])["kind"]) == "shoot" and String(Dictionary(fire["action"])["label"]) == "fireball")
 	state.projectiles.clear()
 	state._spawn_projectile(fire)
-	assert(String(state.projectiles[0]["kind"]) == "firebolt" and is_equal_approx(Vector2(state.projectiles[0]["vel"]).length(), 465.0))
+	# The projectile kind is still `firebolt` -- the 0.2.56 rewrite changed what the ability
+	# does and what it is called, not the internal id, and renaming it would touch the
+	# renderer, the survey and the condition table for no behavioural gain.
+	assert(String(state.projectiles[0]["kind"]) == "firebolt")
 	fire["pos"] = state.player_pos + Vector2.UP * 150.0
 	state._choose_enemy_action(fire)
-	assert(String(Dictionary(fire["action"])["kind"]) == "fire_circle")
+	# The ring became a cone. A ring centred on the caster is answered by standing outside
+	# it; a cone has to be stepped out of the way of, which is a direction rather than a
+	# distance.
+	assert(String(Dictionary(fire["action"])["kind"]) == "fire_breath")
 	var archer := state._make_enemy("archer", state.player_pos + Vector2.UP * 400.0, 5)
 	state._choose_enemy_action(archer)
 	state.projectiles.clear()

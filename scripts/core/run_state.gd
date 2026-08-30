@@ -352,10 +352,10 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # Player actions that are a swing at something -- what a Bandit reads to know it is
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.57"
+const GAME_VERSION := "0.2.58"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -444,6 +444,7 @@ var subclass_ability_cooldown_max := 8.0
 # could see least, and the one carrying an open "might be too strong" against it.
 # Friendly fire only happens when something changed after commitment, so counting it is
 # how we find out whether that ever actually occurs in play rather than on paper.
+var survey_javelins_grounded := 0
 var survey_stray_projectile_hits := 0
 var survey_shots_fired := 0
 var survey_shots_hit := 0
@@ -867,6 +868,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	terminal_combo_recoveries_total = 0
 	survey_reach_times.clear()
 	survey_stray_projectile_hits = 0
+	survey_javelins_grounded = 0
 	survey_burn_damage_total = 0
 	survey_frost_amplified_hits = 0
 	survey_shots_fired = 0
@@ -1179,6 +1181,7 @@ func _survey_recipe_catalog() -> Array[Dictionary]:
 		# both answers are spent and the Shield decides which one you are forced into.
 		{"id": "closing_lanes", "label": "Closing Lanes", "family": "lane_denial", "min_tier": 3, "phases": ["pressure", "climax", "contrast"], "enemies": [{"kind": "archer"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "knife"}]},
 		# Ground that costs time, in front of an enemy you cannot afford to reach late.
+		{"id": "crosswind", "label": "Crosswind", "family": "caster_pair", "min_tier": 4, "phases": ["pressure", "contrast", "climax"], "enemies": [{"kind": "air_caster"}, {"kind": "javelineer"}, {"kind": "shield"}], "reinforcements": [{"kind": "hound"}, {"kind": "blade"}]},
 		{"id": "broken_ground", "label": "Broken Ground", "family": "area_denial", "min_tier": 4, "phases": ["development", "contrast", "respite"], "enemies": [{"kind": "earth_caster"}, {"kind": "polearm"}, {"kind": "knife"}], "reinforcements": [{"kind": "archer"}, {"kind": "boar"}]},
 		# The Duellist wants your attention on it. The Javelineer wants you to move.
 		{"id": "measured_guard", "label": "Measured Guard", "family": "skirmish", "min_tier": 4, "phases": ["opening", "contrast", "pressure"], "enemies": [{"kind": "duellist"}, {"kind": "javelineer"}, {"kind": "hound"}], "reinforcements": [{"kind": "blade"}, {"kind": "bandit"}]},
@@ -1368,7 +1371,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	return chosen
 
 func _survey_enemy_cost(kind: String) -> int:
-	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "chanter": 4, "javelineer": 2, "earth_caster": 3, "duellist": 4, "knight": 5}.get(kind, 2))
+	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "chanter": 4, "javelineer": 2, "earth_caster": 3, "air_caster": 3, "duellist": 4, "knight": 5}.get(kind, 2))
 
 func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	var result := 0
@@ -2004,6 +2007,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
 		"reach_times": survey_reach_times.duplicate(true),
 		"stray_projectile_hits": survey_stray_projectile_hits,
+		"javelins_grounded": survey_javelins_grounded,
 		"burn_damage": survey_burn_damage_total,
 		"frost_amplified_hits": survey_frost_amplified_hits,
 		"shots_fired": survey_shots_fired,
@@ -2197,7 +2201,7 @@ func _enemy_base_hp(kind: String) -> int:
 	# as a support unit, which does not read: an enemy that size needs a boss's move
 	# set to earn it. Dropped to an ordinary humanoid frame so its reach is the thing
 	# that makes it dangerous.
-	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
+	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "air_caster": 32, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -2276,7 +2280,7 @@ func _respawn_enemies() -> void:
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
 	# and equipment identity without creating another visible character stat.
-	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
+	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "air_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
 
 func _enemy_posture_max(kind: String) -> float:
 	var profile := CombatCatalogScript.archetype(kind)
@@ -3017,7 +3021,7 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 # How far a kind can see, shared so the gate below and the awareness update cannot
 # drift apart -- the mistake the Shield's guard list already made once.
 func _enemy_vision_range(enemy: Dictionary) -> float:
-	var far := String(enemy.get("kind", "")) in ["archer", "ice_caster", "fire_caster", "warden", "werewolf"]
+	var far := String(enemy.get("kind", "")) in ["archer", "ice_caster", "fire_caster", "air_caster", "warden", "werewolf"]
 	return (620.0 if far else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
 
 # Eyes on the player right now: inside the cone (or close enough that facing stops
@@ -5476,6 +5480,13 @@ func _try_duellist_parry(enemy: Dictionary) -> void:
 	enemy["parry_cooldown"] = DUELLIST_PARRY_COOLDOWN
 
 func _enemy_evades_attack(enemy: Dictionary) -> bool:
+	# Windstep is the caster's one answer to being reached, and it has to actually work or
+	# it is a slow retreat that gets punished on the wind-up. The window is the travel
+	# window itself -- it evades while it is gone, not before and not after, so swinging
+	# early or waiting for the landing both beat it.
+	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "windstep":
+		var step_elapsed := float(Dictionary(enemy["action"]).get("elapsed", 0.0))
+		return step_elapsed >= float(Dictionary(enemy["action"]).get("move_start", 0.26)) and step_elapsed <= float(Dictionary(enemy["action"]).get("move_end", 0.58))
 	if String(enemy.get("kind", "")) != "bandit": return false
 	var action: Dictionary = enemy.get("action", {})
 	var action_kind := String(action.get("kind", "idle"))
@@ -5615,6 +5626,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 		"chanter": 0.58,
 		"javelineer": 0.54,
 		"earth_caster": 0.56,
+		"air_caster": 0.74,
 		"polearm": 0.38,
 		"shield": 0.38,
 		"brute": 0.24,
@@ -6083,6 +6095,16 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "earth_wall" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_raise_earth_wall(Vector2(enemy["pos"]), int(enemy["id"]))
+		elif kind == "gale" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
+			action["effect_done"] = true
+			_spawn_gale(enemy, Vector2(action.get("target", player_pos)))
+		elif kind == "windstep" and elapsed >= float(action.get("move_start", 0.26)) and elapsed <= float(action.get("move_end", 0.58)):
+			# Over bodies, never through geometry. Barriers stop it too, which is what
+			# keeps Air from negating Earth outright.
+			var step := Vector2(action["direction"]).normalized() * float(action.get("speed", 1250.0)) * enemy_dt
+			var landing := Vector2(enemy["pos"]) + step
+			if not _point_in_wall(landing) and not _point_in_barrier(landing, float(enemy.get("radius", ENEMY_RADIUS))) and _inside_world(landing, float(enemy.get("radius", ENEMY_RADIUS))):
+				enemy["pos"] = landing
 		elif kind == "cold_front" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_cold_front(enemy, Vector2(action.get("target", player_pos)))
@@ -6386,6 +6408,26 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["shot_cooldown"] = 2.30 + 0.20 * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
+	elif enemy_kind == "air_caster":
+		# Control the fight or survive it. Cornered, it goes; with room, it rearranges the
+		# room. Windstep is the same escape the Elementalist will get -- over bodies, never
+		# through walls or barriers, because Air moves you through the crowd and not
+		# through the world.
+		if distance <= 190.0 and float(enemy.get("pounce_cooldown", 0.0)) <= 0.0:
+			enemy["action"] = _action("windstep", 0.86, -direction)
+			enemy["action"]["startup"] = 0.26
+			enemy["action"]["move_start"] = 0.26
+			enemy["action"]["move_end"] = 0.58
+			enemy["action"]["speed"] = 1250.0
+			enemy["pounce_cooldown"] = 4.60
+		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _action("gale", 1.64, direction)
+			enemy["action"]["startup"] = 0.80
+			# Placed between itself and the player, so the blast shoves the player back and
+			# any shot crossing that space is spoiled on the way through.
+			enemy["action"]["target"] = Vector2(enemy["pos"]).lerp(player_pos, 0.62)
+			enemy["shot_cooldown"] = 5.20
+		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "earth_caster":
 		# It never aims at where you are. Ground you are standing on is ground you have
 		# already spent; the cut that matters is between you and where you want to be.
@@ -7372,6 +7414,57 @@ func _spawn_player_fire(pos: Vector2) -> void:
 const COLD_FRONT_TICKS := 4
 const COLD_FRONT_INTERVAL := 0.46
 
+# A placed point; everything near it is pushed AWAY from that point. Placement decides
+# push versus pull -- put the point behind an enemy and it comes toward you -- so one rule
+# produces both outcomes and the decision is made fresh every cast rather than locked in
+# at build time. It moves the caster and the player too; the wind does not take sides.
+const GALE_RADIUS := 250.0
+const GALE_BODY_PUSH := 116.0
+const GALE_PLAYER_PUSH := 96.0
+# Velocity, not position. Pushing a shot's position would offset it while leaving its
+# heading, so it would arrive in the same place merely late.
+const GALE_PROJECTILE_TURN := 0.62
+
+func _spawn_gale(enemy: Dictionary, target: Vector2) -> void:
+	hazards.append({
+		"kind": "gale", "pos": target, "radius": GALE_RADIUS,
+		"elapsed": 0.0, "trigger_at": 0.52, "duration": 0.88, "damage": 0,
+		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
+	})
+	_set_message("The air tears outward.")
+
+func _resolve_gale(centre: Vector2) -> void:
+	_add_effect("strain", centre)
+	for enemy in _nearby_enemies(centre, GALE_RADIUS + 90.0):
+		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+		var offset := Vector2(enemy["pos"]) - centre
+		if offset.length() > GALE_RADIUS: continue
+		# Mass-gated on the same line that already decides who the player can shove, so
+		# "heavy" means one thing throughout rather than one thing per system.
+		if _enemy_mass(String(enemy.get("kind", ""))) >= PUSHABLE_MASS: continue
+		var away := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
+		enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * GALE_BODY_PUSH, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
+	var player_offset := player_pos - centre
+	if player_offset.length() <= GALE_RADIUS:
+		var push := player_offset.normalized() if player_offset.length_squared() > 0.001 else Vector2.LEFT
+		player_pos = _move_actor(player_pos, push * GALE_PLAYER_PUSH, PLAYER_RADIUS, 0)
+	for projectile in projectiles:
+		var to_shot := Vector2(projectile["pos"]) - centre
+		if to_shot.length() > GALE_RADIUS: continue
+		var velocity := Vector2(projectile.get("vel", Vector2.ZERO))
+		if velocity.length_squared() < 0.001: continue
+		var away := to_shot.normalized() if to_shot.length_squared() > 0.001 else velocity.normalized()
+		projectile["vel"] = (velocity.normalized() + away * GALE_PROJECTILE_TURN).normalized() * velocity.length()
+		# A gale spoils flight. An arrow's flight is direction; a javelin's is direction
+		# AND loft, so the same wind takes more from it -- one object with more to lose,
+		# not a special case. Grounded, it comes down short and off-line into the melee it
+		# was meant to sail over.
+		if String(projectile.get("elevation_profile", "flat")) == "arc":
+			projectile["elevation_profile"] = "flat"
+			projectile["elevation"] = 8.0
+			survey_javelins_grounded += 1
+			_set_message("The javelin is torn out of the air.")
+
 func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
@@ -7413,6 +7506,12 @@ func _update_hazards(dt: float) -> void:
 				for enemy in _nearby_enemies(Vector2(hazard["pos"]), float(hazard["radius"]) + 70.0):
 					if _enemy_on_current_layer(enemy) and Vector2(enemy["pos"]).distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + float(enemy["radius"]):
 						_damage_enemy_from_consumable(enemy, int(hazard["damage"]), float(hazard.get("posture", 0.0)), Vector2(hazard["pos"]))
+			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
+			continue
+		if kind == "gale":
+			if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
+				hazard["triggered"] = true
+				_resolve_gale(Vector2(hazard["pos"]))
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
 		if kind == "cold_front":

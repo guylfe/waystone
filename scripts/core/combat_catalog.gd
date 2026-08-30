@@ -294,6 +294,10 @@ const ARCHETYPES := {
 	# The third currency. Fire and Ice deny ground by threatening damage; sundered
 	# earth costs you TIME, which in frozen time is the same as giving every other
 	# enemy in the room a free move.
+	# Air decides where things go -- bodies, and the things bodies throw. Its role is
+	# movement_denial like Earth's, but the verbs do not collide: Earth taxes crossing a
+	# place, Air changes which place you are in.
+	"air_caster": {"role": "movement_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 5, "stealth": 2, "awareness": 7, "resolve": 4, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0, "mass": 0.9}},
 	"earth_caster": {"role": "movement_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 5, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0}},
 	# The Bandit slips AROUND you and relocates; the Duellist holds its ground and
 	# takes your turn away. Its two attacks put their openings in different places --

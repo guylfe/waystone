@@ -1,7 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.57` (Android version code `257`).
+Current prototype version: `0.2.58` (Android version code `258`).
 
+## v0.2.58 — the fourth element
+
+Air is the only genuinely new enemy kind in the caster programme. Earth already existed, and Fire and Ice were rewrites of enemies that were already on the roster; this one is a body that was not there before. It is also the last of the four, which means the shared systems built in 0.2.55–0.2.57 — barriers, the burn meter, the frost meter — now all have something on each side of them.
+
+Its whole idea is that it decides where things go. Everything else in the game decides how much damage you take.
+
+**Gale** is a placed point, and everything light near it is pushed away from that point. Placement is the whole decision: put the point beyond an enemy and that enemy comes toward you, put it between you and the caster and you are shoved backward. One rule produces both outcomes, and which one it produces is chosen fresh on every cast rather than baked in. It moves the caster and it moves the player; the wind does not take sides. Heavy bodies are unmoved, gated on the same `PUSHABLE_MASS` line that already decides who the player can shove, so "heavy" means one thing across the whole game rather than one thing per system.
+
+It also spoils shots. A projectile crossing the point has its **velocity** turned rather than its position offset — pushing the position would leave the heading intact and the arrow would arrive in the same place merely late. A javelin loses more than an arrow does, because it has more to lose: an arrow flies on direction, a javelin flies on direction *and* loft, so the same wind strips the loft and it comes down short and off-line into the melee it was thrown over. That is one object with more to lose, not a special case in the code. The survey now reports how often it happens, because if the number stays at zero in rooms fielding an Air Caster beside a Javelineer, the interaction exists in the source and not in the game.
+
+**Windstep** is what it does when it is reached. Roughly 400 units, over bodies, and untouchable while it is gone — but only while it is gone, so swinging early or waiting for the landing both beat it. It does not pass through walls, and it does not pass through an Earth Caster's barrier either. That last one is deliberate: Air moves you through the crowd, not through the world, and without it Earth would be worthless against Air.
+
+A new recipe, **Crosswind**, fields it alongside a Javelineer and a Shield, which is the arrangement where all three of its interactions can actually occur in one room.
+
+Also in this version: two assertions in `run_state_test` still named `ice_hex`, `ice_cone` and `fire_circle` — abilities that 0.2.56 and 0.2.57 deliberately replaced. They were sitting inside a test file the runner already reported as failing for an unrelated documented reason, which is exactly how a stale assertion hides. They now name the verbs the casters actually have.
 ### v0.2.57: Ice decides evadability
 
 Both of Ice's abilities replaced. It had a cone and a delayed hex; it now has a **moment** and a **condition of being there**.

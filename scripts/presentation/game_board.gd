@@ -2981,7 +2981,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("6f9b6a"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
+	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("6f9b6a"), "air_caster": Color("bcd3e0"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
 	var color: Color = colors.get(kind, BLADE_COLOR)
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
@@ -3032,6 +3032,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) == "slam":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, float(action.get("reach", 205.0)), Color.TRANSPARENT, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 		else: draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
+	elif String(action["kind"]) == "gale": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 18.0, Color("d8ecf6"))
 	elif String(action["kind"]) in ["hex", "ice_hex", "cold_front"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0 if String(action["kind"]) == "cold_front" else 12.0, Color("b57bea") if String(action["kind"]) == "hex" else Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
 	if awareness in ["suspicious", "alerted"]:
@@ -3490,6 +3491,11 @@ func _draw_hazard(hazard: Dictionary) -> void:
 	elif kind in ["fire_breath", "player_fire"]:
 		fill_color = Color(0.92, 0.25, 0.08, 0.10 + progress * 0.20)
 		edge_color = Color("ff9b4f")
+	elif kind == "gale":
+		# Nearly no fill. A gale does no damage, so painting it like a damage zone would
+		# read as one and teach the player to treat a shove as a wound.
+		fill_color = Color(0.78, 0.86, 0.92, 0.04 + progress * 0.05)
+		edge_color = Color("d8ecf6")
 	var sector := _project_world_sector(world_center, float(hazard["radius"]), -PI * 0.5, TAU * maxf(0.002, progress), 32)
 	if sector.size() >= 3: _draw_sector_fill(sector, float(hazard["radius"]), TAU * maxf(0.002, progress), fill_color)
 	var ring := _world_ring(world_center, float(hazard["radius"]), 32)
@@ -3735,6 +3741,8 @@ func _phase(action: Dictionary) -> String:
 		if String(action.get("label", "")) == "firebolt": return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
 		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
+	if kind == "gale": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
+	if kind == "windstep": return "GONE"
 	if kind == "cold_front": return "THE AIR STILLS" if elapsed < float(action.get("startup", 1.12)) else "FREEZING"
 	if kind == "frost_lance": return "CONDENSING" if elapsed < float(action.get("startup", 0.78)) else "LOOSED"
 	if kind == "ice_cone": return "GATHERING FROST" if elapsed < float(action.get("startup", 0.58)) else "CASTING"
@@ -4609,10 +4617,10 @@ func _draw_inspection() -> void:
 			break
 	if enemy.is_empty(): return
 	var kind := String(enemy["kind"])
-	var names := {"ox": "Ox", "boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "knight": "Two-Handed Knight", "ice_caster": "Ice Caster", "fire_caster": "Fire Caster", "chanter": "Chanter", "javelineer": "Javelineer", "earth_caster": "Earth Caster", "duellist": "Duellist", "warden": "Warden", "werewolf": "Werewolf"}
-	var speeds := {"ox": "Fast", "boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "werewolf": "Fast", "duellist": "Fast", "javelineer": "Medium", "chanter": "Medium", "earth_caster": "Slow", "blade": "Medium", "archer": "Medium", "ice_caster": "Medium", "fire_caster": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "knight": "Very slow", "warden": "Slow"}
-	var reaches := {"ox": "Long", "boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "werewolf": "Long", "blade": "Medium", "shield": "Medium", "duellist": "Medium", "javelineer": "Long", "chanter": "None", "earth_caster": "Long", "brute": "Medium", "archer": "Long", "ice_caster": "Long", "fire_caster": "Long", "polearm": "Long", "knight": "Long", "warden": "Long"}
-	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "chanter": "Buffs allies; no attack of its own; hides behind them", "javelineer": "Slow throw that leads your movement; denies a lane", "earth_caster": "Sundered ground; costs time, not health", "duellist": "Parries a swing it reads; two attacks, two different openings", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
+	var names := {"ox": "Ox", "boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "knight": "Two-Handed Knight", "ice_caster": "Ice Caster", "fire_caster": "Fire Caster", "chanter": "Chanter", "javelineer": "Javelineer", "earth_caster": "Earth Caster", "air_caster": "Air Caster", "duellist": "Duellist", "warden": "Warden", "werewolf": "Werewolf"}
+	var speeds := {"ox": "Fast", "boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "werewolf": "Fast", "duellist": "Fast", "javelineer": "Medium", "chanter": "Medium", "earth_caster": "Slow", "air_caster": "Fast", "blade": "Medium", "archer": "Medium", "ice_caster": "Medium", "fire_caster": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "knight": "Very slow", "warden": "Slow"}
+	var reaches := {"ox": "Long", "boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "werewolf": "Long", "blade": "Medium", "shield": "Medium", "duellist": "Medium", "javelineer": "Long", "chanter": "None", "earth_caster": "Long", "air_caster": "Long", "brute": "Medium", "archer": "Long", "ice_caster": "Long", "fire_caster": "Long", "polearm": "Long", "knight": "Long", "warden": "Long"}
+	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "chanter": "Buffs allies; no attack of its own; hides behind them", "javelineer": "Slow throw that leads your movement; denies a lane", "earth_caster": "Sundered ground; costs time, not health", "air_caster": "Gale shoves bodies and spoils shots; steps away when cornered", "duellist": "Parries a swing it reads; two attacks, two different openings", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
 	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "duellist": "rapier_thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}

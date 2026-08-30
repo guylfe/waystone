@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 23
+const FORMAT_VERSION := 24
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -123,6 +123,11 @@ static func build_text(session: Dictionary) -> String:
 			# Friendly fire only happens when something changed after the shot was
 			# committed, so this counts whether that ever actually occurs in play.
 			lines.append("Shots that struck their own side: %d" % int(room.get("stray_projectile_hits", 0)))
+		if int(room.get("javelins_grounded", 0)) > 0:
+			# Reported because the whole point of Gale is that it changes where things end up.
+			# If this stays at zero in rooms fielding an Air Caster beside a Javelineer, the
+			# interaction exists in the code and not in the game.
+			lines.append("Javelins torn out of the air: %d" % int(room.get("javelins_grounded", 0)))
 		if int(room.get("stealth_entries", 0)) > 0:
 			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f stamina paid" % [
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
