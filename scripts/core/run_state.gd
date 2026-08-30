@@ -318,7 +318,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_circle", "hex", "ice_hex"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.52"
+const GAME_VERSION := "0.2.53"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4120,6 +4120,14 @@ func leave_upgrade_menu() -> bool:
 
 func next_upgrade_cost() -> int:
 	return 4 * (character_level() + 1) - 2
+
+# What reaching a level costs from scratch. The k-th upgrade costs 4k + 2 by the curve
+# above, so N upgrades cost 2N^2 + 4N -- kept beside next_upgrade_cost() rather than in
+# the picker, because the two must not drift. Level 1 is a fresh character, so the target
+# level buys `level - 1` upgrades.
+static func xp_for_character_level(level: int) -> int:
+	var upgrades := maxi(0, level - 1)
+	return 2 * upgrades * upgrades + 4 * upgrades
 
 func upgrade_name(id: String) -> String:
 	var track := CombatCatalogScript.character_track(id)

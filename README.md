@@ -1,6 +1,20 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.52` (Android version code `252`).
+Current prototype version: `0.2.53` (Android version code `253`).
+
+### v0.2.53: Levels, not XP
+
+`XP 400` is a number from the wrong vocabulary. The character sheet and the upgrade screen both talk in levels; the picker asked in raw currency, and four arbitrary amounts at that.
+
+**It is a level stepper now**, 1 to 15, with no preset list. `LEVEL 4 · 30 XP · 3 UPGRADES` — the level is the control, and the XP is shown small beneath it because the sheet is what spends it and knowing the amount is occasionally useful.
+
+The conversion lives beside the curve it mirrors rather than in the picker. `next_upgrade_cost()` is `4 × (level + 1) − 2`, so the k-th upgrade costs `4k + 2` and N upgrades cost `2N² + 4N`:
+
+| level | 1 | 2 | 3 | 4 | 5 | 8 |
+|---|---|---|---|---|---|---|
+| XP | 0 | 6 | 16 | 30 | 48 | 112 |
+
+Putting `xp_for_character_level()` next to `next_upgrade_cost()` is the point — a copy of the arithmetic in the UI would drift the first time the cost curve moved, and nothing would notice.
 
 ### v0.2.52: The room is a list, not a tally
 

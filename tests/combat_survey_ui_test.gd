@@ -1,5 +1,7 @@
 extends SceneTree
 
+const RunStateScript = preload("res://scripts/core/run_state.gd")
+
 func _initialize() -> void:
 	var board = load("res://scenes/main.tscn").instantiate()
 	root.add_child(board)
@@ -76,10 +78,20 @@ func _initialize() -> void:
 
 	board._handle_custom_room_press(Rect2(board.custom_formation_rects["retinue"]).get_center())
 	board._handle_custom_room_press(Rect2(board.custom_hp_rects[25]).get_center())
-	board._handle_custom_room_press(Rect2(board.custom_xp_rects[400]).get_center())
+	# A level, not an XP total, and a stepper rather than four arbitrary presets.
+	for _step in range(3): board._handle_custom_room_press(Rect2(board.custom_level_rects["up"]).get_center())
+	assert(board.custom_room_level == 4)
+	board._handle_custom_room_press(Rect2(board.custom_level_rects["down"]).get_center())
+	assert(board.custom_room_level == 3)
+	# It cannot step below a fresh character.
+	for _step in range(6): board._handle_custom_room_press(Rect2(board.custom_level_rects["down"]).get_center())
+	assert(board.custom_room_level == 1)
+	for _step in range(3): board._handle_custom_room_press(Rect2(board.custom_level_rects["up"]).get_center())
 	assert(board.custom_room_formation == "retinue")
 	assert(absf(board.custom_room_hp - 0.25) < 0.01)
-	assert(board.custom_room_xp == 400)
+	# Level 4 is three upgrades: 6 + 10 + 14 by the cost curve.
+	assert(RunStateScript.xp_for_character_level(4) == 30)
+	assert(RunStateScript.xp_for_character_level(1) == 0)
 	board._handle_custom_room_press(Rect2(board.custom_done_rect).get_center())
 	assert(not board.custom_room_open)
 	board._start_run()
@@ -87,13 +99,13 @@ func _initialize() -> void:
 	assert(String(board.state.survey_room_definition.get("formation", "")) == "retinue")
 	assert(bool(board.state.survey_room_definition.get("custom_room", false)))
 	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))
-	assert(board.state.carried_xp >= 400)
+	assert(board.state.carried_xp == RunStateScript.xp_for_character_level(4))
 	board.setup_stage = "root"
 	board.setup_dev_section = "survey"
 	board.custom_room_roster.clear()
 	board.custom_room_formation = ""
 	board.custom_room_hp = 1.0
-	board.custom_room_xp = 0
+	board.custom_room_level = 1
 
 	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
 	board.visual = board.state.snapshot(true)

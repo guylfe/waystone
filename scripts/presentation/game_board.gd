@@ -139,13 +139,16 @@ var custom_remove_rects: Dictionary = {}
 var custom_add_rect := Rect2()
 var custom_room_formation := ""
 var custom_room_hp := 1.0
-var custom_room_xp := 0
+# A level, not an XP total. "XP 400" is a number from the wrong vocabulary -- the sheet
+# and the upgrade screen both talk in levels, so the picker should too. A stepper rather
+# than presets, because there was never a reason for exactly four choices.
+var custom_room_level := 1
 var custom_open_rect := Rect2()
 var custom_panel_rect := Rect2()
 var custom_kind_rects: Dictionary = {}
 var custom_formation_rects: Dictionary = {}
 var custom_hp_rects: Dictionary = {}
-var custom_xp_rects: Dictionary = {}
+var custom_level_rects: Dictionary = {}
 var custom_clear_rect := Rect2()
 var custom_done_rect := Rect2()
 var archive_button_rect := Rect2()
@@ -2030,9 +2033,9 @@ func _handle_custom_room_press(position: Vector2) -> void:
 			custom_room_hp = float(percent) / 100.0
 			queue_redraw()
 			return
-	for amount in custom_xp_rects:
-		if Rect2(custom_xp_rects[amount]).has_point(position):
-			custom_room_xp = int(amount)
+	for direction in custom_level_rects:
+		if Rect2(custom_level_rects[direction]).has_point(position):
+			custom_room_level = clampi(custom_room_level + (1 if String(direction) == "up" else -1), 1, 15)
 			queue_redraw()
 			return
 	if custom_clear_rect.has_point(position):
@@ -2060,7 +2063,7 @@ func _start_run() -> void:
 	state.custom_room_kinds = roster
 	state.custom_room_formation = custom_room_formation
 	state.custom_room_hp_percent = custom_room_hp
-	state.custom_room_xp = custom_room_xp
+	state.custom_room_xp = RunStateScript.xp_for_character_level(custom_room_level)
 	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
@@ -4692,7 +4695,7 @@ func _layout_custom_room_panel() -> void:
 	custom_kind_rects.clear()
 	custom_formation_rects.clear()
 	custom_hp_rects.clear()
-	custom_xp_rects.clear()
+	custom_level_rects.clear()
 	custom_slot_rects.clear()
 	custom_remove_rects.clear()
 	custom_add_rect = Rect2()
@@ -4737,8 +4740,9 @@ func _layout_custom_room_panel() -> void:
 	for index in range(4):
 		custom_hp_rects[[25, 50, 75, 100][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, row_h)
 	y += row_h + 8.0
-	for index in range(4):
-		custom_xp_rects[[0, 200, 400, 800][index]] = Rect2(left + float(index) * (qw + 6.0), y, qw, row_h)
+	var step_w := minf(qw, 96.0)
+	custom_level_rects["down"] = Rect2(left, y, step_w, row_h)
+	custom_level_rects["up"] = Rect2(left + width - step_w, y, step_w, row_h)
 	var half := (width - 8.0) * 0.5
 	custom_clear_rect = Rect2(left, custom_panel_rect.end.y - 60.0, half, 48.0)
 	custom_done_rect = Rect2(left + half + 8.0, custom_panel_rect.end.y - 60.0, half, 48.0)
@@ -4812,12 +4816,18 @@ func _draw_custom_room_panel() -> void:
 		draw_rect(rect, Color("1d3038") if selected else Color("142025"))
 		draw_rect(rect, Color("ee6645") if selected else Color("3b494f"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), "HP %d%%" % int(percent), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("eef0e9") if selected else Color("8b9aa0"))
-	for amount in custom_xp_rects:
-		var rect := Rect2(custom_xp_rects[amount])
-		var selected := custom_room_xp == int(amount)
-		draw_rect(rect, Color("1d3038") if selected else Color("142025"))
-		draw_rect(rect, Color("d7aa58") if selected else Color("3b494f"), false, 2.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.64), "XP %d" % int(amount), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("eef0e9") if selected else Color("8b9aa0"))
+	for direction in custom_level_rects:
+		var rect := Rect2(custom_level_rects[direction])
+		var at_end := custom_room_level <= 1 if String(direction) == "down" else custom_room_level >= 15
+		draw_rect(rect, Color("142025"))
+		draw_rect(rect, Color("3b494f") if at_end else Color("d7aa58"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.66), "−" if String(direction) == "down" else "+", HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 20, Color("55636a") if at_end else Color("d7aa58"))
+	if custom_level_rects.has("down"):
+		var span := Rect2(Rect2(custom_level_rects["down"]).end.x, Rect2(custom_level_rects["down"]).position.y, Rect2(custom_level_rects["up"]).position.x - Rect2(custom_level_rects["down"]).end.x, Rect2(custom_level_rects["down"]).size.y)
+		# The XP is shown small beneath the level, because the sheet spends XP and it is
+		# useful to know how much a level actually bought.
+		draw_string(ThemeDB.fallback_font, span.position + Vector2(0, span.size.y * 0.54), "LEVEL %d" % custom_room_level, HORIZONTAL_ALIGNMENT_CENTER, span.size.x, 15, Color("eef0e9"))
+		draw_string(ThemeDB.fallback_font, span.position + Vector2(0, span.size.y * 0.88), "%d XP · %d UPGRADES" % [RunStateScript.xp_for_character_level(custom_room_level), custom_room_level - 1], HORIZONTAL_ALIGNMENT_CENTER, span.size.x, 10, Color("9fb2b7"))
 	draw_rect(custom_clear_rect, Color("2a1a1c"))
 	draw_rect(custom_clear_rect, Color("ee6645"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, custom_clear_rect.position + Vector2(0, custom_clear_rect.size.y * 0.64), "CLEAR", HORIZONTAL_ALIGNMENT_CENTER, custom_clear_rect.size.x, 14, Color("eef0e9"))
