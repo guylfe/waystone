@@ -14,6 +14,8 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 6. **`docs/survey-archive-findings.md`** — what 297 rated rooms across 30 runs actually say about composition, and two designs the evidence killed. Read before proposing anything about encounter generation.
 7. **`docs/elemental-casters.md`** — the agreed, unimplemented design for the four elemental casters, the Elementalist subclass, and the shared systems they need. Read before touching any caster, projectile elevation, burn or frost.
 
+8. **`docs/code-structure-audit.md`** — how the source is organised and why. Read before adding a field, a kind, an ability, a counter, or a rule about who may affect whom. The modules it produced are where authored facts live: `combat_catalog.gd` (kinds), `ability_catalog.gd` (spells and enemy abilities), `state_field_schema.gd` (fields and their audiences), `survey_counter_catalog.gd` (measurements), `save_migrations.gd`, `runtime_schema.gd` and `determinism_snapshot.gd`.
+
 `README.md` carries implemented-version history and the current version number. It is long; read it last.
 
 **On a first session, or after a long gap, read all of the above before starting work** — and report any contradictions or stale claims you find between them. They were written at different times, by different hands, and some describe superseded behaviour. Surfacing the drift is part of the orientation, not a distraction from it. On a returning session, read what the task actually touches.
@@ -73,6 +75,45 @@ Building, committing and installing are part of finishing a change, not separate
 5. install to the Pixel Fold if it is connected, and verify the installed package version on-device rather than trusting a successful export.
 
 If the Fold is not connected, still build and commit, and say the install was skipped for that reason.
+
+---
+
+## Writing code here
+
+`0.2.75` restructured the source around one idea: **a fact is authored once, and everything that needs it reads it from there.** The audit that produced it is `docs/code-structure-audit.md`, and it is worth reading before any change that adds a field, a kind, an ability, a counter or a rule about who may affect whom.
+
+That structure only holds if new code uses it. The default instinct — add a small dictionary right where it is needed — is what produced every one of the bugs the audit catalogues, and it will do so again.
+
+**Before adding anything, ask where it already lives.**
+
+| Adding | It belongs in | Never |
+|---|---|---|
+| An enemy kind, or any per-kind fact | `combat_catalog.gd` — `ARCHETYPES`, including its `presentation` block | a new `{"ox": …, "blade": …}` literal anywhere else |
+| A spell or an enemy ability | `ability_catalog.gd` — cost, targeting, reach, timing, resolver, phase text, colour | timing in `run_state` and phase text in `game_board`, separately |
+| A field the renderer, a save or a snapshot needs | `state_field_schema.gd`, with its audiences | one writer at a time |
+| A survey measurement | `survey_counter_catalog.gd` — one descriptor carries scope, differencing and format | a variable plus four plumbing sites |
+| A cooldown | a slot through `begin_cooldown()` | a new scalar and a parallel `_max` |
+| A question about whether something may stand somewhere | `_can_occupy()` / `_teleport_allowed()` | `_inside_world` and `_point_in_wall` combined by hand |
+| A rule about who an effect may touch | `_faction_of()` / `_opposes()` / `actor_view()` | `if actor_id == 0` |
+| A save field that older saves lack | a step in `save_migrations.gd` | a `.get()` default that quietly hides both an old field and a forgotten new one |
+
+**The four mistakes that cost the most, so they are recognisable when they recur.**
+
+*One fact, several writers.* A field added to one snapshot and not another is invisible: no error, no warning, and the failure surfaces as behaviour. The Earth Wall was in the world, blocking, and absent from the picture the renderer draws — six versions to find, because probes read a different writer than the game does.
+
+*The renderer keyed on a name the simulation had moved on from.* A cone drawn as a circle, a caster drawing a bow it does not carry, a cone renderer belonging to a hazard nothing spawned any more. Where presentation must branch, branch on a **property** the thing carries — `half_angle` says cone — rather than on its name, and put the authored strings in the catalog so there is only one of them.
+
+*A rule written for the only case that existed.* Barriers blocked "the player" because only enemies could raise one. When the Elementalist learned to, the player's own wall blocked the player and let enemies through. If a rule is about a side, say side; if it is about ownership, say ownership.
+
+*Permissive defaults hiding authoring errors.* An unregistered enemy kind used to ship as a working Blade. Authored IDs now fail loudly, and they should stay that way. Reserve `.get()` defaults for genuinely optional runtime values and old saves.
+
+**Two habits worth keeping.**
+
+Prefer deriving a number over authoring it twice. Gale's launch speed is computed from the distance it should travel, so the tuned figure stays the tuned figure and only the delivery changed. A cooldown is derived from what an ability spends. Where two numbers must agree, compute one from the other.
+
+One behaviour, one contract test. Two files asserting the same mechanic is how an assertion came to describe superseded behaviour while sitting in a suite that was already red. Integration tests assert their own boundary, not another file's internal timing.
+
+**When the structure genuinely does not fit**, say so and change the structure rather than working around it. A bespoke solution beside a universal one is worse than either.
 
 ---
 
