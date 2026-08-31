@@ -68,6 +68,16 @@ Everything below depends on these, and they are cheap to get wrong.
   which is the release valve that stops a death spiral.
   - Implement the slow through `_player_personal_tempo()`. One number, already plumbed,
     and the three phases cannot drift apart.
+  - **Owed, and scheduled for the Elementalist update: carry the proportional slow across
+    to enemies.** `0.2.54` made the player's frost slow proportional to the meter
+    (`1.0 - FROST_MAX_SLOW * player_frost_fraction()`) precisely so a draining bar would be
+    legible. `_enemy_personal_tempo()` still applies the *old binary* `0.85 while any frost
+    stands`, so the two sides of a system whose whole premise is symmetry now compute the
+    same condition by different rules. Enemies can be frosted -- there is a frost
+    vulnerability branch for them already -- so this is live, not hypothetical. It ships
+    with the Elementalist because that is the first build in which the player is throwing
+    frost at enemies rather than only receiving it, which is when the asymmetry starts to
+    matter in play as well as in principle.
   - Thresholds need tuning so frost actually accumulates within a fight.
 - **Both need visible meters.** Frost especially: an invisible tempo modifier is the
   Captain's `×1.14` aura repeated, which was deleted in `0.2.33` for being imperceptible.

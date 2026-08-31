@@ -269,17 +269,19 @@ const HEAVY_TELEGRAPH_MASS := 1.6
 # Brute, Knight and Ox as the only things in the game that can physically stop you,
 # which is their job -- and a Knife can never body-block you again.
 const PUSHABLE_MASS := 1.35
-# Health cost of one authored damage point, before defense. The old flat x5 left a
-# cliff rather than a curve: at the survey's defense of 4 the three authored-1
-# attacks landed for 1 health while everything else landed for 6 or more -- and
-# those three belonged to the Knife and Bandit, the two enemies that land most
-# often. The enemy you could not avoid did nothing; the enemies that hurt never
-# landed, which is rooms 9, 10 and 12 of the 0.2.30 survey rating 1/5 for
-# difficulty. Anything unlisted keeps the old scale.
-const DAMAGE_HEALTH_COST := {1: 9, 2: 14, 3: 17, 4: 20, 5: 25, 6: 30, 7: 35, 8: 40}
-# Every connecting strike must be felt. Below this a hit is bookkeeping, and armour
-# should never turn an attack into nothing at all.
-const MIN_FELT_DAMAGE := 5
+# What an attack does is the number written on the attack. There is no translation step.
+#
+# Until 0.2.60 enemy damage was authored 1-4 and inflated at the point of contact through
+# a lookup table, because the bottom of that range was too weak to matter. Bending the
+# curve to fix a range that is too narrow is the wrong repair -- the fix is to widen the
+# range. Everything else already worked this way: the player's combo is authored 10/15/17
+# and enemy health runs 20 to 210, so enemy damage was the last thing on its own scale.
+#
+# Posture is now authored beside damage rather than derived from it. It used to be
+# `damage x 1.5`, which meant re-authoring health silently re-authored stagger; they are
+# separate questions, and a Knife should keep chipping posture lightly however hard it
+# hits. Sources with no authored posture fall back to this rate.
+const POSTURE_PER_DAMAGE := 0.22
 # A parry costs the player their turn rather than their health. Long enough that the
 # rest of the room gets to act inside it, short enough that it is a mistake and not a
 # death sentence.
@@ -355,7 +357,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.59"
+const GAME_VERSION := "0.2.60"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2655,7 +2657,12 @@ func _player_physical_damage(technique_base: int) -> int:
 	return technique_base + int(player_attributes.get("strength", 0))
 
 func _enemy_personal_tempo(enemy: Dictionary) -> float:
-	return float(enemy.get("personal_tempo", _tempo_from_attributes(Dictionary(enemy.get("attributes", {}))))) * (0.85 if float(Dictionary(enemy.get("conditions", {})).get("frost", 0.0)) > 0.0 else 1.0)
+	# The same proportional slow the player gets. 0.2.54 made frost a draining meter on the
+	# player side and left enemies on the old binary 0.85-while-any-frost-stands, so one
+	# condition computed itself two different ways depending on who was frozen. Shared rules
+	# are the premise, and this is one of them.
+	var frost_fraction := clampf(float(Dictionary(enemy.get("conditions", {})).get("frost", 0.0)) / FROST_FULL_DURATION, 0.0, 1.0)
+	return float(enemy.get("personal_tempo", _tempo_from_attributes(Dictionary(enemy.get("attributes", {}))))) * (1.0 - FROST_MAX_SLOW * frost_fraction)
 
 func _refresh_player_posture_capacity(fill: bool = false) -> void:
 	var previous_max := maxf(0.001, player_posture_max)
@@ -5286,7 +5293,7 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	# "-1" over an enemy the player cleanly hit. Nothing in the current roster reaches
 	# that floor -- player damage lands at 8-10 against everything measured -- but the
 	# guard costs nothing and closes the case rather than leaving it open.
-	var final_damage := maxi(MIN_FELT_DAMAGE, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
+	var final_damage := maxi(0, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
 	return {"damage": final_damage, "posture": posture_damage, "unaware": unaware, "aimed": aimed_contact}
 
 func _register_enemy_hit_awareness(enemy: Dictionary, contact_result: Dictionary, source_action: Dictionary = {}) -> void:
@@ -6016,7 +6023,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				enemy["pos"] = _move_actor(pounce_origin, Vector2(action["direction"]) * float(action.get("speed", 410.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
 				if not bool(action.get("pounce_hit", false)) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0:
 					action["pounce_hit"] = true
-					_resolve_incoming_hit(int(enemy["id"]), int(action.get("pounce_damage", 3)), String(enemy["kind"]))
+					_resolve_incoming_hit(int(enemy["id"]), int(action.get("pounce_damage", 16)), String(enemy["kind"]))
 			_resolve_enemy_combo_tick(enemy, elapsed)
 		elif kind == "melee":
 			# Attack capture. The attacker advances along the vector it committed to,
@@ -6071,12 +6078,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				if not charge_record.is_empty():
 					charge_record["resolution"] = "evaded" if _is_evasive() else "contact"
 					action["capture_record"] = charge_record
-				_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 2)), String(enemy["kind"]))
+				_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 14)), String(enemy["kind"]), Vector2.ZERO, Vector2.INF, float(action.get("posture", -1.0)))
 		elif kind == "slam" and elapsed >= float(action["startup"]) and not bool(action["hit_done"]):
 			action["hit_done"] = true
 			_add_effect("slam", Vector2(enemy["pos"]))
 			if Vector2(enemy["pos"]).distance_to(player_pos) <= float(action.get("reach", 205.0)):
-				_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 4)), String(enemy["kind"]))
+				_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 24)), String(enemy["kind"]), Vector2.ZERO, Vector2.INF, float(action.get("posture", -1.0)))
 		elif kind == "shoot" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_projectile(enemy)
@@ -7166,12 +7173,12 @@ func _charge_action(duration: float, startup: float, active_end: float, speed: f
 
 func _werewolf_claw_combo(direction: Vector2) -> Dictionary:
 	var result := _action("claw_combo", 1.26, direction)
-	result.merge({"first_start": 0.22, "first_end": 0.42, "second_start": 0.57, "second_end": 0.79, "reach": 148.0, "damage": 2, "hit_one": false, "hit_two": false})
+	result.merge({"first_start": 0.22, "first_end": 0.42, "second_start": 0.57, "second_end": 0.79, "reach": 148.0, "damage": 14, "posture": 3.0, "hit_one": false, "hit_two": false})
 	return result
 
 func _werewolf_pounce_combo(direction: Vector2) -> Dictionary:
 	var result := _action("pounce_combo", 1.76, direction)
-	result.merge({"startup": 0.34, "pounce_end": 0.76, "speed": 420.0, "pounce_damage": 3, "pounce_hit": false, "first_start": 0.82, "first_end": 1.01, "second_start": 1.13, "second_end": 1.34, "reach": 152.0, "damage": 2, "hit_one": false, "hit_two": false})
+	result.merge({"startup": 0.34, "pounce_end": 0.76, "speed": 420.0, "pounce_damage": 16, "pounce_hit": false, "first_start": 0.82, "first_end": 1.01, "second_start": 1.13, "second_end": 1.34, "reach": 152.0, "damage": 14, "posture": 3.0, "hit_one": false, "hit_two": false})
 	return result
 
 func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
@@ -7186,7 +7193,7 @@ func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 			# because it is the outcome capture is meant to make necessary.
 			contact_record["resolution"] = "evaded" if _is_evasive() else "contact"
 		var contact := AttackGeometryScript.contact_point(sample, player_pos)
-		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]), Vector2.ZERO, contact)
+		_resolve_incoming_hit(int(enemy["id"]), int(action["damage"]), String(enemy["kind"]), Vector2.ZERO, contact, float(action.get("posture", -1.0)))
 
 func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 	var action: Dictionary = enemy["action"]
@@ -7206,7 +7213,7 @@ func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 		if AttackGeometryScript.hits_circle(sample, player_pos, PLAYER_RADIUS):
 			action[hit_key] = true
 			var contact := AttackGeometryScript.contact_point(sample, player_pos)
-			_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 2)), String(enemy["kind"]), Vector2.ZERO, contact)
+			_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 14)), String(enemy["kind"]), Vector2.ZERO, contact, float(action.get("posture", -1.0)))
 
 func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2, technique_id: String = "diagonal_cut", action_kind: String = "melee") -> Dictionary:
 	# Stamina shortens player commitments only. Before v0.2.6 this helper also
@@ -7245,7 +7252,7 @@ func _spawn_frost_lance(enemy: Dictionary, direction: Vector2) -> void:
 		"pos": Vector2(enemy["pos"]) + direction * 40.0,
 		"vel": direction.normalized() * 610.0,
 		"radius": 11.0,
-		"damage": 3,
+		"damage": 16,
 		"kind": "frost_lance",
 		"launch_direction": direction,
 		"turn_rate": 0.0,
@@ -7270,7 +7277,7 @@ func _spawn_javelin(enemy: Dictionary) -> void:
 		"pos": origin + direction * 44.0,
 		"vel": direction * JAVELIN_SPEED,
 		"radius": JAVELIN_RADIUS,
-		"damage": 3,
+		"damage": 16,
 		"kind": "javelin",
 		"launch_direction": direction,
 		"turn_rate": 0.0,
@@ -7335,7 +7342,7 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 		# The ball hits harder than the breath and barely kindles; the breath buries you in
 		# burn for moderate damage. Near or far is a real choice only if the two differ in
 		# what they cost you, not just in reach.
-		"damage": 4 if firebolt else 2,
+		"damage": 20 if firebolt else 14,
 		"kind": "firebolt" if firebolt else "arrow",
 		# Fireballs retain their launch vector for their entire flight. The fields
 		# remain on the projectile for older-save compatibility and future variants.
@@ -7500,18 +7507,18 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
 		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
-		"damage": 1, "ticks_done": 0, "next_tick": 0.70,
+		"damage": 9, "ticks_done": 0, "next_tick": 0.70,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air goes bitter and still.")
 
 func _spawn_hex(enemy: Dictionary, target: Vector2, hazard_kind: String = "hex") -> void:
 	var ice := hazard_kind == "ice_hex"
-	hazards.append({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 3 if ice else 2, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	hazards.append({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 16 if ice else 14, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("Ice gathers beneath you." if ice else "A hex gathers beneath you.")
 
 func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
-	hazards.append({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 3, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	hazards.append({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("A fan of ice surges forward.")
 
 # A cone, not a ring. A ring centred on the caster asks "are you close?", which the
@@ -7519,7 +7526,7 @@ func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
 # asks "are you in front of it?", so the answer is to leave the arc, which is a different
 # decision and one the caster's own facing telegraphs.
 func _spawn_fire_breath(enemy: Dictionary, direction: Vector2) -> void:
-	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 3, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("The caster breathes fire.")
 
 func _update_hazards(dt: float) -> void:
@@ -7661,7 +7668,7 @@ func _damage_enemy_from_stray_projectile(enemy: Dictionary, projectile: Dictiona
 	# name only. The victim's own armour still applies.
 	var authored := int(projectile.get("damage", 0))
 	var defence := int(Dictionary(enemy.get("attributes", {})).get("defense", 0)) + int(Dictionary(enemy.get("properties", {})).get("armor", 0))
-	var damage := maxi(MIN_FELT_DAMAGE, int(DAMAGE_HEALTH_COST.get(authored, authored * 5)) - defence)
+	var damage := maxi(0, authored - defence)
 	enemy["hp"] = int(enemy["hp"]) - damage
 	damage_dealt += damage
 	survey_stray_projectile_hits += 1
@@ -7718,16 +7725,18 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var source_label := "projectile" if String(projectile.get("kind", "")) != "consumable" else "consumable"
 	_set_message("The %s is struck by the %s." % [String(enemy["kind"]), source_label])
 
-func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF) -> void:
-	# Zero authored damage is not an attack. MIN_FELT_DAMAGE exists to stop armour
-	# reducing a real blow to nothing; without this guard it would instead turn every
-	# damageless effect -- sundered ground, the Ox's disengage -- into a 5-point hit.
+func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0) -> void:
+	# Zero authored damage is not an attack -- sundered ground and the disengage shove both
+	# arrive here with nothing to deal.
 	if damage <= 0: return
 	var impact := player_pos if not contact_position.is_finite() else contact_position
-	var posture_damage := float(damage) * 1.5
-	var scaled_damage := int(DAMAGE_HEALTH_COST.get(damage, damage * 5))
+	var posture_damage := authored_posture if authored_posture >= 0.0 else float(damage) * POSTURE_PER_DAMAGE
+	# Flat subtraction with no floor under it. Armour reducing a caster's staff poke to
+	# almost nothing is the design working rather than a case to guard against: it is the
+	# worst weapon in the game meeting the most armoured class. The old floor raised that
+	# back up and erased the distinction the numbers were drawing.
 	var physical_defense := int(player_attributes.get("defense", 0)) + int(player_properties.get("armor", 0))
-	var mitigated_damage := maxi(MIN_FELT_DAMAGE, scaled_damage - physical_defense)
+	var mitigated_damage := maxi(0, damage - physical_defense)
 	if _is_evasive():
 		_trigger_clean_dodge(impact, source_name)
 		return

@@ -537,27 +537,45 @@ func test_mass_decides_what_can_be_shoved() -> void:
 	for kind in immovable:
 		check(not state._enemy_is_pushable(state._make_enemy(kind, state.player_pos, 1, 5)), "%s should be a wall" % kind)
 
-func test_every_connecting_strike_is_felt() -> void:
-	# The flat x5 curve left a cliff, not a gradient: at the survey's defense of 4 the
-	# three authored-1 attacks cost 1 health while everything else cost 6 or more --
-	# and those three belonged to the Knife and Bandit, the enemies that land most
-	# often. The enemy you could not avoid did nothing.
-	var expected := {1: 5, 2: 10, 3: 13}
-	for authored in expected.keys():
+func test_damage_is_the_number_on_the_attack() -> void:
+	# 0.2.60 removed the lookup that inflated authored 1-4 into 9-20 at the point of
+	# contact. The whole of that scheme was a repair for a range too narrow to express
+	# anything; the range is wide now, so what an attack does is what it says it does,
+	# minus defense, with nothing in between.
+	for authored in [6, 10, 14, 28]:
 		var state := survey_state()
 		var defense: int = int(state.player_attributes.get("defense", 0)) + int(state.player_properties.get("armor", 0))
 		check(defense == 4, "this expectation is authored against a physical defense of 4, got %d" % defense)
 		var before: int = state.player_hp
 		state._resolve_incoming_hit(1, int(authored), "probe", Vector2.LEFT, state.player_pos)
 		var felt: int = before - state.player_hp
-		check(felt == int(expected[authored]), "authored %d should cost %d health, cost %d" % [authored, int(expected[authored]), felt])
+		check(felt == int(authored) - 4, "authored %d should cost %d health, cost %d" % [authored, int(authored) - 4, felt])
 
-func test_no_attack_can_be_reduced_to_nothing() -> void:
+func test_armour_may_reduce_a_weak_hit_to_almost_nothing() -> void:
+	# The inverse of the rule this replaces. A floor under mitigation existed so armour
+	# could never blank an attack, but with direct authoring it erased the distinction
+	# the numbers were drawing: the staff poke is meant to be shrugged off by the most
+	# armoured class in the game, and a clamp raising it back up is the design being
+	# overruled by a guard rail.
 	var state := survey_state()
-	state.player_properties["armor"] = 999
+	state.player_properties["armor"] = 20
 	var before: int = state.player_hp
-	state._resolve_incoming_hit(1, 1, "probe", Vector2.LEFT, state.player_pos)
-	check(before - state.player_hp == state.MIN_FELT_DAMAGE, "armour must never turn a hit into nothing")
+	state._resolve_incoming_hit(1, 6, "staff poke", Vector2.LEFT, state.player_pos)
+	check(before - state.player_hp == 0, "heavy armour should be able to blank a staff poke")
+	# It still registers as a hit -- the contact happened, and everything downstream of
+	# contact must still run.
+	check(state.hits_received_total > 0, "a blanked hit is still a hit")
+
+func test_posture_is_authored_beside_damage() -> void:
+	# Posture used to be damage x 1.5, so re-authoring health silently re-authored
+	# stagger. A Knife hits for 10 now and used to hit for 1; without this separation it
+	# would have gained seven times the posture pressure as a side effect of a change
+	# that was only ever about health.
+	var plan: Dictionary = Dictionary(Array(CombatCatalogScript.melee_attack_plan("knife"))[0])
+	check(plan.has("posture"), "the knife's plan must author its own posture")
+	check(float(plan["posture"]) < 2.0, "a knife chips posture lightly however hard it hits")
+	var heavy: Dictionary = Dictionary(Array(CombatCatalogScript.melee_attack_plan("knight"))[1])
+	check(float(heavy["posture"]) > float(plan["posture"]) * 2.0, "a cleave should out-stagger a knife cut")
 
 # --- Milestone E4: the roster earns its places ----------------------------------
 
@@ -573,17 +591,29 @@ func alerted(state: RunState, kind: String, offset: Vector2) -> Dictionary:
 
 # --- The Chanter ----------------------------------------------------------------
 
-func test_a_chanter_has_no_attack_of_its_own() -> void:
-	# It is worth reaching precisely because reaching it ends the problem. An enemy
-	# that buffs AND fights would be a better version of every other enemy.
-	check(CombatCatalogScript.melee_attack_plan("chanter").is_empty(), "the Chanter should carry no attack plan")
+func test_a_chanter_carries_only_a_staff() -> void:
+	# Until 0.2.59 this asserted the Chanter had no attack at all, on the reasoning that
+	# reaching it should end the problem. Reaching it still does -- but "walks backwards
+	# forever and contests nothing" turned out to be an absence rather than a price, and a
+	# wholly inert body is strange to fight. It now carries the same feeble staff poke every
+	# caster does, and nothing else.
+	var plan := Array(CombatCatalogScript.melee_attack_plan("chanter"))
+	check(plan.size() == 1, "the Chanter should carry exactly one attack")
+	check(String(Dictionary(plan[0])["technique"]) == "staff_poke", "and it should be the staff")
 
 func test_a_chanter_puts_an_ally_between_itself_and_you() -> void:
 	var state := survey_state()
 	alerted(state, "brute", Vector2.UP * 170.0)
 	var chanter := alerted(state, "chanter", Vector2.UP * 90.0)
 	state._choose_enemy_action(chanter)
-	check(String(Dictionary(chanter["action"])["kind"]) == "move", "a cornered Chanter should reposition, not stand and cast")
+	# Cornered, it either pokes or retreats -- what it must never do is stand still and
+	# chant with the player on top of it. Which of the two it picks depends on the staff's
+	# cooldown, and both are the same refusal.
+	var cornered_kind := String(Dictionary(chanter["action"])["kind"])
+	check(cornered_kind != "chant", "a cornered Chanter should not stand and cast")
+	chanter["neutral_cooldown"] = 9.0
+	state._choose_enemy_action(chanter)
+	check(String(Dictionary(chanter["action"])["kind"]) == "move", "with the staff spent it should reposition")
 
 func test_a_chant_suits_the_allies_it_has() -> void:
 	# You know it buffs. You do not know which buff, because you cannot see which
@@ -1043,8 +1073,8 @@ func test_a_landed_blow_is_felt_in_both_directions() -> void:
 	var state := survey_state()
 	for kind in ["knight", "shield", "warden", "blade"]:
 		var enemy := state._make_enemy(kind, state.player_pos + Vector2.UP * 80.0, 999, 5)
-		var dealt := int(Dictionary(state._resolve_player_physical_values(enemy, 1, 1.0, {}))["damage"])
-		check(dealt >= state.MIN_FELT_DAMAGE, "a landed blow on a %s dealt %d" % [kind, dealt])
+		var dealt := int(Dictionary(state._resolve_player_physical_values(enemy, 12, 1.0, {}))["damage"])
+		check(dealt > 0, "a landed blow on a %s dealt %d" % [kind, dealt])
 
 # --- The stamina/cooldown exchange -------------------------------------------------
 #
@@ -1468,9 +1498,10 @@ func _init() -> void:
 	test_the_player_parts_a_crowd_of_light_bodies()
 	test_heavy_bodies_still_stop_you()
 	test_mass_decides_what_can_be_shoved()
-	test_every_connecting_strike_is_felt()
-	test_no_attack_can_be_reduced_to_nothing()
-	test_a_chanter_has_no_attack_of_its_own()
+	test_damage_is_the_number_on_the_attack()
+	test_armour_may_reduce_a_weak_hit_to_almost_nothing()
+	test_posture_is_authored_beside_damage()
+	test_a_chanter_carries_only_a_staff()
 	test_a_chanter_puts_an_ally_between_itself_and_you()
 	test_a_chant_suits_the_allies_it_has()
 	test_bulwark_lends_telegraph_armour_to_a_light_body()

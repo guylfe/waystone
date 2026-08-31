@@ -298,8 +298,8 @@ func test_universal_attributes_conditions_and_defenses() -> void:
 	assert(state.request_endure(Vector2.RIGHT, false))
 	state.player_action["elapsed"] = 0.20
 	var hp_before := state.player_hp
-	state._resolve_incoming_hit(999, 2, "test", Vector2.RIGHT)
-	# Endure halves the mitigated figure, which the damage curve raised from 8 to 10.
+	state._resolve_incoming_hit(999, 14, "test", Vector2.RIGHT)
+	# Endure halves the mitigated figure: 14 authored, less the Rogue's 2 Defense, halved.
 	assert(state.player_hp == hp_before - 6)
 
 func test_v010_save_migration() -> void:

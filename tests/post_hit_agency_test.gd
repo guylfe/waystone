@@ -28,7 +28,7 @@ func fresh_state(rules: String = "stamina") -> RunState:
 
 # Applies a hit from a notional attacker without needing an enemy to reach the
 # player, so the crowd timing under test is exact rather than incidental.
-func strike(state: RunState, damage: int = 2) -> void:
+func strike(state: RunState, damage: int = 14) -> void:
 	state._resolve_incoming_hit(-1, damage, "blade", state.player_pos + Vector2.RIGHT * 60.0, state.player_pos + Vector2.RIGHT * 30.0)
 
 func advance_world(state: RunState, seconds: float) -> void:

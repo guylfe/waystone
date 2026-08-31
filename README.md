@@ -1,7 +1,36 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.59` (Android version code `259`).
+Current prototype version: `0.2.60` (Android version code `260`).
 
+## v0.2.60 — what an attack does is the number on the attack
+
+Three fixes to the combat numbers, all of them removing machinery rather than adding it.
+
+**Enemy damage is now authored directly.** Until this version it was written as 1 to 4 and inflated at the point of contact through a lookup table — authored 1 became 9 health, authored 4 became 20. That table was added in response to the 0.2.30 survey for a real reason: the enemies that landed most often, the Knife and the Bandit, did 1 damage and therefore did nothing, while the enemies that hurt almost never connected. But bending the curve was the wrong repair for a range too narrow to express anything. The fix is to widen the range.
+
+Everything else in the game already worked this way. The player's sword combo is authored 10 / 15 / 17. Enemy health runs from 20 for a Knife to 210 for a Werewolf. Enemy damage was the last thing in the game on a private scale, and now it isn't:
+
+| attack | was | now |
+|---|---|---|
+| staff poke | 1 → 9 | 6 |
+| knife, bandit cut | 1 → 9 | 10 |
+| blade, shield cut | 2 → 14 | 14 |
+| polearm thrust | 3 → 17 | 18 |
+| brute smash | 4 → 20 | 24 |
+| knight cleave | 4 → 20 | 28 |
+| werewolf specials | 6 → 30 | 34 |
+
+Light attacks land about where they did. Heavy attacks get substantially heavier, which is the point — the compression was protecting the bottom of the range by flattening the top, so a Knight's cleave and a Brute's smash both cost exactly what a Polearm's thrust did. And if a number turns out wrong, it is now a number that can be changed on its own.
+
+**Posture is authored beside damage rather than derived from it.** It used to be `damage × 1.5`, which meant re-authoring health silently re-authored stagger — a Knife going from 1 to 10 would have gained seven times its posture pressure as a side effect of a change that was only ever about health. They are separate questions and they are now separate fields.
+
+**The minimum-damage floor is gone.** It existed so armour could never reduce an attack to nothing, but with direct authoring it started overruling the design instead of protecting it: a caster's staff poke meeting the most armoured class in the game *should* be shrugged off, and a clamp raising it back to 5 erased the exact distinction the new numbers were drawing. A hit reduced to nothing still registers as a hit; it just does not hurt.
+
+The Defense values were reviewed at the same time and left alone. Flat subtraction of 2 to 4 was distorting when hits ranged from 9 to 20; against a range of 6 to 34 it lands where it should, mattering enormously against chip damage and marginally against a cleave.
+
+**And frost now slows both sides by the same rule.** 0.2.54 made the player's frost a proportional, draining meter so it would be legible, and left enemies on the old binary "×0.85 while any frost stands." One condition was computing itself two different ways depending on who was frozen. Enemies can be frosted — there is a frost-vulnerability branch for them already — so this was live rather than theoretical, and shared rules are the premise the whole actor model rests on.
+
+Two stale tests are also repaired, both asserting the Chanter has no attack at all. 0.2.59 gave it one deliberately, and those assertions were sitting in a file the runner already reported as failing for an unrelated documented reason — which is exactly how a stale assertion survives a release. Second time this session; the lesson is that a file already in the failed bucket absorbs new failures silently.
 ## v0.2.59 — the casters carry staves
 
 Every caster in the game is holding a staff. None of them could use it.

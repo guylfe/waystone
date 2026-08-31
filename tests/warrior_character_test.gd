@@ -122,7 +122,9 @@ func test_fixed_damage_speed_and_resolve() -> void:
 	state._refresh_player_posture_capacity(true)
 	assert(is_equal_approx(state.player_posture_max, 14.0))
 	state.player_action = state._idle_action()
-	state._resolve_incoming_hit(900, 2, "test")
+	# Posture is authored beside damage as of 0.2.60 rather than derived from it, so this
+	# passes the figure the Blade's plan carries instead of relying on a x1.5 conversion.
+	state._resolve_incoming_hit(900, 14, "test", Vector2.ZERO, Vector2.INF, 3.0)
 	assert(is_equal_approx(state.player_posture, 11.0))
 	state.enemies.clear()
 	state.player_posture_recovery_delay = 0.0

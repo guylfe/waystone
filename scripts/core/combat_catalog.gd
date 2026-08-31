@@ -352,28 +352,28 @@ const MELEE_ATTACK_PLANS := {
 	# be hit by, so committing is the right answer nearly every time. It buys the caster a
 	# beat, not a fight.
 	"ice_caster": [
-		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
 	],
 	"fire_caster": [
-		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
 	],
 	"earth_caster": [
-		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
 	],
 	"air_caster": [
-		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
 	],
 	"chanter": [
-		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 1},
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
 	],
 	"blade": [
-		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "f_rad": 0.50, "advance_distance": 58.0, "advance_end": 0.31, "damage": 2},
+		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "f_rad": 0.50, "advance_distance": 58.0, "advance_end": 0.31, "damage": 14, "posture": 3.0},
 	],
 	"knife": [
-		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "f_rad": 0.45, "advance_distance": 44.0, "advance_end": 0.19, "damage": 1},
+		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "f_rad": 0.45, "advance_distance": 44.0, "advance_end": 0.19, "damage": 10, "posture": 1.5},
 	],
 	"bandit": [
-		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "f_rad": 0.45, "advance_distance": 51.0, "advance_end": 0.22, "damage": 1},
+		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "f_rad": 0.45, "advance_distance": 51.0, "advance_end": 0.22, "damage": 10, "posture": 1.5},
 	],
 	"shield": [
 		# Longer than any other single cut, deliberately. A screen's guard is down for the
@@ -385,14 +385,14 @@ const MELEE_ATTACK_PLANS := {
 		# 2.15s is sized against the player's 0.983s combo lockout: the Shield commits
 		# while you are busy, so the window has to still be open when you get control
 		# back. Anything under about 1.6s closes before you can reach it.
-		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 2.15, "startup": 0.74, "active_end": 1.06, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.44, "damage": 2},
+		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 2.15, "startup": 0.74, "active_end": 1.06, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.44, "damage": 14, "posture": 3.0},
 	],
 	"brute": [
-		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 4},
+		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 24, "posture": 6.0},
 	],
 	"polearm": [
-		{"technique": "thrust", "distance": 205.0, "weight": 1.7, "duration": 1.35, "startup": 0.42, "active_end": 0.62, "reach": 218.0, "f_rad": 0.85, "advance_distance": 60.0, "advance_end": 0.62, "damage": 3},
-		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 2},
+		{"technique": "thrust", "distance": 205.0, "weight": 1.7, "duration": 1.35, "startup": 0.42, "active_end": 0.62, "reach": 218.0, "f_rad": 0.85, "advance_distance": 60.0, "advance_end": 0.62, "damage": 18, "posture": 4.5},
+		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 12, "posture": 3.0},
 	],
 	# Two attacks whose openings sit in different places, so no single habit answers
 	# both. The poke commits fast and is punished afterwards; the swing announces
@@ -403,12 +403,12 @@ const MELEE_ATTACK_PLANS := {
 		# shaft cut and read as the wrong weapon entirely; the speed was right, the
 		# distance was not. Its own technique id so it draws with a rapier's slim profile
 		# rather than the spear's.
-		{"technique": "rapier_thrust", "distance": 118.0, "weight": 1.0, "duration": 1.46, "startup": 0.26, "active_end": 0.44, "reach": 104.0, "f_rad": 0.30, "advance_distance": 46.0, "advance_end": 0.44, "damage": 3},
-		{"technique": "diagonal_cut", "distance": 104.0, "weight": 1.0, "duration": 1.06, "startup": 0.62, "active_end": 0.84, "reach": 116.0, "f_rad": 0.62, "advance_distance": 20.0, "advance_end": 0.30, "damage": 3},
+		{"technique": "rapier_thrust", "distance": 118.0, "weight": 1.0, "duration": 1.46, "startup": 0.26, "active_end": 0.44, "reach": 104.0, "f_rad": 0.30, "advance_distance": 46.0, "advance_end": 0.44, "damage": 16, "posture": 4.5},
+		{"technique": "diagonal_cut", "distance": 104.0, "weight": 1.0, "duration": 1.06, "startup": 0.62, "active_end": 0.84, "reach": 116.0, "f_rad": 0.62, "advance_distance": 20.0, "advance_end": 0.30, "damage": 16, "posture": 4.5},
 	],
 	"knight": [
-		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "f_rad": 0.45, "advance_distance": 234.0, "advance_end": 1.46, "damage": 4},
-		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "f_rad": 0.55, "advance_distance": 87.0, "advance_end": 0.65, "damage": 4},
+		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "f_rad": 0.45, "advance_distance": 234.0, "advance_end": 1.46, "damage": 22, "posture": 6.0},
+		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "f_rad": 0.55, "advance_distance": 87.0, "advance_end": 0.65, "damage": 28, "posture": 6.0},
 	],
 }
 

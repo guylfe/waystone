@@ -358,6 +358,8 @@ Designed, in intended build order:
 
 After a full six-build audit, a **third main class**, with Mage suggested specifically because its Grimoire ability-palette is the hardest stress test of the shared architecture. Further concepts exist at sketch level only: Artificer (Apothecary / Tinkerer), Martial Artist, Phalanx, and the Wanderer draft class.
 
+**Held for a future Mage · Illusionist:** *Anchor* — place a mark, and later return to it instantly. Considered and set aside as the Mage's main-class ability in favour of Circle, but worth keeping. What makes it good is that it is **premeditated** where every other movement tool in the game is reactive: Dodge and Windstep answer something happening now, while Anchor is a decision made before you knew you would need it, and the skill is in choosing the spot. That is an Illusionist's kind of thinking rather than a generic caster's. One caution to resolve before building it: "return to a marked place" sits close to the game's central noun, and a personal waystone must not muddy what a Waystone is.
+
 ### Enemy roles to fill
 
 Only after survey data demonstrates the gap: a coordinator or support enemy that changes target priority, a trapper or terrain-controller, a stealth-using ambusher, a low-threat screening unit, and at least one more forest-native non-human. Deliberately *not* a generic swarm — existing groups already collapse into multi-target cleanup.

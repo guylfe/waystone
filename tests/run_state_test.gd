@@ -395,7 +395,7 @@ func test_directional_block() -> void:
 	state.enemies = [state._make_enemy("blade", state.player_pos + Vector2(0.0, -110.0), 7)]
 	var enemy := state.enemies[0]
 	enemy["facing"] = Vector2.DOWN
-	enemy["action"] = state._melee_action(1.45, 0.52, 0.82, 128.0, 2, Vector2.DOWN)
+	enemy["action"] = state._melee_action(1.45, 0.52, 0.82, 128.0, 14, Vector2.DOWN)
 	enemy["action"]["elapsed"] = 0.22
 	state.enemies[0] = enemy
 	assert(state.request_block(Vector2.UP))
@@ -427,7 +427,7 @@ func test_endure_trades_health_for_strength() -> void:
 	state.enemies = [state._make_enemy("blade", state.player_pos + Vector2(0.0, -110.0), 7)]
 	var enemy := state.enemies[0]
 	enemy["facing"] = Vector2.DOWN
-	enemy["action"] = state._melee_action(1.45, 0.52, 0.82, 128.0, 2, Vector2.DOWN)
+	enemy["action"] = state._melee_action(1.45, 0.52, 0.82, 128.0, 14, Vector2.DOWN)
 	enemy["action"]["elapsed"] = 0.22
 	state.enemies[0] = enemy
 	var hp_before := state.player_hp
@@ -736,30 +736,30 @@ func test_player_reaction_cannot_be_stunlocked() -> void:
 	state.player_hp = 100
 	state.player_posture = 1.0
 	state.player_action = state._idle_action()
-	state._resolve_incoming_hit(1, 1, "first bandit", Vector2.LEFT, state.player_pos)
+	state._resolve_incoming_hit(1, 9, "first bandit", Vector2.LEFT, state.player_pos)
 	assert(String(state.player_action["kind"]) == "stagger")
 	state.advance_streamed_action_tick()
 	var elapsed_before := float(state.player_action["elapsed"])
 	var duration_before := float(state.player_action["duration"])
-	state._resolve_incoming_hit(2, 1, "second bandit", Vector2.RIGHT, state.player_pos)
-	# 5 apiece, not 1: every connecting strike is now felt (MIN_FELT_DAMAGE). The
-	# stunlock rule this test exists for is asserted below and is untouched.
+	state._resolve_incoming_hit(2, 9, "second bandit", Vector2.RIGHT, state.player_pos)
+	# 5 apiece: authored 9 less the survey defense of 4. The stunlock rule this test
+	# exists for is asserted below and is untouched by the damage numbers.
 	assert(state.player_hp == 90)
 	assert(String(state.player_action["kind"]) == "stagger")
 	assert(is_equal_approx(float(state.player_action["elapsed"]), elapsed_before))
 	assert(is_equal_approx(float(state.player_action["duration"]), duration_before))
 	var ticks := 0
 	while not state.is_player_ready() and ticks < 120:
-		if ticks % 12 == 0: state._resolve_incoming_hit(3, 1, "bandit chain", Vector2.UP, state.player_pos)
+		if ticks % 12 == 0: state._resolve_incoming_hit(3, 9, "bandit chain", Vector2.UP, state.player_pos)
 		state.advance_streamed_action_tick()
 		ticks += 1
 	assert(state.is_player_ready())
 	assert(ticks < 120)
 	var hp_before_recovery_tick_hit := state.player_hp
 	state._player_reaction_completed_this_tick = true
-	state._resolve_incoming_hit(4, 1, "late bandit", Vector2.DOWN, state.player_pos)
-	# 5, not 1 -- MIN_FELT_DAMAGE. What this line guards is that a hit landing on the
-	# recovery tick still costs health without stealing the recovery, not its size.
+	state._resolve_incoming_hit(4, 9, "late bandit", Vector2.DOWN, state.player_pos)
+	# What this line guards is that a hit landing on the recovery tick still costs health
+	# without stealing the recovery. The size is incidental.
 	assert(state.player_hp == hp_before_recovery_tick_hit - 5)
 	assert(state.is_player_ready())
 
@@ -1624,9 +1624,11 @@ func test_casters_carry_staves() -> void:
 		assert(CombatCatalogScript.has_melee_attack_plan(String(kind)))
 		var option: Dictionary = Array(CombatCatalogScript.melee_attack_plan(String(kind)))[0]
 		assert(String(option["technique"]) == "staff_poke")
-		# One damage, and every other melee body in the game does more. "Worst weapon in
-		# the game" is a claim the numbers have to actually make.
-		assert(int(option["damage"]) == 1)
+		# Six, against a Knife's ten and a Knight's twenty-eight. "Worst weapon in the game"
+		# is a claim the numbers have to actually make, and against an armoured body it is
+		# very nearly nothing -- which is the point of removing the mitigation floor.
+		assert(int(option["damage"]) == 6)
+		assert(int(option["damage"]) < int(Dictionary(Array(CombatCatalogScript.melee_attack_plan("knife"))[0])["damage"]))
 		# ...but it has reach, which is the only thing it has: a caster is not free to
 		# stand next to, it just costs almost nothing to walk through.
 		assert(float(option["reach"]) > 150.0)
