@@ -37,7 +37,11 @@ const TECHNIQUES := {
 	"staff_whirlwind": {"motion": "arc", "start_angle": -PI, "end_angle": PI, "inner_radius": 32.0, "radius": 7.0, "multi": true, "label": "Whirlwind"},
 	# Held at the very end for maximum length, low, taking the legs. Proactive: they are
 	# not there yet, and now they are on the floor.
-	"staff_leg_sweep": {"motion": "arc", "start_angle": -0.86, "end_angle": 0.86, "inner_radius": 32.0, "radius": 5.0, "multi": true, "label": "Sweep the Legs"},
+	# Long and narrow, which is the entire contrast with Whirlwind. At +/-0.86 radians it
+	# swept 98 degrees -- a broad sweep wearing a different name and very nearly the same
+	# footprint as the circle it is supposed to be the alternative to. 34 degrees at the
+	# staff's full length catches one line of bodies instead of a fan of them.
+	"staff_leg_sweep": {"motion": "arc", "start_angle": -0.30, "end_angle": 0.30, "inner_radius": 32.0, "radius": 5.0, "multi": true, "label": "Sweep the Legs"},
 	"thrust": {"motion": "thrust", "radius": 10.0, "multi": false, "label": "Thrust"},
 	"rapier_thrust": {"motion": "thrust", "radius": 6.0, "multi": false, "label": "Rapier thrust"},
 	"driving_cut": {"motion": "thrust", "radius": 8.0, "multi": false, "label": "Driving cut"},

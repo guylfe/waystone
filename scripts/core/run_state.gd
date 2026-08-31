@@ -235,6 +235,12 @@ const EARTH_WALL_SEGMENTS := 6
 const EARTH_WALL_SPAN := 340.0
 const EARTH_WALL_STANDOFF := 170.0
 const EARTH_WALL_DURATION := 4.5
+# The player's wall stands far longer than a caster's. They are the same object doing
+# opposite jobs: an enemy raises it behind you to tax a retreat you are making right now,
+# so it only has to outlive that moment, while the player raises it to build a fight
+# around. At 4.5 world-seconds a wall cast at arm's length was gone before it could be
+# reached, which is why it read as invisible and as impossible to hit.
+const EARTH_WALL_PLAYER_DURATION := 11.0
 const EARTH_WALL_THICKNESS := 17.0
 const EARTH_WALL_SEGMENT_HP := 10.0
 # A high-impact blow destroys a segment outright; anything lighter chips. Earth is the
@@ -406,7 +412,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.66"
+const GAME_VERSION := "0.2.67"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -1889,6 +1895,14 @@ func _capture_survey_room_entry() -> void:
 		"max_energy": player_max_energy,
 		"potions": potions,
 		"damage_dealt": damage_dealt,
+		# These four accumulate across the run and are differenced per room like every other
+		# figure in the record. Reporting them raw made every room show the run's running
+		# total -- room 2 of the 0.2.66 survey reported six friendly-fire hits with zero
+		# combat time, which is where it was caught.
+		"stray_projectile_hits": survey_stray_projectile_hits,
+		"javelins_grounded": survey_javelins_grounded,
+		"burn_damage": survey_burn_damage_total,
+		"frost_amplified_hits": survey_frost_amplified_hits,
 		"damage_received": damage_received_total,
 		"hits_received": hits_received_total,
 		"protected_damage": protected_damage_total,
@@ -2069,10 +2083,10 @@ func _complete_survey_room(outcome: String) -> void:
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
 		"reach_times": survey_reach_times.duplicate(true),
-		"stray_projectile_hits": survey_stray_projectile_hits,
-		"javelins_grounded": survey_javelins_grounded,
-		"burn_damage": survey_burn_damage_total,
-		"frost_amplified_hits": survey_frost_amplified_hits,
+		"stray_projectile_hits": survey_stray_projectile_hits - int(survey_room_entry.get("stray_projectile_hits", survey_stray_projectile_hits)),
+		"javelins_grounded": survey_javelins_grounded - int(survey_room_entry.get("javelins_grounded", survey_javelins_grounded)),
+		"burn_damage": survey_burn_damage_total - int(survey_room_entry.get("burn_damage", survey_burn_damage_total)),
+		"frost_amplified_hits": survey_frost_amplified_hits - int(survey_room_entry.get("frost_amplified_hits", survey_frost_amplified_hits)),
 		"shots_fired": survey_shots_fired,
 		"shots_hit": survey_shots_hit,
 		"shots_blocked": survey_shots_blocked,
@@ -3462,7 +3476,10 @@ func request_staff_art(direction: Vector2, simulate_immediately: bool = true) ->
 	else:
 		# Long and low. Almost no damage; what it does is take one body off its feet, and
 		# the reach is what lets you do it before they arrive.
-		player_action = _melee_action(1.24, 0.42, 0.60, 214.0 + reach_bonus, 5, player_facing, "staff_leg_sweep", "sweep")
+		# 98 degrees was a broad sweep wearing a different name -- the same shape as the
+		# Whirlwind it is supposed to contrast with. Narrow and long is the whole idea: it
+		# reaches past anything else the player owns and catches one line of bodies.
+		player_action = _melee_action(1.24, 0.42, 0.60, 268.0 + reach_bonus, 5, player_facing, "staff_leg_sweep", "sweep")
 		player_action["duration"] = 1.24
 		player_action["posture_damage"] = 11.0 if mastered else 8.5
 		_set_message("You take their legs out from under them.")
@@ -3535,12 +3552,14 @@ func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool
 	match spell_id:
 		"lightning_bolt": player_action = _spell_action(spell_id, direction, 0.34, 0.86)
 		"windstep": player_action = _spell_action(spell_id, direction, 0.22, 0.78)
+		"gale": player_action = _spell_action(spell_id, direction, 0.30, 0.82)
+		"lightning_bolt2": pass
 		"fire_breath": player_action = _spell_action(spell_id, direction, 0.74, 1.62)
 		"cold_front": player_action = _spell_action(spell_id, direction, 0.96, 1.94)
 		"earth_wall": player_action = _spell_action(spell_id, direction, 1.02, 1.74)
 		_: player_action = _spell_action(spell_id, direction, 0.66, 1.44)
 	player_action["target"] = target
-	_begin_spell_cooldown(_cooldown_for_last_spend())
+	_begin_spell_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("spell")
 	_break_stealth_for_hostile_action()
 	_set_message("You cast %s." % spell_label(spell_id))
@@ -3633,7 +3652,7 @@ func _raise_player_earth_wall(target: Vector2) -> void:
 		barriers.append({
 			"pos": target + axis * offset, "axis": axis, "half_length": segment_span * 0.5,
 			"thickness": EARTH_WALL_THICKNESS, "hp": EARTH_WALL_SEGMENT_HP,
-			"remaining": EARTH_WALL_DURATION, "lowered": false, "source_id": 0, "layer": current_layer,
+			"remaining": EARTH_WALL_PLAYER_DURATION, "lowered": false, "source_id": 0, "layer": current_layer,
 		})
 	_add_effect("earth_wall", target)
 
@@ -3645,7 +3664,7 @@ func request_circle(simulate_immediately: bool = true) -> bool:
 	player_action = _action("circle", wind_up + 0.42, player_facing)
 	player_action["startup"] = wind_up
 	player_action["effect_done"] = false
-	_begin_main_ability_cooldown(_cooldown_for_last_spend())
+	_begin_main_ability_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("circle")
 	_set_message("You draw a circle underfoot.")
 	if simulate_immediately: _simulate_until_ready()
@@ -6216,6 +6235,36 @@ func _segment_crosses_barrier(from_point: Vector2, to_point: Vector2) -> bool:
 		if _point_in_barrier(from_point.lerp(to_point, float(step) / 12.0)): return true
 	return false
 
+# Enemy-facing hazards, for the ones the player casts. Deliberately NOT symmetric with the
+# projectile rule: a shot hits whoever it hits because it can be redirected after it is
+# committed, whereas a zone is placed where the caster chose. Making enemy zones burn their
+# own side would be a real balance change to eight existing abilities and belongs in its
+# own version, not smuggled in as a bug fix.
+func _resolve_player_hazard_hit(hazard: Dictionary, source_label: String, hit_test: Callable) -> void:
+	var struck: Array = Array(hazard.get("player_hit_ids", []))
+	for enemy in _nearby_enemies(Vector2(hazard["pos"]), float(hazard["radius"]) + 120.0):
+		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+		if struck.has(int(enemy["id"])): continue
+		if not hit_test.call(enemy): continue
+		struck.append(int(enemy["id"]))
+		var contact := Vector2(enemy["pos"])
+		var awareness_before := String(enemy.get("awareness", "idle"))
+		var action_before: Dictionary = Dictionary(enemy.get("action", {})).duplicate(true)
+		var source_action := {"kind": "cast", "ability_id": source_label, "duration": 0.35, "elapsed": 0.0, "allow_hit_reaction": true}
+		var resolved := _resolve_player_physical_values(enemy, int(hazard["damage"]), float(hazard.get("posture", 1.4)), source_action)
+		var damage := int(resolved["damage"])
+		enemy["hp"] = int(enemy["hp"]) - damage
+		damage_dealt += damage
+		_on_player_hit_landed(enemy)
+		if not _apply_posture_damage(enemy, float(resolved["posture"]), contact):
+			_apply_enemy_hit_reaction(enemy, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
+		_register_enemy_hit_awareness(enemy, resolved, source_action)
+		_add_effect("hit", contact, damage, {"direction": (contact - Vector2(hazard["pos"])).normalized()})
+		var charge := float(CONDITION_BUILDUP_BY_SOURCE.get(source_label, 0.0))
+		if charge > 0.0: apply_enemy_condition_buildup(enemy, "burning" if "fire" in source_label else "frost", charge)
+		_handle_player_contact_aftermath(enemy, resolved)
+	hazard["player_hit_ids"] = struck
+
 func _update_barriers(dt: float) -> void:
 	if barriers.is_empty(): return
 	var survivors: Array[Dictionary] = []
@@ -7923,7 +7972,7 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
 		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
-		"damage": 9, "ticks_done": 0, "next_tick": 0.70,
+		"damage": 9, "posture": 1.1, "ticks_done": 0, "next_tick": 0.70,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air goes bitter and still.")
@@ -7942,7 +7991,7 @@ func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
 # asks "are you in front of it?", so the answer is to leave the arc, which is a different
 # decision and one the caster's own facing telegraphs.
 func _spawn_fire_breath(enemy: Dictionary, direction: Vector2) -> void:
-	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 16, "posture": 2.0, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("The caster breathes fire.")
 
 func _update_hazards(dt: float) -> void:
@@ -7976,7 +8025,15 @@ func _update_hazards(dt: float) -> void:
 				hazard["ticks_done"] = int(hazard.get("ticks_done", 0)) + 1
 				hazard["next_tick"] = float(hazard["elapsed"]) + COLD_FRONT_INTERVAL
 				_add_effect("ice", Vector2(hazard["pos"]))
-				if player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + PLAYER_RADIUS:
+				if int(hazard["source_id"]) == 0:
+					# The player's own front. Each tick is a fresh chance to be caught, so the
+					# struck list is cleared between ticks rather than kept for the hazard.
+					hazard["player_hit_ids"] = []
+					var front_centre := Vector2(hazard["pos"])
+					var front_reach := float(hazard["radius"])
+					_resolve_player_hazard_hit(hazard, "cold front", func(enemy: Dictionary) -> bool:
+						return Vector2(enemy["pos"]).distance_to(front_centre) <= front_reach + float(enemy.get("radius", ENEMY_RADIUS)))
+				elif player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + PLAYER_RADIUS:
 					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos)
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
@@ -7986,6 +8043,16 @@ func _update_hazards(dt: float) -> void:
 			var progress := clampf(float(hazard["elapsed"]) / float(hazard["trigger_at"]), 0.0, 1.0)
 			var origin := Vector2(hazard["pos"])
 			var offset := player_pos - origin
+			if int(hazard["source_id"]) == 0:
+				var cone_origin := origin
+				var cone_facing := Vector2(hazard["direction"])
+				var cone_half := float(hazard["half_angle"])
+				var cone_reach := float(hazard["radius"]) * progress
+				_resolve_player_hazard_hit(hazard, "fire breath" if kind == "fire_breath" else "ice cone", func(enemy: Dictionary) -> bool:
+					var to_enemy := Vector2(enemy["pos"]) - cone_origin
+					return to_enemy.length() <= cone_reach + float(enemy.get("radius", ENEMY_RADIUS)) and _within_arc(cone_facing, to_enemy, cone_half) and _has_line_of_sight(cone_origin, Vector2(enemy["pos"])))
+				if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
+				continue
 			var inside_cone := offset.length() <= float(hazard["radius"]) * progress + PLAYER_RADIUS and _within_arc(Vector2(hazard["direction"]), offset, float(hazard["half_angle"]))
 			if not bool(hazard["triggered"]) and inside_cone and _has_line_of_sight(origin, player_pos):
 				hazard["triggered"] = true

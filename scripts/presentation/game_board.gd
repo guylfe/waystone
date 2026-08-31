@@ -155,6 +155,7 @@ var spell_rects: Dictionary = {}
 var spellbook_open := true
 var spellbook_panel := Rect2()
 var spellbook_arrow_x := 0.0
+var spellbook_arrow_y := 0.0
 # Each element keeps the colour its enemy caster uses, so a spell you learned off something
 # looks like the thing you learned it from.
 const SPELL_COLORS := {
@@ -868,22 +869,37 @@ func _layout() -> void:
 		var belt_width := (safe_layout_rect.end.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(left + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var action_top := belt_top + belt_height + gap
-		var spells := _spell_row()
-		if spellbook_open and not spells.is_empty():
-			var pad := gap * 0.35
-			var chip_height := clampf(layout_size.y * 0.052, 34.0, 56.0)
-			spellbook_panel = Rect2(left, action_top, safe_layout_rect.end.x - left - gap, chip_height + pad * 2.0)
-			var chip_gap := gap * 0.4
-			var chip_width := (spellbook_panel.size.x - pad * 2.0 - chip_gap * float(spells.size() - 1)) / float(spells.size())
-			for i in range(spells.size()):
-				spell_rects[spells[i]] = Rect2(spellbook_panel.position.x + pad + float(i) * (chip_width + chip_gap), spellbook_panel.position.y + pad, chip_width, chip_height)
-			action_top = spellbook_panel.end.y + gap * 0.6
-		else:
-			spellbook_panel = Rect2()
 		var action_bottom := safe_layout_rect.end.y - gap
 		var height := (action_bottom - action_top - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
 			buttons[names[i]] = Rect2(left, action_top + gap + i * (height + gap), safe_layout_rect.end.x - left - gap, height)
+		var spells := _spell_row()
+		if spellbook_open and not spells.is_empty():
+			# Sized to its contents rather than to the button it hangs off. Five chips inside
+			# one button's height were unreadable, and the drawer is allowed to be taller
+			# than its handle -- it just stays centred on it so the tether still reads.
+			var anchor := Rect2(buttons["advance"])
+			var pad := gap * 0.3
+			var chip_gap := gap * 0.3
+			var chip_height := clampf(layout_size.y * 0.075, 40.0, 62.0)
+			var panel_width := minf(layout_size.x * 0.30, 260.0)
+			var panel_height := chip_height * float(spells.size()) + chip_gap * float(spells.size() - 1) + pad * 2.0
+			# The attack button lives in the board's bottom-right corner, which is exactly
+			# where a drawer centred on the Spellbook slot wants to be. Lift the panel clear
+			# rather than let a chip sit under a control the player is aiming for.
+			# attack_rect is not built until further down this function, so its top edge is
+			# derived here from the same board geometry rather than read stale from the
+			# previous frame.
+			var attack_size_here := clampf(minf(layout_size.x, layout_size.y) * 0.092, 66.0, 92.0)
+			var panel_floor := minf(safe_layout_rect.end.y - gap, board_rect.end.y - attack_size_here - 48.0 - gap * 0.5)
+			var panel_top := clampf(anchor.get_center().y - panel_height * 0.5, safe_layout_rect.position.y + gap, maxf(safe_layout_rect.position.y + gap, panel_floor - panel_height))
+			spellbook_panel = Rect2(anchor.position.x - gap * 0.7 - panel_width, panel_top, panel_width, panel_height)
+			for i in range(spells.size()):
+				spell_rects[spells[i]] = Rect2(spellbook_panel.position.x + pad, spellbook_panel.position.y + pad + float(i) * (chip_height + chip_gap), panel_width - pad * 2.0, chip_height)
+			spellbook_arrow_x = -1.0
+			spellbook_arrow_y = anchor.get_center().y
+		else:
+			spellbook_panel = Rect2()
 		var upgrade_height := (action_bottom - action_top - gap * 4.0) / 3.0
 		for i in range(3): upgrade_rects[i] = Rect2(left, action_top + gap + i * (upgrade_height + gap), safe_layout_rect.end.x - left - gap, upgrade_height)
 	var attack_size := clampf(minf(layout_size.x, layout_size.y) * 0.092, 66.0, 92.0)
@@ -916,7 +932,12 @@ func _layout() -> void:
 			var mode_id: String = ["expedition", "campaign_lab", "combat_survey"][index]
 			progression_rects[mode_id] = Rect2(setup_left, stack_top + float(index) * (button_height + setup_gap), setup_width, button_height)
 	else:
-		seed_input.visible = true
+		# _sync_setup_controls already decides this correctly; _layout used to overrule it
+		# with an unconditional true, so any relayout during a run put the world-seed field
+		# back on screen over whatever the canvas was drawing. It was noticed on the
+		# character sheet, and 0.2.65 made it far more frequent by relaying out whenever the
+		# spellbook's contents change.
+		seed_input.visible = state == null or not state.run_active
 		var row := layout_origin.y + 74.0
 		setup_back_rect = Rect2(setup_left, layout_origin.y + 16.0, clampf(setup_width * 0.32, 96.0, 160.0), 44.0)
 		var class_height := clampf(layout_size.y * 0.052, 44.0, 62.0)
@@ -3035,6 +3056,13 @@ func _draw_player() -> void:
 		else: draw_circle(pos - facing * collision_radius * 0.7, collision_radius * 1.25, Color(DODGE_COLOR, 0.16))
 	_draw_actor(pos, foot, facing, radius, PLAYER_COLOR, Color("ffffff"), false, Vector2(pose["body_scale"]), float(pose["stride"]))
 	if String(action.get("kind", "idle")) in ["attack", "sweep", "combo", "art_combo"]: _draw_weapon(world_pos, action, true, state.PLAYER_RADIUS)
+	# Enemy casters got a wind-up pose in 0.2.66 and the player never had one, so casting
+	# looked like standing still until the effect arrived -- which reads as the spell taking
+	# forever to start rather than as a commitment being served. The player is the one actor
+	# whose wind-up the player cannot infer from anything else on screen.
+	elif String(action.get("kind", "idle")) in ["cast", "circle"]:
+		var spell_colour := SPELL_COLORS.get(String(action.get("spell_id", "")), Color("6be3c6")) as Color
+		_draw_spell_cast(pos, facing, collision_radius, action, spell_colour)
 	elif String(action.get("kind", "idle")) == "twin_fang": _draw_twin_fang(world_pos, action)
 	elif String(action.get("kind", "idle")) in ["bow_draw", "bow_release", "bow_art"]: _draw_bow(pos, facing, radius, action, world_pos)
 	elif String(action.get("kind", "idle")) == "block": _draw_guard(pos, facing, radius, action)
@@ -4891,6 +4919,13 @@ func _draw_spell_row() -> void:
 			var tip := Vector2(spellbook_arrow_x, spellbook_panel.end.y + 11.0)
 			draw_colored_polygon(PackedVector2Array([tip, Vector2(spellbook_arrow_x - 11.0, spellbook_panel.end.y - 1.0), Vector2(spellbook_arrow_x + 11.0, spellbook_panel.end.y - 1.0)]), Color("2bb8e0"))
 			draw_colored_polygon(PackedVector2Array([tip + Vector2(0.0, -3.4), Vector2(spellbook_arrow_x - 7.6, spellbook_panel.end.y - 3.0), Vector2(spellbook_arrow_x + 7.6, spellbook_panel.end.y - 3.0)]), Color("101c24"))
+		else:
+			# Landscape opens sideways, so the notch is on the right edge pointing into the
+			# button rather than on the bottom pointing down at it.
+			var edge := spellbook_panel.end.x
+			var mid := clampf(spellbook_arrow_y, spellbook_panel.position.y + 14.0, spellbook_panel.end.y - 14.0)
+			draw_colored_polygon(PackedVector2Array([Vector2(edge + 11.0, mid), Vector2(edge - 1.0, mid - 11.0), Vector2(edge - 1.0, mid + 11.0)]), Color("2bb8e0"))
+			draw_colored_polygon(PackedVector2Array([Vector2(edge + 7.6, mid), Vector2(edge - 3.0, mid - 7.6), Vector2(edge - 3.0, mid + 7.6)]), Color("101c24"))
 	var castable := state.spell_is_available()
 	for spell_value in spell_rects:
 		var spell_id := String(spell_value)
@@ -4970,7 +5005,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	elif name == "advance" and state.loadout_id == "mage_elementalist":
 		title = "SPELLBOOK %s" % ("\u25be" if spellbook_open else "\u25b4")
 		available = state.spell_is_available()
-		subtitle = state.spell_label(state.selected_spell).to_upper() if state.selected_spell != "" else "CLOSED" if not spellbook_open else "OPEN"
+		subtitle = "OPEN" if spellbook_open else (state.spell_label(state.selected_spell).to_upper() if state.selected_spell != "" else "CLOSED")
 	elif name == "advance":
 		title = "VAULT" if state.loadout_id == "rogue_acrobat" else "TAKE AIM" if state.loadout_id == "rogue_sharpshooter" else "ADVANCE"
 		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001 and not (state.loadout_id == "warrior" and state.energy_actions_locked())

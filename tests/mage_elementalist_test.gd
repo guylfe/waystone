@@ -34,6 +34,9 @@ func _init() -> void:
 	test_steadier_cast_holds_against_a_light_hit()
 	test_the_staff_arts_actually_commit()
 	test_a_cone_hazard_tells_the_renderer_it_is_a_cone()
+	test_a_player_cast_zone_hurts_enemies()
+	test_a_spell_is_priced_once()
+	test_world_time_advances_through_a_cast()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -240,3 +243,69 @@ func test_a_cone_hazard_tells_the_renderer_it_is_a_cone() -> void:
 	state.hazards.clear()
 	state._spawn_cold_front({"id": 1, "pos": state.player_pos, "layer": state.current_layer}, state.player_pos + Vector2.UP * 120.0)
 	check(not Dictionary(state.hazards[0]).has("half_angle"), "a front is not a cone")
+
+func test_a_player_cast_zone_hurts_enemies() -> void:
+	# Every hazard resolved against the player and nobody else, because until 0.2.62 every
+	# hazard belonged to an enemy. Fire Breath and Cold Front were therefore an expensive
+	# light show with the right cone, the right meter and no target: half the class's spells
+	# did nothing at all.
+	for spell_id in ["fire_breath", "cold_front"]:
+		var state := fresh()
+		state.hazards.clear()
+		var target := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 150.0, 35)
+		state.enemies.append(target)
+		state._invalidate_active_enemy_cache()
+		state._build_enemy_spatial_index()
+		var before := int(target["hp"])
+		state._resolve_player_spell(String(spell_id), state.player_pos + Vector2.RIGHT * 200.0, Vector2.RIGHT)
+		for tick in range(60): state._update_hazards(0.03)
+		check(int(target["hp"]) < before, "the player's %s should hurt what stands in it" % spell_id)
+		check(state.damage_dealt > 0, "and it should count as the player's damage")
+	# An enemy's zone still resolves against the player alone. That asymmetry is deliberate:
+	# a projectile hits whoever it hits because it can be redirected after commitment, but a
+	# zone lands where its caster chose, and making enemy zones burn their own side is a
+	# balance change to eight existing abilities rather than a bug fix.
+	var enemy_state := fresh()
+	enemy_state.hazards.clear()
+	var caster := enemy_state._make_enemy("fire_caster", enemy_state.player_pos + Vector2.UP * 300.0, 40)
+	var ally := enemy_state._make_enemy("blade", enemy_state.player_pos + Vector2.UP * 180.0, 35)
+	enemy_state.enemies.append(caster)
+	enemy_state.enemies.append(ally)
+	enemy_state._invalidate_active_enemy_cache()
+	enemy_state._build_enemy_spatial_index()
+	var ally_before := int(ally["hp"])
+	enemy_state._spawn_fire_breath(caster, Vector2.DOWN)
+	for tick in range(60): enemy_state._update_hazards(0.03)
+	check(int(ally["hp"]) == ally_before, "an enemy cone should not burn its own side")
+
+func test_a_spell_is_priced_once() -> void:
+	# Every other ability prices itself in Energy OR in cooldown, never both -- that is what
+	# `0.0 if uses_energy_rules() else ...` says everywhere else in the file. Spells were
+	# charged the Energy and then locked out for the cooldown as well, so one Frost Lance
+	# bought a long silence afterwards for no stated reason.
+	var energy_state := fresh()
+	var before := energy_state.player_energy
+	energy_state.request_spell("lightning_bolt", energy_state.player_pos + Vector2.UP * 300.0, false)
+	check(energy_state.player_energy < before, "under Energy rules the spell costs Energy")
+	check(energy_state.spell_cooldown <= 0.0001, "and nothing else")
+	# Under Recovery there is no bar to spend, so the cooldown is the whole price.
+	var recovery_state: RunState = RunStateScript.new()
+	recovery_state.start_run("mage_elementalist", "combat_survey", 8811, "encounter", "recovery")
+	recovery_state.enemies.clear()
+	recovery_state.request_spell("lightning_bolt", recovery_state.player_pos + Vector2.UP * 300.0, false)
+	check(recovery_state.spell_cooldown > 0.0, "under Recovery rules the cooldown is the price")
+
+func test_world_time_advances_through_a_cast() -> void:
+	# Frozen time means the world moves only while the player is committed -- and a wind-up
+	# is commitment. Checked because a cast with no visible pose reads as time being paused
+	# when it is not, which is a presentation problem rather than a simulation one.
+	var state := fresh()
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 400.0, 35)
+	enemy["action"] = state._melee_action(2.0, 1.0, 1.2, 100.0, 14, Vector2.LEFT)
+	state.enemies.append(enemy)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var started := state.simulation_time
+	state.request_spell("lightning_bolt", state.player_pos + Vector2.UP * 300.0, true)
+	check(state.simulation_time > started, "world time should advance across a cast")
+	check(float(Dictionary(enemy["action"]).get("elapsed", 0.0)) > 0.5, "and the enemy should have been acting throughout it")

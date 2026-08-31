@@ -1,7 +1,54 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.66` (Android version code `266`).
+Current prototype version: `0.2.67` (Android version code `267`).
 
+## v0.2.67 — half the Elementalist's spells did nothing
+
+### Fire Breath and Cold Front hurt nobody
+
+The worst bug the class has had. Every hazard in the game resolved against the player and against nothing else, because until `0.2.62` every hazard belonged to an enemy. When the Elementalist learned to cast them, the cone came out at the right angle, loaded the right meter, and did no damage to anything — an expensive light show. Two of the class's eight spells were inert, and a third of its damage output did not exist.
+
+Player-sourced zones now resolve against enemies, count as the player's damage, apply their burn or frost, and interrupt.
+
+They are deliberately **not** symmetric with the projectile rule. A shot hits whoever it hits because it can be redirected after it is committed — that is what Gale is for. A zone lands where its caster chose, so making enemy cones burn their own side would be a real balance change to eight existing abilities and belongs in a version that means to make it, not smuggled in beside a bug fix.
+
+### Spells were charged twice
+
+Every other ability in the game prices itself in Energy *or* in cooldown, never both — `0.0 if uses_energy_rules() else …` is the shape used everywhere. Spells paid the Energy and were then locked out for the cooldown as well, which is why one Frost Lance bought a long silence afterwards for no stated reason. The Circle had the same defect.
+
+### The Earth Wall lasted 4.5 seconds
+
+It was rendering correctly and it was strikeable; it was simply gone before it could be reached. An enemy raises a wall behind you to tax a retreat you are making right now, so 4.5 world-seconds is the right life for it. The player raises one to build a fight around. The player's wall now stands for 11.
+
+### Casting had no wind-up pose
+
+Enemy casters were given one in `0.2.66` and the player never had one, so casting looked like standing still until the effect arrived — which reads as the spell taking forever to start.
+
+Worth being exact about the underlying claim, because it turned out to be false: **world time was already advancing through the wind-up.** Measured directly, an enemy's committed attack progressed 0.84s while the player cast a bolt. Frozen time was working as designed; what was missing was any sign of it on screen, compounded by the double cooldown above. Gale's wind-up is shortened anyway — 0.66s of preparation for a shove that deals no damage was pricing it like a heavy attack.
+
+### Sweep the Legs was a broad sweep
+
+98 degrees, which is very nearly the Whirlwind's own footprint — the two arts were the same shape with different names, which destroys the fork they exist to be. It is now 34 degrees at 268 units, longer than anything else the player owns and narrow enough to catch one line of bodies rather than a fan.
+
+### The landscape spellbook was four buttons from its own button
+
+Stacked above a vertical action column, the drawer opened nowhere near the Spellbook slot and the tether was a gap. In landscape it now opens sideways out of its own button, sized to its contents rather than crammed into one button's height, and lifted clear of the attack control.
+
+### The world-seed field appeared over the character sheet
+
+`seed_input` is a real `LineEdit` layered above the canvas. `_sync_setup_controls` hid it correctly during a run; `_layout` then overruled that with an unconditional `visible = true`, so any relayout put it back on screen over whatever was being drawn. `0.2.65` made it far more frequent by relaying out whenever the spellbook's contents change.
+
+### Every room reported the run's friendly-fire total
+
+Four survey counters — stray hits, grounded javelins, burn damage, frost-amplified hits — were reported raw while every other figure in the record is differenced against the room's entry snapshot. Caught because room 2 of the `0.2.66` survey reported six friendly-fire hits with zero seconds of combat.
+
+### The Spellbook button repeated itself
+
+It named the selected spell while the drawer was open and the chip was already highlighted. It now names it only when the drawer is shut, which is the one time you cannot see it.
+
+### And the Fire Caster that vanished
+
+Not a bug, and the report says so: **six shots struck their own side.** A Gale bends whatever crosses it, and a bent fireball is authored at 20 against a caster with no Defense. That is the friendly-fire rule doing exactly what it exists to do — it only fires when something changes after a shot is committed, which is precisely what Air is for. With the counter now reported per room, it should be legible when it happens instead of appearing as an enemy quietly disappearing.
 ## v0.2.66 — a deliberate look at every caster ability
 
 Four renderer bugs shipped in three versions — a cone drawn as a circle, a caster drawing a bow it does not carry, an invisible Lightning Bolt, an invisible Circle — and every one of them was the same failure: the simulation moved and the drawing stayed where it was. Each was found by being played, one at a time, rather than by being looked at.
