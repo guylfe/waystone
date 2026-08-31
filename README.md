@@ -1,7 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.72` (Android version code `272`).
+Current prototype version: `0.2.73` (Android version code `273`).
 
+## v0.2.73 — Gale is a gust, not a relocation
+
+Push effects in games come in four families and they feel nothing like each other: an **impulse** that hands out velocity and lets the body travel and decelerate; a **sustained force** that accelerates whatever stands in it; an **instant displacement** that simply writes a new position; and a **vortex**, which is the same machinery with the sign flipped.
+
+Gale was the third. `_resolve_gale` computed an offset and wrote the new position on the frame it landed — nobody travelled, they were simply somewhere else. That is how a MOBA displacement works, because it is cheap and unambiguous, and it is why the ability had no momentum. `0.2.72` added falloff by distance from the centre, which changed *how far* a body went and not *that it got there instantly*.
+
+It is an impulse now. Caught bodies are given a velocity along the away-vector and carried over roughly 0.38 seconds of world time, decelerating as they go. Measured across a line of Hounds at 40, 130 and 235 units from the centre: **92, 50 and 30 units of travel**, arriving over time rather than on contact, with an Ox standing in it unmoved.
+
+The launch speed is derived from the distance rather than authored beside it — `v = sqrt(2ad)` — so every number tuned in `0.2.72` survives intact and only the delivery changes.
+
+What this buys, beyond feel: **the trip can be interrupted.** A body blown into a wall, a barrier or the edge of the floor stops where it hits, and the wind spends itself on the impact rather than pressing anything into geometry. Being blown *into* your own Earth Wall is now a thing that can happen, which is the sort of interaction Air was supposed to create and could not while the movement was instantaneous.
+
+**Deliberately not a sustained force field**, tempting as one is here. A wind that kept pushing while world time advanced would mean the longer you act the further you are blown — elegant, and exactly Burn's currency. Fire already charges you for the duration of your commitment; Air's question is where things are, not how long you spend acting. Two elements taxing the same thing is the "element is paint" failure wearing a new costume.
+
+One implementation note worth recording, because it is the sort of thing that looks like a bug later. The drift is checked against **geometry** — world, walls, barriers, floor — and not against other bodies. Checking bodies broke it in the case that matters most: anything crowding you starts inside your own radius, so every incremental step was refused and the shove died on the frame it began. The old instant write escaped this by accident, by covering the whole distance in one jump. Overlaps that survive the drift are resolved by the crowding push, as they always have been.
 ## v0.2.72 — the wall was never in the picture the renderer draws
 
 `Walls raised: 3; times the player was stopped by one: 1482` — the instrumentation added in `0.2.69` answered it in one room.

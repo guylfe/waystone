@@ -461,7 +461,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.72"
+const GAME_VERSION := "0.2.73"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -587,6 +587,7 @@ var aimed_remaining := 0.0
 var bow_followup_ready := false
 var bow_followup_consumed := false
 var barriers: Array[Dictionary] = []
+var player_gale_velocity := Vector2.ZERO
 var circle_pos := Vector2.ZERO
 var circle_remaining := 0.0
 # Learned spells, in the order they were learned. The Elementalist starts with the bolt and
@@ -911,6 +912,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	player_conditions.clear()
 	barriers.clear()
 	circle_remaining = 0.0
+	player_gale_velocity = Vector2.ZERO
 	spell_cooldown = 0.0
 	_player_burn_debt = 0.0
 	bow_followup_ready = false
@@ -4592,6 +4594,7 @@ func _restore_at_waystone() -> void:
 	player_conditions.clear()
 	barriers.clear()
 	circle_remaining = 0.0
+	player_gale_velocity = Vector2.ZERO
 	spell_cooldown = 0.0
 	_player_burn_debt = 0.0
 	rally_remaining = 0.0
@@ -6439,6 +6442,7 @@ func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) 
 func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 	_update_barriers(dt)
 	_update_circle(dt)
+	_update_gale_drift(dt)
 	_refresh_active_enemy_cache()
 	# Which casters are still standing. Anything sustained by a Chanter that is no
 	# longer alive ends this tick -- collected here rather than through a death hook so
@@ -8033,6 +8037,21 @@ const GALE_PLAYER_PUSH := 96.0
 # Velocity, not position. Pushing a shot's position would offset it while leaving its
 # heading, so it would arrive in the same place merely late.
 const GALE_PROJECTILE_TURN := 0.62
+# A gust gives you a shove, not a new address. Until 0.2.73 the push was a single position
+# write on the frame it landed -- nobody travelled, they were simply somewhere else, which
+# is the shape of a MOBA displacement rather than of wind. Adding falloff changed how far
+# they went and not that they got there instantly.
+#
+# Now it is an impulse: a velocity that carries the body and decays, so the movement has a
+# direction you can watch and an arrival you can predict, and anything in the way -- a wall,
+# a barrier, another body -- stops it where it stands. Being blown INTO something becomes a
+# real interaction rather than a number that was already applied.
+#
+# Deliberately NOT a sustained force field, tempting as that is in frozen time. A wind that
+# kept pushing while world time advanced would tax the duration of your commitment, and that
+# is Burn's currency. Air's question is where things are, not how long you spend acting.
+const GALE_DECELERATION := 1165.0
+const GALE_DRIFT_FLOOR := 24.0
 
 func _spawn_gale(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
@@ -8041,6 +8060,46 @@ func _spawn_gale(enemy: Dictionary, target: Vector2) -> void:
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air tears outward.")
+
+# Distance travelled under linear deceleration is v^2 / 2a, so the speed that produces a
+# given distance is sqrt(2 a d). Authoring the distance and deriving the speed keeps the
+# numbers that were tuned by play and makes the impulse a presentation of them.
+func _gale_launch_speed(distance: float) -> float:
+	return sqrt(2.0 * GALE_DECELERATION * maxf(0.0, distance))
+
+# Carries anything the wind has hold of. Runs on world time like everything else, so a body
+# blown across a room travels while the world is moving and stands still while it is not.
+func _update_gale_drift(dt: float) -> void:
+	# Drift is checked against GEOMETRY rather than against bodies. The wind does not care
+	# what it blows you past, and checking bodies made the whole thing fail in the one case
+	# that matters most: anything already crowding you starts inside your own radius, so
+	# every incremental step was refused and the shove died on the frame it began. The old
+	# instant write escaped this by accident, by covering the whole distance at once.
+	# Overlaps that survive the drift are resolved by the crowding push, as they always are.
+	if player_gale_velocity.length() > GALE_DRIFT_FLOOR:
+		var landing := player_pos + player_gale_velocity * dt
+		if _teleport_allowed(landing, PLAYER_RADIUS, 0):
+			player_pos = landing
+			player_gale_velocity = player_gale_velocity.move_toward(Vector2.ZERO, GALE_DECELERATION * dt)
+		else:
+			# Stopped by the world. The wind spends itself on the impact rather than pressing
+			# a body into a wall, which is what makes being blown INTO cover matter.
+			player_gale_velocity = Vector2.ZERO
+	else:
+		player_gale_velocity = Vector2.ZERO
+	for enemy in enemies:
+		var velocity := Vector2(enemy.get("gale_velocity", Vector2.ZERO))
+		if velocity.length() <= GALE_DRIFT_FLOOR or int(enemy.get("hp", 0)) <= 0:
+			if enemy.has("gale_velocity"): enemy.erase("gale_velocity")
+			continue
+		var radius := float(enemy.get("radius", ENEMY_RADIUS))
+		var target := Vector2(enemy["pos"]) + velocity * dt
+		if not _teleport_allowed(target, radius, int(enemy["id"])):
+			enemy.erase("gale_velocity")
+			continue
+		enemy["pos"] = target
+		_update_enemy_bucket_membership(enemy)
+		enemy["gale_velocity"] = velocity.move_toward(Vector2.ZERO, GALE_DECELERATION * dt)
 
 func _resolve_gale(centre: Vector2) -> void:
 	_add_effect("strain", centre)
@@ -8057,8 +8116,9 @@ func _resolve_gale(centre: Vector2) -> void:
 		# WHERE the point goes the decision rather than merely whether you were inside it.
 		var falloff := 1.0 - clampf(offset.length() / GALE_RADIUS, 0.0, 1.0)
 		var shove := GALE_BODY_PUSH * (0.25 + 0.75 * falloff * falloff)
-		enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * shove, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
-		_update_enemy_bucket_membership(enemy)
+		# The launch speed is derived from the distance rather than authored beside it, so
+		# the tuning from 0.2.72 survives intact and only the delivery changes.
+		enemy["gale_velocity"] = away * _gale_launch_speed(shove)
 		# Being physically thrown is not something a body sleeps through. It learns where the
 		# player is, the same way it would from being hit -- an enemy that is shoved across a
 		# room and then keeps idling is the room telling an obvious lie.
@@ -8067,7 +8127,7 @@ func _resolve_gale(centre: Vector2) -> void:
 	if player_offset.length() <= GALE_RADIUS:
 		var push := player_offset.normalized() if player_offset.length_squared() > 0.001 else Vector2.LEFT
 		var player_falloff := 1.0 - clampf(player_offset.length() / GALE_RADIUS, 0.0, 1.0)
-		player_pos = _move_actor(player_pos, push * GALE_PLAYER_PUSH * (0.25 + 0.75 * player_falloff * player_falloff), PLAYER_RADIUS, 0)
+		player_gale_velocity = push * _gale_launch_speed(GALE_PLAYER_PUSH * (0.25 + 0.75 * player_falloff * player_falloff))
 	for projectile in projectiles:
 		var to_shot := Vector2(projectile["pos"]) - centre
 		if to_shot.length() > GALE_RADIUS: continue

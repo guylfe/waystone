@@ -41,6 +41,7 @@ func _init() -> void:
 	test_walking_into_an_unseen_body_reveals_it()
 	test_a_wall_stops_the_side_that_did_not_raise_it()
 	test_nothing_steps_off_the_floor()
+	test_gale_shoves_with_momentum()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -441,3 +442,42 @@ func test_nothing_steps_off_the_floor() -> void:
 	air["action"]["speed"] = 1250.0
 	for tick in range(60): state._update_enemies(state.SIM_DT, tick % 2 == 0)
 	check(state._actor_footprint_on_floor(Vector2(air["pos"]), state.ENEMY_RADIUS), "the caster should still be on the floor")
+
+func test_gale_shoves_with_momentum() -> void:
+	# A gust gives you a shove, not a new address. The push used to be a single position
+	# write on the frame it landed -- nobody travelled, they were simply somewhere else,
+	# which is a MOBA displacement rather than wind. Adding falloff changed how far they went
+	# and not that they got there instantly.
+	var state := fresh()
+	var near := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 40.0, 30)
+	var mid := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 130.0, 30)
+	var edge := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 235.0, 30)
+	var heavy := state._make_enemy("ox", state.player_pos + Vector2.DOWN * 90.0, 96)
+	for body in [near, mid, edge, heavy]: state.enemies.append(body)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var origins := {}
+	for body in state.enemies: origins[int(body["id"])] = Vector2(body["pos"])
+	state._resolve_gale(state.player_pos)
+	# Nothing has moved yet. That is the whole point: the wind hands out velocity, and the
+	# travel happens where the player can watch it.
+	for body in state.enemies:
+		check(Vector2(body["pos"]).distance_to(Vector2(origins[int(body["id"])])) < 0.01, "nothing should be displaced at the instant of impact")
+	check(Vector2(near.get("gale_velocity", Vector2.ZERO)).length() > 0.0, "a light body should be carrying velocity")
+	check(Vector2(heavy.get("gale_velocity", Vector2.ZERO)).length() == 0.0, "a heavy one should not")
+	var elapsed := 0.0
+	for tick in range(300):
+		var moving := false
+		for body in state.enemies:
+			if body.has("gale_velocity"): moving = true
+		if not moving: break
+		state._update_gale_drift(state.SIM_DT)
+		elapsed += state.SIM_DT
+	check(elapsed > 0.15, "the travel should take real world time, took %.2fs" % elapsed)
+	var near_moved := Vector2(near["pos"]).distance_to(Vector2(origins[int(near["id"])]))
+	var mid_moved := Vector2(mid["pos"]).distance_to(Vector2(origins[int(mid["id"])]))
+	var edge_moved := Vector2(edge["pos"]).distance_to(Vector2(origins[int(edge["id"])]))
+	check(near_moved > mid_moved and mid_moved > edge_moved, "distance from the centre should decide how far you go (%.0f / %.0f / %.0f)" % [near_moved, mid_moved, edge_moved])
+	check(Vector2(heavy["pos"]).distance_to(Vector2(origins[int(heavy["id"])])) < 0.01, "a heavy body stands in it")
+	# Being thrown across a room is not something a body sleeps through.
+	check(String(near.get("awareness", "idle")) == "alerted", "the wind should announce the caster")
