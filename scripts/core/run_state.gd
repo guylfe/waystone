@@ -282,6 +282,55 @@ const PUSHABLE_MASS := 1.35
 # separate questions, and a Knife should keep chipping posture lightly however hard it
 # hits. Sources with no authored posture fall back to this rate.
 const POSTURE_PER_DAMAGE := 0.22
+# Intelligence is the caster's Strength: Strength adds to physical damage, Intelligence
+# subtracts from spell cost. It does NOT add magnitude -- a stat that multiplies every
+# spell in the game forces every casting class onto one curve and prevents spells from
+# having independent worth, which is the "element is paint" failure the caster design
+# exists to avoid. Spell power lives in the spell.
+#
+# Because a cooldown is `spend / pool x 24`, cutting the cost cuts the cooldown by the
+# same proportion. One stat, one effect, and it means the same thing under both rule
+# profiles without a second rule.
+const INTELLIGENCE_BASELINE := 5
+const SPELL_COST_PER_INTELLIGENCE := 0.055
+const SPELL_COST_FLOOR := 0.40
+# The Circle. A place where your casting is cheaper, and nothing else -- not faster, since
+# a speed bonus would reduce the time you stand exposed and so cancel its own price, and
+# not stronger, since magnitude belongs to the spell.
+#
+# 168 is the Earth caster's radius, and it is also exactly how far a Sidestep travels. From
+# the centre a Sidestep lands you on the rim and a Long Roll (231) puts you outside, so the
+# Evasion track's permanent fork acquires a new meaning for a caster: Sidestep is the form
+# that can hold ground.
+const CIRCLE_RADIUS := 168.0
+const CIRCLE_WIDE_RADIUS := 248.0
+const CIRCLE_DURATION := 16.0
+const CIRCLE_WIND_UP := 1.5
+const CIRCLE_ENERGY := 8.0
+const CIRCLE_INTELLIGENCE := 3
+# Every spell the Elementalist can learn, and which stage teaches it. Each is an enemy
+# ability first; the spellbook is the bestiary.
+const ELEMENT_STAGE_SPELLS := {
+	"element_fire": ["fireball", "fire_breath"],
+	"element_ice": ["frost_lance", "cold_front"],
+	"element_earth": ["earth_wall", "sunder"],
+	"element_air": ["gale", "windstep"],
+}
+# Raw cost before Intelligence and before ENERGY_COST_SCALE. The bolt is deliberately the
+# cheapest thing a caster can do and the weakest: it is what raw force does before it has
+# been shaped into an element, which is why it has no condition, no fork and no terrain.
+const SPELL_ENERGY := {
+	"lightning_bolt": 16.0, "fireball": 30.0, "fire_breath": 34.0,
+	"frost_lance": 30.0, "cold_front": 38.0, "earth_wall": 30.0,
+	"sunder": 26.0, "gale": 28.0, "windstep": 24.0,
+}
+const SPELL_LABELS := {
+	"lightning_bolt": "Lightning Bolt", "fireball": "Fireball", "fire_breath": "Fire Breath",
+	"frost_lance": "Frost Lance", "cold_front": "Cold Front", "earth_wall": "Earth Wall",
+	"sunder": "Sunder", "gale": "Gale", "windstep": "Windstep",
+}
+const LIGHTNING_RANGE := 560.0
+const LIGHTNING_DAMAGE := 11
 # A parry costs the player their turn rather than their health. Long enough that the
 # rest of the room gets to act inside it, short enough that it is a mistake and not a
 # death sentence.
@@ -357,7 +406,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.61"
+const GAME_VERSION := "0.2.62"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -469,6 +518,16 @@ var aimed_remaining := 0.0
 var bow_followup_ready := false
 var bow_followup_consumed := false
 var barriers: Array[Dictionary] = []
+var circle_pos := Vector2.ZERO
+var circle_remaining := 0.0
+# Learned spells, in the order they were learned. The Elementalist starts with the bolt and
+# adds one element per subclass rank, so this is never empty and never longer than five.
+var player_spells: Array[String] = []
+var selected_spell := ""
+var spell_cooldown := 0.0
+var spell_cooldown_max := 8.0
+var survey_circle_casts := 0
+var survey_spell_casts := 0
 var player_condition_buildup: Dictionary = {}
 # How much of the frost still stands, 0..1. Read by tempo, by the damage amplifier and by
 # the meter, so all three agree by construction.
@@ -782,6 +841,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	player_condition_buildup.clear()
 	player_conditions.clear()
 	barriers.clear()
+	circle_remaining = 0.0
+	spell_cooldown = 0.0
 	_player_burn_debt = 0.0
 	bow_followup_ready = false
 	bow_followup_consumed = false
@@ -2376,6 +2437,9 @@ func _apply_loadout() -> void:
 	# the Warrior instead depends on deliberate defensive movement when flankers
 	# close the distance.
 	player_move_speed = WARRIOR_MOVE_SPEED if loadout_id == "warrior" else MOVE_SPEED
+	if loadout_id == "mage_elementalist" and player_spells.is_empty():
+		player_spells = ["lightning_bolt"]
+		selected_spell = "lightning_bolt"
 	match player_weapon_frame:
 		"knife", "twin_knives":
 			player_attack_duration = 0.70
@@ -2386,6 +2450,17 @@ func _apply_loadout() -> void:
 			player_attack_technique = "knife_cut_in"
 			player_attack_reach = 74.0
 			player_attack_posture = 1.0
+		"staff":
+			# Long and slow, and it does less per hit than a sword. The staff's whole case is
+			# the ground it covers and the posture it takes.
+			player_attack_duration = 1.24
+			player_attack_startup = 0.30
+			player_attack_active_end = 0.44
+			player_damage_min = 8
+			player_damage_max = 8
+			player_attack_technique = "staff_thrust"
+			player_attack_reach = 150.0
+			player_attack_posture = 1.8
 		"bow":
 			player_attack_duration = 0.70
 			player_attack_startup = 0.10
@@ -2471,6 +2546,28 @@ func dodge_is_available() -> bool:
 
 func energy_cost(amount: float) -> float:
 	return amount * ENERGY_COST_SCALE
+
+# Intelligence applies to spells only. A staff swing is not cleverer for being cast by a
+# clever person, and letting Intelligence discount physical actions would make it a
+# universal stat that every class wanted.
+func player_intelligence() -> int:
+	var total := int(player_attributes.get("intelligence", INTELLIGENCE_BASELINE))
+	if player_is_inside_circle(): total += circle_intelligence_bonus()
+	return total
+
+func circle_intelligence_bonus() -> int:
+	return CIRCLE_INTELLIGENCE * (2 if track_choice("circle_mastery") == "deep_circle" else 1)
+
+func circle_radius() -> float:
+	return CIRCLE_WIDE_RADIUS if track_choice("circle_mastery") == "wide_circle" else CIRCLE_RADIUS
+
+func player_is_inside_circle() -> bool:
+	return circle_remaining > 0.0 and player_pos.distance_to(circle_pos) <= circle_radius()
+
+func spell_energy_cost(spell_id: String) -> float:
+	var raw := float(SPELL_ENERGY.get(spell_id, 24.0))
+	var discount := 1.0 - float(player_intelligence() - INTELLIGENCE_BASELINE) * SPELL_COST_PER_INTELLIGENCE
+	return energy_cost(raw * maxf(SPELL_COST_FLOOR, discount))
 
 # A cooldown is the ability's price expressed as a share of the pool, times the one
 # global rate. See COOLDOWN_SECONDS_PER_FULL_POOL for why the pool is the denominator.
@@ -2629,6 +2726,40 @@ func _linked_combo_phases(raw_phases: Array[Dictionary], recovery_before_link: f
 		raw_origin = float(raw.get("end", raw_origin))
 		linked_origin = float(linked["link"])
 	return result
+
+# Cast and Circle both resolve on their own wind-up rather than through the melee tick,
+# because neither has attack geometry. Windstep is the one that also moves you, so it runs
+# per tick across its travel window like the enemy version does.
+func _tick_player_cast(dt: float) -> void:
+	var kind := String(player_action.get("kind", "idle"))
+	if kind not in ["cast", "circle"]: return
+	var elapsed := float(player_action.get("elapsed", 0.0))
+	var startup := float(player_action.get("startup", 0.4))
+	if kind == "circle":
+		if elapsed >= startup and not bool(player_action.get("effect_done", false)):
+			player_action["effect_done"] = true
+			circle_pos = player_pos
+			circle_remaining = CIRCLE_DURATION
+			survey_circle_casts += 1
+			_add_effect("earth_wall", player_pos)
+			_set_message("The circle takes. Your casting is cheaper while you stand in it.")
+		return
+	var spell_id := String(player_action.get("spell_id", ""))
+	if spell_id == "windstep":
+		if elapsed >= startup and elapsed <= startup + 0.32:
+			var step := Vector2(player_action["direction"]).normalized() * 1250.0 * dt
+			var landing := player_pos + step
+			if not _point_in_wall(landing) and not _point_in_barrier(landing, PLAYER_RADIUS) and _inside_world(landing, PLAYER_RADIUS):
+				player_pos = landing
+		return
+	if elapsed >= startup and not bool(player_action.get("effect_done", false)):
+		player_action["effect_done"] = true
+		_resolve_player_spell(spell_id, Vector2(player_action.get("target", player_pos + player_facing * 200.0)), Vector2(player_action["direction"]))
+
+func _update_circle(dt: float) -> void:
+	if circle_remaining <= 0.0: return
+	circle_remaining = maxf(0.0, circle_remaining - dt)
+	if circle_remaining <= 0.0: _set_message("The circle fades.")
 
 func _increase_max_energy(amount: float) -> void:
 	player_max_energy += amount
@@ -2808,6 +2939,7 @@ func request_combo(direction: Vector2, simulate_immediately: bool = true, held: 
 	_reset_building_force()
 	_reset_building_force_if_unavailable()
 	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held)
+	elif player_weapon_frame == "staff": _begin_staff_combo(direction, held)
 	elif player_weapon_frame == "bow": return false
 	else: _begin_sword_combo(direction, held, false)
 	if simulate_immediately: _simulate_until_ready()
@@ -2910,6 +3042,37 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 
 func _aimed_projectile_range_multiplier() -> float:
 	return 1.15 if has_track_rank("sharpshooter", 2) else 1.0
+
+# Thrust, sweep, overhead spin. The reward for finishing is that the last hit catches
+# everything around you rather than that it hits harder -- the staff's growth is in ground
+# covered, which is why Flowing Form widens the middle hit at the same duration instead of
+# speeding anything up.
+func _begin_staff_combo(direction: Vector2, held: bool) -> void:
+	player_facing = direction.normalized()
+	var reach_bonus := 18.0 if has_track_rank("staff", 2) else 0.0
+	var wide_middle := has_track_rank("staff", 3)
+	var phases: Array[Dictionary] = [
+		{"startup": 0.30, "active_end": 0.44, "end": 0.92, "reach": 150.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 1.8, "technique": "staff_thrust", "energy_cost": 14.0},
+		{"startup": 1.06, "active_end": 1.26, "end": 1.78, "reach": 138.0 + reach_bonus, "damage_min": _player_physical_damage(4), "damage_max": _player_physical_damage(4), "posture": 2.4, "technique": "staff_spin" if wide_middle else "staff_sweep", "energy_cost": 14.0},
+		{"startup": 1.94, "active_end": 2.22, "end": 2.86, "reach": 146.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 3.6, "technique": "staff_spin", "energy_cost": 18.0},
+	]
+	phases = _linked_combo_phases(phases, 0.25)
+	if not _spend_energy(float(phases[0]["energy_cost"])): return
+	player_action = _action("combo", float(phases[-1]["end"]), player_facing)
+	player_action["phases"] = phases
+	player_action["combo_length"] = phases.size()
+	player_action["combo_instance_id"] = _next_combo_instance_id
+	_next_combo_instance_id += 1
+	player_action["phase_index"] = -1
+	player_action["continue_held"] = held
+	player_action["committed_phase"] = 0
+	player_action["terminal_recovery_locked"] = false
+	player_action["terminal_recovery_recorded"] = false
+	player_action["building_force_registered"] = false
+	_apply_action_poise(player_action)
+	_annotate_player_action("staff_combo")
+	_emit_sound(player_pos, 300.0)
+	_set_message("The staff comes up. Hold to carry the form through.")
 
 func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	player_facing = direction.normalized()
@@ -3281,6 +3444,158 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 410.0)
 	_set_message("You draw through a narrow opening in one committed cut.")
+	if simulate_immediately: _simulate_until_ready()
+	else: _streamed_action_cpu_usec = 0
+	return true
+
+func knows_spell(spell_id: String) -> bool:
+	return player_spells.has(spell_id)
+
+func spell_label(spell_id: String) -> String:
+	return String(SPELL_LABELS.get(spell_id, spell_id.capitalize()))
+
+func spell_is_available() -> bool:
+	return is_player_ready() and not player_spells.is_empty() and spell_cooldown <= 0.0001 and not energy_actions_locked()
+
+func select_spell(spell_id: String) -> bool:
+	if not knows_spell(spell_id): return false
+	selected_spell = spell_id
+	return true
+
+# Casting roots you. That positional cost is what makes "casting competes with dodging"
+# true, so Walking Cast frees the recovery and never the wind-up: you still commit in
+# place, you just do not have to serve the whole bill standing there.
+func _spell_action(spell_id: String, direction: Vector2, wind_up: float, total: float) -> Dictionary:
+	var pace := 0.88 if has_track_rank("mage", 2) else 1.0
+	var action := _action("cast", total * pace, direction)
+	action["startup"] = wind_up * pace
+	action["spell_id"] = spell_id
+	action["effect_done"] = false
+	action["mobile_recovery"] = has_track_rank("mage", 4)
+	return action
+
+func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool = true) -> bool:
+	if not spell_is_available() or not knows_spell(spell_id): return false
+	var offset := target - player_pos
+	var direction := offset.normalized() if offset.length_squared() > 0.01 else player_facing
+	if not _spend_energy(spell_energy_cost(spell_id), false): return false
+	selected_spell = spell_id
+	player_facing = direction
+	survey_spell_casts += 1
+	match spell_id:
+		"lightning_bolt": player_action = _spell_action(spell_id, direction, 0.34, 0.86)
+		"windstep": player_action = _spell_action(spell_id, direction, 0.22, 0.78)
+		"fire_breath": player_action = _spell_action(spell_id, direction, 0.74, 1.62)
+		"cold_front": player_action = _spell_action(spell_id, direction, 0.96, 1.94)
+		"earth_wall": player_action = _spell_action(spell_id, direction, 1.02, 1.74)
+		_: player_action = _spell_action(spell_id, direction, 0.66, 1.44)
+	player_action["target"] = target
+	_begin_spell_cooldown(_cooldown_for_last_spend())
+	_annotate_player_action("spell")
+	_break_stealth_for_hostile_action()
+	_set_message("You cast %s." % spell_label(spell_id))
+	if simulate_immediately: _simulate_until_ready()
+	else: _streamed_action_cpu_usec = 0
+	return true
+
+func _begin_spell_cooldown(seconds: float) -> void:
+	spell_cooldown = seconds
+	spell_cooldown_max = maxf(0.0001, seconds)
+
+# The player's spells are the enemies' spells. Every one of these reuses the spawner the
+# enemy version already calls, with the player standing in as the source, which is what
+# keeps "the spellbook is the bestiary" true in the code and not only in the design.
+func _resolve_player_spell(spell_id: String, target: Vector2, direction: Vector2) -> void:
+	var caster := {"id": 0, "pos": player_pos, "layer": current_layer, "kind": "player"}
+	match spell_id:
+		"lightning_bolt": _resolve_lightning_bolt(direction)
+		"fireball":
+			projectiles.append({
+				"pos": player_pos + direction * 36.0, "vel": direction * 465.0, "radius": 13.0,
+				"damage": 20, "posture": 1.6, "kind": "firebolt", "friendly": true, "source_id": 0,
+				"travelled": 0.0, "max_range": 700.0, "hit_ids": [], "elevation_profile": "flat",
+				"elevation": PROJECTILE_GROUND_ELEVATION, "layer": current_layer,
+			})
+		"frost_lance":
+			projectiles.append({
+				"pos": player_pos + direction * 36.0, "vel": direction * 610.0, "radius": 11.0,
+				"damage": 16, "posture": 1.4, "kind": "frost_lance", "friendly": true, "source_id": 0,
+				"travelled": 0.0, "max_range": 660.0, "hit_ids": [], "elevation_profile": "flat",
+				"elevation": PROJECTILE_GROUND_ELEVATION, "layer": current_layer,
+			})
+		"fire_breath": _spawn_fire_breath(caster, direction)
+		"cold_front": _spawn_cold_front(caster, target)
+		"sunder": _spawn_sundered_ground(target, 0, current_layer)
+		"earth_wall": _raise_player_earth_wall(target)
+		"gale": _spawn_gale(caster, target)
+		"windstep": pass
+
+func _resolve_lightning_bolt(direction: Vector2) -> void:
+	# An instant line to the first thing in it. Not a travelling projectile and not a cone,
+	# so it shares geometry with neither Fire ability -- and it cannot be dodged in flight,
+	# because there is no flight. It is the caster's jab: reliable, cheap, unimpressive.
+	var best: Dictionary = {}
+	var best_distance := LIGHTNING_RANGE
+	for enemy in _nearby_enemies(player_pos, LIGHTNING_RANGE + 80.0):
+		if int(enemy.get("hp", 0)) <= 0 or not _enemy_on_current_layer(enemy): continue
+		var offset := Vector2(enemy["pos"]) - player_pos
+		var along := offset.dot(direction)
+		if along <= 0.0 or along > best_distance: continue
+		if absf(offset.cross(direction)) > float(enemy.get("radius", ENEMY_RADIUS)) + 16.0: continue
+		if not _has_line_of_sight(player_pos, Vector2(enemy["pos"])): continue
+		best = enemy
+		best_distance = along
+	_add_effect("strain", player_pos + direction * minf(best_distance, LIGHTNING_RANGE))
+	if best.is_empty():
+		_set_message("The bolt earths itself on nothing.")
+		return
+	var contact := Vector2(best["pos"])
+	var awareness_before := String(best.get("awareness", "idle"))
+	var action_before: Dictionary = Dictionary(best.get("action", {})).duplicate(true)
+	var source_action := {"kind": "cast", "ability_id": "lightning_bolt", "duration": 0.35, "elapsed": 0.0, "allow_hit_reaction": true}
+	var resolved := _resolve_player_physical_values(best, LIGHTNING_DAMAGE, 1.2, source_action)
+	var damage := int(resolved["damage"])
+	best["hp"] = int(best["hp"]) - damage
+	damage_dealt += damage
+	_on_player_hit_landed(best)
+	var posture_broken := _apply_posture_damage(best, float(resolved["posture"]), contact)
+	if not posture_broken:
+		_apply_enemy_hit_reaction(best, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
+	_register_enemy_hit_awareness(best, resolved, source_action)
+	_add_effect("hit", contact, damage, {"direction": (contact - player_pos).normalized()})
+	_handle_player_contact_aftermath(best, resolved)
+	_set_message("The bolt earths itself in the %s." % String(best["kind"]))
+
+func _raise_player_earth_wall(target: Vector2) -> void:
+	# Placed where the player asked rather than across their retreat. Same rule, opposite
+	# value: an enemy caster puts it behind you to cut the way out, and you put it toward
+	# the threat to gate them -- and because a barrier never blocks enemies, what it
+	# actually gates is their archers and everything else that gets thrown.
+	var heading := (target - player_pos)
+	if heading.length_squared() < 0.001: heading = player_facing
+	heading = heading.normalized()
+	var axis := heading.rotated(PI * 0.5)
+	var segment_span := EARTH_WALL_SPAN / float(EARTH_WALL_SEGMENTS)
+	for index in range(EARTH_WALL_SEGMENTS):
+		var offset := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
+		barriers.append({
+			"pos": target + axis * offset, "axis": axis, "half_length": segment_span * 0.5,
+			"thickness": EARTH_WALL_THICKNESS, "hp": EARTH_WALL_SEGMENT_HP,
+			"remaining": EARTH_WALL_DURATION, "lowered": false, "source_id": 0, "layer": current_layer,
+		})
+	_add_effect("earth_wall", target)
+
+func request_circle(simulate_immediately: bool = true) -> bool:
+	if not is_player_ready() or loadout_id != "mage_elementalist": return false
+	if main_ability_cooldown > 0.0001 or energy_actions_locked(): return false
+	if not _spend_energy(CIRCLE_ENERGY, true): return false
+	var wind_up := CIRCLE_WIND_UP * (0.5 if track_choice("circle_mastery") == "swift_circle" else 1.0)
+	player_action = _action("circle", wind_up + 0.42, player_facing)
+	player_action["startup"] = wind_up
+	player_action["effect_done"] = false
+	_begin_main_ability_cooldown(_cooldown_for_last_spend())
+	_annotate_player_action("circle")
+	_set_message("You draw a circle underfoot.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
@@ -4130,6 +4445,8 @@ func _restore_at_waystone() -> void:
 	player_condition_buildup.clear()
 	player_conditions.clear()
 	barriers.clear()
+	circle_remaining = 0.0
+	spell_cooldown = 0.0
 	_player_burn_debt = 0.0
 	rally_remaining = 0.0
 	rally_end_after_action = false
@@ -4252,7 +4569,28 @@ func next_track_stage(track_id: String) -> Dictionary:
 	return CombatCatalogScript.character_stage(track_id, int(track_ranks.get(track_id, 0)))
 
 func _apply_character_stage(stage_id: String, choice_id: String) -> void:
+	if ELEMENT_STAGE_SPELLS.has(stage_id):
+		# One element per rank, and the fork is permanent. Both halves exist as enemy
+		# abilities whichever you pick, so the one you refused is still something the room
+		# can do to you.
+		if not player_spells.has(choice_id): player_spells.append(choice_id)
+		if selected_spell == "": selected_spell = choice_id
+		_set_message("You have learned %s." % spell_label(choice_id))
+		return
 	match stage_id:
+		"staff_art":
+			player_weapon_art_library = [choice_id]
+			player_equipped_weapon_art = choice_id
+		"measured_1", "measured_2", "measured_3", "measured_4":
+			if choice_id == "temperance":
+				player_attributes["intelligence"] = int(player_attributes.get("intelligence", 5)) + 1
+				_increase_max_health(12)
+			else:
+				_increase_max_energy(14.0)
+				player_attributes["resolve"] = int(player_attributes.get("resolve", 3)) + 1
+				_refresh_player_posture_capacity(true)
+		"learned":
+			player_attributes["intelligence"] = int(player_attributes.get("intelligence", 5)) + 3
 		"sword_art":
 			player_weapon_art_library = [choice_id]
 			player_equipped_weapon_art = choice_id
@@ -4487,6 +4825,7 @@ func _tick(dt: float) -> void:
 	rally_cooldown = maxf(0.0, rally_cooldown - player_dt)
 	advance_cooldown = maxf(0.0, advance_cooldown - player_dt)
 	main_ability_cooldown = maxf(0.0, main_ability_cooldown - player_dt)
+	spell_cooldown = maxf(0.0, spell_cooldown - player_dt)
 	subclass_ability_cooldown = maxf(0.0, subclass_ability_cooldown - player_dt)
 	weapon_sequence_cooldown = maxf(0.0, weapon_sequence_cooldown - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
@@ -4668,7 +5007,10 @@ func _update_player(dt: float) -> void:
 		return
 	player_action["elapsed"] = float(player_action["elapsed"]) + dt
 	var elapsed := float(player_action["elapsed"])
+	_tick_player_cast(dt)
 	match kind:
+		"cast", "circle":
+			pass
 		"move":
 			player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
 		"dodge":
@@ -5581,6 +5923,9 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 # does not. The knife's opening cuts no longer interrupt -- posture still accumulates,
 # so a full sequence still adds up to a break, and the later phases and Execution keep
 # their teeth. This is the one place the Rogue's speed is allowed to cost it something.
+func _cast_survives_light_hit() -> bool:
+	return has_track_rank("mage", 1)
+
 func _player_hit_can_interrupt() -> bool:
 	if player_weapon_frame not in ["knife", "twin_knives"]: return true
 	if String(player_action.get("kind", "idle")) != "combo": return true
@@ -5873,6 +6218,7 @@ func _sample_enemy_player_los(enemy: Dictionary, enemy_pos: Vector2, dt: float) 
 
 func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 	_update_barriers(dt)
+	_update_circle(dt)
 	_refresh_active_enemy_cache()
 	# Which casters are still standing. Anything sustained by a Chanter that is no
 	# longer alive ends this tick -- collected here rather than through a death hook so
@@ -7839,6 +8185,16 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 			_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
 		return
 	var posture_broken := player_posture <= 0.0001
+	# Steadier Cast. A caster's real vulnerability is not that a hit hurts, it is that a hit
+	# ERASES the thing they were doing -- which is why this is the Mage track's first node
+	# and why it is the difference between a caster that functions and one that does not.
+	# It holds against a light blow only; a heavy one, or one that breaks posture, still
+	# takes the spell.
+	if interrupted_kind in ["cast", "circle"] and _cast_survives_light_hit() and not posture_broken and posture_damage < 3.0:
+		interruptions_prevented_total += 1
+		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
+		_set_message("The %s lands, but the working holds." % source_name)
+		return
 	var guard_remaining := float(player_action.get("guard_remaining", 0.0))
 	if guard_remaining > 0.0 and not posture_broken:
 		var received_posture := posture_damage

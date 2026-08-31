@@ -1,6 +1,87 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.61` (Android version code `261`).
+Current prototype version: `0.2.62` (Android version code `262`).
+
+## v0.2.62 — Mage · Elementalist
+
+The fourth class, and the one the last seven versions were built for. Everything in 0.2.55 through 0.2.59 — barriers, the burn meter, the frost meter, projectile elevation, the staff — existed so this class could be assembled out of parts that already worked and had already been played against.
+
+### The sheet
+
+Staff, Evasion, Measured, Mage, Elementalist. The cadence is the one every class shares: weapon, defense and temperament at level 2, main class at 3, subclass at 4.
+
+Defense is the ordinary Evasion track rather than something authored for casters. That is deliberate and load-bearing: the entire argument against a mana bar is that casting has to compete with dodging, which requires the caster to actually be dodging. A bespoke defensive verb would have quietly dissolved the tension four milestones went into building.
+
+### The staff
+
+A Shaolin staff, not a wizard's walking stick. Its combo is thrust, sweep, overhead spin, and the reward for finishing is that the last hit catches everything around you rather than that it hits harder — the staff's growth is in ground covered, which is why **Flowing Form** at rank 3 widens the middle hit at the same duration instead of speeding anything up.
+
+The Weapon Art is a permanent fork between two things that are not versions of each other:
+
+- **Whirlwind** — the full circle, shoving bodies out, expensive. Reactive: they are already on you and you are buying room.
+- **Sweep the Legs** — a long low arc at the staff's full length, taking their feet. Proactive: they are not there yet, and now they are on the floor.
+
+Whirlwind buys **space**; Sweep the Legs buys **time**. Those are the two currencies the elemental framework is built on, so the fork reads in the design's own vocabulary rather than as "wide or narrow".
+
+The frame's previous two arts were placeholders written before anything used them, and one of them was called Vault — which would have given a staff-carrying Acrobat two Vaults. The capstone, **Conduit**, returns Energy on a landed staff hit: the weapon's advantage is that fighting pays for casting, not that it hits hard.
+
+### Intelligence, at last
+
+Intelligence has been a visible attribute with no effect since the framework was written. It now **reduces the Energy cost of spells**, and nothing else.
+
+Because a cooldown is `spend / pool x 24`, cutting the cost cuts the cooldown by exactly the same proportion. One stat, one effect, and it means the same thing under Energy rules and under Recovery rules without a second rule for either.
+
+It deliberately does **not** add spell power. A stat that multiplies every spell in the game forces every casting class onto one curve and stops spells from having independent worth, which is the "element is paint" failure the whole caster design exists to avoid. Magnitude lives in the spell. It also does not discount physical actions — a stat that cheapens swinging a stick is a stat every class wants, and then it is not the caster's stat at all.
+
+### Circle
+
+The Mage's main-class ability, and the thing that makes Mage a class rather than a delivery mechanism for its subclass. Draw a circle underfoot; while you stand in it your casting is cheaper. Long wind-up, almost no cost — the price is time, not resource, because paying a lot of Energy to reduce Energy consumption makes no sense.
+
+It is cost only. Not speed: a speed bonus would shorten the time you stand exposed and so cancel its own price. Not magnitude: that belongs to the spell.
+
+Its radius is 168, and that number is not arbitrary. A Sidestep travels exactly 168 units and a Long Roll covers 231, so from the centre **a Sidestep lands you on the rim and a Long Roll gives the ground up**. The Evasion track's permanent fork acquires a second meaning the moment a caster takes it, and Sidestep becomes the form that can hold ground. The rank 10 node lets you buy that back — **Wide Circle** is defined by that exact threshold rather than by being "bigger".
+
+This is the caster's version of a Warrior planting his feet, and no other class does it: the Mage is the class about establishing a place and deciding whether to hold it.
+
+### The spellbook is the bestiary
+
+The Elementalist starts holding **Lightning Bolt** — cheap, weak, an instant line to the first thing in it. It is the only ability in the game with no enemy behind it, and that is its identity rather than an oversight: raw force before it has been shaped into an element, which is why it carries no condition, no fork and no terrain. It is the one thing you did not have to learn from something that used it on you first.
+
+Everything else, you did. Each subclass rank teaches one element as a **permanent one-of-two**, and both halves are abilities an enemy caster already uses against you:
+
+| Gate | Element | The choice |
+|---|---|---|
+| 4 | Fire | Fireball or Fire Breath — near or far |
+| 6 | Ice | Frost Lance or Cold Front — a spike they can answer, or a drip they cannot |
+| 8 | Earth | Earth Wall or Sunder — block or slow |
+| 10 | Air | Gale or Windstep — control the fight or survive it |
+
+The half you refuse is still something the room can do to you. Every one of them resolves through the same spawner the enemy version calls, so the claim is true in the code and not only in the prose.
+
+Earth Wall is the sharpest demonstration of why one rule beats two. A barrier blocks the player and blocks projectiles, and never blocks enemies. An enemy caster places it behind you to cut your retreat; you place it toward the threat, and what it gates is their archers. Same rule, opposite value, decided entirely by where it goes.
+
+### The Mage track
+
+Interruption first, because it is the difference between a caster that functions and one that does not. **Steadier Cast** at rank 3 holds a working through a light hit — a caster's real vulnerability is not that a hit hurts, it is that a hit erases what they were doing. A heavy blow still takes it, or the frailest class in the game would become the hardest to interrupt.
+
+Then **Faster Cast**, **Learned** (+3 Intelligence), and **Walking Cast**, which frees the recovery and never the wind-up. That distinction matters: casting costs you position, and that cost is what makes casting compete with dodging. You still commit in place; you just do not have to serve the whole bill standing there, and you move at an exhausted pace when you do.
+
+The rank 10 node improves the Circle three ways — a halved wind-up so it can be laid down inside a fight, the wider radius, or a deeper discount.
+
+### Measured
+
+The temperament, four purchases as always, and the two packages split Intelligence and Energy deliberately rather than bundling them:
+
+- **Temperance** — +1 Intelligence, +12 health. Needs little, lasts long.
+- **Conviction** — +14 Energy, +1 Resolve. Spends big, pushes through the hit.
+
+Both stats shorten cooldowns, via opposite terms of the same formula — Intelligence shrinks what you spend, a deeper pool grows what you spend it against. Putting them in the same package would have made one of them *the cooldown package*, and the fork would have collapsed into a single decision taken four times. Split, neither is the automatic repeat pick, and the question stays live on the fourth purchase.
+
+### The interface
+
+Up to five spell buttons in a row above the action row, tethered to the subclass slot they belong to. A palette reached through that slot would cost two taps per cast, which for a class whose whole loop is choosing between four questions is the difference between a spellbook and a chore.
+
+Frozen time is what makes the extra row affordable: no world time passes while you decide, so more buttons cost nothing in dexterity, and the only real cost is screen space. Each button carries its current price, because Intelligence and the Circle both move it and a cost that changes silently is a cost the player cannot plan around.
 
 ## v0.2.61 — Stamina becomes Energy
 

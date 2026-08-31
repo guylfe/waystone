@@ -137,6 +137,19 @@ var custom_editing_slot := -1
 var custom_slot_rects: Dictionary = {}
 var custom_remove_rects: Dictionary = {}
 var custom_add_rect := Rect2()
+# The spellbook row. A palette reached through the subclass slot would cost two taps per
+# cast, which for a class whose whole loop is choosing between four questions is the
+# difference between a spellbook and a chore. Frozen time is what makes the extra row
+# affordable: no world time passes while you decide, so more buttons cost nothing in
+# dexterity and the only real cost is screen space.
+var spell_rects: Dictionary = {}
+# Each element keeps the colour its enemy caster uses, so a spell you learned off something
+# looks like the thing you learned it from.
+const SPELL_COLORS := {
+	"lightning_bolt": Color("d8ecf6"), "fireball": Color("ff9b4f"), "fire_breath": Color("ff7a3c"),
+	"frost_lance": Color("9be7ff"), "cold_front": Color("8edcff"), "earth_wall": Color("6f9b6a"),
+	"sunder": Color("87ac7d"), "gale": Color("d8ecf6"), "windstep": Color("bcd3e0"),
+}
 var custom_room_formation := ""
 var custom_room_hp := 1.0
 # A level, not an XP total. "XP 400" is a number from the wrong vocabulary -- the sheet
@@ -790,6 +803,7 @@ func _layout() -> void:
 	dev_section_rects.clear()
 	survey_profile_rects.clear()
 	combat_rule_rects.clear()
+	spell_rects.clear()
 	var names := ["defense", "skill", "rally", "advance", "adopted"]
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
@@ -805,6 +819,16 @@ func _layout() -> void:
 		var belt_width := (layout_size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(layout_origin.x + gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var top := belt_top + belt_height + gap * 0.55
+		# The spellbook sits directly above the action row and is tethered to the subclass
+		# slot it belongs to, so it reads as that slot opening rather than as five more
+		# unexplained controls.
+		var spells := _spell_row()
+		if not spells.is_empty():
+			var spell_height := clampf(layout_size.y * 0.052, 40.0, 62.0)
+			var spell_width := (layout_size.x - gap * float(spells.size() + 1)) / float(spells.size())
+			for i in range(spells.size()):
+				spell_rects[spells[i]] = Rect2(layout_origin.x + gap + i * (spell_width + gap), top, spell_width, spell_height)
+			top += spell_height + gap * 0.45
 		var width := (layout_size.x - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
 			buttons[names[i]] = Rect2(layout_origin.x + gap + i * (width + gap), top, width, safe_layout_rect.end.y - top - gap)
@@ -822,6 +846,13 @@ func _layout() -> void:
 		var belt_width := (safe_layout_rect.end.x - left - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(left + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var action_top := belt_top + belt_height + gap
+		var spells := _spell_row()
+		if not spells.is_empty():
+			var spell_height := clampf(layout_size.y * 0.048, 34.0, 52.0)
+			var spell_width := (safe_layout_rect.end.x - left - gap * float(spells.size() + 1)) / float(spells.size())
+			for i in range(spells.size()):
+				spell_rects[spells[i]] = Rect2(left + i * (spell_width + gap), action_top, spell_width, spell_height)
+			action_top += spell_height + gap * 0.6
 		var action_bottom := safe_layout_rect.end.y - gap
 		var height := (action_bottom - action_top - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
@@ -1792,6 +1823,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 		if Rect2(consumable_rects[slot_id]).has_point(end_position):
 			_handle_consumable(String(slot_id))
 			return
+	# Tested before the action row, because the spellbook sits directly above it and an
+	# overlap must not be swallowed by whichever dictionary happens to iterate first.
+	if _handle_spell_press(end_position): return
 	for name in buttons:
 		if Rect2(buttons[name]).has_point(end_position):
 			_handle_button(String(name))
@@ -1883,8 +1917,12 @@ func _handle_button(name: String) -> void:
 				# there is no streamed action to begin and no world time to spend.
 				state.request_end_stealth()
 				queue_redraw()
+			elif state.loadout_id == "mage_elementalist":
+				_begin_streamed_action(state.request_circle(false))
 			else:
 				_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
+		"advance" when state.loadout_id == "mage_elementalist":
+			if state.spell_is_available(): selected_action = "" if selected_action == "advance" else "advance"
 		"advance":
 			var remaining := state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown
 			var energy_locked := state.loadout_id == "warrior" and state.energy_actions_locked()
@@ -1928,6 +1966,8 @@ func _commit_direction(direction: Vector2) -> void:
 	else: _begin_streamed_move(direction)
 
 func _request_subclass_direction(direction: Vector2) -> bool:
+	if state.loadout_id == "mage_elementalist":
+		return state.request_spell(state.selected_spell, state.player_pos + direction * 340.0, false)
 	if state.loadout_id == "rogue_acrobat": return state.request_vault(direction, false)
 	if state.loadout_id == "rogue_sharpshooter":
 		state.message = "Tap a visible enemy to Take Aim."
@@ -3786,6 +3826,7 @@ func _draw_hud() -> void:
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
+		_draw_spell_row()
 		_draw_button("wait", interaction_rect)
 		if state.uses_energy_rules(): _draw_attack_button()
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
@@ -4655,6 +4696,43 @@ func _draw_loadout_tab(choice: String, rect: Rect2) -> void:
 	var font := maxi(9, int(minf(rect.size.x, rect.size.y) * 0.25))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.62), choice.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font, Color("eef0e9") if selected else Color("718087"))
 
+func _spell_row() -> Array[String]:
+	if state.loadout_id != "mage_elementalist": return []
+	var row: Array[String] = []
+	for spell_value in state.player_spells: row.append(String(spell_value))
+	return row
+
+func _draw_spell_row() -> void:
+	if spell_rects.is_empty(): return
+	var castable := state.spell_is_available()
+	for spell_value in spell_rects:
+		var spell_id := String(spell_value)
+		var rect := Rect2(spell_rects[spell_id])
+		var chosen := spell_id == state.selected_spell
+		var colour := SPELL_COLORS.get(spell_id, Color("c8d6de")) as Color
+		draw_rect(rect, Color("16222a") if castable else Color("11191d"))
+		draw_rect(rect, colour if castable else Color("465359"), false, 4.0 if chosen else 2.0)
+		var label := state.spell_label(spell_id)
+		var label_font := maxi(9, int(minf(rect.size.x / maxf(1.0, float(label.length())) * 1.7, rect.size.y * 0.36)))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.5 + float(label_font) * 0.34), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, label_font, colour if castable else Color("5d6a71"))
+		# The cost, because Intelligence and the Circle both move it and a price that
+		# changes silently is a price the player cannot plan around.
+		var cost := "%d" % roundi(state.spell_energy_cost(spell_id))
+		var cost_font := maxi(8, int(label_font * 0.72))
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5.0, float(cost_font) + 3.0), cost, HORIZONTAL_ALIGNMENT_LEFT, -1, cost_font, Color(colour, 0.62))
+
+func _handle_spell_press(position: Vector2) -> bool:
+	for spell_value in spell_rects:
+		var spell_id := String(spell_value)
+		if not Rect2(spell_rects[spell_id]).has_point(position): continue
+		state.select_spell(spell_id)
+		# Selecting arms the subclass slot rather than casting, because every spell needs a
+		# direction and the board is where directions come from.
+		if state.spell_is_available(): selected_action = "advance"
+		queue_redraw()
+		return true
+	return false
+
 func _draw_button(name: String, rect: Rect2) -> void:
 	var available := true
 	var subtitle := ""
@@ -4681,10 +4759,18 @@ func _draw_button(name: String, rect: Rect2) -> void:
 			title = "END STEALTH" if stealth_state == "active" else "STEALTH"
 			available = stealth_state in ["available", "active"]
 			subtitle = "CONCEAL" if stealth_state == "available" else "STEP OUT" if stealth_state == "active" else "NOTICED" if stealth_state == "noticed" else "COOLING" if stealth_state == "cooldown" else "LOCKED"
+		elif state.loadout_id == "mage_elementalist":
+			title = "CIRCLE"
+			available = state.main_ability_cooldown <= 0.0001 and state.is_player_ready() and not state.energy_actions_locked()
+			subtitle = "INSIDE" if state.player_is_inside_circle() else "GOOD GROUND" if available else "COOLING"
 		else:
 			title = "RALLY"
 			available = state.rally_is_available()
 			subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
+	elif name == "advance" and state.loadout_id == "mage_elementalist":
+		title = state.spell_label(state.selected_spell).to_upper() if state.selected_spell != "" else "SPELLBOOK"
+		available = state.spell_is_available()
+		subtitle = "CAST" if available else "EXHAUSTED" if state.energy_actions_locked() else "COOLING"
 	elif name == "advance":
 		title = "VAULT" if state.loadout_id == "rogue_acrobat" else "TAKE AIM" if state.loadout_id == "rogue_sharpshooter" else "ADVANCE"
 		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001 and not (state.loadout_id == "warrior" and state.energy_actions_locked())

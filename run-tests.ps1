@@ -64,6 +64,7 @@ $HeadlessSuite = @(
     'energy_test',
     'warrior_character_test',
     'rogue_characters_test',
+    'mage_elementalist_test',
     'combat_survey_test',
     'combat_survey_ui_test',
     'weapon_geometry_test',

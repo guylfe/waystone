@@ -47,7 +47,9 @@ func test_loadout_sheets_and_gates() -> void:
 	var sharpshooter := fresh("rogue_sharpshooter")
 	assert(String(sharpshooter.character_sheet_data()["name"]) == "Rogue · Sharpshooter")
 	assert(sharpshooter.character_track_order() == ["bow", "evasion", "patient", "rogue", "sharpshooter", "adopted"])
-	assert(CombatCatalogScript.loadout_ids().size() == 3)
+	# Four as of 0.2.62. Named rather than counted, so adding a class is a deliberate edit
+	# here and not a number that quietly drifts.
+	assert(CombatCatalogScript.loadout_ids() == ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"])
 
 func test_knife_sequences_and_art_choice() -> void:
 	var state := fresh("rogue_acrobat")

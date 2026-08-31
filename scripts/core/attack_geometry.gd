@@ -26,6 +26,18 @@ const TECHNIQUES := {
 	# want you close and the poke says so, rather than being a scaled-down sword. It is the
 	# worst melee attack in the game and is meant to read that way at a glance.
 	"staff_poke": {"motion": "thrust", "radius": 5.0, "multi": false, "label": "Staff poke"},
+	# The player's staff is a Shaolin staff rather than a mage's walking stick: reach,
+	# posture and ground covered, never damage. Its combo opens narrow and ends wide, so
+	# the reward for finishing is spatial instead of numerical.
+	"staff_thrust": {"motion": "thrust", "radius": 6.0, "multi": false, "label": "Staff thrust"},
+	"staff_sweep": {"motion": "arc", "start_angle": -0.72, "end_angle": 0.72, "inner_radius": 30.0, "radius": 5.0, "multi": false, "label": "Staff sweep"},
+	# The overhead spin. Everything around you, once, as the last thing the combo does.
+	"staff_spin": {"motion": "arc", "start_angle": -1.92, "end_angle": 1.92, "inner_radius": 30.0, "radius": 6.0, "multi": true, "label": "Overhead spin"},
+	# The full circle. Reactive: they are already on you, and you are buying room.
+	"staff_whirlwind": {"motion": "arc", "start_angle": -PI, "end_angle": PI, "inner_radius": 32.0, "radius": 7.0, "multi": true, "label": "Whirlwind"},
+	# Held at the very end for maximum length, low, taking the legs. Proactive: they are
+	# not there yet, and now they are on the floor.
+	"staff_leg_sweep": {"motion": "arc", "start_angle": -0.86, "end_angle": 0.86, "inner_radius": 32.0, "radius": 5.0, "multi": true, "label": "Sweep the Legs"},
 	"thrust": {"motion": "thrust", "radius": 10.0, "multi": false, "label": "Thrust"},
 	"rapier_thrust": {"motion": "thrust", "radius": 6.0, "multi": false, "label": "Rapier thrust"},
 	"driving_cut": {"motion": "thrust", "radius": 8.0, "multi": false, "label": "Driving cut"},

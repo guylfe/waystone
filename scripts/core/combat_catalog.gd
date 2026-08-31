@@ -60,7 +60,7 @@ const WEAPON_FRAMES := {
 	"twin_knives": {"label": "Twin Knives", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["knife_twin_fang"], "guard_profile": "dual"},
 	"bow": {"label": "Bow", "delivery": "ranged", "basic_technique": "drawn_shot", "art_ids": ["bow_piercing_shot", "bow_fan_shot"], "guard_profile": "awkward"},
 	"impact": {"label": "Impact Weapon", "delivery": "melee", "basic_technique": "forward_smash", "art_ids": ["impact_ground_smash", "impact_guard_break"]},
-	"staff": {"label": "Staff", "delivery": "melee", "basic_technique": "staff_strike", "art_ids": ["staff_push_sweep", "staff_vault"]},
+	"staff": {"label": "Staff", "delivery": "melee", "basic_technique": "staff_thrust", "art_ids": ["staff_whirlwind", "staff_leg_sweep"]},
 	"natural": {"label": "Natural Weapon", "delivery": "melee", "basic_technique": "bite", "art_ids": ["natural_pounce", "natural_flurry"]},
 	"unarmed": {"label": "Unarmed", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["unarmed_step_in", "unarmed_breaker"]},
 }
@@ -84,8 +84,8 @@ const WEAPON_ARTS := {
 	"bow_scatter_shot": {"label": "Scatter Shot", "frame": "bow", "style": "space_control", "gate": "elite_foe"},
 	"impact_ground_smash": {"label": "Ground Smash", "frame": "impact", "style": "impact", "gate": "quarry_lesson"},
 	"impact_guard_break": {"label": "Guard Break", "frame": "impact", "style": "disrupt", "gate": "armory_manual"},
-	"staff_push_sweep": {"label": "Push Sweep", "frame": "staff", "style": "space_control", "gate": "academy_lesson"},
-	"staff_vault": {"label": "Vault", "frame": "staff", "style": "mobility", "gate": "wind_shrine"},
+	"staff_whirlwind": {"label": "Whirlwind", "frame": "staff", "style": "space_control", "gate": "academy_lesson"},
+	"staff_leg_sweep": {"label": "Sweep the Legs", "frame": "staff", "style": "posture_break", "gate": "academy_lesson"},
 	"natural_pounce": {"label": "Pounce", "frame": "natural", "style": "engage", "gate": "natural"},
 	"natural_flurry": {"label": "Claw Flurry", "frame": "natural", "style": "pressure", "gate": "natural"},
 	"unarmed_step_in": {"label": "Step In", "frame": "unarmed", "style": "engage", "gate": "trainer"},
@@ -97,10 +97,14 @@ const WEAPON_ARTS := {
 const LOADOUT_PROFILES := {
 	"warrior": {"name": "Warrior · Vanguard", "weapon_frame": "sword", "track_order": ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 100, "strength": 5, "defense": 4, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "resistance": 6, "intelligence": 2, "faith": 2}, "properties": {"mass": 1.05}},
 	"rogue_acrobat": {"name": "Rogue · Acrobat", "weapon_frame": "knife", "track_order": ["knife", "evasion", "finesse", "rogue", "acrobat", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 80, "strength": 4, "defense": 2, "speed": 7, "stealth": 7, "awareness": 6, "resolve": 3, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.82}},
+	# Frailer than a Rogue and far frailer than a Warrior, with the game's only meaningful
+	# Intelligence. Resolve is deliberately low: a caster's vulnerability is that a hit
+	# cancels the spell, which is what the Mage track's first node exists to repair.
+	"mage_elementalist": {"name": "Mage · Elementalist", "weapon_frame": "staff", "track_order": ["staff", "evasion", "measured", "mage", "elementalist", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 75, "strength": 3, "defense": 2, "speed": 5, "stealth": 3, "awareness": 6, "resolve": 3, "resistance": 6, "intelligence": 7, "faith": 2}, "properties": {"mass": 0.85}},
 	"rogue_sharpshooter": {"name": "Rogue · Sharpshooter", "weapon_frame": "bow", "track_order": ["bow", "evasion", "patient", "rogue", "sharpshooter", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 85, "strength": 4, "defense": 2, "speed": 6, "stealth": 7, "awareness": 8, "resolve": 4, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.88}},
 }
 
-const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "knife", "finesse", "rogue", "acrobat", "bow", "patient", "sharpshooter", "adopted"]
+const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "knife", "finesse", "rogue", "acrobat", "bow", "patient", "sharpshooter", "staff", "measured", "mage", "elementalist", "adopted"]
 
 # Each stage is the next node in a compact track. A gate is a minimum character
 # level, so an unchosen node remains available after its gate instead of
@@ -253,6 +257,88 @@ const CHARACTER_TRACKS := {
 			{"id": "far_sight", "label": "Far Sight", "gate": 6, "description": "+25% unobstructed sight distance and +15% maximum range for every aimed projectile."},
 			{"id": "expose_weakness", "label": "Expose Weakness", "gate": 8, "description": "Take Aim grants +10 damage, ignores 6 Defense, and adds +3 posture damage."},
 			{"id": "dead_to_rights", "label": "Dead to Rights", "gate": 10, "description": "First Aimed contact deals +50% final physical damage and double posture; a kill refreshes Take Aim."},
+		],
+	},
+	"staff": {
+		"label": "Staff",
+		"description": "Reach, posture and ground covered. The staff never competes on damage.",
+		"stages": [
+			{"id": "staff_art", "label": "Weapon Art", "gate": 2, "description": "Choose one Staff Art for this run.", "choices": [
+				{"id": "staff_whirlwind", "label": "Whirlwind", "description": "A full circle that shoves bodies out. Expensive, and for when they are already on you."},
+				{"id": "staff_leg_sweep", "label": "Sweep the Legs", "description": "A long low arc at the staff's full length. Takes them off their feet before they arrive."},
+			]},
+			{"id": "long_guard", "label": "Long Guard", "gate": 4, "description": "Every staff attack gains exactly +18 reach."},
+			{"id": "flowing_form", "label": "Flowing Form", "gate": 6, "description": "The combo's second hit widens into a sweep that catches everything in front of you."},
+			{"id": "staff_art_mastery", "label": "Art Mastery", "gate": 8, "description": "Whirlwind pushes further and knocks down; Sweep the Legs holds them down longer."},
+			{"id": "conduit", "label": "Conduit", "gate": 10, "description": "Landing a staff hit returns 6 Energy. Fighting pays for casting."},
+		],
+	},
+	"measured": {
+		"label": "Measured",
+		"description": "Temperament: repeatedly choose between Temperance and Conviction, up to four times.",
+		"stages": [
+			# Intelligence and Energy are split across the two packages on purpose. Cooldown
+			# is `spend / pool x 24`, so Intelligence shrinks the numerator and a bigger pool
+			# grows the denominator -- both shorten cooldowns. Putting them together would
+			# have made one package the cooldown package and the fork would degenerate into
+			# a single decision taken four times.
+			{"id": "measured_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health. Needs little, lasts long."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve. Spends big, pushes through the hit."},
+			]},
+			{"id": "measured_2", "label": "Temperament II", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+			{"id": "measured_3", "label": "Temperament III", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+			{"id": "measured_4", "label": "Temperament IV", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+		],
+	},
+	"mage": {
+		"label": "Mage",
+		"description": "The craft of casting itself, not the spells. Everything here serves any spellbook.",
+		"stages": [
+			# Interruption first: it is the difference between a caster that functions and one
+			# that does not.
+			{"id": "steadier_cast", "label": "Steadier Cast", "gate": 3, "description": "A light hit no longer cancels a spell in progress."},
+			{"id": "faster_cast", "label": "Faster Cast", "gate": 5, "description": "Spell wind-up and recovery become approximately 12% faster."},
+			{"id": "learned", "label": "Learned", "gate": 7, "description": "+3 Intelligence. Every spell costs less, and so cools faster."},
+			{"id": "walking_cast", "label": "Walking Cast", "gate": 9, "description": "You may move while a spell recovers, at an exhausted pace. The wind-up still roots you."},
+			{"id": "circle_mastery", "label": "Deeper Circle", "gate": 10, "description": "Improve the Circle.", "choices": [
+				{"id": "swift_circle", "label": "Swift Circle", "description": "The wind-up halves, so the Circle can be laid down inside a fight rather than before it."},
+				{"id": "wide_circle", "label": "Wide Circle", "description": "The Circle grows past a Long Roll's travel, so any evasion keeps you inside it."},
+				{"id": "deep_circle", "label": "Deep Circle", "description": "+3 more Intelligence while you stand in it."},
+			]},
+		],
+	},
+	"elementalist": {
+		"label": "Elementalist",
+		"description": "Four elements, learned one at a time from the things that used them on you.",
+		"stages": [
+			# Every one of these eight is an enemy ability first. The spellbook is the bestiary,
+			# and each element keeps the decision it poses for the enemy that taught it.
+			{"id": "element_fire", "label": "Fire", "gate": 4, "description": "Near or far.", "choices": [
+				{"id": "fireball", "label": "Fireball", "description": "A heavy ball at range that barely kindles."},
+				{"id": "fire_breath", "label": "Fire Breath", "description": "A close cone that buries them in burn for moderate damage."},
+			]},
+			{"id": "element_ice", "label": "Ice", "gate": 6, "description": "A spike they can answer, or a drip they cannot.", "choices": [
+				{"id": "frost_lance", "label": "Frost Lance", "description": "One dodgeable shot that charges frost hard."},
+				{"id": "cold_front", "label": "Cold Front", "description": "A wide front that repeats, so backing off is not enough."},
+			]},
+			{"id": "element_earth", "label": "Earth", "gate": 8, "description": "Slow or block.", "choices": [
+				{"id": "earth_wall", "label": "Earth Wall", "description": "A wall you can place across an approach. It never blocks enemies -- only you and what is thrown."},
+				{"id": "sunder", "label": "Sunder", "description": "Broken ground that costs time to cross rather than health."},
+			]},
+			{"id": "element_air", "label": "Air", "gate": 10, "description": "Control the fight or survive it.", "choices": [
+				{"id": "gale", "label": "Gale", "description": "A placed point that shoves light bodies away from it and spoils shots crossing it."},
+				{"id": "windstep", "label": "Windstep", "description": "Roughly 400 units, over bodies, untouchable while you are gone."},
+			]},
 		],
 	},
 	"adopted": {
@@ -450,7 +536,7 @@ static func character_stage_by_id(id: String) -> Dictionary:
 	return {}
 
 static func loadout_ids() -> Array[String]:
-	return ["warrior", "rogue_acrobat", "rogue_sharpshooter"]
+	return ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"]
 
 static func track_order_for_loadout(id: String) -> Array[String]:
 	var profile := Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"]))
