@@ -1546,15 +1546,20 @@ func test_air_caster_gale_and_windstep() -> void:
 	# without forcing it -- the live loop refreshes first, so a test poking the state
 	# directly has to do the same or it queries the previous room.
 	state._build_enemy_spatial_index()
-	var light_before := Vector2(light["pos"]).distance_to(centre)
 	var heavy_before := Vector2(heavy["pos"]).distance_to(centre)
-	var player_before := state.player_pos.distance_to(centre)
 	state._resolve_gale(centre)
-	assert(Vector2(light["pos"]).distance_to(centre) > light_before + 40.0)
-	# ...and anything heavy does not, gated on the same PUSHABLE_MASS line that already
-	# decides who the player can shove, so "heavy" means one thing across the whole game.
+	# 0.2.73 made the push an impulse rather than a position write, so nothing moves on the
+	# frame it lands -- it is handed velocity and travels. This file asserts only that the
+	# wind takes hold of the right bodies; how far they then go belongs to the Gale contract
+	# test in mage_elementalist_test, which owns it. Two files asserting the same mechanic is
+	# how this assertion came to describe superseded behaviour while sitting in a suite that
+	# was already red for an unrelated reason.
+	assert(Vector2(light.get("gale_velocity", Vector2.ZERO)).length() > 0.0)
+	# ...and anything heavy is not moved at all, gated on the same PUSHABLE_MASS line that
+	# already decides who the player can shove, so "heavy" means one thing across the game.
+	assert(Vector2(heavy.get("gale_velocity", Vector2.ZERO)).length() == 0.0)
 	assert(is_equal_approx(Vector2(heavy["pos"]).distance_to(centre), heavy_before))
-	assert(state.player_pos.distance_to(centre) > player_before + 30.0)
+	assert(state.player_gale_velocity.length() > 0.0)
 
 	# A shot crossing the point has its VELOCITY turned, not its position: offsetting the
 	# position would leave the heading intact and the arrow would arrive in the same place

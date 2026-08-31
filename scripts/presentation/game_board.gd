@@ -4014,8 +4014,12 @@ func _phase(action: Dictionary) -> String:
 	if kind == "gale": return "BREATHING IN" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
 	if kind == "earth_wall": return "HEAVING" if elapsed < float(action.get("startup", 1.10)) else "RECOVERING"
 	if kind == "sunder": return "BREAKING" if elapsed < float(action.get("startup", 0.92)) else "RECOVERING"
-	if kind == "frost_lance": return "AIMING" if elapsed < float(action.get("startup", 0.78)) else "RECOVERING"
-	if kind == "fire_breath": return "INHALING" if elapsed < float(action.get("startup", 0.74)) else "BREATHING"
+	# Frost Lance and Fire Breath already had readouts further down this chain -- "CONDENSING"
+	# / "LOOSED" and "DRAWING BREATH" / "BREATHING FIRE", which are better lines than the ones
+	# 0.2.66 added. That version claimed all four of these abilities had no phase text; it was
+	# right about Earth Wall and Sunder and wrong about the other two, and because the new
+	# branches came first they shadowed the originals into unreachable code. Two authored
+	# descriptions each, one of them dead.
 	if kind == "chant": return "CHANTING" if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
 	if kind == "windstep": return "GONE"
 	if kind == "cold_front": return "THE AIR STILLS" if elapsed < float(action.get("startup", 1.12)) else "FREEZING"

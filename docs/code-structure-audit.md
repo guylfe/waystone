@@ -111,3 +111,168 @@ Every proposal here promises identical gameplay, and that promise needs a test r
 The simulation is already deterministic: same seed, same inputs, same outcome. So a **golden-run harness** — drive a fixed seed through a scripted sequence of actions, hash the resulting simulation state, and compare against a recorded baseline — turns "gameplay is unchanged" into something the suite can check. It would also have caught several of the bugs above on its own.
 
 Build that first, then take the items in this order: **4 → 2 → 6 → 3 → 1 → 5**. Cheapest and safest first, the two structural ones last, and nothing attempted without the harness in place.
+
+---
+
+# Sol 5.6 Independent Audit — Suggestions for Opus Evaluation
+
+> **Authorship and status:** Everything from this heading onward is the Sol 5.6 independent audit appended after the original audit. These are suggestions for Opus to evaluate, reject, revise, or incorporate. They are not accepted design decisions, approved implementation work, or scheduled changes. The original audit above has not been rewritten.
+
+The original audit identifies the right underlying failure mode: one concept is represented independently in several places, and omissions fail silently. The following additions cover places where that same problem exists outside the six examples above, plus refinements intended to keep the proposed universal systems from becoming new collections of loosely checked strings and flags.
+
+## C1. Abilities, actions and effects lack a canonical definition
+
+The enemy catalog is only one half of the authoring problem. A spell or ability is currently declared separately in progression data, Energy cost, label, targeting category, request timing, resolution, enemy decision-making, action classification, telegraph drawing, phase text and tests.
+
+There is direct evidence of drift:
+
+- The Fire Caster's shot was renamed from `firebolt` to `fireball`, while the renderer retained the old name and drew the caster using a bow. The corrective comment is in `game_board.gd` around the enemy-action drawing branch.
+- `_action_phase_text` contains two `frost_lance` branches and two `fire_breath` branches. The later pair is unreachable, so the file contains two authored descriptions of each phase but only one can ever appear.
+- Player and enemy versions of some elemental spells share spawners, while others independently construct similar projectile dictionaries despite the nearby claim that the enemy spawners are the shared implementation.
+- `PLAYER_ATTACK_ACTION_KINDS`, `ENEMY_ATTACK_ACTION_KINDS` and `ENERGY_REGEN_ACTIONS` are additional registration sites that a new action can silently omit.
+
+**Sol 5.6 proposal for Opus to evaluate.** Add a canonical ability definition keyed by a stable ID. It should own the authored facts shared across callers: cost, target mode, range, timing, action/effect type, classification, and presentation metadata such as telegraph shape, colour and phase labels. Explicit player/enemy delivery overrides can remain where their behavior is intentionally different. Enemy AI should still decide *when* and *why* to use an ability; the definition should say *what the ability is*.
+
+This should not become a general-purpose spell scripting language. The useful boundary is centralized authored facts and a checked schema, not replacing all behavior with data.
+
+**Risk:** medium. **Value:** very high; this is the largest remaining example of the bug class the original audit targets.
+
+---
+
+## C2. Runtime dictionaries need constructors, schemas and fail-fast validation
+
+Actions, hazards, projectiles, barriers, effects and actors are raw dictionaries whose contracts are distributed among their producers and consumers. Optional `.get()` defaults make them tolerant at runtime, but also let missing or misspelled fields select plausible, incorrect behavior.
+
+`_update_hazards` demonstrates the hidden protocol. Ownership and resolution depend on combinations of `friendly`, `source_id`, `kind`, `triggered`, timing fields and geometry-specific fields. The renderer also uses structural clues such as the presence of `half_angle` to decide whether a hazard is a cone. Those can be useful representations, but nothing currently verifies that every producer supplies the required combination.
+
+The same problem exists in the catalogs. `CombatCatalog.role()` silently treats an unknown kind as `frontline`, and `CombatCatalog.archetype()` silently substitutes the Blade archetype. A missing registration therefore produces a convincing enemy rather than an authoring error.
+
+**Sol 5.6 proposal for Opus to evaluate.** Keep dictionaries if they remain the most practical Godot representation, but construct them through named helpers and validate their schemas in tests or development startup. Add cross-catalog validation proving that:
+
+- every encounter enemy has an archetype, role, required attributes and an AI implementation;
+- every authored melee plan refers to a real attack technique;
+- every progression choice refers to an implemented ability;
+- every spell has cost, targeting, timing, execution and presentation definitions;
+- every action and hazard kind has the required executor and presentation metadata;
+- required fields exist with the expected types.
+
+Unknown authored IDs should fail loudly. Permissive defaults should be reserved for genuinely optional runtime fields and old-save migration.
+
+**Risk:** low for validation, medium for introducing constructors incrementally. **Value:** very high because it makes all subsequent catalog work safer.
+
+---
+
+## C3. Dynamic presentation objects need stable identities and one time authority
+
+The snapshot proposal above addresses omitted fields, but there is a second presentation problem. `PresentationFrame` matches enemies by ID, while `_blend_flat_array` matches projectiles, hazards, effects and pickups by array index. If an item expires, spawns, or changes order between frames, one object can interpolate toward an unrelated object.
+
+There is also more than one dynamic render-time authority. Most moving state comes from the interpolated presentation frame, but the Circle and barriers are read directly from live simulation state because barriers were absent from `PresentationFrame`. That repaired their invisibility, but objects drawn together can now represent different simulation moments.
+
+**Sol 5.6 proposal for Opus to evaluate.** Give every dynamic presentation entity a stable ID and blend collections by ID. A new or removed entity should appear or disappear rather than cross-blending with its former array neighbour. Establish an explicit boundary:
+
+- immutable geography may come from a static world view;
+- every dynamic datum visible in a frame comes from that frame;
+- consumers do not silently fall back from the frame to newer live state.
+
+**Risk:** medium. **Value:** high; it prevents visual-only failures that probes and simulation tests may not reveal.
+
+---
+
+## C4. Factions do not by themselves unify actor behavior
+
+The faction proposal above is necessary, but `_faction_of()` and `_opposes()` would still leave parallel implementations for player and enemy condition buildup, damage, posture, interruption, displacement, Gale velocity and projectile ownership. The player would be faction-aware without yet being handled as an actor by the systems that apply effects.
+
+Enemy collection mutation also has a hidden maintenance contract. Tests that append or replace enemies repeatedly call `_invalidate_active_enemy_cache()` and sometimes `_build_enemy_spatial_index()` themselves. One Air Caster test explicitly explains that `_nearby_enemies` does not force a rebuild. Any production path that changes membership or position without maintaining the same caches can query stale actors.
+
+**Sol 5.6 proposal for Opus to evaluate.** Introduce a bounded shared actor interface or adapter used by damage, conditions, posture and impulse resolution. It should expose actor ID, position, radius, faction and the operations those systems need without requiring an immediate merge of the player scalars and enemy dictionaries.
+
+Central actor-repository methods such as `add_actor`, `remove_actor` and `set_actor_position` should own stable IDs, spatial buckets and cache invalidation. A complete player/enemy storage rewrite is not required to gain these benefits and would be considerably riskier.
+
+**Risk:** medium-high if attempted wholesale; medium if introduced one resolution boundary at a time. **Value:** high, particularly before allies, summons or more faction-neutral effects are added.
+
+---
+
+## C5. Save compatibility needs an explicit migration pipeline
+
+Save/load participates in the duplicated-field problem, but it is not the same surface as presentation. Presentation contains interpolated and derived visible state. A save contains authoritative internal state and migration history while deliberately omitting deterministically reconstructed geography. Having all writers literally walk one undifferentiated list could persist transient data or expose hidden state to rendering.
+
+`load_run()` currently accepts a list of old versions, assigns current fields directly with defaults, and performs special cases inside the hydration sequence. As the schema grows, a default can conceal both a legitimate old field and an accidentally forgotten current field.
+
+**Sol 5.6 proposal for Opus to evaluate.** Either give a shared field registry explicit audience flags (`snapshot`, `presentation`, `save`) or maintain separate checked schemas derived from common descriptors. Normalize old payloads through sequential migrations from version N to N+1, validate the resulting current payload, and only then hydrate the run. Each migration should have a focused compatibility test.
+
+**Risk:** medium. **Value:** high over the lifetime of the project; it separates compatibility policy from ordinary state restoration.
+
+---
+
+## C6. Tests need one owner for each behavioral contract
+
+The current suite contains a concrete example of superseded behavior surviving in a second test. `run_state_test.gd` expects `_resolve_gale()` to move light bodies immediately. `mage_elementalist_test.gd` tests the current design: Gale imparts velocity at impact and bodies move over later simulation ticks. Those assertions cannot both describe the same contract.
+
+The full suite also currently retains the previously known clean-opening and late-sidestep failures. A golden baseline recorded while behavioral expectations are contradictory would canonize uncertainty rather than protect behavior.
+
+**Sol 5.6 proposal for Opus to evaluate.** Assign each behavior one canonical contract test. Broader integration suites should test their boundary or outcome instead of duplicating internal timing semantics. When a mechanic intentionally changes, audit and remove or revise assertions that describe its superseded form. Establish a green baseline, or an explicit temporary expected-failure ledger, before recording golden runs.
+
+**Risk:** low. **Value:** high because structural refactors are only as safe as the contract they preserve.
+
+---
+
+## C7. Current version metadata still has several sources
+
+The current game version is repeated in `run_state.gd`, the README heading and release text, Android export metadata, and Windows file/product metadata. Project instructions require these values to remain synchronized manually. This is a small instance of the same multi-site fact problem.
+
+**Sol 5.6 proposal for Opus to evaluate.** Establish one machine-readable current-version source and make export/build validation consume or check it. Human-authored release history should remain human-authored; only the current version fields need generation or a consistency test.
+
+**Risk:** low. **Value:** modest, but the implementation is cheap and removes routine release drift.
+
+---
+
+## Sol 5.6 refinements to the original six proposals
+
+These are proposed amendments for Opus to consider, not objections to the original direction.
+
+### Snapshot writers
+
+Use audience-specific schemas or explicit audience flags rather than making save and presentation literally identical. Required-field contract tests should prove that each consumer receives its declared surface. Presentation interpolation and save migration remain distinct policies.
+
+### Per-kind catalog data
+
+Moving the fields is only half the protection. Remove silent Blade/frontline fallbacks for authored IDs and run a complete catalog integrity validator. Optional presentation text may have a harmless display fallback; simulation identity should not.
+
+### Cooldowns
+
+Use stable slot constants and accessors around the proposed dictionary. Otherwise named scalar variables become stringly typed keys that can still be misspelled in saves or the HUD. The registry should also describe which UI slot an ability occupies and which clocks or rules advance it.
+
+### Occupancy
+
+A single boolean with `ignore_bodies` is likely to grow additional bespoke flags. Placement, endpoint movement, swept movement, Vault, Windstep, Gale and intentional body crossing need different policies. Prefer a pure structured query returning a blocking reason and blocking object or actor ID. Telemetry can consume the result without the spatial query itself mutating survey counters.
+
+### Factions
+
+Pair factions with the shared actor/effect boundary proposed in C4. Allegiance answers who may affect whom; it does not by itself universalize how damage, conditions, posture and impulses are applied.
+
+### Survey counters
+
+The registry needs more than `{name: default}` because counters include scalars, arrays and dictionaries, and some are cumulative while others are room deltas. A descriptor should state scope, default factory, aggregation/difference policy and report formatting. The plumbing can then be generated without forcing unlike measurements into one arithmetic rule.
+
+### Golden-run harness
+
+Hash a canonical authoritative projection rather than a raw Dictionary or presentation snapshot. Sort keys, include RNG and dynamic authoritative state, exclude caches and performance/presentation data, and define stable float handling. Record named checkpoints or semantic component hashes as well as the final hash so a failure identifies what diverged instead of returning only one opaque mismatch.
+
+---
+
+## Sol 5.6 proposed ordering for Opus to evaluate
+
+This ordering is offered for comparison with the original **4 → 2 → 6 → 3 → 1 → 5** sequence. It is not approved or scheduled.
+
+1. Resolve contradictory tests and explicitly account for any temporary expected failures.
+2. Build the canonical, checkpointed deterministic harness.
+3. Add catalog and runtime-schema validators without changing gameplay.
+4. Establish the canonical ability/action/effect definitions.
+5. Introduce the structured occupancy query and central actor mutation methods.
+6. Move the remaining per-kind facts into the validated enemy catalog.
+7. Universalize survey descriptors and cooldown slots.
+8. Give dynamic presentation entities stable IDs and enforce a single dynamic frame authority.
+9. Introduce sequential save migrations and checked save/presentation audiences.
+10. Expand faction handling through the shared actor/effect-resolution boundary.
+
+As in the original audit, mechanically splitting `run_state.gd` should not be the first move. These changes should create real ownership boundaries first; files can then shrink along those boundaries instead of becoming several smaller modules with the same hidden coupling.

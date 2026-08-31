@@ -1,7 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.73` (Android version code `273`).
+Current prototype version: `0.2.74` (Android version code `274`).
 
+## v0.2.74 — two defects a second audit found
+
+An independent audit of the source turned up several things, two of which were live defects rather than structural observations. Both are mine and both are the same mistake: adding something without checking whether it already existed.
+
+**A test broken by `0.2.73`, hidden in a file that was already red.** `run_state_test` asserted that Gale displaces light bodies on the frame it lands. Making the push an impulse falsified that, and because the file already fails for the documented bandit-strafe reason, the new failure sat inside an existing FAILED line and reported nothing new. That is the third time this session a stale assertion has hidden in an already-failing file.
+
+The deeper problem is that two files asserted the same mechanic. Gale's displacement contract belongs to `mage_elementalist_test`, which owns it; `run_state_test` now asserts only that the wind takes hold of the right bodies — that a light one is given velocity and a heavy one is not — and leaves how far they travel to the file whose subject that is.
+
+**Two phase readouts each for Frost Lance and Fire Breath, one of them unreachable.** `0.2.66` claimed four abilities had no phase text and added it for all four. It was right about Earth Wall and Sunder and wrong about the other two, which already had readouts further down the same chain — and the new branches, coming first, shadowed the originals into dead code.
+
+The originals were the better writing, so the additions are gone: Frost Lance reads "CONDENSING" and "LOOSED" again, and Fire Breath "DRAWING BREATH" and "BREATHING FIRE" rather than the flatter "AIMING" and "INHALING" that had been silently winning.
 ## v0.2.73 — Gale is a gust, not a relocation
 
 Push effects in games come in four families and they feel nothing like each other: an **impulse** that hands out velocity and lets the body travel and decelerate; a **sustained force** that accelerates whatever stands in it; an **instant displacement** that simply writes a new position; and a **vortex**, which is the same machinery with the sign flipped.
