@@ -1,12 +1,89 @@
 # Code structure audit
 
-**Status:** Proposal. Nothing here is implemented.
+**Status:** Decisions recorded below. Two items were live defects and are already fixed in `0.2.74`; everything else is agreed but unimplemented.
 
-**Recorded:** 2026-08-31, after `0.2.73`.
+**Recorded:** 2026-08-31 after `0.2.73`. Second audit and decisions added 2026-09-01.
 
 **Scope:** Where the source repeats itself, what that has already cost, and what to unify. Every proposal must leave gameplay identical — this is about how the rules are written, never about what they are.
 
+**How to read this file.** Two audits, then a decision layer that resolves them. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan. The two audits below it are the evidence and the reasoning, kept intact and attributed.
+
 ---
+
+# Decisions and execution order
+
+## Before starting: standing context
+
+- **Do not write code until the change is approved.** Present a plan and wait. This is a project rule and it exists because it was violated before at real cost.
+- **Gameplay must not change.** Every item here is about how rules are expressed, never what they are. If a change makes something play differently, it is out of scope and needs raising as a design question instead.
+- **Two test failures are documented and expected**, and must not be "fixed" by weakening them:
+  - `run_state_test.gd` — `test_clean_opening_hit_preserves_a_defensive_choice`. The bandit strafes out of the arc; a pursuit question, not a post-hit one.
+  - `capture_telemetry_test.gd` — `a late sidestep at mid range must fail`. The Boar misses by 9.6 of a 72-unit contact width; an open tuning question.
+  - A green run of `run-tests.ps1` therefore reads `FAILED (2): run_state_test, capture_telemetry_test`. **Anything else is a regression.**
+- **Beware the already-red file.** Three times in one session a stale or broken assertion hid inside a file that was already failing for one of the two reasons above, and reported nothing new. When touching a system, run its test file alone and read the assertion line numbers, not the summary.
+
+## Already fixed — do not redo
+
+Both were found by the second audit and shipped in `0.2.74`.
+
+- **A test broken by `0.2.73`.** `run_state_test` asserted Gale displaces bodies on the frame it lands, which the impulse change falsified. Gale's displacement contract now belongs solely to `mage_elementalist_test`; `run_state_test` asserts only that the wind takes hold of the right bodies.
+- **Duplicate phase readouts.** `frost_lance` and `fire_breath` each had two branches in the phase-text chain, the second unreachable. `0.2.66` added the first pair while claiming these abilities had none; the originals were the better writing and the additions are gone.
+
+## Verified findings
+
+Everything below was checked against the source before being accepted. File and line references were current at `0.2.74`.
+
+| Claim | Verified |
+|---|---|
+| Three independent snapshot writers; ~157 keys duplicated across two literals | yes |
+| `PresentationFrame` never captured `barriers` — the six-version invisible wall | yes |
+| ~13 edit sites to add one enemy kind, across three files | yes |
+| Five identical `_begin_*_cooldown` helpers with parallel `_max` scalars | yes |
+| `_inside_world` ×7, `_point_in_wall` ×4, `_actor_footprint_on_floor` ×5, combined by hand | yes |
+| `CombatCatalog.role()` silently returns `frontline`; `archetype()` silently returns Blade | yes |
+| `_blend_flat_array` pairs items by array index, so one expiry mis-pairs the rest | yes |
+| Duplicate `frost_lance` / `fire_breath` phase branches, second unreachable | yes — fixed in `0.2.74` |
+| Contradictory Gale assertions across two test files | yes — fixed in `0.2.74` |
+| Some player spells reuse enemy spawners, others build projectile dictionaries inline | yes, and worse than stated — see below |
+
+**On that last one.** `mage_elementalist_test` contains the comment *"Each spell resolves through the same spawner its enemy version calls"*, and it is false: `fireball` and `frost_lance` construct their projectiles inline in `_resolve_player_spell` while `fire_breath` and `cold_front` call the shared spawners. The comment describes an intention, not the code. Fixing the inconsistency is part of C1; deleting or correcting the claim is not optional either way.
+
+## What is accepted
+
+**Accepted as written:** original items 1–4 and 6; Sol 5.6's C1, C2, C3, C6, and the refinements on catalog fallbacks, cooldown slot constants, survey counter descriptors, and golden-run hashing.
+
+**Accepted with amendment:**
+
+- **C2 is promoted to the front of the queue**, ahead of the harness. Validators are cheaper than a harness, cannot change behaviour, and catch a class of error the harness cannot see at all — a kind that is never registered currently ships as a working Blade rather than as an error. This is the one change to Sol 5.6's ordering.
+- **Original item 5 (factions) is subsumed into C4.** Allegiance alone does not unify how damage, conditions, posture and impulse are applied; the shared actor boundary is the real work and the faction test is one part of it.
+- **C5 (save migrations) is accepted but deferred** to the end. It is real, and it is the least urgent: saves are currently loaded by a version whitelist that already refuses anything unrecognised, so the failure mode is a refused load rather than a corrupted run.
+
+**Declined for now:**
+
+- **C7, one source for the version number.** Real, but `ship.py` already synchronises the four sites and the failure mode is a wrong number in a changelog rather than a bug in the game. Revisit if it ever drifts in practice.
+- **The structured occupancy query returning a blocking reason**, in favour of the simpler predicate, *until a second caller actually needs the reason*. The criticism is correct in principle — a boolean that accretes flags is a smell — but so is a query object with one consumer. Build the predicate; promote it the moment placement or telemetry genuinely wants to know *what* blocked.
+- **Splitting `run_state.gd`.** Both audits agree. Ownership boundaries first; files shrink along them afterwards or not at all.
+
+## The order to do them in
+
+1. **Resolve contradictory test contracts** and record the expected-failure ledger. One canonical contract test per behaviour; integration suites assert their boundary, not another file's internal timing. *(Partly done in `0.2.74` for Gale — the rest of the suite still needs the sweep.)*
+2. **Catalog and runtime schema validators.** No behaviour change. Remove the silent Blade/frontline fallbacks for authored IDs, and add cross-catalog checks: every encounter kind has an archetype, role, attributes and an AI branch; every melee plan names a real technique; every progression choice names an implemented ability; every action and hazard kind has an executor and presentation metadata.
+3. **The golden-run harness**, with named checkpoints rather than one opaque hash. Hash a canonical authoritative projection — sorted keys, RNG state included, caches and presentation excluded, stable float handling — so a failure says *what* diverged.
+4. **Canonical ability/action/effect definitions** (C1), including folding the inline player projectile construction into the shared spawners.
+5. **The occupancy predicate** and central actor mutation methods owning IDs, buckets and cache invalidation.
+6. **Per-kind facts into the validated catalog**, including the renderer's colour, name, speed, reach and trait strings.
+7. **Survey counter descriptors and cooldown slots**, both behind stable constants rather than bare strings.
+8. **Stable IDs for dynamic presentation entities**, blending by ID, and one time authority per frame. This also repays the debt knowingly taken in `0.2.72`, where barriers and the Circle were moved to live state to stop them being invisible — correct at the time, and it does mean objects drawn together can represent different moments.
+9. **Save migrations and audience-flagged schemas** (C5).
+10. **The shared actor/effect boundary and factions** (C4 plus original item 5), last because it is the change most likely to look like it should alter gameplay.
+
+Steps 1 and 2 change no behaviour and should be verifiable by the existing suite alone. Nothing from step 4 onward should be attempted before step 3 exists.
+
+---
+
+# The original audit
+
+**Author:** Opus 5, recorded 2026-08-31 after `0.2.73`. Kept as written; the decision layer above supersedes it where they differ.
 
 ## Why now
 
@@ -116,7 +193,7 @@ Build that first, then take the items in this order: **4 → 2 → 6 → 3 → 1
 
 # Sol 5.6 Independent Audit — Suggestions for Opus Evaluation
 
-> **Authorship and status:** Everything from this heading onward is the Sol 5.6 independent audit appended after the original audit. These are suggestions for Opus to evaluate, reject, revise, or incorporate. They are not accepted design decisions, approved implementation work, or scheduled changes. The original audit above has not been rewritten.
+> **Authorship and status:** Everything from this heading onward is the Sol 5.6 independent audit, appended after the original audit and kept as written. It was offered as suggestions to evaluate; that evaluation has since happened, and *Decisions and execution order* at the top of this file records what was accepted, amended and declined, along with which claims were verified against the source. Where this section and that one differ, the decision layer is current.
 
 The original audit identifies the right underlying failure mode: one concept is represented independently in several places, and omissions fail silently. The following additions cover places where that same problem exists outside the six examples above, plus refinements intended to keep the proposed universal systems from becoming new collections of loosely checked strings and flags.
 
