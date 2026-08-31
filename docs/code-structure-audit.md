@@ -20,6 +20,7 @@
   - `run_state_test.gd` — `test_clean_opening_hit_preserves_a_defensive_choice`. The bandit strafes out of the arc; a pursuit question, not a post-hit one.
   - `capture_telemetry_test.gd` — `a late sidestep at mid range must fail`. The Boar misses by 9.6 of a 72-unit contact width; an open tuning question.
   - These live in `tests/expected_failures.json`. A green `run-tests.ps1` run reports both as `EXPECTED FAIL`; an extra failure in either file is a regression, and an unexpected pass is surfaced as `XPASS` for contract review.
+  - The ledger matches on **reason, not count**. A file may fail for exactly the one documented cause; every distinct failure it reports must name that cause, however many times the engine prints it. The original `problemCount` field compared an inflated match tally against an authored number, never agreed, and left the mechanism inert from the day it landed — verified fixed by injecting a second failure and confirming the run goes red.
 - **Beware the already-red file.** Three times in one session a stale or broken assertion hid inside a file that was already failing for one of the two reasons above, and reported nothing new. When touching a system, run its test file alone and read the assertion line numbers, not the summary.
 
 ## Already fixed — do not redo

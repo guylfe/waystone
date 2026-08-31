@@ -1,13 +1,11 @@
 {
   "run_state_test": {
     "match": "test_clean_opening_hit_preserves_a_defensive_choice",
-    "problemCount": 2,
     "owner": "attack_capture_test.gd",
-    "reason": "The Bandit strafes out of the arc; this is a pursuit question, not a post-hit contract."
+    "reason": "The Bandit strafes out of the arc; this is a pursuit question, not a post-hit contract. Every distinct failure in this file must name this test."
   },
   "capture_telemetry_test": {
     "match": "a late sidestep at mid range must fail",
-    "problemCount": 1,
     "owner": "capture_telemetry_test.gd",
     "reason": "The Boar misses by 9.6 units of a 72-unit contact width; tuning remains intentionally unresolved."
   }

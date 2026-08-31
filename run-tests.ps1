@@ -126,11 +126,37 @@ foreach ($name in $Selected) {
     # and exit non-zero. Only the first was ever counted, so every check()-style file
     # reported PASS no matter what it found -- which hid two real failures in
     # capture_telemetry_test, the file carrying most of the milestone coverage.
-    $problems = ([regex]::Matches($output, 'Assertion failed|SCRIPT ERROR|FAILED:')).Count
+    # Distinct failures, not raw matches. Godot writes each error to both streams and the
+    # two are merged here, so one failed assertion produced four matches -- "SCRIPT ERROR"
+    # and "Assertion failed" on the same line, twice over. The ledger compared that inflated
+    # number against an authored count, never agreed, and so classified both documented
+    # failures as ordinary FAIL: the mechanism built to tell expected from regression was
+    # inert from the day it landed.
+    #
+    # A failure is identified by what it says, deduplicated: the `at:` line naming the test
+    # function for an assert()-style file, or the `FAILED:` line for a check()-style one.
+    # Not anchored to the start of a line: a job captures stderr as an error record, so
+    # Godot's own output arrives prefixed with the executable name. PowerShell's error
+    # furniture (`+ CategoryInfo`, `+ FullyQualifiedErrorId`) is dropped first because it
+    # echoes an elided copy of the same message and would read as a second, different one.
+    $cleanOutput = ($output -split "`r?`n" | Where-Object { $_ -notmatch '^\s*\+ ' }) -join "`n"
+    $failureLines = @(
+        @([regex]::Matches($cleanOutput, 'FAILED:\s*([^
+]+)') | ForEach-Object { 'FAILED: ' + $_.Groups[1].Value.Trim() }) +
+        @([regex]::Matches($cleanOutput, 'at:\s*([A-Za-z_0-9]+ \(res://tests/[^)]+\))') | ForEach-Object { 'at: ' + $_.Groups[1].Value.Trim() })
+    ) | Sort-Object -Unique
+    $problems = $failureLines.Count
     $ok = (-not $timedOut) -and ($problems -eq 0) -and ($code -eq 0)
     $expectedProperty = $ExpectedFailures.PSObject.Properties[$name]
     $expected = if ($null -ne $expectedProperty) { $expectedProperty.Value } else { $null }
-    $matchesExpected = (-not $ok) -and (-not $timedOut) -and ($null -ne $expected) -and ($problems -eq [int]$expected.problemCount) -and ($output -match [regex]::Escape([string]$expected.match))
+    # Every distinct failure must be the documented one. No count to keep in step -- a file
+    # is allowed to fail for exactly one recorded reason, and a second, different failure
+    # breaks the run however many times it prints.
+    $unexpectedLines = @()
+    if ($null -ne $expected) {
+        $unexpectedLines = @($failureLines | Where-Object { $_ -notmatch [regex]::Escape([string]$expected.match) })
+    }
+    $matchesExpected = (-not $ok) -and (-not $timedOut) -and ($null -ne $expected) -and ($problems -gt 0) -and ($unexpectedLines.Count -eq 0)
 
     if ($matchesExpected) {
         $ExpectedSeen += $name
@@ -145,7 +171,11 @@ foreach ($name in $Selected) {
         Write-Host ("{0,-34} HANG  no exit within {1}s -- likely a failed assert inside _init()" -f $name, $TimeoutSeconds) -ForegroundColor Red
     } else {
         $Failed += $name
-        Write-Host ("{0,-34} FAIL  exit={1} problems={2}" -f $name, $code, $problems) -ForegroundColor Red
+        Write-Host ("{0,-34} FAIL  exit={1} failures={2}" -f $name, $code, $problems) -ForegroundColor Red
+        if ($unexpectedLines.Count -gt 0) {
+            Write-Host ("    not covered by the expected-failure ledger:") -ForegroundColor Red
+            $unexpectedLines | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        }
         $output -split "`r?`n" |
             Where-Object { $_ -match 'Assertion failed|SCRIPT ERROR|FAILED:|\.gd:\d+' } |
             Select-Object -First 12 |
