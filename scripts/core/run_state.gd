@@ -335,6 +335,23 @@ const SPELL_LABELS := {
 	"frost_lance": "Frost Lance", "cold_front": "Cold Front", "earth_wall": "Earth Wall",
 	"sunder": "Sunder", "gale": "Gale", "windstep": "Windstep",
 }
+# Placed spells land where the player tapped; aimed spells only need a heading. The tap
+# already carries a world point, and until 0.2.68 that point was reduced to a direction and
+# re-projected to a fixed 340 units -- so an Earth Wall could not be put anywhere in
+# particular, and in isometric it routinely landed off the visible floor. It was not
+# invisible; it was somewhere else.
+const PLACED_SPELLS := ["earth_wall", "sunder", "cold_front", "gale"]
+const SPELL_PLACE_RANGE := 420.0
+
+static func spell_is_placed(spell_id: String) -> bool:
+	return PLACED_SPELLS.has(spell_id)
+
+func spell_target_for(spell_id: String, world_point: Vector2) -> Vector2:
+	if not spell_is_placed(spell_id): return world_point
+	var offset := world_point - player_pos
+	if offset.length() <= SPELL_PLACE_RANGE: return world_point
+	return player_pos + offset.normalized() * SPELL_PLACE_RANGE
+
 const LIGHTNING_RANGE := 560.0
 const LIGHTNING_DAMAGE := 11
 # A parry costs the player their turn rather than their health. Long enough that the
@@ -412,7 +429,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.67"
+const GAME_VERSION := "0.2.68"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -7931,7 +7948,7 @@ const GALE_PROJECTILE_TURN := 0.62
 func _spawn_gale(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
 		"kind": "gale", "pos": target, "radius": GALE_RADIUS,
-		"elapsed": 0.0, "trigger_at": 0.52, "duration": 0.88, "damage": 0,
+		"elapsed": 0.0, "trigger_at": 0.08 if int(enemy.get("id", -1)) == 0 else 0.52, "duration": 0.88, "damage": 0,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air tears outward.")
@@ -7972,7 +7989,7 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	hazards.append({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
 		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
-		"damage": 9, "posture": 1.1, "ticks_done": 0, "next_tick": 0.70,
+		"damage": 9, "posture": 1.1, "ticks_done": 0, "next_tick": 0.10 if int(enemy.get("id", -1)) == 0 else 0.70,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air goes bitter and still.")

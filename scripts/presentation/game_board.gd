@@ -1931,7 +1931,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 		_begin_streamed_action(state.request_skill(_screen_to_world(end_position) - state.player_pos, false))
 	elif selected_action == "advance":
 		selected_action = ""
-		_begin_streamed_action(_request_subclass_direction(_screen_to_world(end_position) - state.player_pos))
+		_begin_streamed_action(_request_subclass_target(_screen_to_world(end_position)))
 	elif selected_action.begins_with("consumable_"):
 		var slot := int(selected_action.trim_prefix("consumable_"))
 		selected_action = ""
@@ -2017,8 +2017,15 @@ func _commit_direction(direction: Vector2) -> void:
 	else: _begin_streamed_move(direction)
 
 func _request_subclass_direction(direction: Vector2) -> bool:
+	return _request_subclass_target(state.player_pos + direction.normalized() * 340.0)
+
+# A drag gives a heading and a tap gives a place. Both arrive here as a world point, and
+# whether the point or only its direction survives is the spell's business rather than the
+# input's -- an Earth Wall goes where you touched, a Fireball goes the way you pointed.
+func _request_subclass_target(world_point: Vector2) -> bool:
 	if state.loadout_id == "mage_elementalist":
-		return state.request_spell(state.selected_spell, state.player_pos + direction * 340.0, false)
+		return state.request_spell(state.selected_spell, state.spell_target_for(state.selected_spell, world_point), false)
+	var direction := world_point - state.player_pos
 	if state.loadout_id == "rogue_acrobat": return state.request_vault(direction, false)
 	if state.loadout_id == "rogue_sharpshooter":
 		state.message = "Tap a visible enemy to Take Aim."

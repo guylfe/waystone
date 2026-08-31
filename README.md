@@ -1,7 +1,33 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.67` (Android version code `267`).
+Current prototype version: `0.2.68` (Android version code `268`).
 
+## v0.2.68 — placed spells land where you put them
+
+### The Earth Wall was never invisible. It was somewhere else.
+
+`0.2.67` treated this as a duration problem and it was not. The wall rendered correctly and stood for eleven seconds; it was simply being built 340 units away in a direction the player had not chosen.
+
+A board tap already carries a world point. The input layer computed that point, reduced it to a bare direction, threw the distance away, and re-projected it to a fixed 340 units — the same fixed distance for every spell in the book. In an isometric view a wall placed 340 units "up" lands high and to the right, frequently half off the visible floor. Casting it and then not finding it is exactly what that produces.
+
+Spells are now split by what they need from the input:
+
+- **Placed** — Earth Wall, Sunder, Cold Front, Gale. These take the tapped point, clamped to 420 units. The wall is centred on where you touched.
+- **Aimed** — Lightning Bolt, Fireball, Frost Lance, Fire Breath, Windstep. These only ever needed a heading, and a drag still supplies one.
+
+Which of the two a spell is belongs to the spell, not to the input, so a drag and a tap now arrive at the same place and the spell decides what survives of it.
+
+### Gale took over a second to do anything
+
+Also diagnosed wrongly last version, where the lockout afterwards was fixed and the delay in front of it was only trimmed. There were **two** waits stacked: the cast's own wind-up, and then the hazard's fuse before it resolves.
+
+The fuse is a telegraph, and a telegraph is a warning to whoever did not choose the action. An enemy's Gale should announce itself; the player's should not warn the player about the thing they just committed to. Player-sourced hazards now trigger almost immediately — Gale's fuse drops from 0.52s to 0.08s, and the player's Cold Front takes its first tick at 0.10s instead of 0.70s.
+
+Measured end to end, commit to shove: **1.18s before, 0.375s now.**
+
+### On the survey's Energy figures
+
+Recorded so it is not mistaken for evidence later: the `0.2.66` run showed zero exhaustion, no dodges at all, and 265 of 313 Energy regenerated. That would be a serious result about the caster's resource economy if the room supported it, and it does not — the composition was five casters with almost no one closing, mean 0.57 enemies engaged. It says nothing about whether casting competes with dodging. The test that would is the Elementalist against the melee roster.
 ## v0.2.67 — half the Elementalist's spells did nothing
 
 ### Fire Breath and Cold Front hurt nobody
