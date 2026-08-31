@@ -342,9 +342,12 @@ const ELEMENT_STAGE_SPELLS := {
 # cheapest thing a caster can do and the weakest: it is what raw force does before it has
 # been shaped into an element, which is why it has no condition, no fork and no terrain.
 const SPELL_ENERGY := {
-	"lightning_bolt": 16.0, "fireball": 30.0, "fire_breath": 34.0,
-	"frost_lance": 30.0, "cold_front": 38.0, "earth_wall": 30.0,
-	"sunder": 26.0, "gale": 28.0, "windstep": 24.0,
+	# Raised across the board after the 0.2.71 survey spent 200 Energy over 58 seconds and
+	# finished the room at full: the bar was never a constraint, so casting competed with
+	# nothing. That is the one thing the no-mana argument cannot survive.
+	"lightning_bolt": 26.0, "fireball": 40.0, "fire_breath": 44.0,
+	"frost_lance": 40.0, "cold_front": 50.0, "earth_wall": 42.0,
+	"sunder": 36.0, "gale": 38.0, "windstep": 32.0,
 }
 const SPELL_LABELS := {
 	"lightning_bolt": "Lightning Bolt", "fireball": "Fireball", "fire_breath": "Fire Breath",
@@ -362,13 +365,26 @@ const SPELL_PLACE_RANGE := 420.0
 static func spell_is_placed(spell_id: String) -> bool:
 	return PLACED_SPELLS.has(spell_id)
 
+# How far a spell reaches, for the ring the renderer draws when one is armed. Placed spells
+# reach as far as they may be put; the bolt reaches as far as it strikes; everything else is
+# a heading rather than a distance and has no ring to draw.
+func spell_reach(spell_id: String) -> float:
+	if spell_is_placed(spell_id): return SPELL_PLACE_RANGE
+	if spell_id == "lightning_bolt": return LIGHTNING_RANGE
+	return 0.0
+
 func spell_target_for(spell_id: String, world_point: Vector2) -> Vector2:
 	if not spell_is_placed(spell_id): return world_point
 	var offset := world_point - player_pos
 	if offset.length() <= SPELL_PLACE_RANGE: return world_point
 	return player_pos + offset.normalized() * SPELL_PLACE_RANGE
 
-const LIGHTNING_RANGE := 560.0
+# 340 rather than 560. The bolt is the caster's jab -- reliable, cheap, unimpressive -- and
+# a jab that reaches most of the arena is the answer to every question in the room. It now
+# reaches about as far as a Javelineer throws, so closing on a caster is a real approach
+# rather than a formality, and the range is drawn when the spell is armed so the limit is
+# something the player can see rather than discover.
+const LIGHTNING_RANGE := 340.0
 const LIGHTNING_DAMAGE := 11
 # A parry costs the player their turn rather than their health. Long enough that the
 # rest of the room gets to act inside it, short enough that it is a mistake and not a
@@ -445,7 +461,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.71"
+const GAME_VERSION := "0.2.72"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2819,7 +2835,7 @@ func _tick_player_cast(dt: float) -> void:
 		if elapsed >= startup and elapsed <= startup + 0.32:
 			var step := Vector2(player_action["direction"]).normalized() * 1250.0 * dt
 			var landing := player_pos + step
-			if not _point_in_wall(landing) and not _point_in_barrier(landing, PLAYER_RADIUS) and _inside_world(landing, PLAYER_RADIUS):
+			if _teleport_allowed(landing, PLAYER_RADIUS, 0):
 				player_pos = landing
 		return
 	if elapsed >= startup and not bool(player_action.get("effect_done", false)):
@@ -6294,8 +6310,19 @@ func _barrier_blocks(segment: Dictionary, point: Vector2, radius: float) -> bool
 
 # The player is stopped by a barrier; enemies never are. That is the whole asymmetry, and
 # it is why the navigation grid can stay ignorant of the thing.
-func _point_in_barrier(point: Vector2, radius: float = 0.0) -> bool:
+# A wall stops the other side. The player's own wall was stopping the player and letting
+# enemies walk through it, which is the rule exactly inverted: it was written as "barriers
+# block the player" back when only enemies could raise one, and never revisited when the
+# Elementalist learned to. Ownership is what decides, not whether you happen to be the
+# player -- so an Earth Caster's wall cuts your retreat and yours gates their approach, and
+# the same object reads as help or hindrance purely by who put it there.
+func _barrier_opposes(segment: Dictionary, actor_id: int) -> bool:
+	var raised_by_player := int(segment.get("source_id", -1)) == 0
+	return raised_by_player != (actor_id == 0)
+
+func _point_in_barrier(point: Vector2, radius: float = 0.0, actor_id: int = 0) -> bool:
 	for segment in barriers:
+		if not _barrier_opposes(segment, actor_id): continue
 		if _barrier_blocks(segment, point, radius): return true
 	return false
 
@@ -6654,7 +6681,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			# keeps Air from negating Earth outright.
 			var step := Vector2(action["direction"]).normalized() * float(action.get("speed", 1250.0)) * enemy_dt
 			var landing := Vector2(enemy["pos"]) + step
-			if not _point_in_wall(landing) and not _point_in_barrier(landing, float(enemy.get("radius", ENEMY_RADIUS))) and _inside_world(landing, float(enemy.get("radius", ENEMY_RADIUS))):
+			if _teleport_allowed(landing, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"])):
 				enemy["pos"] = landing
 		elif kind == "cold_front" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
@@ -8025,11 +8052,22 @@ func _resolve_gale(centre: Vector2) -> void:
 		# "heavy" means one thing throughout rather than one thing per system.
 		if _enemy_mass(String(enemy.get("kind", ""))) >= PUSHABLE_MASS: continue
 		var away := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
-		enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * GALE_BODY_PUSH, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
+		# A gust, not a tow rope. The push falls off with distance from the centre, so
+		# standing at the edge is a shove and standing on it is thrown -- which is what makes
+		# WHERE the point goes the decision rather than merely whether you were inside it.
+		var falloff := 1.0 - clampf(offset.length() / GALE_RADIUS, 0.0, 1.0)
+		var shove := GALE_BODY_PUSH * (0.25 + 0.75 * falloff * falloff)
+		enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * shove, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
+		_update_enemy_bucket_membership(enemy)
+		# Being physically thrown is not something a body sleeps through. It learns where the
+		# player is, the same way it would from being hit -- an enemy that is shoved across a
+		# room and then keeps idling is the room telling an obvious lie.
+		_broadcast_enemy_alarm(enemy, player_pos)
 	var player_offset := player_pos - centre
 	if player_offset.length() <= GALE_RADIUS:
 		var push := player_offset.normalized() if player_offset.length_squared() > 0.001 else Vector2.LEFT
-		player_pos = _move_actor(player_pos, push * GALE_PLAYER_PUSH, PLAYER_RADIUS, 0)
+		var player_falloff := 1.0 - clampf(player_offset.length() / GALE_RADIUS, 0.0, 1.0)
+		player_pos = _move_actor(player_pos, push * GALE_PLAYER_PUSH * (0.25 + 0.75 * player_falloff * player_falloff), PLAYER_RADIUS, 0)
 	for projectile in projectiles:
 		var to_shot := Vector2(projectile["pos"]) - centre
 		if to_shot.length() > GALE_RADIUS: continue
@@ -8802,9 +8840,9 @@ func _crowd_separation_direction(enemy: Dictionary, nearby: Array[Dictionary] = 
 
 func _position_blocked_with_context(position: Vector2, radius: float, actor_id: int, local_walls: Array[Rect2], local_enemies: Array[Dictionary]) -> bool:
 	if not _inside_world(position, radius): return true
-	# Barriers stop the player alone. Enemies walk through, which is why the navigation
-	# grid can stay ignorant of them.
-	if actor_id == 0 and _point_in_barrier(position, radius):
+	# A barrier stops whichever side did not raise it, so enemies must route around the
+	# player's wall exactly as the player routes around theirs.
+	if _point_in_barrier(position, radius, actor_id):
 		survey_barrier_blocks += 1
 		return true
 	for wall in local_walls:
@@ -8907,6 +8945,17 @@ func _actor_footprint_on_floor(position: Vector2, radius: float) -> bool:
 func _circle_intersects_rect(center: Vector2, radius: float, rect: Rect2) -> bool:
 	var nearest := Vector2(clampf(center.x, rect.position.x, rect.end.x), clampf(center.y, rect.position.y, rect.end.y))
 	return center.distance_squared_to(nearest) < radius * radius
+
+# One gate for every movement that writes a position directly instead of going through
+# _move_actor -- Windstep today, anything that blinks or is thrown tomorrow. `_inside_world`
+# alone was not enough: the survey arena is a disc inside a much larger world, so a Windstep
+# could clear the arena entirely and still be "inside the world", which is how an Air Caster
+# threw itself off the edge of the map. The floor is the boundary that matters.
+func _teleport_allowed(position: Vector2, radius: float, actor_id: int) -> bool:
+	if not _inside_world(position, radius): return false
+	if _point_in_wall(position): return false
+	if _point_in_barrier(position, radius, actor_id): return false
+	return _actor_footprint_on_floor(position, radius)
 
 func _point_in_wall(point: Vector2) -> bool:
 	for wall in _nearby_walls(point, 2.0):

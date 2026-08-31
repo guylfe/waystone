@@ -2382,10 +2382,20 @@ func _draw_world() -> void:
 	# The Circle. Drawn on the ground as a ring with a faint fill, and brighter while the
 	# player is standing in it, because "am I still on my ground" is the question the
 	# ability exists to ask and it must be answerable at a glance.
-	var circle_left := float(visual.get("circle_remaining", state.circle_remaining))
+	# Read from the simulation rather than from the presentation frame. `visual` is a
+	# PresentationFrame for the whole of any streamed action -- which is nearly all of play --
+	# and that frame captures enemies, projectiles, hazards, effects and pickups and has
+	# never captured barriers. So the wall was in the world, blocking, and simply absent from
+	# the thing the renderer draws. Every capture I took looked correct because a probe sets
+	# `visual` from `state.snapshot()`, which does carry them; the game never does.
+	#
+	# Barriers and the Circle are few, static between ticks, and nothing about them wants
+	# interpolating, so they belong on the same footing as walls -- which the renderer has
+	# always read straight from state for exactly this reason.
+	var circle_left := state.circle_remaining
 	if circle_left > 0.0:
-		var circle_centre := Vector2(visual.get("circle_pos", state.circle_pos))
-		var circle_radius := float(visual.get("circle_radius", state.circle_radius()))
+		var circle_centre := state.circle_pos
+		var circle_radius := state.circle_radius()
 		var standing := state.player_is_inside_circle()
 		var fade := clampf(circle_left / 4.0, 0.35, 1.0)
 		var ring := _world_ring(circle_centre, circle_radius, 40)
@@ -2398,7 +2408,15 @@ func _draw_world() -> void:
 			var a_in := _world_to_screen(circle_centre + Vector2.RIGHT.rotated(angle) * circle_radius * 0.82)
 			var a_out := _world_to_screen(circle_centre + Vector2.RIGHT.rotated(angle) * circle_radius)
 			draw_line(a_in, a_out, Color(0.36, 0.88, 0.76, 0.55 * fade), maxf(1.5, world_scale * 2.5))
-	for segment in Array(visual.get("barriers", [])):
+	# The reach of an armed spell, drawn on the ground. A limit the player discovers by
+	# casting into nothing is a limit they learn by being punished; a ring they can see is
+	# one they can plan around, and it costs a circle.
+	if selected_action == "advance" and state.loadout_id == "mage_elementalist" and state.selected_spell != "":
+		var cast_reach := state.spell_reach(state.selected_spell)
+		if cast_reach > 0.0:
+			var reach_ring := _world_ring(Vector2(visual.get("player_pos", state.player_pos)), cast_reach, 44)
+			draw_polyline(_closed_points(reach_ring), Color(0.36, 0.78, 0.92, 0.38), maxf(1.5, world_scale * 2.0))
+	for segment in state.barriers:
 		if String(segment.get("layer", state.current_layer)) != state.current_layer: continue
 		var centre := Vector2(segment["pos"])
 		if not _world_point_on_camera(centre, float(segment.get("half_length", 30.0)) + 40.0): continue

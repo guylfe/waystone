@@ -39,6 +39,8 @@ func _init() -> void:
 	test_world_time_advances_through_a_cast()
 	test_a_wall_never_stands_up_without_warning()
 	test_walking_into_an_unseen_body_reveals_it()
+	test_a_wall_stops_the_side_that_did_not_raise_it()
+	test_nothing_steps_off_the_floor()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -387,3 +389,55 @@ func test_walking_into_an_unseen_body_reveals_it() -> void:
 	var before := seen.survey_blind_collisions
 	for step in range(30): seen.player_pos = seen._move_actor(seen.player_pos, Vector2.RIGHT * 8.0, seen.PLAYER_RADIUS, 0)
 	check(seen.survey_blind_collisions == before, "a body already known should not count again")
+
+func test_a_wall_stops_the_side_that_did_not_raise_it() -> void:
+	# The rule was written as "barriers block the player" when only enemies could raise one,
+	# and never revisited when the Elementalist learned to. So the player's own wall stopped
+	# the player and let enemies stroll through it -- the rule exactly inverted. Ownership
+	# decides, not whether you happen to be the player.
+	var state := fresh()
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.UP * 300.0, 35)
+	state.enemies.append(enemy)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._raise_player_earth_wall(state.player_pos + Vector2.UP * 150.0)
+	var mine: Vector2 = Vector2(state.barriers[0]["pos"])
+	check(not state._point_in_barrier(mine, state.PLAYER_RADIUS, 0), "my own wall must not stop me")
+	check(state._point_in_barrier(mine, state.ENEMY_RADIUS, int(enemy["id"])), "and it must stop them")
+	# An enemy's wall is the mirror: it cuts the player's retreat and its own side ignores it.
+	state.barriers.clear()
+	var caster := state._make_enemy("earth_caster", state.player_pos + Vector2.DOWN * 420.0, 36)
+	state.enemies.append(caster)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._raise_earth_wall(Vector2(caster["pos"]), int(caster["id"]))
+	var theirs: Vector2 = Vector2(state.barriers[0]["pos"])
+	check(state._point_in_barrier(theirs, state.PLAYER_RADIUS, 0), "their wall must stop me")
+	check(not state._point_in_barrier(theirs, state.ENEMY_RADIUS, int(caster["id"])), "and must not stop them")
+
+func test_nothing_steps_off_the_floor() -> void:
+	# An Air Caster threw itself off the edge of the map. Windstep wrote a position directly
+	# and checked only `_inside_world` -- but the survey arena is a disc inside a much larger
+	# world, so clearing the arena entirely still counts as inside it. Every direct write now
+	# goes through one gate that asks about the floor, which is the boundary that matters,
+	# rather than each ability inventing its own answer.
+	var state := fresh()
+	# Just outside the arena disc but comfortably inside the world rectangle -- the exact gap
+	# `_inside_world` alone leaves open.
+	var far := state.SURVEY_ARENA_CENTER + Vector2.RIGHT * (state.SURVEY_ARENA_RADIUS + 120.0)
+	check(state._inside_world(far, state.ENEMY_RADIUS), "the point is inside the world")
+	check(not state._actor_footprint_on_floor(far, state.ENEMY_RADIUS), "and off the arena floor")
+	check(not state._teleport_allowed(far, state.ENEMY_RADIUS, 1), "so nothing may land there")
+	check(state._teleport_allowed(state.player_pos + Vector2.RIGHT * 60.0, state.ENEMY_RADIUS, 1), "ordinary ground is still fine")
+	# Windstep itself refuses it, rather than the gate merely existing.
+	var air := state._make_enemy("air_caster", state.SURVEY_ARENA_CENTER + Vector2.RIGHT * (state.SURVEY_ARENA_RADIUS - 40.0), 32)
+	state.enemies.append(air)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	air["action"] = state._action("windstep", 0.86, Vector2.RIGHT)
+	air["action"]["startup"] = 0.26
+	air["action"]["move_start"] = 0.26
+	air["action"]["move_end"] = 0.58
+	air["action"]["speed"] = 1250.0
+	for tick in range(60): state._update_enemies(state.SIM_DT, tick % 2 == 0)
+	check(state._actor_footprint_on_floor(Vector2(air["pos"]), state.ENEMY_RADIUS), "the caster should still be on the floor")

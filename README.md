@@ -1,7 +1,40 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.71` (Android version code `271`).
+Current prototype version: `0.2.72` (Android version code `272`).
 
+## v0.2.72 — the wall was never in the picture the renderer draws
+
+`Walls raised: 3; times the player was stopped by one: 1482` — the instrumentation added in `0.2.69` answered it in one room.
+
+`visual`, the thing the renderer draws from, is a **PresentationFrame** for the whole of any streamed action, which is nearly all of play. That frame captures the player, enemies, projectiles, hazards, effects and pickups. It has never captured barriers, and `blend` only carries keys it names, so the wall was in the world, blocking, and simply absent from the picture.
+
+Six versions of wrong answers all trace to one habit: every capture I took set `visual` from `state.snapshot()`, which *does* carry barriers. The probe and the game were reading different things, so the probe could never fail the way the game did.
+
+Barriers and the Circle now come **straight from the simulation**, the way walls always have — they are few, static between ticks, and nothing about them wants interpolating. Verified by rendering a frame with `barriers` genuinely absent from the presentation data: the wall draws.
+
+### A wall belongs to a side
+
+Your own wall was stopping you and letting enemies walk through it. The rule was written as "barriers block the player" when only an Earth Caster could raise one, and never revisited when the Elementalist learned to.
+
+**Ownership decides now, not whether you happen to be the player.** An Earth Caster's wall cuts your retreat and its own side ignores it; yours gates their approach and you walk through it freely. The same object is help or hindrance purely by who put it there, which is what the design meant when it said one rule should produce opposite value depending on placement.
+
+### Nothing steps off the floor
+
+The Air Caster that threw itself off the map was Windstep writing a position directly and checking only `_inside_world`. The survey arena is a disc inside a much larger world, so clearing the arena entirely still counts as being inside it.
+
+Every direct position write now goes through **one gate** — world, walls, barriers, and the floor — rather than each ability inventing its own answer. Windstep uses it today; anything that blinks or is thrown uses it tomorrow.
+
+### The bolt was free
+
+200 Energy spent across 58 seconds and the room finished at 100/100. The bar was never a constraint, which means casting competed with nothing — the one thing the argument against a mana pool cannot survive.
+
+Every spell is repriced upward, the bolt hardest: 16 → 26. Its range drops from 560 to **340**, about a Javelineer's throw, so closing on a caster is an approach rather than a formality. When a spell is armed its reach is now drawn on the ground, because a limit you discover by casting into nothing is a limit you learn by being punished.
+
+### Gale is a gust
+
+The push falls off with distance from the centre — standing at the edge is a shove, standing on it is thrown. That makes *where the point goes* the decision rather than merely whether you were inside it, which is what the ability was supposed to be about.
+
+And being physically thrown across a room now tells a body where you are. An enemy that is picked up by the wind and then keeps idling is the room telling an obvious lie.
 ## v0.2.71 — the invisible wall was a body you could not see
 
 Five versions of this were spent on the Earth Wall, and the Earth Wall was never involved. Two things finally settled it: the wall renders perfectly in a screenshot, and the obstruction was **in a place that was traversible before and after**. Transient rules out the floor edge, the wall rects and the arena bounds; all three are static. Something that comes and goes, blocks, and is not drawn is a body.
