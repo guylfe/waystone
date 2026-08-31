@@ -6,14 +6,14 @@ func _initialize() -> void:
 	root.add_child(board)
 	await process_frame
 	await process_frame
-	board.state.start_run("warrior", "expedition", 270207, "encounter", "stamina")
+	board.state.start_run("warrior", "expedition", 270207, "encounter", "energy")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)
 	board._layout()
 	board.queue_redraw()
 	await process_frame
 	await process_frame
-	_capture("res://builds/stamina-attack-button.png")
+	_capture("res://builds/energy-attack-button.png")
 	assert(board.board_rect.encloses(board.attack_rect))
 	assert(board.state.request_combo(Vector2.RIGHT, false))
 	board.state.set_attack_hold(false)
@@ -24,7 +24,7 @@ func _initialize() -> void:
 	board.queue_redraw()
 	await process_frame
 	await process_frame
-	_capture("res://builds/stamina-terminal-recovery.png")
+	_capture("res://builds/energy-terminal-recovery.png")
 	board.state.start_run("warrior", "expedition", 270207, "encounter", "recovery")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)

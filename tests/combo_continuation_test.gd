@@ -20,7 +20,7 @@ var failures: Array[String] = []
 func check(condition: bool, message: String) -> void:
 	if not condition: failures.append(message)
 
-func fresh_state(loadout: String = "warrior", rules: String = "stamina") -> RunState:
+func fresh_state(loadout: String = "warrior", rules: String = "energy") -> RunState:
 	# Always choose the combat rule profile explicitly. A RunState built without
 	# setup defaults to Recovery, which would make these names lie.
 	var state: RunState = RunStateScript.new(false)
@@ -133,7 +133,7 @@ func test_board_quick_tap_commits_one_strike() -> void:
 	# so the finger is already up and nothing will ever clear a seeded hold.
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("warrior", "combat_survey", 4242, "encounter", "stamina")
+	board.state.start_run("warrior", "combat_survey", 4242, "encounter", "energy")
 	board.state.enemies.clear()
 	var enemy: Dictionary = board.state._make_enemy("blade", board.state.player_pos + Vector2.RIGHT * 70.0, 7, 0)
 	board.state.enemies.assign([enemy])

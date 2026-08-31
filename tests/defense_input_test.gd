@@ -23,7 +23,7 @@ func check(condition: bool, message: String) -> void:
 func board_with_enemy(distance: float):
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("warrior", "combat_survey", 4242, "encounter", "stamina")
+	board.state.start_run("warrior", "combat_survey", 4242, "encounter", "energy")
 	board.state.enemies.clear()
 	board.state.walls.clear()
 	var enemy: Dictionary = board.state._make_enemy("blade", board.state.player_pos + Vector2.RIGHT * distance, 30, 0)

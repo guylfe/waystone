@@ -61,7 +61,7 @@ $HeadlessSuite = @(
     'sweeping_cut_test',
     'defense_input_test',
     'capture_telemetry_test',
-    'stamina_test',
+    'energy_test',
     'warrior_character_test',
     'rogue_characters_test',
     'combat_survey_test',

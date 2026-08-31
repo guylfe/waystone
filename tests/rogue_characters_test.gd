@@ -76,7 +76,7 @@ func test_combo_presentation_and_sequence_recovery() -> void:
 	assert(int(Dictionary(captured["player_action"])["combo_length"]) == 4)
 	knife.player_action = knife._idle_action()
 	assert(knife.choose_upgrade("knife|knife_twin_fang"))
-	knife.player_stamina = knife.player_max_stamina
+	knife.player_energy = knife.player_max_energy
 	# Held throughout: the sequence-completion cooldown only arms when all six
 	# cuts are actually committed, and continuation is sampled at each link.
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
@@ -164,11 +164,11 @@ func test_stealth_eligibility_breaks_and_alerts() -> void:
 	# Superseded deliberately. This asserted the flat 12.0s cooldown that every hide
 	# used to pay regardless of length. Stealth is charged by the second now, so a hide
 	# broken almost immediately -- which is what attacking out of concealment is --
-	# pays the STEALTH_MINIMUM_STAMINA floor rather than the full five seconds' worth.
+	# pays the STEALTH_MINIMUM_ENERGY floor rather than the full five seconds' worth.
 	# 20 of a 100 pool at 24s per pool is 4.8s. That the strike-and-vanish loop got
 	# cheaper under Recovery is the intended reward for striking quickly, and it is
 	# what the new stealth re-entry telemetry exists to check in play.
-	var floor_cooldown := RunStateScript.STEALTH_MINIMUM_STAMINA / state.player_max_stamina * RunStateScript.COOLDOWN_SECONDS_PER_FULL_POOL
+	var floor_cooldown := RunStateScript.STEALTH_MINIMUM_ENERGY / state.player_max_energy * RunStateScript.COOLDOWN_SECONDS_PER_FULL_POOL
 	assert(state.main_ability_cooldown > floor_cooldown - 0.5 and state.main_ability_cooldown < floor_cooldown + 1.5)
 
 	var alarm_state := fresh("rogue_acrobat")

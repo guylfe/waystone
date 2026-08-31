@@ -24,7 +24,7 @@ func check(condition: bool, message: String) -> void:
 
 func fresh_state(loadout: String = "warrior") -> RunState:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run(loadout, "combat_survey", 4242, "encounter", "stamina")
+	state.start_run(loadout, "combat_survey", 4242, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	return state
@@ -102,7 +102,7 @@ func test_hold_does_not_repeat_a_context_action() -> void:
 	# guarded; the hole was the repeat, which never re-checked the label.
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("warrior", "combat_survey", 919191, "encounter", "stamina")
+	board.state.start_run("warrior", "combat_survey", 919191, "encounter", "energy")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)
 	board.size = Vector2(1280, 800)

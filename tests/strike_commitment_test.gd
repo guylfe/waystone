@@ -29,7 +29,7 @@ func check(condition: bool, message: String) -> void:
 
 func fresh_state() -> RunState:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "combat_survey", 4242, "encounter", "stamina")
+	state.start_run("warrior", "combat_survey", 4242, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	return state
@@ -41,7 +41,7 @@ func fresh_state() -> RunState:
 # a single point, which silently hides the randomness this file is measuring.
 func approach(kind: String, start_distance: float, enemy_id: int, seed_value: int) -> Dictionary:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "combat_survey", seed_value, "encounter", "stamina")
+	state.start_run("warrior", "combat_survey", seed_value, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	var enemy := state._make_enemy(kind, state.player_pos + Vector2.RIGHT * start_distance, 999, enemy_id)

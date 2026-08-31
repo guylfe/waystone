@@ -8,7 +8,7 @@ func _initialize() -> void:
 	await process_frame
 	board.desktop_controls = false
 	board.layout_safe_area_override = Rect2(0, board.size.y * 89.0 / 1394.0, board.size.x, board.size.y * 1263.0 / 1394.0)
-	board.state.start_run("warrior", "combat_survey", 290801, "attrition", "stamina")
+	board.state.start_run("warrior", "combat_survey", 290801, "attrition", "energy")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)
 	board._layout()

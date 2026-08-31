@@ -22,8 +22,8 @@ func capture(state: RunState) -> Dictionary:
 	data["player_facing"] = state.player_facing
 	data["player_hp"] = state.player_hp
 	data["player_max_hp"] = state.player_max_hp
-	data["player_stamina"] = state.player_stamina
-	data["player_max_stamina"] = state.player_max_stamina
+	data["player_energy"] = state.player_energy
+	data["player_max_energy"] = state.player_max_energy
 	data["player_posture"] = state.player_posture
 	data["player_posture_max"] = state.player_posture_max
 	data["carried_xp"] = state.carried_xp
@@ -83,7 +83,7 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	data["player_facing"] = _blend_direction(Vector2(current_data["player_facing"]), Vector2(following_data["player_facing"]), amount)
 	for key in ["player_hp", "player_max_hp", "carried_xp", "secured_xp", "message"]:
 		data[key] = following_data.get(key, current_data.get(key))
-	for key in ["player_stamina", "player_max_stamina", "player_posture", "player_posture_max", "strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "weapon_sequence_cooldown", "stealth_remaining", "aimed_remaining", "rally_remaining"]:
+	for key in ["player_energy", "player_max_energy", "player_posture", "player_posture_max", "strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "weapon_sequence_cooldown", "stealth_remaining", "aimed_remaining", "rally_remaining"]:
 		data[key] = lerpf(float(current_data.get(key, 0.0)), float(following_data.get(key, 0.0)), amount)
 	_blend_action(Dictionary(current_data["player_action"]), Dictionary(following_data["player_action"]), amount, _player_action)
 	_copy_flat_dictionary(Dictionary(following_data.get("lost_xp", {})), _lost_xp)

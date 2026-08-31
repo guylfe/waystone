@@ -1,7 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.60` (Android version code `260`).
+Current prototype version: `0.2.61` (Android version code `261`).
 
+## v0.2.61 — Stamina becomes Energy
+
+A rename, and nothing else. 786 occurrences across 36 files, plus the test file itself.
+
+It was scheduled to land beside the Elementalist rather than before it, and this is the version immediately before that class arrives. The reasoning has not changed: the rename's real cost is the historical record — every survey report, changelog entry and design document written so far says *Stamina* — and that cost is identical whenever it lands. Doing it next to the class that motivates it keeps one break point and makes it read as a reason rather than as churn.
+
+The motivation is that one bar is about to pay for spells as well as swings. A caster who spent mana on offence and stamina on defence would never face the trade the Warrior faces, and casting would be defensively free; keeping one bar is the entire argument against a mana pool. But a bar called *Stamina* that pays for a fireball is a word doing the wrong job, and the word was going to have to change the moment the first spell was cast from it.
+
+Two things are deliberately not broken by it:
+
+**Saved runs still load.** Every `..._stamina...` key written before this version is read under its new name at load time. The historical record was an accepted cost; a run in progress is not the historical record, and silently resetting someone's Energy to a default is a different thing entirely.
+
+**The old rule-profile id still works.** `"stamina"` is normalised to `"energy"` wherever it arrives — from a save, an archived survey, or a test written before today. The profile did not change, only what it is called.
+
+The survey report format moves to 25 accordingly, so archived runs remain distinguishable from ones recorded after the rename.
 ## v0.2.60 — what an attack does is the number on the attack
 
 Three fixes to the combat numbers, all of them removing machinery rather than adding it.

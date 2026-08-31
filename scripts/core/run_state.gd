@@ -54,38 +54,38 @@ const STRIKE_INTENT_ABANDON_MARGIN := 60.0
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-# Stamina is the burst budget, not the fight gate -- recovery is the primary
+# Energy is the burst budget, not the fight gate -- recovery is the primary
 # limiter. Costs are authored at their original relative shape and scaled here,
 # so the relationships stay legible and the global price level is one number.
 #
 # 0.5 was too generous: the 0.2.17 survey emptied the bar 4 times in 205 seconds
 # of combat (1.2 lockouts per minute against 4.1 in 0.2.15) and the tester could
 # not exhaust himself deliberately. The error was sizing costs against a static
-# bar rather than against a fight -- Room 11 spent 202 Stamina without a single
+# bar rather than against a fight -- Room 11 spent 202 Energy without a single
 # lockout because 4.1 seconds of regeneration returned 115 of it. 0.65 was chosen
 # by replaying every room of that survey: easy rooms still finish with breath to
 # spare, and the pressure rooms exhaust once or twice as they should.
-const STAMINA_COST_SCALE := 0.65
+const ENERGY_COST_SCALE := 0.65
 # Slower than the old 60/s, but continuous: spending no longer arms a delay, so
 # the bar refills while you reposition rather than pausing then snapping back.
-const STAMINA_REGEN_PER_SECOND := 28.0
+const ENERGY_REGEN_PER_SECOND := 28.0
 # Only a hit suppresses regeneration now, and only briefly.
-const STAMINA_REGEN_DELAY := 0.5
+const ENERGY_REGEN_DELAY := 0.5
 # The single exchange rate between the two rule profiles. A cooldown is how long it
 # would take to earn an ability's price back as a share of the whole pool, so ONE
-# authored stamina number now sets both -- there is no second table to keep in sync,
-# and a global re-tune of STAMINA_COST_SCALE carries the cooldowns with it.
+# authored energy number now sets both -- there is no second table to keep in sync,
+# and a global re-tune of ENERGY_COST_SCALE carries the cooldowns with it.
 #
 # 24s is not a guess. The six hand-authored pairs that already existed implied 20-33
-# seconds per 100 stamina (Advance 33.0, Execution 28.2, piercing shot 26.3, bow art
+# seconds per 100 energy (Advance 33.0, Execution 28.2, piercing shot 26.3, bow art
 # 24.0, Twin Fang 21.6, Drawing Cut 20.2, median 25), so the formula mostly codifies
 # what was there and repairs the three abilities that fell outside it entirely.
 #
-# The pool is the denominator deliberately. Under Recovery stamina is never spent and
-# never regenerated, so the +10 max stamina from `vigilance`, `fleetness` and
+# The pool is the denominator deliberately. Under Recovery energy is never spent and
+# never regenerated, so the +10 max energy from `vigilance`, `fleetness` and
 # `observation` did nothing at all -- three track choices with a dead half. This gives
-# that half a job. The accepted consequence: max stamina buys burst depth under
-# Stamina (more actions before empty, prices unchanged) and sustain under Recovery
+# that half a job. The accepted consequence: max energy buys burst depth under
+# Energy (more actions before empty, prices unchanged) and sustain under Recovery
 # (every cooldown shorter, burst unchanged). The same stat reads differently in each
 # profile, which is a known divergence rather than an oversight.
 const COOLDOWN_SECONDS_PER_FULL_POOL := 24.0
@@ -100,7 +100,7 @@ const STEALTH_DRAIN_PER_SECOND := 10.0
 # benefit is instantaneous while a purely proportional price is not. Without a floor a
 # quarter-second tap would buy the unaware-execution bonus for a rounding error, and
 # tapping would strictly beat hiding.
-const STEALTH_MINIMUM_STAMINA := 20.0
+const STEALTH_MINIMUM_ENERGY := 20.0
 const STEALTH_DURATION := 5.0
 # Back to 2.0 from the 1.2 that 0.2.17 adopted to offset the movement slow. The
 # 0.2.20 survey found exhaustion costing 2 damage across 8.33 seconds *despite*
@@ -333,7 +333,7 @@ const SHIELD_PATIENCE_MAX := 4.4
 # the 0.2.38 survey reported. One list, one source.
 const SHIELD_OPEN_ACTION_KINDS := ["melee", "dodge_strike", "charge", "slam", "hit_reaction", "stagger"]
 const EXHAUSTED_MOVE_SCALE := 0.45
-const DODGE_STAMINA_COST := 18.0
+const DODGE_ENERGY_COST := 18.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
 # one executable response. 90 units of travel clears a Blade's envelope (68) and
 # little else, the i-frame window is two thirds of a real Dodge's, and the tail is
@@ -347,7 +347,7 @@ const EXHAUSTED_DODGE_DURATION := 0.75
 # short to cover an offensive sequence. Provisional; see the handoff section 5.4.
 const POST_HIT_PROTECTION_TAIL := 0.35
 # "hit_reaction" and "stagger" are deliberately absent. Player posture recovery
-# already excludes them, so stamina regenerating through a flinch had the two
+# already excludes them, so energy regenerating through a flinch had the two
 # resources disagreeing about whether being hit is a chance to recover.
 # What counts as an enemy having committed to hurting you. Used by the threat
 # snapshot, so a caster mid-cone reads as danger the same way a Blade mid-swing does.
@@ -355,9 +355,9 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
-const STAMINA_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
+const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.60"
+const GAME_VERSION := "0.2.61"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -373,11 +373,11 @@ var player_pos := Vector2(800.0, 1900.0)
 var player_facing := Vector2.UP
 var player_hp := PLAYER_MAX_HP
 var player_max_hp := PLAYER_MAX_HP
-var player_stamina := 100.0
-var player_max_stamina := 100.0
+var player_energy := 100.0
+var player_max_energy := 100.0
 var player_overexertion_pending := false
 var player_exhaustion_remaining := 0.0
-var player_stamina_regen_delay := 0.0
+var player_energy_regen_delay := 0.0
 var player_posture := 12.0
 var player_posture_max := 12.0
 var player_posture_recovery_delay := 0.0
@@ -421,7 +421,7 @@ var stealth_remaining := 0.0
 var stealth_cooldown_pending := false
 # What this hide has cost so far. Accrues in BOTH profiles: Recovery never deducts it
 # but derives the cooldown from it, which is how a cancelled hide gets a short one.
-var stealth_stamina_paid := 0.0
+var stealth_energy_paid := 0.0
 var _stealth_last_ended_at := -1.0
 # How often each arrangement has been drawn this run. Left to chance, one run gave
 # column four rooms and screen_line none -- and the whole reason for authoring
@@ -429,9 +429,9 @@ var _stealth_last_ended_at := -1.0
 var _formation_use_counts: Dictionary = {}
 # Why the last hide ended. "expired" is the only outcome the player paid for in full.
 var stealth_last_end_reason := ""
-# The last amount _spend_stamina actually priced, so a cooldown can be derived from
+# The last amount _spend_energy actually priced, so a cooldown can be derived from
 # the cost sitting two lines above it instead of from a duplicated literal.
-var _last_stamina_spend := 0.0
+var _last_energy_spend := 0.0
 # What each cooldown started at, so the readiness bar is drawn against the real
 # maximum rather than against a hardcoded guess that derived values now break.
 var skill_cooldown_max := 6.5
@@ -456,7 +456,7 @@ var survey_stealth_entries_total := 0
 var survey_stealth_cancels_total := 0
 var survey_stealth_quick_reentries_total := 0
 var survey_stealth_hidden_time_total := 0.0
-var survey_stealth_stamina_paid_total := 0.0
+var survey_stealth_energy_paid_total := 0.0
 var assassination_window_remaining := 0.0
 var turnabout_remaining := 0.0
 # Counts down in world time from the moment a hit reaction begins, through the
@@ -534,15 +534,15 @@ var clean_evade_vault_total := 0
 var turnabout_primed_total := 0
 var turnabout_consumed_total := 0
 var potions_used_total := 0
-var stamina_spent_total := 0.0
-var stamina_depleted_total := 0.0
-var stamina_overdraw_total := 0.0
-var stamina_regenerated_total := 0.0
-var stamina_regen_delay_time_total := 0.0
-var stamina_regen_active_time_total := 0.0
+var energy_spent_total := 0.0
+var energy_depleted_total := 0.0
+var energy_overdraw_total := 0.0
+var energy_regenerated_total := 0.0
+var energy_regen_delay_time_total := 0.0
+var energy_regen_active_time_total := 0.0
 var overexertion_count := 0
 var winded_time_total := 0.0
-var stamina_blocked_continuations := 0
+var energy_blocked_continuations := 0
 var exhaustion_damage_received_total := 0
 var exhaustion_move_time_total := 0.0
 var exhaustion_wait_time_total := 0.0
@@ -560,8 +560,8 @@ var exhaustion_end_alerted_sum := 0
 var exhaustion_end_clear := 0
 var exhaustion_start_soonest_sum := 0.0
 var exhaustion_start_nearest_sum := 0.0
-var stamina_starved_time_total := 0.0
-var stamina_combo_starved_time_total := 0.0
+var energy_starved_time_total := 0.0
+var energy_combo_starved_time_total := 0.0
 var exhaustion_threatened_time_total := 0.0
 var exhausted_dodge_room_max_chain := 0
 var terminal_combo_recoveries_total := 0
@@ -675,7 +675,7 @@ var _streamed_action_cpu_usec := 0
 var _simulation_tick_index := 0
 var _next_combo_instance_id := 1
 var survey_profile := "encounter"
-var combat_rules := "stamina"
+var combat_rules := "energy"
 var survey_room_number := 0
 # A custom room is a Combat Survey room whose roster and arrangement are chosen rather
 # than drawn. It is deliberately NOT a separate mode: keeping it inside the survey means
@@ -725,10 +725,10 @@ func _init(auto_start: bool = true) -> void:
 	rng.seed = run_seed
 	_apply_loadout()
 	player_hp = player_max_hp
-	player_stamina = player_max_stamina
+	player_energy = player_max_energy
 	# Headless systems and legacy regressions that instantiate an immediate run
 	# retain the established recovery model. The actual setup screen explicitly
-	# selects Stamina for normal play and exposes both rules in Combat Survey.
+	# selects Energy for normal play and exposes both rules in Combat Survey.
 	if auto_start: start_run(loadout_id, mode_id, run_seed, "encounter", "recovery")
 
 func build_laboratory() -> void:
@@ -737,21 +737,21 @@ func build_laboratory() -> void:
 func build_expedition_room() -> void:
 	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
-func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "stamina") -> void:
+func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy") -> void:
 	loadout_id = chosen_loadout if CombatCatalogScript.loadout_ids().has(chosen_loadout) else "warrior"
 	mode_id = ModeRulesScript.normalize(chosen_mode)
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
 	survey_profile = survey_profile_override if survey_profile_override in ["encounter", "attrition"] else "encounter"
-	combat_rules = combat_rules_override if combat_rules_override in ["recovery", "stamina"] else "stamina"
+	combat_rules = normalize_combat_rules(combat_rules_override)
 	if seed_override >= 0: run_seed = seed_override
 	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
 	_apply_loadout()
 	player_hp = player_max_hp
-	player_stamina = player_max_stamina
+	player_energy = player_max_energy
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
-	player_stamina_regen_delay = 0.0
+	player_energy_regen_delay = 0.0
 	_refresh_player_posture_capacity(true)
 	player_facing = Vector2.UP
 	player_action = _idle_action()
@@ -766,10 +766,10 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	weapon_sequence_cooldown = 0.0
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
-	stealth_stamina_paid = 0.0
+	stealth_energy_paid = 0.0
 	_stealth_last_ended_at = -1.0
 	_formation_use_counts.clear()
-	_last_stamina_spend = 0.0
+	_last_energy_spend = 0.0
 	skill_cooldown_max = 6.5
 	advance_cooldown_max = 6.0
 	main_ability_cooldown_max = 12.0
@@ -837,15 +837,15 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	turnabout_primed_total = 0
 	turnabout_consumed_total = 0
 	potions_used_total = 0
-	stamina_spent_total = 0.0
-	stamina_depleted_total = 0.0
-	stamina_overdraw_total = 0.0
-	stamina_regenerated_total = 0.0
-	stamina_regen_delay_time_total = 0.0
-	stamina_regen_active_time_total = 0.0
+	energy_spent_total = 0.0
+	energy_depleted_total = 0.0
+	energy_overdraw_total = 0.0
+	energy_regenerated_total = 0.0
+	energy_regen_delay_time_total = 0.0
+	energy_regen_active_time_total = 0.0
 	overexertion_count = 0
 	winded_time_total = 0.0
-	stamina_blocked_continuations = 0
+	energy_blocked_continuations = 0
 	exhaustion_damage_received_total = 0
 	exhaustion_move_time_total = 0.0
 	exhaustion_wait_time_total = 0.0
@@ -863,8 +863,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	exhaustion_end_clear = 0
 	exhaustion_start_soonest_sum = 0.0
 	exhaustion_start_nearest_sum = 0.0
-	stamina_starved_time_total = 0.0
-	stamina_combo_starved_time_total = 0.0
+	energy_starved_time_total = 0.0
+	energy_combo_starved_time_total = 0.0
 	exhaustion_threatened_time_total = 0.0
 	exhausted_dodge_room_max_chain = 0
 	terminal_combo_recoveries_total = 0
@@ -880,7 +880,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_stealth_cancels_total = 0
 	survey_stealth_quick_reentries_total = 0
 	survey_stealth_hidden_time_total = 0.0
-	survey_stealth_stamina_paid_total = 0.0
+	survey_stealth_energy_paid_total = 0.0
 	terminal_combo_recovery_time_total = 0.0
 	direct_attack_uses_total = 0
 	dodge_style_uses_total.clear()
@@ -1390,7 +1390,7 @@ func _survey_is_ranged_pressure(planned_enemy: Dictionary) -> bool:
 # screen, a flanker, a frontliner and a knife rated a point higher at identical
 # engagement (2.33 versus 2.30 enemies engaged at once).
 # Two kinds can hold different roles and still ask the same question. The 0.2.40
-# Stamina run's room 3 landed seven boar pounces and nine hound pounces -- sixteen of
+# Energy run's room 3 landed seven boar pounces and nine hound pounces -- sixteen of
 # twenty-eight attacks -- and the note read "too many enemies doing the same thing,
 # busy and monotonous". Boar is `frontline` and Hound is `flanker`, so the role cap
 # waved them both through. The verb is what the player actually reads.
@@ -1824,8 +1824,8 @@ func _capture_survey_room_entry() -> void:
 		"time": simulation_time,
 		"hp": player_hp,
 		"max_hp": player_max_hp,
-		"stamina": player_stamina,
-		"max_stamina": player_max_stamina,
+		"energy": player_energy,
+		"max_energy": player_max_energy,
 		"potions": potions,
 		"damage_dealt": damage_dealt,
 		"damage_received": damage_received_total,
@@ -1848,15 +1848,15 @@ func _capture_survey_room_entry() -> void:
 		"engagement_multi_samples": survey_engagement_multi_samples,
 		"isolated_kills": survey_isolated_kills,
 		"engaged_kills": survey_engaged_kills,
-		"stamina_spent": stamina_spent_total,
-		"stamina_depleted": stamina_depleted_total,
-		"stamina_overdraw": stamina_overdraw_total,
-		"stamina_regenerated": stamina_regenerated_total,
-		"stamina_regen_delay_time": stamina_regen_delay_time_total,
-		"stamina_regen_active_time": stamina_regen_active_time_total,
+		"energy_spent": energy_spent_total,
+		"energy_depleted": energy_depleted_total,
+		"energy_overdraw": energy_overdraw_total,
+		"energy_regenerated": energy_regenerated_total,
+		"energy_regen_delay_time": energy_regen_delay_time_total,
+		"energy_regen_active_time": energy_regen_active_time_total,
 		"overexertions": overexertion_count,
 		"winded_time": winded_time_total,
-		"stamina_blocked_continuations": stamina_blocked_continuations,
+		"energy_blocked_continuations": energy_blocked_continuations,
 		"exhaustion_damage_received": exhaustion_damage_received_total,
 		"exhaustion_move_time": exhaustion_move_time_total,
 		"exhaustion_wait_time": exhaustion_wait_time_total,
@@ -1873,15 +1873,15 @@ func _capture_survey_room_entry() -> void:
 		"exhaustion_end_clear": exhaustion_end_clear,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
-		"stamina_starved_time_total": stamina_starved_time_total,
-		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"energy_starved_time_total": energy_starved_time_total,
+		"energy_combo_starved_time_total": energy_combo_starved_time_total,
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"terminal_combo_recoveries": terminal_combo_recoveries_total,
 		"stealth_entries": survey_stealth_entries_total,
 		"stealth_cancels": survey_stealth_cancels_total,
 		"stealth_quick_reentries": survey_stealth_quick_reentries_total,
 		"stealth_hidden_time": survey_stealth_hidden_time_total,
-		"stealth_stamina_paid": survey_stealth_stamina_paid_total,
+		"stealth_energy_paid": survey_stealth_energy_paid_total,
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total,
 		"direct_attack_uses": direct_attack_uses_total,
 		"dodge_style_uses": dodge_style_uses_total.duplicate(true),
@@ -1946,10 +1946,10 @@ func _complete_survey_room(outcome: String) -> void:
 		"entry_hp": int(survey_room_entry.get("hp", player_hp)),
 		"entry_max_hp": int(survey_room_entry.get("max_hp", player_max_hp)),
 		"exit_hp": player_hp,
-		"entry_stamina": float(survey_room_entry.get("stamina", player_stamina)),
-		"entry_max_stamina": float(survey_room_entry.get("max_stamina", player_max_stamina)),
-		"exit_stamina": player_stamina,
-		"exit_max_stamina": player_max_stamina,
+		"entry_energy": float(survey_room_entry.get("energy", player_energy)),
+		"entry_max_energy": float(survey_room_entry.get("max_energy", player_max_energy)),
+		"exit_energy": player_energy,
+		"exit_max_energy": player_max_energy,
 		"entry_potions": int(survey_room_entry.get("potions", potions)),
 		"exit_potions": potions,
 		"death_source": survey_last_damage_source if outcome == "death" else "",
@@ -1977,15 +1977,15 @@ func _complete_survey_room(outcome: String) -> void:
 		"perfect_dodges": perfect_dodges - int(survey_room_entry.get("perfect_dodges", perfect_dodges)),
 		"successful_blocks": successful_blocks - int(survey_room_entry.get("successful_blocks", successful_blocks)),
 		"successful_endures": successful_endures - int(survey_room_entry.get("successful_endures", successful_endures)),
-		"stamina_spent": stamina_spent_total - float(survey_room_entry.get("stamina_spent", stamina_spent_total)),
-		"stamina_depleted": stamina_depleted_total - float(survey_room_entry.get("stamina_depleted", stamina_depleted_total)),
-		"stamina_overdraw": stamina_overdraw_total - float(survey_room_entry.get("stamina_overdraw", stamina_overdraw_total)),
-		"stamina_regenerated": stamina_regenerated_total - float(survey_room_entry.get("stamina_regenerated", stamina_regenerated_total)),
-		"stamina_regen_delay_time": stamina_regen_delay_time_total - float(survey_room_entry.get("stamina_regen_delay_time", stamina_regen_delay_time_total)),
-		"stamina_regen_active_time": stamina_regen_active_time_total - float(survey_room_entry.get("stamina_regen_active_time", stamina_regen_active_time_total)),
+		"energy_spent": energy_spent_total - float(survey_room_entry.get("energy_spent", energy_spent_total)),
+		"energy_depleted": energy_depleted_total - float(survey_room_entry.get("energy_depleted", energy_depleted_total)),
+		"energy_overdraw": energy_overdraw_total - float(survey_room_entry.get("energy_overdraw", energy_overdraw_total)),
+		"energy_regenerated": energy_regenerated_total - float(survey_room_entry.get("energy_regenerated", energy_regenerated_total)),
+		"energy_regen_delay_time": energy_regen_delay_time_total - float(survey_room_entry.get("energy_regen_delay_time", energy_regen_delay_time_total)),
+		"energy_regen_active_time": energy_regen_active_time_total - float(survey_room_entry.get("energy_regen_active_time", energy_regen_active_time_total)),
 		"overexertions": overexertion_count - int(survey_room_entry.get("overexertions", overexertion_count)),
 		"winded_time": winded_time_total - float(survey_room_entry.get("winded_time", winded_time_total)),
-		"stamina_blocked_continuations": stamina_blocked_continuations - int(survey_room_entry.get("stamina_blocked_continuations", stamina_blocked_continuations)),
+		"energy_blocked_continuations": energy_blocked_continuations - int(survey_room_entry.get("energy_blocked_continuations", energy_blocked_continuations)),
 		"exhaustion_damage_received": exhaustion_damage_received_total - int(survey_room_entry.get("exhaustion_damage_received", exhaustion_damage_received_total)),
 		"exhaustion_move_time": exhaustion_move_time_total - float(survey_room_entry.get("exhaustion_move_time", exhaustion_move_time_total)),
 		"exhaustion_wait_time": exhaustion_wait_time_total - float(survey_room_entry.get("exhaustion_wait_time", exhaustion_wait_time_total)),
@@ -2002,8 +2002,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"exhaustion_end_clear": exhaustion_end_clear - int(survey_room_entry.get("exhaustion_end_clear", exhaustion_end_clear)),
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum - float(survey_room_entry.get("exhaustion_start_soonest_sum", exhaustion_start_soonest_sum)),
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum - float(survey_room_entry.get("exhaustion_start_nearest_sum", exhaustion_start_nearest_sum)),
-		"stamina_starved_time_total": stamina_starved_time_total - float(survey_room_entry.get("stamina_starved_time_total", stamina_starved_time_total)),
-		"stamina_combo_starved_time_total": stamina_combo_starved_time_total - float(survey_room_entry.get("stamina_combo_starved_time_total", stamina_combo_starved_time_total)),
+		"energy_starved_time_total": energy_starved_time_total - float(survey_room_entry.get("energy_starved_time_total", energy_starved_time_total)),
+		"energy_combo_starved_time_total": energy_combo_starved_time_total - float(survey_room_entry.get("energy_combo_starved_time_total", energy_combo_starved_time_total)),
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total - float(survey_room_entry.get("exhaustion_threatened_time_total", exhaustion_threatened_time_total)),
 		"terminal_combo_recoveries": terminal_combo_recoveries_total - int(survey_room_entry.get("terminal_combo_recoveries", terminal_combo_recoveries_total)),
 		"formation_ids": Array(survey_room_definition.get("formation_ids", [])).duplicate(),
@@ -2019,7 +2019,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"stealth_cancels": survey_stealth_cancels_total - int(survey_room_entry.get("stealth_cancels", survey_stealth_cancels_total)),
 		"stealth_quick_reentries": survey_stealth_quick_reentries_total - int(survey_room_entry.get("stealth_quick_reentries", survey_stealth_quick_reentries_total)),
 		"stealth_hidden_time": survey_stealth_hidden_time_total - float(survey_room_entry.get("stealth_hidden_time", survey_stealth_hidden_time_total)),
-		"stealth_stamina_paid": survey_stealth_stamina_paid_total - float(survey_room_entry.get("stealth_stamina_paid", survey_stealth_stamina_paid_total)),
+		"stealth_energy_paid": survey_stealth_energy_paid_total - float(survey_room_entry.get("stealth_energy_paid", survey_stealth_energy_paid_total)),
 		"terminal_combo_recovery_time": terminal_combo_recovery_time_total - float(survey_room_entry.get("terminal_combo_recovery_time", terminal_combo_recovery_time_total)),
 		"direct_attack_uses": direct_attack_uses_total - int(survey_room_entry.get("direct_attack_uses", direct_attack_uses_total)),
 		"dodge_style_uses": _survey_dodge_style_delta(),
@@ -2096,10 +2096,10 @@ func _load_next_survey_room() -> void:
 		weapon_sequence_cooldown = 0.0
 		player_conditions.clear()
 		player_condition_buildup.clear()
-	player_stamina = player_max_stamina
+	player_energy = player_max_energy
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
-	player_stamina_regen_delay = 0.0
+	player_energy_regen_delay = 0.0
 	survey_strike_diagnostics.clear()
 	var layout := _generate_survey_layout(survey_room_number)
 	world_size = Vector2(layout["world_size"])
@@ -2295,9 +2295,9 @@ func _hydrate_enemy_combat_profile(enemy: Dictionary) -> Dictionary:
 	if not enemy.has("equipped_weapon_art"): enemy["equipped_weapon_art"] = String(profile["equipped_weapon_art"])
 	if not enemy.has("defense_id"): enemy["defense_id"] = String(profile["defense_id"])
 	if not enemy.has("attributes"): enemy["attributes"] = Dictionary(profile["attributes"]).duplicate(true)
-	elif not Dictionary(enemy["attributes"]).has("stamina"):
+	elif not Dictionary(enemy["attributes"]).has("energy"):
 		var hydrated_attributes := Dictionary(enemy["attributes"])
-		hydrated_attributes["stamina"] = int(Dictionary(profile["attributes"]).get("stamina", 100))
+		hydrated_attributes["energy"] = int(Dictionary(profile["attributes"]).get("energy", 100))
 		enemy["attributes"] = hydrated_attributes
 	if not enemy.has("properties"): enemy["properties"] = Dictionary(profile["properties"]).duplicate(true)
 	if not enemy.has("revealed_to_player"): enemy["revealed_to_player"] = String(enemy.get("kind", "")) != "bandit"
@@ -2339,14 +2339,14 @@ func player_actor() -> Dictionary:
 	# attribute profile remains ready for temperament-gated advancement.
 	var attributes := player_attributes.duplicate(true)
 	attributes["health"] = player_max_hp
-	attributes["stamina"] = roundi(player_max_stamina)
+	attributes["energy"] = roundi(player_max_energy)
 	attributes["speed"] = int(player_attributes.get("speed", 5))
 	var properties := player_properties.duplicate(true)
 	properties["collision_radius"] = PLAYER_RADIUS
 	return {
 		"kind": "player",
-		"current_stamina": player_stamina,
-		"maximum_stamina": player_max_stamina,
+		"current_energy": player_energy,
+		"maximum_energy": player_max_energy,
 		"weapon_frame": player_weapon_frame,
 		"weapon_art_ids": player_weapon_art_library.duplicate(),
 		"equipped_weapon_art": player_equipped_weapon_art,
@@ -2370,7 +2370,7 @@ func _apply_loadout() -> void:
 	_sync_player_combat_profile()
 	defense_id = String(CombatCatalogScript.loadout_profile(loadout_id).get("defense_id", "dodge"))
 	player_max_hp = int(player_attributes.get("health", PLAYER_MAX_HP))
-	player_max_stamina = float(player_attributes.get("stamina", 100))
+	player_max_energy = float(player_attributes.get("energy", 100))
 	# The armoured Warrior should not be able to reset melee pressure through
 	# ordinary walking. Faster loadouts retain their existing traversal speed;
 	# the Warrior instead depends on deliberate defensive movement when flankers
@@ -2414,11 +2414,16 @@ func _player_personal_tempo() -> float:
 	# aura again, which 0.2.33 deleted for being imperceptible.
 	return _tempo_from_attributes(player_attributes) * (1.0 - FROST_MAX_SLOW * player_frost_fraction())
 
-func uses_stamina_rules() -> bool:
-	return combat_rules == "stamina"
+# "stamina" is still accepted as an id. The rename is a rename, and a saved run or an
+# archived survey that predates it names a profile that still exists under another word.
+static func normalize_combat_rules(value: String) -> String:
+	return "energy" if value == "stamina" else ("energy" if value not in ["recovery", "energy"] else value)
 
-func stamina_actions_locked() -> bool:
-	return uses_stamina_rules() and (player_stamina <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0001)
+func uses_energy_rules() -> bool:
+	return combat_rules == "energy"
+
+func energy_actions_locked() -> bool:
+	return uses_energy_rules() and (player_energy <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0001)
 
 func basic_attack_lock_remaining() -> float:
 	return 0.0
@@ -2430,15 +2435,15 @@ func _can_start_basic_attack() -> bool:
 	return is_player_ready() and not trial_complete and weapon_sequence_cooldown <= 0.0001 and _can_commit_physical_action()
 
 func _combat_rules_intro() -> String:
-	if not uses_stamina_rules():
-		return "Recovery rules: abilities and defensive techniques use cooldowns; Stamina is inactive. Weapon commitment is shared with Stamina rules."
-	return "Stamina rules: physical actions and Dodge spend Stamina, and it regenerates continuously — only a hit interrupts it. Emptying it exhausts you: attacks lock and you move at less than half speed until your breath returns. A Dodge is still available while exhausted, but it empties the bar again and restarts the clock."
+	if not uses_energy_rules():
+		return "Recovery rules: abilities and defensive techniques use cooldowns; Energy is inactive. Weapon commitment is shared with Energy rules."
+	return "Energy rules: physical actions and Dodge spend Energy, and it regenerates continuously — only a hit interrupts it. Emptying it exhausts you: attacks lock and you move at less than half speed until your breath returns. A Dodge is still available while exhausted, but it empties the bar again and restarts the clock."
 
 func _can_commit_physical_action() -> bool:
-	return not uses_stamina_rules() or not stamina_actions_locked()
+	return not uses_energy_rules() or not energy_actions_locked()
 
 func player_is_exhausted() -> bool:
-	return uses_stamina_rules() and player_exhaustion_remaining > 0.0001
+	return uses_energy_rules() and player_exhaustion_remaining > 0.0001
 
 # Every consumer of walking speed goes through this, so exhaustion slows stepping,
 # the Wait unit derived from a step, and the streamed-move duration together.
@@ -2460,20 +2465,20 @@ func _terrain_speed_scale(position: Vector2) -> float:
 	return scale
 
 # Dodge is the one physical action exhaustion does not take away. The UI asks this
-# rather than stamina_actions_locked() so the button stays live while winded.
+# rather than energy_actions_locked() so the button stays live while winded.
 func dodge_is_available() -> bool:
-	return is_player_ready() and not trial_complete and (uses_stamina_rules() or dodge_cooldown <= 0.0001)
+	return is_player_ready() and not trial_complete and (uses_energy_rules() or dodge_cooldown <= 0.0001)
 
-func stamina_cost(amount: float) -> float:
-	return amount * STAMINA_COST_SCALE
+func energy_cost(amount: float) -> float:
+	return amount * ENERGY_COST_SCALE
 
 # A cooldown is the ability's price expressed as a share of the pool, times the one
 # global rate. See COOLDOWN_SECONDS_PER_FULL_POOL for why the pool is the denominator.
 func _cooldown_for(spend: float) -> float:
-	return spend / maxf(1.0, player_max_stamina) * COOLDOWN_SECONDS_PER_FULL_POOL
+	return spend / maxf(1.0, player_max_energy) * COOLDOWN_SECONDS_PER_FULL_POOL
 
 func _cooldown_for_last_spend() -> float:
-	return _cooldown_for(_last_stamina_spend)
+	return _cooldown_for(_last_energy_spend)
 
 func _begin_skill_cooldown(seconds: float) -> void:
 	skill_cooldown = seconds
@@ -2492,54 +2497,54 @@ func _begin_subclass_cooldown(seconds: float) -> void:
 	subclass_ability_cooldown_max = maxf(0.0001, seconds)
 
 # `scaled = false` charges the authored number directly. Sweeping Cut uses it:
-# see the note on SWEEPING_CUT_STAMINA for why price parity with the combo could
+# see the note on SWEEPING_CUT_ENERGY for why price parity with the combo could
 # not hold it in check.
-func _basic_attack_stamina_cost() -> float:
+func _basic_attack_energy_cost() -> float:
 	return 12.0 if player_weapon_frame == "twin_knives" else 14.0 if player_weapon_frame == "knife" else 18.0
 
 # Whole-sequence price. Sitting between this and the basic cost is the interesting
 # band: you can open, but you cannot commit to finishing. Kept in sync by hand with
 # the phase arrays in _begin_sword_combo and _begin_knife_combo.
-func _combo_stamina_cost() -> float:
+func _combo_energy_cost() -> float:
 	return 60.0 if player_weapon_frame == "twin_knives" else 54.0 if player_weapon_frame == "knife" else 56.0
 
-func _spend_stamina(raw_amount: float, scaled: bool = true) -> bool:
+func _spend_energy(raw_amount: float, scaled: bool = true) -> bool:
 	# Priced in both profiles even though Recovery deducts nothing, because Recovery
 	# derives its cooldown from this number. One authored cost, two rule sets.
-	_last_stamina_spend = stamina_cost(raw_amount) if scaled else raw_amount
-	if not uses_stamina_rules(): return true
+	_last_energy_spend = energy_cost(raw_amount) if scaled else raw_amount
+	if not uses_energy_rules(): return true
 	if raw_amount <= 0.0: return true
 	if not _can_commit_physical_action(): return false
-	var amount := stamina_cost(raw_amount) if scaled else raw_amount
-	var before := player_stamina
-	player_stamina = maxf(0.0, player_stamina - amount)
-	stamina_spent_total += amount
-	stamina_depleted_total += before - player_stamina
-	stamina_overdraw_total += maxf(0.0, amount - before)
+	var amount := energy_cost(raw_amount) if scaled else raw_amount
+	var before := player_energy
+	player_energy = maxf(0.0, player_energy - amount)
+	energy_spent_total += amount
+	energy_depleted_total += before - player_energy
+	energy_overdraw_total += maxf(0.0, amount - before)
 	# Spending no longer arms the regeneration delay. Only being hit does, so
 	# recovery reads as continuous breathing rather than a hold-then-snap refill.
-	if player_stamina <= 0.0001:
-		player_stamina = 0.0
+	if player_energy <= 0.0001:
+		player_energy = 0.0
 		player_overexertion_pending = true
 	return true
 
-func _regenerate_stamina(dt: float) -> void:
-	if not uses_stamina_rules() or player_overexertion_pending or dt <= 0.0: return
+func _regenerate_energy(dt: float) -> void:
+	if not uses_energy_rules() or player_overexertion_pending or dt <= 0.0: return
 	# Suspended while hidden. A 10/s drain against 28/s of regeneration is not a price,
 	# it is a slower profit -- hiding would still refill you. Concealment has to compete
 	# with dodging for the same pool or the drain means nothing.
 	if stealth_remaining > 0.0: return
 	var active_dt := dt
-	if player_stamina_regen_delay > 0.0:
-		var delayed := minf(player_stamina_regen_delay, active_dt)
-		player_stamina_regen_delay -= delayed
-		stamina_regen_delay_time_total += delayed
+	if player_energy_regen_delay > 0.0:
+		var delayed := minf(player_energy_regen_delay, active_dt)
+		player_energy_regen_delay -= delayed
+		energy_regen_delay_time_total += delayed
 		active_dt -= delayed
-	if active_dt <= 0.0 or player_stamina >= player_max_stamina: return
-	var before := player_stamina
-	player_stamina = minf(player_max_stamina, player_stamina + STAMINA_REGEN_PER_SECOND * active_dt)
-	stamina_regenerated_total += player_stamina - before
-	stamina_regen_active_time_total += active_dt
+	if active_dt <= 0.0 or player_energy >= player_max_energy: return
+	var before := player_energy
+	player_energy = minf(player_max_energy, player_energy + ENERGY_REGEN_PER_SECOND * active_dt)
+	energy_regenerated_total += player_energy - before
+	energy_regen_active_time_total += active_dt
 
 # Alerted state rather than raw proximity: an Archer at 600 units putting arrows
 # into you is threat, and distance alone says otherwise. `soonest` is how long
@@ -2590,7 +2595,7 @@ func _record_exhaustion_threat(start: bool) -> void:
 		if alerted == 0: exhaustion_end_clear += 1
 
 func _begin_exhaustion() -> void:
-	if not uses_stamina_rules(): return
+	if not uses_energy_rules(): return
 	player_overexertion_pending = false
 	player_exhaustion_remaining = EXHAUSTION_DURATION
 	overexertion_count += 1
@@ -2598,14 +2603,14 @@ func _begin_exhaustion() -> void:
 	_set_message("EXHAUSTED — attacks are locked and your footwork is slow. Dodge still answers, but it costs you the recovery.")
 
 func _shorten_recovery(duration: float, active_end: float, factor: float = 0.60) -> float:
-	if not uses_stamina_rules(): return duration
+	if not uses_energy_rules(): return duration
 	return active_end + maxf(0.0, duration - active_end) * factor
 
 func _linked_combo_phases(raw_phases: Array[Dictionary], recovery_before_link: float = 0.25) -> Array[Dictionary]:
 	# Each authored phase keeps its complete terminal recovery. Continuing the
 	# sequence commits at a weapon-specific link point during the follow-through,
 	# then starts the next wind-up without serving the rest of that recovery.
-	# This timing grammar is shared by Recovery and Stamina rules; the profiles
+	# This timing grammar is shared by Recovery and Energy rules; the profiles
 	# differ in how actions are budgeted, not in how the same weapon handles.
 	var result: Array[Dictionary] = []
 	var raw_origin := 0.0
@@ -2625,23 +2630,23 @@ func _linked_combo_phases(raw_phases: Array[Dictionary], recovery_before_link: f
 		linked_origin = float(linked["link"])
 	return result
 
-func _increase_max_stamina(amount: float) -> void:
-	player_max_stamina += amount
-	player_stamina = minf(player_max_stamina, player_stamina + amount)
-	player_attributes["stamina"] = roundi(player_max_stamina)
+func _increase_max_energy(amount: float) -> void:
+	player_max_energy += amount
+	player_energy = minf(player_max_energy, player_energy + amount)
+	player_attributes["energy"] = roundi(player_max_energy)
 
-func _migrate_v25_temperament_to_stamina() -> void:
-	player_max_stamina = 100.0
+func _migrate_v25_temperament_to_energy() -> void:
+	player_max_energy = 100.0
 	for stage_index in range(1, 5):
 		var steadfast_choice := String(track_choices.get("steadfast_%d" % stage_index, ""))
 		if steadfast_choice == "vigilance":
 			player_attributes["speed"] = maxi(0, int(player_attributes.get("speed", 0)) - 1)
-			player_max_stamina += 10.0
+			player_max_energy += 10.0
 		var finesse_choice := String(track_choices.get("finesse_%d" % stage_index, ""))
 		if finesse_choice == "fleetness":
 			player_max_hp = maxi(1, player_max_hp - 5)
 			player_hp = mini(player_hp, player_max_hp)
-			player_max_stamina += 10.0
+			player_max_energy += 10.0
 		elif finesse_choice == "subtlety":
 			player_attributes["awareness"] = maxi(0, int(player_attributes.get("awareness", 0)) - 1)
 			player_max_hp += 5
@@ -2649,9 +2654,9 @@ func _migrate_v25_temperament_to_stamina() -> void:
 		var patient_choice := String(track_choices.get("patient_%d" % stage_index, ""))
 		if patient_choice == "observation":
 			player_attributes["stealth"] = maxi(0, int(player_attributes.get("stealth", 0)) - 1)
-			player_max_stamina += 10.0
+			player_max_energy += 10.0
 	player_attributes["health"] = player_max_hp
-	player_attributes["stamina"] = roundi(player_max_stamina)
+	player_attributes["energy"] = roundi(player_max_energy)
 
 func _player_physical_damage(technique_base: int) -> int:
 	return technique_base + int(player_attributes.get("strength", 0))
@@ -2759,7 +2764,7 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 		direction = player_facing
 	player_facing = direction.normalized()
 	var definition := _player_basic_attack_definition(player_facing)
-	if not _spend_stamina(_basic_attack_stamina_cost()): return false
+	if not _spend_energy(_basic_attack_energy_cost()): return false
 	player_action = _melee_action(float(definition["duration"]), float(definition["startup"]), float(definition["active_end"]), float(definition["reach"]), int(definition["damage_max"]), player_facing, String(definition["technique"]), "attack")
 	player_action["damage_min"] = int(definition["damage_min"])
 	player_action["damage_max"] = int(definition["damage_max"])
@@ -2879,7 +2884,7 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	if direction.length_squared() > 0.01: set_bow_aim(direction)
 	var draw_time := float(player_action.get("elapsed", 0.0))
 	var ratio := clampf(draw_time / 0.90, 0.0, 1.0)
-	if not _spend_stamina(lerpf(10.0, 28.0, ratio)):
+	if not _spend_energy(lerpf(10.0, 28.0, ratio)):
 		player_action = _idle_action()
 		return false
 	var strength_adjustment := int(player_attributes.get("strength", 4)) - 4
@@ -2914,7 +2919,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	var total := 2.65 * speed_scale
 	var interval := total / float(count)
 	var techniques := ["knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"]
-	var stamina_costs := [12.0, 9.0, 9.0, 9.0, 9.0, 12.0] if twin else [14.0, 12.0, 12.0, 16.0]
+	var energy_costs := [12.0, 9.0, 9.0, 9.0, 9.0, 12.0] if twin else [14.0, 12.0, 12.0, 16.0]
 	var phases: Array[Dictionary] = []
 	for index in range(count):
 		var phase_start := interval * float(index)
@@ -2927,11 +2932,11 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 			"damage_max": _player_physical_damage(1 if twin else 2) + (1 if has_track_rank("knife", 2) else 0),
 			"posture": 0.65 if twin else 1.0,
 			"technique": techniques[index % techniques.size()],
-			"stamina_cost": stamina_costs[index],
+			"energy_cost": energy_costs[index],
 		})
 	phases = _linked_combo_phases(phases, 0.20)
 	total = float(phases[-1]["end"])
-	if not _spend_stamina(float(stamina_costs[0])): return
+	if not _spend_energy(float(energy_costs[0])): return
 	player_action = _action("combo", total, player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = phases.size()
@@ -2951,7 +2956,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	_set_message("The Knife sequence begins. Hold to continue cutting.")
 
 func request_execution(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(EXECUTION_STAMINA): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(EXECUTION_ENERGY): return false
 	player_facing = direction.normalized()
 	var execution_damage := _player_physical_damage(8)
 	player_action = _melee_action(1.16, 0.34, 0.45, 92.0, execution_damage, player_facing, "knife_falling_cut", "sweep")
@@ -2976,7 +2981,7 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 	# announced the approach instead: the victim woke during the 1.16s wind-up and walked
 	# out of its own execution.
 	player_action["impact_sound"] = 260.0
-	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_set_message("You commit to Execution.")
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
@@ -2997,13 +3002,13 @@ func _execution_target_id(direction: Vector2) -> int:
 	return best_id
 
 func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(32.0): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(32.0): return false
 	player_facing = direction.normalized()
 	player_action = _action("twin_fang", _shorten_recovery(0.68, 0.29), player_facing)
 	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_twin_fang")
-	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 300.0)
 	_set_message("Twin Fang drives both blades through one opening.")
 	if simulate_immediately: _simulate_until_ready()
@@ -3011,14 +3016,14 @@ func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) ->
 	return true
 
 func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(38.0 if piercing else 32.0): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(38.0 if piercing else 32.0): return false
 	player_facing = direction.normalized()
 	var art_startup := 0.54 if piercing else 0.28
 	var art_duration := _shorten_recovery(1.50 if piercing else 0.90, art_startup, 0.68)
 	player_action = _action("bow_art", art_duration, player_facing)
 	player_action.merge({"startup": 0.54 if piercing else 0.28, "shot_spawned": false, "piercing": piercing}, true)
 	_annotate_player_action("bow_piercing_shot" if piercing else "bow_fan_shot")
-	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 260.0)
 	_set_message("You prepare %s." % ("Piercing Shot" if piercing else "Fan Shot"))
 	if simulate_immediately: _simulate_until_ready()
@@ -3090,24 +3095,24 @@ func request_stealth(simulate_immediately: bool = true) -> bool:
 	else: _streamed_action_cpu_usec = 0
 	return true
 
-# Priced under Stamina for the first time. Vault, Take Aim and Stealth were the only
-# abilities in the file sitting on a cooldown with NO `uses_stamina_rules()` waiver and
-# no cost -- together 116 stamina of ability use against a 100 pool, free, every room.
+# Priced under Energy for the first time. Vault, Take Aim and Stealth were the only
+# abilities in the file sitting on a cooldown with NO `uses_energy_rules()` waiver and
+# no cost -- together 116 energy of ability use against a 100 pool, free, every room.
 # 51 raw spends 33.2 and derives the 8.0s cooldown that was previously hand-authored;
 # the Acrobat's rank-4 discount moves the cost rather than the cooldown, so one number
 # still drives both profiles and the 4.8s falls out unchanged.
-const VAULT_STAMINA := 51.0
-const TAKE_AIM_STAMINA := 51.0
+const VAULT_ENERGY := 51.0
+const TAKE_AIM_ENERGY := 51.0
 
 func request_vault(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	var vault_stamina := VAULT_STAMINA * (0.6 if has_track_rank("acrobat", 4) else 1.0)
-	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(vault_stamina): return false
+	var vault_energy := VAULT_ENERGY * (0.6 if has_track_rank("acrobat", 4) else 1.0)
+	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(vault_energy): return false
 	player_facing = direction.normalized()
 	var recovery := 0.10 if has_track_rank("acrobat", 1) else 0.20
 	player_action = _action("vault", 0.34 + recovery, player_facing)
 	player_action.merge({"speed": 582.0, "move_start": 0.0, "move_end": 0.34, "evade_start": 0.0, "evade_end": 0.34 + (0.06 if has_track_rank("acrobat", 2) else 0.0), "clean_dodge_triggered": false, "vault_crossed_ids": []}, true)
 	_annotate_player_action("acrobat_vault")
-	_begin_subclass_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend())
+	_begin_subclass_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_emit_sound(player_pos, 210.0)
 	_set_message("You Vault through the opening.")
 	if simulate_immediately: _simulate_until_ready()
@@ -3115,7 +3120,7 @@ func request_vault(direction: Vector2, simulate_immediately: bool = true) -> boo
 	return true
 
 func request_take_aim(target_id: int, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_stamina_rules()) or not _spend_stamina(TAKE_AIM_STAMINA): return false
+	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_energy_rules()) or not _spend_energy(TAKE_AIM_ENERGY): return false
 	var target := _enemy_by_id(target_id)
 	if target.is_empty() or not enemy_visible_to_player(target) or not is_visible(Vector2(target["pos"])): return false
 	player_facing = player_pos.direction_to(Vector2(target["pos"]))
@@ -3133,7 +3138,7 @@ func _enemy_by_id(enemy_id: int) -> Dictionary:
 	return {}
 
 func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> void:
-	if not _spend_stamina(18.0): return
+	if not _spend_energy(18.0): return
 	player_facing = direction.normalized()
 	var edge_damage := 1 if has_track_rank("swordsmanship", 3) else 0
 	var edge_posture := 0.5 if has_track_rank("swordsmanship", 3) else 0.0
@@ -3141,14 +3146,14 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	var duration := 3.08 if flowing else 3.34
 	var opener_startup := 0.24 if from_advance and has_track_rank("vanguard", 2) else 0.30
 	var opener_posture := 2.3 if from_advance and has_track_rank("vanguard", 2) else 1.8
-	var second_damage := 13 if uses_stamina_rules() else 10
-	var finisher_damage := 17 if uses_stamina_rules() else 15
-	var second_posture := 2.8 if uses_stamina_rules() else 2.2
-	var finisher_posture := 4.5 if uses_stamina_rules() else 3.8
+	var second_damage := 13 if uses_energy_rules() else 10
+	var finisher_damage := 17 if uses_energy_rules() else 15
+	var second_posture := 2.8 if uses_energy_rules() else 2.2
+	var finisher_posture := 4.5 if uses_energy_rules() else 3.8
 	var phases: Array[Dictionary] = [
-		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "stamina_cost": 18.0},
-		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": second_damage + edge_damage, "damage_max": second_damage + edge_damage, "posture": second_posture + edge_posture, "technique": "reverse_cut", "stamina_cost": 16.0},
-		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "stamina_cost": 22.0},
+		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "energy_cost": 18.0},
+		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": second_damage + edge_damage, "damage_max": second_damage + edge_damage, "posture": second_posture + edge_posture, "technique": "reverse_cut", "energy_cost": 16.0},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "energy_cost": 22.0},
 	]
 	phases = _linked_combo_phases(phases, 0.25)
 	duration = float(phases[-1]["end"])
@@ -3195,13 +3200,13 @@ func resume_combo_hold() -> bool:
 
 # Sweeping Cut is the Sword combo's third strike, available immediately, at the
 # combo's full price. It is not a wider, cheaper, faster version of that finisher,
-# which is what it had become: a 160-degree arc for 34 Stamina in 23% of the
+# which is what it had become: a 160-degree arc for 34 Energy in 23% of the
 # combo's time, so building the sequence for its own finisher was never correct.
 #
 # Now it shares the finisher's geometry, damage and posture, costs exactly what
 # the whole combo costs, and serves its complete terminal recovery in both rule
 # profiles. What you buy is the *time* you skip, and you pay the full price for it.
-# It is no longer exempt from STAMINA_COST_SCALE. The exemption held the price at 56
+# It is no longer exempt from ENERGY_COST_SCALE. The exemption held the price at 56
 # while everything around it scaled, which meant a global re-tune of the price level
 # would move every ability EXCEPT this one -- the real defect, and not one the number
 # itself caused. The authored cost is raised to 86 instead, so it still spends ~56 by
@@ -3210,20 +3215,20 @@ func resume_combo_hold() -> bool:
 # time is a special attack, not a cheaper way to reach the same place.
 #
 # The original reasoning -- charge the sword combo's full price for skipping the
-# combo's time -- assumed 1.9 saved seconds were worth about a combo's Stamina.
-# They are not, once Stamina regenerates at 28/s: 0.2.17 halved the sweep to 28
+# combo's time -- assumed 1.9 saved seconds were worth about a combo's Energy.
+# They are not, once Energy regenerates at 28/s: 0.2.17 halved the sweep to 28
 # and the 0.2.18 survey came back "sweeping is still too easy", with the death
 # room played as five sweeps and one combo. Price parity cannot restrain an
 # action that refills faster than its advantage decays, so the sweep keeps the
 # full 56 while everything around it scales -- roughly one and a half combos.
-const SWEEPING_CUT_STAMINA := 86.0
+const SWEEPING_CUT_ENERGY := 86.0
 # Doubled from 30. A silent, cheap, high-damage opener with no wind-up was worth
 # spamming; noise alone might have restrained it, but the price is the part that makes
 # choosing it a decision rather than a default.
-const EXECUTION_STAMINA := 60.0
+const EXECUTION_ENERGY := 60.0
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(SWEEPING_CUT_STAMINA):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(SWEEPING_CUT_ENERGY):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -3234,11 +3239,11 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	# Deliberately identical to the combo's turning slash, including how the two
 	# rule profiles differ, so this reads as that strike arriving early rather than
 	# as a separate and better attack.
-	var finisher_damage := 17 if uses_stamina_rules() else 15
-	var finisher_posture := 4.5 if uses_stamina_rules() else 3.8
+	var finisher_damage := 17 if uses_energy_rules() else 15
+	var finisher_posture := 4.5 if uses_energy_rules() else 3.8
 	var full_duration := 1.29 if flowing else 1.42
 	player_action = _melee_action(full_duration, 0.44, 0.57, 178.0 if extended else 158.0, finisher_damage, player_facing, "turning_slash", "sweep")
-	# `_melee_action` shortens recovery for "sweep" under Stamina rules, which is
+	# `_melee_action` shortens recovery for "sweep" under Energy rules, which is
 	# right for Knife Execution and Drawing Cut but not here: physical commitment is
 	# shared across profiles and only the resource model differs. Restore the full
 	# authored recovery so the terminal window is actually visible.
@@ -3248,10 +3253,10 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	player_action["damage_max"] = int(player_action["damage_min"])
 	_apply_action_poise(player_action)
 	_annotate_player_action(player_equipped_weapon_art if player_equipped_weapon_art != "" else "prototype_sweeping_cut")
-	# No attack cooldown under Stamina: commitment, recovery and cost govern it, as
+	# No attack cooldown under Energy: commitment, recovery and cost govern it, as
 	# they govern every other physical attack. Recovery rules keep their own
 	# budgeting, which is the modes' actual difference. Matches Drawing Cut.
-	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
 	if simulate_immediately: _simulate_until_ready()
@@ -3259,7 +3264,7 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	return true
 
 func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(32.0):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(32.0):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -3273,7 +3278,7 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	player_action["damage_max"] = int(player_action["damage_min"])
 	_apply_action_poise(player_action)
 	_annotate_player_action("prototype_drawing_cut")
-	_begin_skill_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 410.0)
 	_set_message("You draw through a narrow opening in one committed cut.")
 	if simulate_immediately: _simulate_until_ready()
@@ -3281,19 +3286,19 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	return true
 
 func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (dodge_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01:
+	if not is_player_ready() or trial_complete or (dodge_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01:
 		return false
 	# Exhaustion locks every physical action except this one. Milestone B's floor --
 	# a hit must always leave one executable response -- outranks the lockout, so
-	# the Dodge stays reachable and pays in debt instead of Stamina.
-	var desperate := uses_stamina_rules() and not _can_commit_physical_action()
-	# Rolling smothers fire. Checked before the stamina gate so a winded player still has
+	# the Dodge stays reachable and pays in debt instead of Energy.
+	var desperate := uses_energy_rules() and not _can_commit_physical_action()
+	# Rolling smothers fire. Checked before the energy gate so a winded player still has
 	# the one answer to burning that exhaustion cannot take away.
 	if float(player_conditions.get("burning", 0.0)) > 0.0:
 		player_conditions["burning"] = maxf(0.0, float(player_conditions["burning"]) - BURN_DODGE_RELIEF)
 		if float(player_conditions["burning"]) <= 0.0: player_conditions.erase("burning")
 		player_condition_buildup["burning"] = 0.0
-	if not desperate and not _spend_stamina(DODGE_STAMINA_COST):
+	if not desperate and not _spend_energy(DODGE_ENERGY_COST):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -3306,10 +3311,10 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	var evade_end := 0.38
 	var speed := DODGE_SPEED
 	var cooldown := 3.6 if has_track_rank("evasion", 1) else DODGE_COOLDOWN
-	if uses_stamina_rules():
-		# Stamina Dodge has no long cooldown. Every learned form strictly improves
+	if uses_energy_rules():
+		# Energy Dodge has no long cooldown. Every learned form strictly improves
 		# the modest but dependable basic Dodge, then specializes either recovery
-		# or protected displacement without hiding a higher Stamina cost.
+		# or protected displacement without hiding a higher Energy cost.
 		if style == "sidestep":
 			duration = 0.47
 			move_start = 0.05
@@ -3370,15 +3375,15 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	player_action.merge({"speed": speed, "move_start": move_start, "move_end": move_end, "evade_start": evade_start, "evade_end": evade_end, "vulnerable_recovery_start": evade_end, "dodge_style": reported_style, "clean_dodge_triggered": false}, true)
 	dodge_style_uses_total[reported_style] = int(dodge_style_uses_total.get(reported_style, 0)) + 1
 	_annotate_player_action("defense_dodge")
-	dodge_cooldown = 0.0 if uses_stamina_rules() else cooldown
+	dodge_cooldown = 0.0 if uses_energy_rules() else cooldown
 	_emit_sound(player_pos, 270.0)
 	if desperate:
 		# Flat debt: the bar empties and the clock restarts at the same duration
 		# every time. Chaining is already self-limiting -- at 117 u/s only the
 		# dodged attack misses, so a chain resolves in damage rather than stalling.
-		player_stamina = 0.0
+		player_energy = 0.0
 		player_overexertion_pending = false
-		player_stamina_regen_delay = 0.0
+		player_energy_regen_delay = 0.0
 		player_exhaustion_remaining = EXHAUSTION_DURATION
 		exhausted_dodge_total += 1
 		exhausted_dodge_chain += 1
@@ -3408,7 +3413,7 @@ func rally_is_available() -> bool:
 	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and rally_remaining <= 0.0001
 
 func request_advance(direction: Vector2, continue_held: bool = false, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_stamina_rules()) or direction.length_squared() < 0.01 or not _spend_stamina(28.0): return false
+	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(28.0): return false
 	_break_player_combo()
 	_reset_building_force()
 	player_facing = direction.normalized()
@@ -3422,7 +3427,7 @@ func request_advance(direction: Vector2, continue_held: bool = false, simulate_i
 		"continue_held": continue_held, "impact_ids": [], "pass_mass": -1.0, "max_targets": 1,
 	}, true)
 	_apply_action_poise(player_action, 4.0)
-	_begin_advance_cooldown(0.0 if uses_stamina_rules() else _cooldown_for_last_spend())
+	_begin_advance_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("vanguard_advance")
 	_emit_sound(player_pos, 420.0)
 	_set_message("You commit to Advance.")
@@ -3716,7 +3721,7 @@ func activate_waystone() -> bool:
 	_capture_anchor_history()
 	last_anchor_report = {"xp": xp_gained, "memories": memories_gained, "shortcut": shortcut_gained, "restored": true}
 	_add_effect("anchor", bonfire_pos, xp_gained)
-	var parts: Array[String] = ["health and Stamina restored", "enemies revived"]
+	var parts: Array[String] = ["health and Energy restored", "enemies revived"]
 	if xp_gained > 0: parts.append("%d XP integrated" % xp_gained)
 	if memories_gained > 0: parts.append("%d map traces anchored" % memories_gained)
 	if shortcut_gained: parts.append("shortcut remembered")
@@ -4094,10 +4099,10 @@ func _load_current_layer_discovery() -> void:
 
 func _restore_at_waystone() -> void:
 	player_hp = player_max_hp
-	player_stamina = player_max_stamina
+	player_energy = player_max_energy
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
-	player_stamina_regen_delay = 0.0
+	player_energy_regen_delay = 0.0
 	potions = healing_capacity()
 	dodge_cooldown = 0.0
 	block_cooldown = 0.0
@@ -4109,10 +4114,10 @@ func _restore_at_waystone() -> void:
 	subclass_ability_cooldown = 0.0
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
-	stealth_stamina_paid = 0.0
+	stealth_energy_paid = 0.0
 	_stealth_last_ended_at = -1.0
 	_formation_use_counts.clear()
-	_last_stamina_spend = 0.0
+	_last_energy_spend = 0.0
 	skill_cooldown_max = 6.5
 	advance_cooldown_max = 6.0
 	main_ability_cooldown_max = 12.0
@@ -4257,7 +4262,7 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 				player_attributes["resolve"] = int(player_attributes.get("resolve", 7)) + 1
 				_refresh_player_posture_capacity(false)
 			elif choice_id == "vigilance":
-				_increase_max_stamina(10.0)
+				_increase_max_energy(10.0)
 				player_attributes["awareness"] = int(player_attributes.get("awareness", 5)) + 1
 		"warriors_physique":
 			_increase_max_health(20)
@@ -4277,14 +4282,14 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 		"finesse_1", "finesse_2", "finesse_3", "finesse_4":
 			if choice_id == "fleetness":
 				player_attributes["speed"] = int(player_attributes.get("speed", 7)) + 1
-				_increase_max_stamina(10.0)
+				_increase_max_energy(10.0)
 			elif choice_id == "subtlety":
 				player_attributes["stealth"] = int(player_attributes.get("stealth", 7)) + 1
 				_increase_max_health(5)
 		"patient_1", "patient_2", "patient_3", "patient_4":
 			if choice_id == "observation":
 				player_attributes["awareness"] = int(player_attributes.get("awareness", 8)) + 1
-				_increase_max_stamina(10.0)
+				_increase_max_energy(10.0)
 			elif choice_id == "composure":
 				player_attributes["resolve"] = int(player_attributes.get("resolve", 4)) + 1
 				_refresh_player_posture_capacity(false)
@@ -4332,12 +4337,12 @@ func character_sheet_data() -> Dictionary:
 		tracks.append({"id": track_id, "label": definition["label"], "description": definition["description"], "rank": rank, "stages": stages, "next_stage": next_track_stage(track_id)})
 	var sheet_attributes := player_attributes.duplicate(true)
 	sheet_attributes["health"] = player_max_hp
-	sheet_attributes["stamina"] = roundi(player_max_stamina)
+	sheet_attributes["energy"] = roundi(player_max_energy)
 	return {
 		"name": CombatCatalogScript.loadout_name(loadout_id),
 		"attributes": sheet_attributes,
-		"current_stamina": player_stamina,
-		"maximum_stamina": player_max_stamina,
+		"current_energy": player_energy,
+		"maximum_energy": player_max_energy,
 		"equipment": equipment_slots.duplicate(true),
 		"healing_charges": potions,
 		"healing_capacity": healing_capacity(),
@@ -4511,18 +4516,18 @@ func _tick(dt: float) -> void:
 			_set_message("Rally fades. Its recovery begins.")
 	strength_remaining = maxf(0.0, strength_remaining - dt)
 	var player_action_kind := String(player_action.get("kind", "idle"))
-	if uses_stamina_rules() and player_action_kind in STAMINA_REGEN_ACTIONS:
-		_regenerate_stamina(dt)
+	if uses_energy_rules() and player_action_kind in ENERGY_REGEN_ACTIONS:
+		_regenerate_energy(dt)
 	# Time too poor to act, measured as a state rather than as refused attempts.
 	# A counter of declined actions records nothing, because a player who can read
 	# a greyed-out control never presses it -- the constraint has to be observed
 	# from the bar, not from what was tried against it.
-	if uses_stamina_rules():
-		if player_stamina < stamina_cost(_basic_attack_stamina_cost()):
-			stamina_starved_time_total += dt
-		if player_stamina < stamina_cost(_combo_stamina_cost()):
-			stamina_combo_starved_time_total += dt
-	if uses_stamina_rules() and player_exhaustion_remaining > 0.0001:
+	if uses_energy_rules():
+		if player_energy < energy_cost(_basic_attack_energy_cost()):
+			energy_starved_time_total += dt
+		if player_energy < energy_cost(_combo_energy_cost()):
+			energy_combo_starved_time_total += dt
+	if uses_energy_rules() and player_exhaustion_remaining > 0.0001:
 		player_exhaustion_remaining = maxf(0.0, player_exhaustion_remaining - dt)
 		winded_time_total += dt
 		# Exhaustion sampled continuously rather than only at its two endpoints:
@@ -4669,7 +4674,7 @@ func _update_player(dt: float) -> void:
 		"dodge":
 			if elapsed >= float(player_action.get("move_start", 0.08)) and elapsed <= float(player_action.get("move_end", 0.38)):
 				player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
-			if uses_stamina_rules():
+			if uses_energy_rules():
 				var vulnerable_start := float(player_action.get("vulnerable_recovery_start", player_action.get("evade_end", 0.38)))
 				var previous_elapsed := elapsed - dt
 				var vulnerable_overlap := maxf(0.0, minf(elapsed, float(player_action["duration"])) - maxf(previous_elapsed, vulnerable_start))
@@ -4771,8 +4776,8 @@ func _update_player(dt: float) -> void:
 		var continue_advance := completed_kind == "advance" and has_track_rank("vanguard", 2) and bool(player_action.get("continue_held", false))
 		var completed_twin_sequence := completed_kind == "combo" and bool(player_action.get("knife_sequence", false)) and player_weapon_frame == "twin_knives" and int(player_action.get("committed_phase", 0)) >= int(player_action.get("combo_length", 6)) - 1
 		if completed_twin_sequence:
-			weapon_sequence_cooldown = 0.0 if uses_stamina_rules() else (0.55 if has_track_rank("knife", 5) else TWIN_KNIFE_SEQUENCE_RECOVERY)
-			if not uses_stamina_rules(): _set_message("The full sequence leaves your knives recovering.")
+			weapon_sequence_cooldown = 0.0 if uses_energy_rules() else (0.55 if has_track_rank("knife", 5) else TWIN_KNIFE_SEQUENCE_RECOVERY)
+			if not uses_energy_rules(): _set_message("The full sequence leaves your knives recovering.")
 		_break_player_combo()
 		player_action = _idle_action()
 		if completed_kind in ["stagger", "hit_reaction"]:
@@ -4781,7 +4786,7 @@ func _update_player(dt: float) -> void:
 				player_posture = player_posture_max
 		if rally_end_after_action: _finish_rally(true)
 		if player_overexertion_pending:
-			if continue_advance: stamina_blocked_continuations += 1
+			if continue_advance: energy_blocked_continuations += 1
 			_begin_exhaustion()
 		elif continue_advance:
 			_begin_sword_combo(completed_direction, true, true)
@@ -4887,12 +4892,12 @@ func _update_player_combo(elapsed: float) -> void:
 		if committed_phase >= phases.size() - 1 or not bool(player_action.get("continue_held", false)):
 			_lock_combo_terminal_recovery(phase)
 		elif not _can_commit_physical_action():
-			stamina_blocked_continuations += 1
+			energy_blocked_continuations += 1
 			_lock_combo_terminal_recovery(phase)
 		else:
 			var next_phase := committed_phase + 1
-			if not _spend_stamina(float(Dictionary(phases[next_phase]).get("stamina_cost", 0.0))):
-				stamina_blocked_continuations += 1
+			if not _spend_energy(float(Dictionary(phases[next_phase]).get("energy_cost", 0.0))):
+				energy_blocked_continuations += 1
 				_lock_combo_terminal_recovery(phase)
 			else:
 				committed_phase = next_phase
@@ -5277,7 +5282,7 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 			posture_damage *= 2.0
 		aimed_enemy_id = -1
 		aimed_remaining = 0.0
-		_begin_subclass_cooldown(0.0 if uses_stamina_rules() else _cooldown_for(stamina_cost(TAKE_AIM_STAMINA)))
+		_begin_subclass_cooldown(0.0 if uses_energy_rules() else _cooldown_for(energy_cost(TAKE_AIM_ENERGY)))
 	var source_ability := String(source_action.get("ability_id", ""))
 	if turnabout_remaining > 0.0 and source_ability in ["basic_attack", "sword_combo", "knife_sequence"]:
 		explicit_bonus += 8
@@ -5350,15 +5355,15 @@ func _handle_player_contact_aftermath(enemy: Dictionary, contact_result: Diction
 		_begin_stealth()
 		# Rank 5 refunds the hide it just earned rather than charging for it twice.
 		_begin_main_ability_cooldown(0.0)
-		stealth_stamina_paid = 0.0
+		stealth_energy_paid = 0.0
 		assassination_window_remaining = 0.0
 
 func _begin_stealth(duration: float = STEALTH_DURATION) -> void:
 	if stealth_remaining <= 0.0:
-		stealth_stamina_paid = 0.0
+		stealth_energy_paid = 0.0
 		survey_stealth_entries_total += 1
 		# How fast concealment is re-entered is the measure of whether hide-execute-hide
-		# has become the whole class. With no Stamina-mode cooldown, `player_is_noticed()`
+		# has become the whole class. With no Energy-mode cooldown, `player_is_noticed()`
 		# is the only thing rationing it -- and rogue rank 4 removes even that.
 		if _stealth_last_ended_at >= 0.0 and simulation_time - _stealth_last_ended_at <= 3.0:
 			survey_stealth_quick_reentries_total += 1
@@ -5368,33 +5373,33 @@ func _begin_stealth(duration: float = STEALTH_DURATION) -> void:
 
 func _drain_stealth(dt: float) -> void:
 	var charge := STEALTH_DRAIN_PER_SECOND * dt
-	stealth_stamina_paid += charge
+	stealth_energy_paid += charge
 	survey_stealth_hidden_time_total += dt
-	if not uses_stamina_rules(): return
-	_spend_stamina(charge, false)
+	if not uses_energy_rules(): return
+	_spend_energy(charge, false)
 	# Running the pool dry drops the veil. Exhaustion is a state you cannot hide in.
-	if player_stamina <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0:
+	if player_energy <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0:
 		_end_stealth("exhausted")
 
 func _end_stealth(reason: String) -> void:
 	if stealth_remaining <= 0.0 and not stealth_cooldown_pending: return
 	stealth_remaining = 0.0
 	stealth_cooldown_pending = false
-	# The floor, charged however the hide ended. See STEALTH_MINIMUM_STAMINA: the
+	# The floor, charged however the hide ended. See STEALTH_MINIMUM_ENERGY: the
 	# rank-4 awareness wipe is instantaneous while a proportional price is not, so
 	# without this a quarter-second tap would be the strictly better play.
-	var owed := maxf(0.0, STEALTH_MINIMUM_STAMINA - stealth_stamina_paid)
+	var owed := maxf(0.0, STEALTH_MINIMUM_ENERGY - stealth_energy_paid)
 	if owed > 0.0:
-		stealth_stamina_paid += owed
-		if uses_stamina_rules(): _spend_stamina(owed, false)
-	survey_stealth_stamina_paid_total += stealth_stamina_paid
+		stealth_energy_paid += owed
+		if uses_energy_rules(): _spend_energy(owed, false)
+	survey_stealth_energy_paid_total += stealth_energy_paid
 	stealth_last_end_reason = reason
 	if reason == "cancelled": survey_stealth_cancels_total += 1
 	_stealth_last_ended_at = simulation_time
 	# A full 5s hide pays 50, which derives 12.0s -- exactly the cooldown that shipped
 	# before this change. A hide cut short at 1.5s pays 20 (the floor) and derives 4.8s.
-	_begin_main_ability_cooldown(0.0 if uses_stamina_rules() else _cooldown_for(stealth_stamina_paid))
-	stealth_stamina_paid = 0.0
+	_begin_main_ability_cooldown(0.0 if uses_energy_rules() else _cooldown_for(stealth_energy_paid))
+	stealth_energy_paid = 0.0
 
 # Free and instant: this stops a cost rather than performing an action, so there is
 # nothing to commit to and no world time to spend. Without it the drain is not a drain
@@ -7216,8 +7221,8 @@ func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 			_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 14)), String(enemy["kind"]), Vector2.ZERO, contact, float(action.get("posture", -1.0)))
 
 func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2, technique_id: String = "diagonal_cut", action_kind: String = "melee") -> Dictionary:
-	# Stamina shortens player commitments only. Before v0.2.6 this helper also
-	# shortened every enemy attack whenever the run used Stamina rules, which made
+	# Energy shortens player commitments only. Before v0.2.6 this helper also
+	# shortened every enemy attack whenever the run used Energy rules, which made
 	# bandits and other fast enemies re-enter attacks before their authored recovery.
 	var profiled_duration := _shorten_recovery(duration, active_end) if action_kind in ["attack", "sweep"] else duration
 	var result := _action(action_kind, profiled_duration, direction)
@@ -7801,13 +7806,13 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	player_hp = maxi(0, player_hp - damage_received)
 	damage_received_total += damage_received
 	if was_protected: protected_damage_total += damage_received
-	if uses_stamina_rules() and interrupted_kind == "dodge" and float(interrupted_action.get("elapsed", 0.0)) > float(interrupted_action.get("evade_end", 0.0)):
+	if uses_energy_rules() and interrupted_kind == "dodge" and float(interrupted_action.get("elapsed", 0.0)) > float(interrupted_action.get("evade_end", 0.0)):
 		dodge_recovery_damage_total += damage_received
 	if player_exhaustion_remaining > 0.0001: exhaustion_damage_received_total += damage_received
 	hits_received_total += 1
 	player_posture = maxf(0.0, player_posture - posture_damage)
 	player_posture_recovery_delay = 1.15
-	player_stamina_regen_delay = maxf(player_stamina_regen_delay, STAMINA_REGEN_DELAY)
+	player_energy_regen_delay = maxf(player_energy_regen_delay, ENERGY_REGEN_DELAY)
 	_add_effect("hurt", impact, damage_received)
 	_break_stealth_for_hostile_action()
 	_apply_source_condition_to_player(source_name)
@@ -8568,10 +8573,10 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"player_facing": player_facing,
 		"player_hp": player_hp,
 		"player_max_hp": player_max_hp,
-		"player_stamina": player_stamina,
-		"player_max_stamina": player_max_stamina,
+		"player_energy": player_energy,
+		"player_max_energy": player_max_energy,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
-		"player_stamina_regen_delay": player_stamina_regen_delay,
+		"player_energy_regen_delay": player_energy_regen_delay,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -8600,8 +8605,8 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"survey_stealth_cancels_total": survey_stealth_cancels_total,
 		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
 		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
-		"survey_stealth_stamina_paid_total": survey_stealth_stamina_paid_total,
-		"stealth_stamina_paid": stealth_stamina_paid,
+		"survey_stealth_energy_paid_total": survey_stealth_energy_paid_total,
+		"stealth_energy_paid": stealth_energy_paid,
 		"skill_cooldown_max": skill_cooldown_max,
 		"advance_cooldown_max": advance_cooldown_max,
 		"main_ability_cooldown_max": main_ability_cooldown_max,
@@ -8643,13 +8648,13 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"protected_damage_total": protected_damage_total,
 		"interruptions_prevented_total": interruptions_prevented_total,
 		"potions_used_total": potions_used_total,
-		"stamina_spent_total": stamina_spent_total,
-		"stamina_depleted_total": stamina_depleted_total,
-		"stamina_overdraw_total": stamina_overdraw_total,
-		"stamina_regenerated_total": stamina_regenerated_total,
+		"energy_spent_total": energy_spent_total,
+		"energy_depleted_total": energy_depleted_total,
+		"energy_overdraw_total": energy_overdraw_total,
+		"energy_regenerated_total": energy_regenerated_total,
 		"overexertion_count": overexertion_count,
 		"winded_time_total": winded_time_total,
-		"stamina_blocked_continuations": stamina_blocked_continuations,
+		"energy_blocked_continuations": energy_blocked_continuations,
 		"exhaustion_damage_received_total": exhaustion_damage_received_total,
 		"exhaustion_move_time_total": exhaustion_move_time_total,
 		"exhaustion_wait_time_total": exhaustion_wait_time_total,
@@ -8666,8 +8671,8 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"exhaustion_end_clear": exhaustion_end_clear,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
-		"stamina_starved_time_total": stamina_starved_time_total,
-		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"energy_starved_time_total": energy_starved_time_total,
+		"energy_combo_starved_time_total": energy_combo_starved_time_total,
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"message": message,
 		"run_active": run_active,
@@ -8794,11 +8799,11 @@ func _build_save_payload() -> Dictionary:
 		"player_facing": player_facing,
 		"player_hp": player_hp,
 		"player_max_hp": player_max_hp,
-		"player_stamina": player_stamina,
-		"player_max_stamina": player_max_stamina,
+		"player_energy": player_energy,
+		"player_max_energy": player_max_energy,
 		"player_overexertion_pending": player_overexertion_pending,
 		"player_exhaustion_remaining": player_exhaustion_remaining,
-		"player_stamina_regen_delay": player_stamina_regen_delay,
+		"player_energy_regen_delay": player_energy_regen_delay,
 		"combat_rules": combat_rules,
 		"player_posture": player_posture,
 		"player_posture_max": player_posture_max,
@@ -8842,8 +8847,8 @@ func _build_save_payload() -> Dictionary:
 		"survey_stealth_cancels_total": survey_stealth_cancels_total,
 		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
 		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
-		"survey_stealth_stamina_paid_total": survey_stealth_stamina_paid_total,
-		"stealth_stamina_paid": stealth_stamina_paid,
+		"survey_stealth_energy_paid_total": survey_stealth_energy_paid_total,
+		"stealth_energy_paid": stealth_energy_paid,
 		"skill_cooldown_max": skill_cooldown_max,
 		"advance_cooldown_max": advance_cooldown_max,
 		"main_ability_cooldown_max": main_ability_cooldown_max,
@@ -8890,15 +8895,15 @@ func _build_save_payload() -> Dictionary:
 		"protected_damage_total": protected_damage_total,
 		"interruptions_prevented_total": interruptions_prevented_total,
 		"potions_used_total": potions_used_total,
-		"stamina_spent_total": stamina_spent_total,
-		"stamina_depleted_total": stamina_depleted_total,
-		"stamina_overdraw_total": stamina_overdraw_total,
-		"stamina_regenerated_total": stamina_regenerated_total,
-		"stamina_regen_delay_time_total": stamina_regen_delay_time_total,
-		"stamina_regen_active_time_total": stamina_regen_active_time_total,
+		"energy_spent_total": energy_spent_total,
+		"energy_depleted_total": energy_depleted_total,
+		"energy_overdraw_total": energy_overdraw_total,
+		"energy_regenerated_total": energy_regenerated_total,
+		"energy_regen_delay_time_total": energy_regen_delay_time_total,
+		"energy_regen_active_time_total": energy_regen_active_time_total,
 		"overexertion_count": overexertion_count,
 		"winded_time_total": winded_time_total,
-		"stamina_blocked_continuations": stamina_blocked_continuations,
+		"energy_blocked_continuations": energy_blocked_continuations,
 		"exhaustion_damage_received_total": exhaustion_damage_received_total,
 		"exhaustion_move_time_total": exhaustion_move_time_total,
 		"exhaustion_wait_time_total": exhaustion_wait_time_total,
@@ -8915,8 +8920,8 @@ func _build_save_payload() -> Dictionary:
 		"exhaustion_end_clear": exhaustion_end_clear,
 		"exhaustion_start_soonest_sum": exhaustion_start_soonest_sum,
 		"exhaustion_start_nearest_sum": exhaustion_start_nearest_sum,
-		"stamina_starved_time_total": stamina_starved_time_total,
-		"stamina_combo_starved_time_total": stamina_combo_starved_time_total,
+		"energy_starved_time_total": energy_starved_time_total,
+		"energy_combo_starved_time_total": energy_combo_starved_time_total,
 		"exhaustion_threatened_time_total": exhaustion_threatened_time_total,
 		"message": message,
 		"run_active": run_active,
@@ -8970,6 +8975,15 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	var value: Variant = file.get_var(true)
 	if not value is Dictionary: return false
 	var payload: Dictionary = value
+	# Every `..._stamina...` key written before 0.2.61 is read under its new name. The
+	# rename cost the historical record, which was known and accepted when it was
+	# scheduled -- but a save is not the historical record, it is a run in progress, and
+	# silently resetting someone's Energy to a default is a different thing entirely.
+	for saved_key in payload.keys():
+		var key_name := String(saved_key)
+		if not key_name.contains("stamina"): continue
+		var renamed := key_name.replace("stamina", "energy")
+		if not payload.has(renamed): payload[renamed] = payload[saved_key]
 	var save_version := int(payload.get("save_version", 0))
 	var migration_notices: Array[String] = []
 	# v19 replaces the prototype Wayfarer progression with the first durable
@@ -9000,7 +9014,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
 	run_seed = int(payload.get("run_seed", run_seed))
-	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "stamina")))
+	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")))
 	if mode_id == ModeRulesScript.COMBAT_SURVEY:
 		var saved_survey_room := int(payload.get("survey_room_number", 1))
 		if saved_survey_room > 1:
@@ -9019,11 +9033,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_facing = Vector2(payload.get("player_facing", Vector2.UP))
 	player_hp = int(payload.get("player_hp", player_max_hp))
 	player_max_hp = int(payload.get("player_max_hp", player_max_hp))
-	player_stamina = float(payload.get("player_stamina", player_max_stamina))
-	player_max_stamina = float(payload.get("player_max_stamina", player_max_stamina))
+	player_energy = float(payload.get("player_energy", player_max_energy))
+	player_max_energy = float(payload.get("player_max_energy", player_max_energy))
 	player_overexertion_pending = bool(payload.get("player_overexertion_pending", false))
 	player_exhaustion_remaining = float(payload.get("player_exhaustion_remaining", 0.0))
-	player_stamina_regen_delay = float(payload.get("player_stamina_regen_delay", 0.0))
+	player_energy_regen_delay = float(payload.get("player_energy_regen_delay", 0.0))
 	player_posture = float(payload.get("player_posture", player_posture))
 	player_posture_max = float(payload.get("player_posture_max", player_posture_max))
 	player_posture_recovery_delay = float(payload.get("player_posture_recovery_delay", 0.0))
@@ -9061,19 +9075,19 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	track_ranks = Dictionary(payload.get("track_ranks", _empty_character_track_ranks())).duplicate(true)
 	track_choices = Dictionary(payload.get("track_choices", {})).duplicate(true)
 	if save_version == 25:
-		_migrate_v25_temperament_to_stamina()
+		_migrate_v25_temperament_to_energy()
 	# Actions in older saves used the retired forced-Winded state. Migration ends
 	# any in-progress commitment and starts the new rule set from a clear resource.
-	if save_version < SAVE_VERSION: player_stamina = player_max_stamina
+	if save_version < SAVE_VERSION: player_energy = player_max_energy
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
-	player_stamina_regen_delay = 0.0
+	player_energy_regen_delay = 0.0
 	_defense_cooldown_multiplier = float(payload.get("defense_cooldown_multiplier", 1.0))
 	_skill_cooldown_multiplier = float(payload.get("skill_cooldown_multiplier", 1.0))
 	player_action = _idle_action()
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
-	player_stamina_regen_delay = 0.0
+	player_energy_regen_delay = 0.0
 	# v13 introduced a new semantic world grammar and changed Campaign area IDs.
 	# Older dynamic actors are regenerated so they cannot survive off-floor in the
 	# rewritten geography; learned progression and run statistics remain intact.
@@ -9200,15 +9214,15 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	protected_damage_total = int(payload.get("protected_damage_total", 0))
 	interruptions_prevented_total = int(payload.get("interruptions_prevented_total", 0))
 	potions_used_total = int(payload.get("potions_used_total", 0))
-	stamina_spent_total = float(payload.get("stamina_spent_total", 0.0))
-	stamina_depleted_total = float(payload.get("stamina_depleted_total", stamina_spent_total))
-	stamina_overdraw_total = float(payload.get("stamina_overdraw_total", 0.0))
-	stamina_regenerated_total = float(payload.get("stamina_regenerated_total", 0.0))
-	stamina_regen_delay_time_total = float(payload.get("stamina_regen_delay_time_total", 0.0))
-	stamina_regen_active_time_total = float(payload.get("stamina_regen_active_time_total", 0.0))
+	energy_spent_total = float(payload.get("energy_spent_total", 0.0))
+	energy_depleted_total = float(payload.get("energy_depleted_total", energy_spent_total))
+	energy_overdraw_total = float(payload.get("energy_overdraw_total", 0.0))
+	energy_regenerated_total = float(payload.get("energy_regenerated_total", 0.0))
+	energy_regen_delay_time_total = float(payload.get("energy_regen_delay_time_total", 0.0))
+	energy_regen_active_time_total = float(payload.get("energy_regen_active_time_total", 0.0))
 	overexertion_count = int(payload.get("overexertion_count", 0))
 	winded_time_total = float(payload.get("winded_time_total", 0.0))
-	stamina_blocked_continuations = int(payload.get("stamina_blocked_continuations", 0))
+	energy_blocked_continuations = int(payload.get("energy_blocked_continuations", 0))
 	exhaustion_damage_received_total = int(payload.get("exhaustion_damage_received_total", 0))
 	exhaustion_move_time_total = float(payload.get("exhaustion_move_time_total", 0.0))
 	exhaustion_wait_time_total = float(payload.get("exhaustion_wait_time_total", 0.0))
@@ -9225,16 +9239,16 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	exhaustion_end_clear = int(payload.get("exhaustion_end_clear", 0))
 	exhaustion_start_soonest_sum = float(payload.get("exhaustion_start_soonest_sum", 0.0))
 	exhaustion_start_nearest_sum = float(payload.get("exhaustion_start_nearest_sum", 0.0))
-	stamina_starved_time_total = float(payload.get("stamina_starved_time_total", 0.0))
-	stamina_combo_starved_time_total = float(payload.get("stamina_combo_starved_time_total", 0.0))
+	energy_starved_time_total = float(payload.get("energy_starved_time_total", 0.0))
+	energy_combo_starved_time_total = float(payload.get("energy_combo_starved_time_total", 0.0))
 	exhaustion_threatened_time_total = float(payload.get("exhaustion_threatened_time_total", 0.0))
 	terminal_combo_recoveries_total = int(payload.get("terminal_combo_recoveries_total", 0))
 	survey_stealth_entries_total = int(payload.get("survey_stealth_entries_total", 0))
 	survey_stealth_cancels_total = int(payload.get("survey_stealth_cancels_total", 0))
 	survey_stealth_quick_reentries_total = int(payload.get("survey_stealth_quick_reentries_total", 0))
 	survey_stealth_hidden_time_total = float(payload.get("survey_stealth_hidden_time_total", 0.0))
-	survey_stealth_stamina_paid_total = float(payload.get("survey_stealth_stamina_paid_total", 0.0))
-	stealth_stamina_paid = float(payload.get("stealth_stamina_paid", 0.0))
+	survey_stealth_energy_paid_total = float(payload.get("survey_stealth_energy_paid_total", 0.0))
+	stealth_energy_paid = float(payload.get("stealth_energy_paid", 0.0))
 	skill_cooldown_max = float(payload.get("skill_cooldown_max", 6.5))
 	advance_cooldown_max = float(payload.get("advance_cooldown_max", 6.0))
 	main_ability_cooldown_max = float(payload.get("main_ability_cooldown_max", 12.0))

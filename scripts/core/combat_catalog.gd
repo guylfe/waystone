@@ -6,11 +6,11 @@ extends RefCounted
 # catalogue gives every actor the same vocabulary so future character tracks,
 # equipment, and enemy variants can use one foundation.
 
-const ATTRIBUTE_KEYS := ["health", "stamina", "strength", "defense", "speed", "stealth", "awareness", "resolve", "resistance", "intelligence", "faith"]
+const ATTRIBUTE_KEYS := ["health", "energy", "strength", "defense", "speed", "stealth", "awareness", "resolve", "resistance", "intelligence", "faith"]
 
 const ATTRIBUTE_DEFAULTS := {
 	"health": 5,
-	"stamina": 100,
+	"energy": 100,
 	"strength": 5,
 	"defense": 0,
 	"speed": 5,
@@ -139,7 +139,7 @@ const CHARACTER_TRACKS := {
 		"stages": [
 			{"id": "steadfast_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Steadfast package.", "choices": [
 				{"id": "toughness", "label": "Toughness", "description": "+15 maximum health and +1 Resolve."},
-				{"id": "vigilance", "label": "Vigilance", "description": "+10 maximum Stamina and +1 Awareness."},
+				{"id": "vigilance", "label": "Vigilance", "description": "+10 maximum Energy and +1 Awareness."},
 			]},
 			{"id": "steadfast_2", "label": "Temperament II", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
 			{"id": "steadfast_3", "label": "Temperament III", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
@@ -186,7 +186,7 @@ const CHARACTER_TRACKS := {
 		"description": "Temperament: repeatedly choose Fleetness or Subtlety, up to four times.",
 		"stages": [
 			{"id": "finesse_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Finesse package.", "choices": [
-				{"id": "fleetness", "label": "Fleetness", "description": "+10 maximum Stamina and +1 Speed."},
+				{"id": "fleetness", "label": "Fleetness", "description": "+10 maximum Energy and +1 Speed."},
 				{"id": "subtlety", "label": "Subtlety", "description": "+5 maximum Health and +1 Stealth."},
 			]},
 			{"id": "finesse_2", "label": "Temperament II", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
@@ -237,7 +237,7 @@ const CHARACTER_TRACKS := {
 		"description": "Temperament: repeatedly choose Observation or Composure, up to four times.",
 		"stages": [
 			{"id": "patient_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Patient package.", "choices": [
-				{"id": "observation", "label": "Observation", "description": "+10 maximum Stamina and +1 Awareness."},
+				{"id": "observation", "label": "Observation", "description": "+10 maximum Energy and +1 Awareness."},
 				{"id": "composure", "label": "Composure", "description": "+5 maximum Health and +1 Resolve."},
 			]},
 			{"id": "patient_2", "label": "Temperament II", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},

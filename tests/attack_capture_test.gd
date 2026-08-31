@@ -30,7 +30,7 @@ func plan_option(kind: String, technique: String) -> Dictionary:
 # `response` is "retreat", "lateral", "dodge" or "none".
 func trial(kind: String, technique: String, response: String, respond_at: float, seed_value: int = 7001) -> Dictionary:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "combat_survey", seed_value, "encounter", "stamina")
+	state.start_run("warrior", "combat_survey", seed_value, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	var option := plan_option(kind, technique)
@@ -139,7 +139,7 @@ func test_direction_is_locked() -> void:
 	# The lunge travels the committed line and does not home. A player who reads it
 	# early and leaves sideways must not be followed.
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "combat_survey", 7001, "encounter", "stamina")
+	state.start_run("warrior", "combat_survey", 7001, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	var option := plan_option("blade", "diagonal_cut")

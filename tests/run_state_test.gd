@@ -58,7 +58,7 @@ func _init() -> void:
 	test_desktop_movement_tracks_screen_directions()
 	test_desktop_held_keys_combine_diagonally()
 	test_desktop_hold_attack_key()
-	test_stamina_direct_attack_button()
+	test_energy_direct_attack_button()
 	test_held_wait_repeats_until_release()
 	test_melee_enemy_tap_intent_classifier()
 	test_immediate_touch_drag_claims_movement()
@@ -875,7 +875,7 @@ func test_crowded_enemy_steers_around_another_actor() -> void:
 
 func test_flankers_reserve_interception_lanes() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "expedition", 717, "encounter", "stamina")
+	state.start_run("warrior", "expedition", 717, "encounter", "energy")
 	state.player_pos = Vector2(600, 600)
 	state.player_facing = Vector2.RIGHT
 	state.player_action = state._action("move", 0.2, Vector2.RIGHT)
@@ -1020,10 +1020,10 @@ func test_desktop_hold_attack_key() -> void:
 	assert(not board.attack_key_held and not bool(board.state.player_action.get("continue_held", true)))
 	board.free()
 
-func test_stamina_direct_attack_button() -> void:
+func test_energy_direct_attack_button() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("warrior", "expedition", 919191, "encounter", "stamina")
+	board.state.start_run("warrior", "expedition", 919191, "encounter", "energy")
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)
 	board.size = Vector2(1280, 800)

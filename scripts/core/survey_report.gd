@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 24
+const FORMAT_VERSION := 25
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -50,7 +50,7 @@ static func build_text(session: Dictionary) -> String:
 	lines.append("Generator version: %d" % int(session.get("generator_version", 1)))
 	lines.append("Presentation version: %d" % int(session.get("presentation_version", 0)))
 	lines.append("Profile: %s" % String(session.get("profile", "encounter")).capitalize())
-	lines.append("Combat rules: %s" % String(session.get("combat_rules", "stamina")).capitalize())
+	lines.append("Combat rules: %s" % String(session.get("combat_rules", "energy")).capitalize())
 	lines.append("Character: %s" % String(session.get("loadout", "unknown")))
 	lines.append("Started: %s" % String(session.get("started_at", "unknown")))
 	lines.append("Ended: %s" % String(session.get("ended_at", "unknown")))
@@ -80,13 +80,13 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Roles: %s" % ", ".join(PackedStringArray(room.get("enemy_roles", []))))
 		lines.append("Build: %s" % String(room.get("build_summary", "unknown")))
 		lines.append("Health: %d/%d -> %d/%d" % [int(room.get("entry_hp", 0)), int(room.get("entry_max_hp", 0)), int(room.get("exit_hp", 0)), int(room.get("entry_max_hp", 0))])
-		lines.append("Stamina: %d/%d -> %d/%d" % [roundi(float(room.get("entry_stamina", 0.0))), roundi(float(room.get("entry_max_stamina", 0.0))), roundi(float(room.get("exit_stamina", 0.0))), roundi(float(room.get("exit_max_stamina", room.get("entry_max_stamina", 0.0))))])
-		lines.append("Stamina spent: %.1f" % float(room.get("stamina_spent", 0.0)))
-		lines.append("Stamina depleted: %.1f" % float(room.get("stamina_depleted", room.get("stamina_spent", 0.0))))
-		lines.append("Stamina overdraw: %.1f" % float(room.get("stamina_overdraw", 0.0)))
-		lines.append("Stamina regenerated: %.1f" % float(room.get("stamina_regenerated", 0.0)))
-		lines.append("Stamina regeneration delay: %.2fs" % float(room.get("stamina_regen_delay_time", 0.0)))
-		lines.append("Active Stamina regeneration: %.2fs" % float(room.get("stamina_regen_active_time", 0.0)))
+		lines.append("Energy: %d/%d -> %d/%d" % [roundi(float(room.get("entry_energy", 0.0))), roundi(float(room.get("entry_max_energy", 0.0))), roundi(float(room.get("exit_energy", 0.0))), roundi(float(room.get("exit_max_energy", room.get("entry_max_energy", 0.0))))])
+		lines.append("Energy spent: %.1f" % float(room.get("energy_spent", 0.0)))
+		lines.append("Energy depleted: %.1f" % float(room.get("energy_depleted", room.get("energy_spent", 0.0))))
+		lines.append("Energy overdraw: %.1f" % float(room.get("energy_overdraw", 0.0)))
+		lines.append("Energy regenerated: %.1f" % float(room.get("energy_regenerated", 0.0)))
+		lines.append("Energy regeneration delay: %.2fs" % float(room.get("energy_regen_delay_time", 0.0)))
+		lines.append("Active Energy regeneration: %.2fs" % float(room.get("energy_regen_active_time", 0.0)))
 		lines.append("Exhaustion lockouts: %d" % int(room.get("overexertions", 0)))
 		lines.append("Exhausted time: %.2fs (%.2fs of it with an enemy alerted)" % [
 			float(room.get("winded_time", 0.0)), float(room.get("exhaustion_threatened_time_total", 0.0))])
@@ -107,14 +107,14 @@ static func build_text(session: Dictionary) -> String:
 				float(room.get("exhaustion_end_alerted_sum", 0)) / float(ends),
 				int(room.get("exhaustion_end_clear", 0)), ends])
 		lines.append("Unable to afford: a basic attack %.2fs; a full combo %.2fs" % [
-			float(room.get("stamina_starved_time_total", 0.0)), float(room.get("stamina_combo_starved_time_total", 0.0))])
+			float(room.get("energy_starved_time_total", 0.0)), float(room.get("energy_combo_starved_time_total", 0.0))])
 		lines.append("Exhaustion advanced by: movement %.2fs; Wait %.2fs; other %.2fs" % [float(room.get("exhaustion_move_time", 0.0)), float(room.get("exhaustion_wait_time", 0.0)), float(room.get("exhaustion_other_time", 0.0))])
-		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("stamina_blocked_continuations", 0)))
+		lines.append("Combo continuations prevented by exhaustion: %d" % int(room.get("energy_blocked_continuations", 0)))
 		lines.append("Terminal combo recoveries: %d" % int(room.get("terminal_combo_recoveries", 0)))
 		lines.append("Terminal combo recovery time: %.2fs" % float(room.get("terminal_combo_recovery_time", 0.0)))
 		lines.append("Direct attack button/key uses: %d" % int(room.get("direct_attack_uses", 0)))
 		lines.append("Dodge forms used: %s" % _action_usage_text(Dictionary(room.get("dodge_style_uses", {}))))
-		# Only for runs that actually hid. With no Stamina-mode cooldown, how fast
+		# Only for runs that actually hid. With no Energy-mode cooldown, how fast
 		# concealment is re-entered is the whole question about whether hide-execute-hide
 		# has eaten the class -- and it was previously unmeasurable.
 		if int(room.get("burn_damage", 0)) > 0 or int(room.get("frost_amplified_hits", 0)) > 0:
@@ -129,10 +129,10 @@ static func build_text(session: Dictionary) -> String:
 			# interaction exists in the code and not in the game.
 			lines.append("Javelins torn out of the air: %d" % int(room.get("javelins_grounded", 0)))
 		if int(room.get("stealth_entries", 0)) > 0:
-			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f stamina paid" % [
+			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f energy paid" % [
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
 				int(room.get("stealth_quick_reentries", 0)), float(room.get("stealth_hidden_time", 0.0)),
-				float(room.get("stealth_stamina_paid", 0.0))])
+				float(room.get("stealth_energy_paid", 0.0))])
 		lines.append("Vulnerable Dodge recovery: %.2fs; damage received: %d" % [float(room.get("dodge_vulnerable_time", 0.0)), int(room.get("dodge_recovery_damage", 0))])
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))

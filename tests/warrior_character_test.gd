@@ -193,12 +193,12 @@ func test_current_save_boundary() -> void:
 	assert(loaded.loadout_id == "warrior")
 	assert(int(loaded.track_ranks["evasion"]) == 1)
 	assert(String(loaded.player_action["kind"]) == "idle")
-	assert(is_equal_approx(loaded.player_stamina, state.player_stamina))
-	assert(is_equal_approx(loaded.player_max_stamina, state.player_max_stamina))
+	assert(is_equal_approx(loaded.player_energy, state.player_energy))
+	assert(is_equal_approx(loaded.player_max_energy, state.player_max_energy))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_v25_temperament_migration() -> void:
-	var path := "user://warrior-v25-stamina-migration.save"
+	var path := "user://warrior-v25-energy-migration.save"
 	var state := fresh_state()
 	state.track_choices["steadfast_1"] = "vigilance"
 	state.track_ranks["steadfast"] = 1
@@ -209,8 +209,8 @@ func test_v25_temperament_migration() -> void:
 	var payload: Dictionary = reader.get_var(true)
 	reader.close()
 	payload["save_version"] = 25
-	payload.erase("player_stamina")
-	payload.erase("player_max_stamina")
+	payload.erase("player_energy")
+	payload.erase("player_max_energy")
 	payload.erase("player_overexertion_pending")
 	var writer := FileAccess.open(path, FileAccess.WRITE)
 	writer.store_var(payload, true)
@@ -219,8 +219,8 @@ func test_v25_temperament_migration() -> void:
 	assert(loaded.load_run(path))
 	assert(int(loaded.player_attributes["speed"]) == 5)
 	assert(int(loaded.player_attributes["awareness"]) == 6)
-	assert(is_equal_approx(loaded.player_max_stamina, 110.0))
-	assert(is_equal_approx(loaded.player_stamina, 110.0))
+	assert(is_equal_approx(loaded.player_max_energy, 110.0))
+	assert(is_equal_approx(loaded.player_energy, 110.0))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_v21_major_framework_boundary() -> void:

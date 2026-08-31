@@ -19,7 +19,7 @@ var failures: Array[String] = []
 func check(condition: bool, message: String) -> void:
 	if not condition: failures.append(message)
 
-func fresh_state(rules: String = "stamina") -> RunState:
+func fresh_state(rules: String = "energy") -> RunState:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("warrior", "combat_survey", 4242, "encounter", rules)
 	state.enemies.clear()
@@ -122,7 +122,7 @@ func test_frozen_time_does_not_burn_protection() -> void:
 
 func test_recovery_profile_shares_the_guarantee() -> void:
 	# Post-hit agency is a fairness floor, not a resource rule, so it cannot
-	# differ between the Recovery and Stamina profiles.
+	# differ between the Recovery and Energy profiles.
 	var state := fresh_state("recovery")
 	strike(state)
 	check(state.player_hit_protection_remaining > 0.0, "Recovery rules must arm protection too")

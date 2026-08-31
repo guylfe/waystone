@@ -28,7 +28,7 @@ func plan_option(kind: String, technique: String) -> Dictionary:
 
 func survey_state() -> RunState:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "combat_survey", 4242, "encounter", "stamina")
+	state.start_run("warrior", "combat_survey", 4242, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	# Clearing the array is not enough: the wall spatial index is what line-of-sight
@@ -1076,13 +1076,13 @@ func test_a_landed_blow_is_felt_in_both_directions() -> void:
 		var dealt := int(Dictionary(state._resolve_player_physical_values(enemy, 12, 1.0, {}))["damage"])
 		check(dealt > 0, "a landed blow on a %s dealt %d" % [kind, dealt])
 
-# --- The stamina/cooldown exchange -------------------------------------------------
+# --- The energy/cooldown exchange -------------------------------------------------
 #
-# One authored stamina number now drives both rule profiles: a cooldown is that price
+# One authored energy number now drives both rule profiles: a cooldown is that price
 # as a share of the pool, times one global rate. These tests exist because the defect
 # they cover was invisible for the whole life of the Rogue -- Stealth, Vault and Take
-# Aim sat on cooldowns with no `uses_stamina_rules()` waiver and no cost, so they were
-# simultaneously free under Stamina and walled under Recovery, and nothing noticed.
+# Aim sat on cooldowns with no `uses_energy_rules()` waiver and no cost, so they were
+# simultaneously free under Energy and walled under Recovery, and nothing noticed.
 
 func rogue_state(profile: String) -> RunState:
 	var state: RunState = RunStateScript.new(false)
@@ -1106,11 +1106,11 @@ func enter_stealth(state: RunState) -> bool:
 
 func test_no_ability_is_free_in_one_profile_and_walled_in_the_other() -> void:
 	# The actual defect, stated as a rule. An ability that charges nothing under
-	# Stamina but blocks for seconds under Recovery is two different abilities wearing
-	# one name, and it makes the Recovery-versus-Stamina comparison unreadable.
+	# Energy but blocks for seconds under Recovery is two different abilities wearing
+	# one name, and it makes the Recovery-versus-Energy comparison unreadable.
 	for call_id in ["vault", "stealth", "execution"]:
-		var state := rogue_state("stamina")
-		var before := state.player_stamina
+		var state := rogue_state("energy")
+		var before := state.player_energy
 		match call_id:
 			"vault": state.request_vault(Vector2.RIGHT, false)
 			"execution": state.request_execution(Vector2.RIGHT, false)
@@ -1118,11 +1118,11 @@ func test_no_ability_is_free_in_one_profile_and_walled_in_the_other() -> void:
 				state.request_stealth(false)
 				# Charged by the second, so it must actually be held to cost anything.
 				for _i in range(400): state._tick(0.0125)
-		check(state.player_stamina < before - 0.5,
-			"%s costs nothing under Stamina (%.1f -> %.1f)" % [call_id, before, state.player_stamina])
+		check(state.player_energy < before - 0.5,
+			"%s costs nothing under Energy (%.1f -> %.1f)" % [call_id, before, state.player_energy])
 
 func test_a_full_hide_costs_fifty_and_derives_the_shipped_cooldown() -> void:
-	# 10/s over the 5s duration is 50 stamina, and 50 of a 100 pool at 24s per pool is
+	# 10/s over the 5s duration is 50 energy, and 50 of a 100 pool at 24s per pool is
 	# 12.0s -- exactly the cooldown that was hand-authored before the formula existed.
 	# That agreement is the check that the exchange rate is not arbitrary.
 	var state := rogue_state("recovery")
@@ -1136,30 +1136,30 @@ func test_a_full_hide_costs_fifty_and_derives_the_shipped_cooldown() -> void:
 func test_a_cancelled_hide_costs_the_floor_not_the_full_price() -> void:
 	# The reason cancellation is offered at all: a drain you cannot stop is a fixed
 	# cost with extra steps. A hide cut short must be cheaper than one sat in.
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	check(enter_stealth(state), "stealth should be active before it is cancelled")
 	for _i in range(8): state._tick(0.0125)
 	check(state.request_end_stealth(), "an active hide must be cancellable")
 	check(state.stealth_remaining <= 0.0, "cancelling must actually end concealment")
-	var paid := 100.0 - state.player_stamina
-	check(absf(paid - RunStateScript.STEALTH_MINIMUM_STAMINA) < 2.0,
-		"a hide cancelled early should cost the %.0f floor, paid %.1f" % [RunStateScript.STEALTH_MINIMUM_STAMINA, paid])
+	var paid := 100.0 - state.player_energy
+	check(absf(paid - RunStateScript.STEALTH_MINIMUM_ENERGY) < 2.0,
+		"a hide cancelled early should cost the %.0f floor, paid %.1f" % [RunStateScript.STEALTH_MINIMUM_ENERGY, paid])
 
 func test_a_tapped_hide_cannot_undercut_the_floor() -> void:
 	# Without this, entering stealth for a quarter second would buy the rank-4
 	# awareness wipe -- and with it the unaware-execution bonus -- for a rounding
 	# error, because that benefit is instantaneous while a proportional price is not.
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	check(enter_stealth(state), "stealth should begin before it is tapped out")
 	state.request_end_stealth()
-	check(100.0 - state.player_stamina >= RunStateScript.STEALTH_MINIMUM_STAMINA - 0.01,
-		"an instant tap paid %.1f, under the floor" % (100.0 - state.player_stamina))
+	check(100.0 - state.player_energy >= RunStateScript.STEALTH_MINIMUM_ENERGY - 0.01,
+		"an instant tap paid %.1f, under the floor" % (100.0 - state.player_energy))
 
 func test_cancelling_stealth_is_free_and_instant() -> void:
 	# It stops a cost rather than performing an action, so there is nothing to commit
 	# to. In frozen time an action that spends no world time is unusual enough to
 	# assert rather than assume.
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	check(enter_stealth(state), "stealth should be active before it is cancelled")
 	var clock := state.simulation_time
 	state.request_end_stealth()
@@ -1169,42 +1169,42 @@ func test_cancelling_stealth_is_free_and_instant() -> void:
 func test_hiding_does_not_refill_the_bar() -> void:
 	# A 10/s drain against 28/s of regeneration is a profit, not a price. Suspension is
 	# what makes concealment compete with dodging for the same pool.
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	check(enter_stealth(state), "stealth should be active before regeneration is checked")
-	state.player_stamina = 60.0
-	var entered := state.player_stamina
+	state.player_energy = 60.0
+	var entered := state.player_energy
 	for _i in range(40): state._tick(0.0125)
-	check(state.player_stamina < entered,
-		"stamina rose from %.1f to %.1f while hidden" % [entered, state.player_stamina])
+	check(state.player_energy < entered,
+		"energy rose from %.1f to %.1f while hidden" % [entered, state.player_energy])
 
 func test_exhaustion_ends_concealment() -> void:
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	check(enter_stealth(state), "stealth should be active before the pool is drained")
-	state.player_stamina = 4.0
+	state.player_energy = 4.0
 	for _i in range(200):
 		state._tick(0.0125)
 		if state.stealth_remaining <= 0.0: break
 	check(state.stealth_remaining <= 0.0, "running the pool dry should drop the veil")
 
 func test_sweeping_cut_is_no_longer_a_special_case() -> void:
-	# It was exempt from STAMINA_COST_SCALE, which held its price at 56 while every
+	# It was exempt from ENERGY_COST_SCALE, which held its price at 56 while every
 	# other ability scaled -- so a global re-tune would move everything except this.
 	# The authored cost carries the surcharge instead, and the cooldown derives.
 	var state := survey_state()
-	var spend := state.stamina_cost(state.SWEEPING_CUT_STAMINA)
+	var spend := state.energy_cost(state.SWEEPING_CUT_ENERGY)
 	check(absf(spend - 56.0) < 1.0,
 		"Sweeping Cut should still spend ~56 after scaling, spends %.1f" % spend)
 	check(absf(state._cooldown_for(spend) - 13.4) < 0.3,
 		"Sweeping Cut should derive ~13.4s, got %.2f" % state._cooldown_for(spend))
 
 func test_a_deeper_pool_shortens_recovery_cooldowns() -> void:
-	# The reason the pool is the denominator: under Recovery stamina is never spent or
+	# The reason the pool is the denominator: under Recovery energy is never spent or
 	# regenerated, so the +10 max from vigilance, fleetness and observation did nothing
 	# whatsoever. This is that half of those three choices doing something.
 	var state := rogue_state("recovery")
-	var at_hundred := state._cooldown_for(state.stamina_cost(30.0))
-	state._increase_max_stamina(20.0)
-	var at_deeper := state._cooldown_for(state.stamina_cost(30.0))
+	var at_hundred := state._cooldown_for(state.energy_cost(30.0))
+	state._increase_max_energy(20.0)
+	var at_deeper := state._cooldown_for(state.energy_cost(30.0))
 	check(at_deeper < at_hundred,
 		"a deeper pool should shorten cooldowns: %.2f then %.2f" % [at_hundred, at_deeper])
 	check(absf(at_deeper - at_hundred * 100.0 / 120.0) < 0.05,
@@ -1238,7 +1238,7 @@ func generated_rooms(salts: int = 12) -> Array:
 	var rooms: Array = []
 	for salt in range(salts):
 		var state: RunState = RunStateScript.new(false)
-		state.start_run("warrior", "combat_survey", 7100 + salt, "encounter", "stamina")
+		state.start_run("warrior", "combat_survey", 7100 + salt, "encounter", "energy")
 		for room_number in range(1, 12):
 			var layout := state._generate_survey_layout(room_number)
 			rooms.append({
@@ -1336,7 +1336,7 @@ func test_the_centred_elite_keeps_a_control_group() -> void:
 	check(centred < elite_rooms, "every elite room was a Retinue -- the control group is gone")
 
 func test_a_room_never_asks_one_attack_three_times() -> void:
-	# Roles were not enough. The 0.2.40 Stamina run landed seven boar pounces and nine
+	# Roles were not enough. The 0.2.40 Energy run landed seven boar pounces and nine
 	# hound pounces in one room -- sixteen of twenty-eight attacks, "busy and monotonous"
 	# -- and the role cap waved them through, because Boar is frontline and Hound is
 	# flanker. The verb is what the player reads.
@@ -1372,7 +1372,7 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 	var off_floor := 0
 	for salt in range(10):
 		var state: RunState = RunStateScript.new(false)
-		state.start_run("warrior", "combat_survey", 8300 + salt, "encounter", "stamina")
+		state.start_run("warrior", "combat_survey", 8300 + salt, "encounter", "energy")
 		for room_number in range(1, 12):
 			var layout := state._generate_survey_layout(room_number)
 			var walls: Array = Array(Dictionary(layout["layer_walls"])["survey_arena"])
@@ -1397,7 +1397,7 @@ func test_no_body_is_ever_spawned_inside_the_geometry() -> void:
 	check(off_floor == 0, "%d of %d bodies spawned off the arena floor entirely" % [off_floor, total])
 
 func hidden_trial(awareness: String) -> Dictionary:
-	var state := rogue_state("stamina")
+	var state := rogue_state("energy")
 	var foe := state._make_enemy("knife", state.player_pos + Vector2(300, 0), 30)
 	foe["layer"] = state.current_layer
 	foe["awareness"] = awareness
@@ -1425,7 +1425,7 @@ func test_concealment_survives_an_enemy_that_is_already_hunting() -> void:
 	# they do strike me when they get into distance." Three defects, one cause -- pursuit
 	# and attack selection read `player_pos` directly, so concealment did nothing at all
 	# once an enemy was awake. It measured 0.02s hidden across three entries and 60
-	# stamina paid for it.
+	# energy paid for it.
 	var result := hidden_trial("suspicious")
 	check(bool(result["entered"]), "a hunting enemy that cannot see the player must not block the hide")
 	check(float(result["held"]) > 4.5, "the hide lasted %.2fs against a hunting enemy, not its full duration" % float(result["held"]))
@@ -1444,7 +1444,7 @@ func test_the_screen_screens_arrows_too() -> void:
 	# Shieldbearer walked into archery with no defence -- and a screen that stops one
 	# damage type is not a screen. Going around it is still the answer.
 	for from_front in [true, false]:
-		var state := rogue_state("stamina")
+		var state := rogue_state("energy")
 		var foe := state._make_enemy("shield", state.player_pos + Vector2(260, 0), 50)
 		foe["layer"] = state.current_layer
 		foe["awareness"] = "alerted"
@@ -1471,7 +1471,7 @@ func test_only_eyes_on_you_refuse_the_hide() -> void:
 			{"facing": Vector2.RIGHT, "gap": 300.0, "blocked": false, "label": "back turned"},
 			{"facing": Vector2.RIGHT, "gap": 600.0, "blocked": false, "label": "far and turned away"},
 			{"facing": Vector2.RIGHT, "gap": 80.0, "blocked": true, "label": "close enough that facing stops mattering"}]:
-		var state := rogue_state("stamina")
+		var state := rogue_state("energy")
 		var foe := state._make_enemy("knife", state.player_pos + Vector2(float(trial["gap"]), 0), 30)
 		foe["layer"] = state.current_layer
 		foe["awareness"] = "alerted"
