@@ -1,6 +1,8 @@
 class_name PresentationFrame
 extends RefCounted
 
+const StateFieldSchemaScript = preload("res://scripts/core/state_field_schema.gd")
+
 var data: Dictionary = {}
 var _player_action: Dictionary = {}
 var _lost_xp: Dictionary = {}
@@ -14,34 +16,14 @@ var _effect_pool: Array[Dictionary] = []
 var _effects: Array[Dictionary] = []
 var _pickup_pool: Array[Dictionary] = []
 var _pickups: Array[Dictionary] = []
+var _barrier_pool: Array[Dictionary] = []
+var _barriers: Array[Dictionary] = []
 var _following_by_id: Dictionary = {}
 
 func capture(state: RunState) -> Dictionary:
-	data["time"] = state.simulation_time
-	data["player_pos"] = state.player_pos
-	data["player_facing"] = state.player_facing
-	data["player_hp"] = state.player_hp
-	data["player_max_hp"] = state.player_max_hp
-	data["player_energy"] = state.player_energy
-	data["player_max_energy"] = state.player_max_energy
-	data["player_posture"] = state.player_posture
-	data["player_posture_max"] = state.player_posture_max
-	data["carried_xp"] = state.carried_xp
-	data["secured_xp"] = state.secured_xp
-	data["strength_remaining"] = state.strength_remaining
-	data["dodge_cooldown"] = state.dodge_cooldown
-	data["block_cooldown"] = state.block_cooldown
-	data["endure_cooldown"] = state.endure_cooldown
-	data["skill_cooldown"] = state.skill_cooldown
-	data["rally_cooldown"] = state.rally_cooldown
-	data["advance_cooldown"] = state.advance_cooldown
-	data["main_ability_cooldown"] = state.main_ability_cooldown
-	data["subclass_ability_cooldown"] = state.subclass_ability_cooldown
-	data["weapon_sequence_cooldown"] = state.weapon_sequence_cooldown
-	data["stealth_remaining"] = state.stealth_remaining
-	data["aimed_remaining"] = state.aimed_remaining
-	data["rally_remaining"] = state.rally_remaining
-	data["message"] = state.message
+	var shared := StateFieldSchemaScript.capture_scalars(state, StateFieldSchemaScript.PRESENTATION)
+	for key in shared:
+		data[key] = shared[key]
 	_copy_flat_dictionary(state.player_action, _player_action)
 	_copy_flat_dictionary(state.lost_xp, _lost_xp)
 	data["player_action"] = _player_action
@@ -68,10 +50,12 @@ func capture(state: RunState) -> Dictionary:
 	# streamed frame. Otherwise they appear while time is frozen (full snapshot)
 	# and vanish as soon as movement switches to the optimized frame path.
 	_capture_flat_array(state.world_pickups, _pickup_pool, _pickups)
+	_capture_flat_array(state.barriers, _barrier_pool, _barriers)
 	data["projectiles"] = _projectiles
 	data["hazards"] = _hazards
 	data["effects"] = _effects
 	data["world_pickups"] = _pickups
+	data["barriers"] = _barriers
 	return data
 
 func blend(current: PresentationFrame, following: PresentationFrame, weight: float) -> Dictionary:
@@ -85,6 +69,9 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 		data[key] = following_data.get(key, current_data.get(key))
 	for key in ["player_energy", "player_max_energy", "player_posture", "player_posture_max", "strength_remaining", "dodge_cooldown", "block_cooldown", "endure_cooldown", "skill_cooldown", "rally_cooldown", "advance_cooldown", "main_ability_cooldown", "subclass_ability_cooldown", "weapon_sequence_cooldown", "stealth_remaining", "aimed_remaining", "rally_remaining"]:
 		data[key] = lerpf(float(current_data.get(key, 0.0)), float(following_data.get(key, 0.0)), amount)
+	data["circle_pos"] = Vector2(current_data.get("circle_pos", Vector2.ZERO)).lerp(Vector2(following_data.get("circle_pos", Vector2.ZERO)), amount)
+	data["circle_remaining"] = lerpf(float(current_data.get("circle_remaining", 0.0)), float(following_data.get("circle_remaining", 0.0)), amount)
+	data["circle_radius"] = lerpf(float(current_data.get("circle_radius", 0.0)), float(following_data.get("circle_radius", 0.0)), amount)
 	_blend_action(Dictionary(current_data["player_action"]), Dictionary(following_data["player_action"]), amount, _player_action)
 	_copy_flat_dictionary(Dictionary(following_data.get("lost_xp", {})), _lost_xp)
 	data["player_action"] = _player_action
@@ -115,10 +102,12 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	_blend_flat_array(Array(current_data.get("hazards", [])), Array(following_data.get("hazards", [])), amount, _hazard_pool, _hazards, ["pos"], ["elapsed"])
 	_blend_flat_array(Array(current_data.get("effects", [])), Array(following_data.get("effects", [])), amount, _effect_pool, _effects, ["pos"], ["elapsed"])
 	_blend_flat_array(Array(current_data.get("world_pickups", [])), Array(following_data.get("world_pickups", [])), amount, _pickup_pool, _pickups, ["pos"], [])
+	_blend_flat_array(Array(current_data.get("barriers", [])), Array(following_data.get("barriers", [])), amount, _barrier_pool, _barriers, ["pos"], ["remaining"])
 	data["projectiles"] = _projectiles
 	data["hazards"] = _hazards
 	data["effects"] = _effects
 	data["world_pickups"] = _pickups
+	data["barriers"] = _barriers
 	return data
 
 func _copy_enemy(source: Dictionary, target: Dictionary, default_layer: String) -> void:
@@ -151,18 +140,34 @@ func _capture_flat_array(source: Array, pool: Array[Dictionary], output: Array[D
 		output.append(pool[index])
 
 func _blend_flat_array(current: Array, following: Array, weight: float, pool: Array[Dictionary], output: Array[Dictionary], vector_keys: Array[String], float_keys: Array[String]) -> void:
-	_ensure_pool(pool, current.size())
+	_following_by_id.clear()
+	for index in range(following.size()):
+		var following_item := Dictionary(following[index])
+		_following_by_id[_presentation_key(following_item, index)] = following_item
+	_ensure_pool(pool, maxi(current.size(), following.size()))
 	output.clear()
 	for index in range(current.size()):
 		var item := Dictionary(current[index])
-		var next_item := Dictionary(following[index]) if index < following.size() else item
-		var target := pool[index]
+		var presentation_key: Variant = _presentation_key(item, index)
+		var has_following := _following_by_id.has(presentation_key)
+		if not has_following and weight >= 0.5: continue
+		var next_item := Dictionary(_following_by_id.get(presentation_key, item))
+		var target := pool[output.size()]
 		_copy_flat_dictionary(item, target)
 		for key in vector_keys:
 			if item.has(key) and next_item.has(key): target[key] = Vector2(item[key]).lerp(Vector2(next_item[key]), weight)
 		for key in float_keys:
 			if item.has(key) and next_item.has(key): target[key] = lerpf(float(item[key]), float(next_item[key]), weight)
 		output.append(target)
+		_following_by_id.erase(presentation_key)
+	if weight >= 0.5:
+		for value in _following_by_id.values():
+			var target := pool[output.size()]
+			_copy_flat_dictionary(Dictionary(value), target)
+			output.append(target)
+
+func _presentation_key(item: Dictionary, legacy_index: int) -> Variant:
+	return int(item["presentation_id"]) if item.has("presentation_id") else "legacy:%d" % legacy_index
 
 func _copy_flat_dictionary(source: Dictionary, target: Dictionary, excluded: Array[String] = []) -> void:
 	target.clear()

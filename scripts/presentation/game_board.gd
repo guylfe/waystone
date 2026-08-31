@@ -2,6 +2,7 @@ extends Control
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const AbilityCatalogScript = preload("res://scripts/core/ability_catalog.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
 const IsometricPoseScript = preload("res://scripts/presentation/isometric_pose.gd")
@@ -2274,9 +2275,9 @@ func _handle_waystone_menu_press(position: Vector2) -> void:
 	queue_redraw()
 
 func _defense_cooldown() -> float:
-	if state.defense_id == "block": return state.block_cooldown
-	if state.defense_id == "endure": return state.endure_cooldown
-	return state.dodge_cooldown
+	if state.defense_id == "block": return state.cooldown_remaining(state.COOLDOWN_BLOCK)
+	if state.defense_id == "endure": return state.cooldown_remaining(state.COOLDOWN_ENDURE)
+	return state.cooldown_remaining(state.COOLDOWN_DODGE)
 
 func _on_state_changed() -> void:
 	_mark_autosave()
@@ -2382,21 +2383,13 @@ func _draw_world() -> void:
 	# The Circle. Drawn on the ground as a ring with a faint fill, and brighter while the
 	# player is standing in it, because "am I still on my ground" is the question the
 	# ability exists to ask and it must be answerable at a glance.
-	# Read from the simulation rather than from the presentation frame. `visual` is a
-	# PresentationFrame for the whole of any streamed action -- which is nearly all of play --
-	# and that frame captures enemies, projectiles, hazards, effects and pickups and has
-	# never captured barriers. So the wall was in the world, blocking, and simply absent from
-	# the thing the renderer draws. Every capture I took looked correct because a probe sets
-	# `visual` from `state.snapshot()`, which does carry them; the game never does.
-	#
-	# Barriers and the Circle are few, static between ticks, and nothing about them wants
-	# interpolating, so they belong on the same footing as walls -- which the renderer has
-	# always read straight from state for exactly this reason.
-	var circle_left := state.circle_remaining
+	# All dynamic objects come from the same presentation frame. This keeps the Circle,
+	# barriers and moving bodies on one simulation-time authority during streamed actions.
+	var circle_left := float(visual.get("circle_remaining", 0.0))
 	if circle_left > 0.0:
-		var circle_centre := state.circle_pos
-		var circle_radius := state.circle_radius()
-		var standing := state.player_is_inside_circle()
+		var circle_centre := Vector2(visual.get("circle_pos", state.circle_pos))
+		var circle_radius := float(visual.get("circle_radius", state.circle_radius()))
+		var standing := Vector2(visual.get("player_pos", state.player_pos)).distance_to(circle_centre) <= circle_radius
 		var fade := clampf(circle_left / 4.0, 0.35, 1.0)
 		var ring := _world_ring(circle_centre, circle_radius, 40)
 		draw_colored_polygon(ring, Color(0.18, 0.72, 0.62, (0.10 if standing else 0.05) * fade))
@@ -2416,7 +2409,7 @@ func _draw_world() -> void:
 		if cast_reach > 0.0:
 			var reach_ring := _world_ring(Vector2(visual.get("player_pos", state.player_pos)), cast_reach, 44)
 			draw_polyline(_closed_points(reach_ring), Color(0.36, 0.78, 0.92, 0.38), maxf(1.5, world_scale * 2.0))
-	for segment in state.barriers:
+	for segment in Array(visual.get("barriers", [])):
 		if String(segment.get("layer", state.current_layer)) != state.current_layer: continue
 		var centre := Vector2(segment["pos"])
 		if not _world_point_on_camera(centre, float(segment.get("half_length", 30.0)) + 40.0): continue
@@ -3174,8 +3167,8 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var collision_radius := world_radius * world_scale
 	var radius := _actor_body_radius(world_radius)
 	var kind := String(enemy["kind"])
-	var colors := {"ox": Color("6f4a3a"), "boar": Color("9b6541"), "bandit": Color("d2b05c"), "knife": Color("e5be55"), "blade": BLADE_COLOR, "polearm": POLEARM_COLOR, "archer": ARCHER_COLOR, "shield": Color("6aa9c9"), "hound": HOUND_COLOR, "brute": Color("9f554d"), "knight": Color("77838e"), "ice_caster": Color("70bddd"), "fire_caster": Color("db7447"), "chanter": Color("c9a3e6"), "javelineer": Color("bfa870"), "earth_caster": Color("6f9b6a"), "air_caster": Color("bcd3e0"), "duellist": Color("e0c24e"), "warden": Color("d84b65"), "werewolf": Color("7f5965")}
-	var color: Color = colors.get(kind, BLADE_COLOR)
+	var presentation := CombatCatalogScript.presentation(kind)
+	var color := Color(String(presentation["color"]))
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
 	if reeling: _draw_reaction_motion(pos, facing, radius, action, color)
@@ -3222,7 +3215,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		# kept naming the old label, so the caster fell through to _draw_bow and spent the
 		# whole wind-up visibly drawing a bow it does not carry. Same root cause as the cone
 		# drawn as a circle: the renderer keying on a name the simulation had moved on from.
-		if String(action.get("label", "")) in ["firebolt", "fireball"]: _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
+		if String(action.get("label", "")) in ["firebolt", "fireball"]: _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fireball")["color"])))
 		else: _draw_bow(pos, facing, radius, action, world_pos)
 	elif String(action["kind"]) in ["charge", "pounce_combo"]: draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "evade": draw_line(pos, pos - _screen_direction(Vector2(action.get("direction", Vector2.ZERO))) * radius * 1.8, Color(color, 0.42), maxf(3.0, radius * 0.22))
@@ -3230,17 +3223,18 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, float(action.get("reach", 205.0)), Color.TRANSPARENT, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 		else: draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 	elif String(action["kind"]) == "gale":
-		_draw_spell_cast(pos, facing, radius, action, Color("d8ecf6"))
-		draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 18.0, Color("d8ecf6"))
+		var gale_color := Color(String(AbilityCatalogScript.enemy_ability("gale")["color"]))
+		_draw_spell_cast(pos, facing, radius, action, gale_color)
+		draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 18.0, gale_color)
 	# Earth, the lance, the breath and the chant all wound up with nothing drawn at all, so
 	# four of the roster's abilities gave the player no tell to read -- in a game whose
 	# entire defensive layer is reading a wind-up and choosing an answer. Each takes the
 	# colour of the thing it is about to become.
 	elif String(action["kind"]) in ["earth_wall", "sunder"]:
-		_draw_spell_cast(pos, facing, radius, action, Color("87ac7d"))
+		_draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability(String(action["kind"]))["color"])))
 		if action.has("target"): draw_circle(_world_to_screen(Vector2(action["target"])), 14.0, Color(0.53, 0.67, 0.49, 0.75))
-	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color("9be7ff"))
-	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
+	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("frost_lance")["color"])))
+	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fire_breath")["color"])))
 	elif String(action["kind"]) == "chant": _draw_spell_cast(pos, facing, radius, action, Color("e0c46a"))
 	elif String(action["kind"]) in ["hex", "ice_hex", "cold_front"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0 if String(action["kind"]) == "cold_front" else 12.0, Color("b57bea") if String(action["kind"]) == "hex" else Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
@@ -3967,6 +3961,9 @@ func _draw_posture(pos: Vector2, radius: float, posture: float, maximum: float) 
 func _phase(action: Dictionary) -> String:
 	var kind := String(action.get("kind", "idle"))
 	var elapsed := float(action.get("elapsed", 0.0))
+	var ability := AbilityCatalogScript.enemy_ability_for_action(action)
+	if not ability.is_empty():
+		return String(ability["phase_before"]) if elapsed < float(action.get("startup", ability["startup"])) else String(ability["phase_after"])
 	if kind == "attack":
 		if elapsed < float(action["startup"]): return "WINDING UP"
 		if elapsed < float(action["active_end"]): return "STRIKING"
@@ -4007,13 +4004,8 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["startup"]): return "WINDING UP"
 		if elapsed < float(action["active_end"]): return "STRIKING"
 		return "RECOVERING"
-	if kind == "shoot":
-		if String(action.get("label", "")) in ["firebolt", "fireball"]: return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
-		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
+	if kind == "shoot": return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
-	if kind == "gale": return "BREATHING IN" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
-	if kind == "earth_wall": return "HEAVING" if elapsed < float(action.get("startup", 1.10)) else "RECOVERING"
-	if kind == "sunder": return "BREAKING" if elapsed < float(action.get("startup", 0.92)) else "RECOVERING"
 	# Frost Lance and Fire Breath already had readouts further down this chain -- "CONDENSING"
 	# / "LOOSED" and "DRAWING BREATH" / "BREATHING FIRE", which are better lines than the ones
 	# 0.2.66 added. That version claimed all four of these abilities had no phase text; it was
@@ -4021,11 +4013,7 @@ func _phase(action: Dictionary) -> String:
 	# branches came first they shadowed the originals into unreachable code. Two authored
 	# descriptions each, one of them dead.
 	if kind == "chant": return "CHANTING" if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
-	if kind == "windstep": return "GONE"
-	if kind == "cold_front": return "THE AIR STILLS" if elapsed < float(action.get("startup", 1.12)) else "FREEZING"
-	if kind == "frost_lance": return "CONDENSING" if elapsed < float(action.get("startup", 0.78)) else "LOOSED"
 	if kind == "ice_cone": return "GATHERING FROST" if elapsed < float(action.get("startup", 0.58)) else "CASTING"
-	if kind == "fire_breath": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.74)) else "BREATHING FIRE"
 	if kind == "charge":
 		if elapsed < float(action.get("startup", 0.4)): return "CROUCHING"
 		if elapsed < float(action.get("active_end", 0.8)): return "POUNCING" if String(action.get("label", "")) == "pounce" else "CHARGING"
@@ -4897,14 +4885,10 @@ func _draw_inspection() -> void:
 			break
 	if enemy.is_empty(): return
 	var kind := String(enemy["kind"])
-	var names := {"ox": "Ox", "boar": "Boar", "bandit": "Bandit", "knife": "Knife", "blade": "Blade", "archer": "Archer", "polearm": "Polearm", "shield": "Shieldbearer", "hound": "Hound", "brute": "Brute", "knight": "Two-Handed Knight", "ice_caster": "Ice Caster", "fire_caster": "Fire Caster", "chanter": "Chanter", "javelineer": "Javelineer", "earth_caster": "Earth Caster", "air_caster": "Air Caster", "duellist": "Duellist", "warden": "Warden", "werewolf": "Werewolf"}
-	var speeds := {"ox": "Fast", "boar": "Medium", "bandit": "Fast", "knife": "Fast", "hound": "Fast", "werewolf": "Fast", "duellist": "Fast", "javelineer": "Medium", "chanter": "Medium", "earth_caster": "Slow", "air_caster": "Fast", "blade": "Medium", "archer": "Medium", "ice_caster": "Medium", "fire_caster": "Medium", "shield": "Slow", "polearm": "Slow", "brute": "Slow", "knight": "Very slow", "warden": "Slow"}
-	var reaches := {"ox": "Long", "boar": "Medium", "bandit": "Short", "knife": "Short", "hound": "Medium", "werewolf": "Long", "blade": "Medium", "shield": "Medium", "duellist": "Medium", "javelineer": "Long", "chanter": "None", "earth_caster": "Long", "air_caster": "Long", "brute": "Medium", "archer": "Long", "ice_caster": "Long", "fire_caster": "Long", "polearm": "Long", "knight": "Long", "warden": "Long"}
-	var traits := {"ox": "Unstoppable gore; runs its line until it hits something", "boar": "Pounce only", "bandit": "Quick knife; evasive", "knife": "Low stability", "hound": "Pounce; agile retreat", "archer": "Faster arrows; formation support", "polearm": "Heavy long reach", "shield": "Frontal guard", "brute": "Grounded heavy attacks", "knight": "High health; grounded greatsword", "ice_caster": "Ice hex; expanding frost cone", "fire_caster": "Fire ring; tracking firebolt", "chanter": "Buffs allies; no attack of its own; hides behind them", "javelineer": "Slow throw that leads your movement; denies a lane", "earth_caster": "Sundered ground; costs time, not health", "air_caster": "Gale shoves bodies and spoils shots; steps away when cornered", "duellist": "Parries a swing it reads; two attacks, two different openings", "warden": "Grounded boss", "werewolf": "Pounce; claw chain; evasive", "blade": "Balanced melee"}
+	var presentation := CombatCatalogScript.presentation(kind)
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"
-	var signature_techniques := {"bandit": "quick_cut", "knife": "quick_cut", "blade": "diagonal_cut", "polearm": "thrust", "brute": "forward_smash", "knight": "heavy_cleave", "duellist": "rapier_thrust", "warden": "heavy_cleave", "werewolf": "quick_cut"}
-	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", signature_techniques.get(kind, "")))
+	var technique_id := String(Dictionary(enemy["action"]).get("technique_id", presentation["signature_technique"]))
 	var technique_text := AttackGeometryScript.label(technique_id) if technique_id != "" else "Ranged"
 	var posture_ratio := float(enemy.get("posture", 1.0)) / maxf(0.01, float(enemy.get("posture_max", 1.0)))
 	var stability := "Strained" if posture_ratio < 0.45 else "Unsteady" if posture_ratio < 0.8 else "Stable"
@@ -4915,9 +4899,9 @@ func _draw_inspection() -> void:
 	draw_rect(rect, Color("9fb2b7"), false, 2.0)
 	var title_font := maxi(13, int(height * 0.16))
 	var body_font := maxi(10, int(title_font * 0.65))
-	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.25), String(names.get(kind, kind.capitalize())).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, width - 20, title_font, Color("eef0e9"))
-	var line_one := "%s  |  %s  |  %s speed  |  %s reach" % [action_text.capitalize(), technique_text, String(speeds.get(kind, "Medium")), String(reaches.get(kind, "Medium"))]
-	var line_two := "%s  |  %s" % [stability, String(traits.get(kind, ""))]
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.25), String(presentation["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, width - 20, title_font, Color("eef0e9"))
+	var line_one := "%s  |  %s  |  %s speed  |  %s reach" % [action_text.capitalize(), technique_text, String(presentation["speed"]), String(presentation["reach"])]
+	var line_two := "%s  |  %s" % [stability, String(presentation["trait"])]
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.56), line_one, HORIZONTAL_ALIGNMENT_LEFT, width - 20, body_font, Color("d8ddd8"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(10, height * 0.80), line_two, HORIZONTAL_ALIGNMENT_LEFT, width - 20, body_font, Color("d7aa58"))
 

@@ -2,10 +2,15 @@ class_name RunState
 extends RefCounted
 
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+const AbilityCatalogScript = preload("res://scripts/core/ability_catalog.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
 const ModeRulesScript = preload("res://scripts/core/mode_rules.gd")
 const SurveyReportScript = preload("res://scripts/core/survey_report.gd")
+const SurveyCounterCatalogScript = preload("res://scripts/core/survey_counter_catalog.gd")
+const StateFieldSchemaScript = preload("res://scripts/core/state_field_schema.gd")
+const SaveMigrationsScript = preload("res://scripts/core/save_migrations.gd")
+const RuntimeSchemaScript = preload("res://scripts/core/runtime_schema.gd")
 
 signal changed
 signal message_changed(text: String)
@@ -332,46 +337,25 @@ const CIRCLE_ENERGY := 8.0
 const CIRCLE_INTELLIGENCE := 3
 # Every spell the Elementalist can learn, and which stage teaches it. Each is an enemy
 # ability first; the spellbook is the bestiary.
-const ELEMENT_STAGE_SPELLS := {
-	"element_fire": ["fireball", "fire_breath"],
-	"element_ice": ["frost_lance", "cold_front"],
-	"element_earth": ["earth_wall", "sunder"],
-	"element_air": ["gale", "windstep"],
-}
+const ELEMENT_STAGE_SPELLS := AbilityCatalogScript.ELEMENT_STAGE_SPELLS
 # Raw cost before Intelligence and before ENERGY_COST_SCALE. The bolt is deliberately the
 # cheapest thing a caster can do and the weakest: it is what raw force does before it has
 # been shaped into an element, which is why it has no condition, no fork and no terrain.
-const SPELL_ENERGY := {
-	# Raised across the board after the 0.2.71 survey spent 200 Energy over 58 seconds and
-	# finished the room at full: the bar was never a constraint, so casting competed with
-	# nothing. That is the one thing the no-mana argument cannot survive.
-	"lightning_bolt": 26.0, "fireball": 40.0, "fire_breath": 44.0,
-	"frost_lance": 40.0, "cold_front": 50.0, "earth_wall": 42.0,
-	"sunder": 36.0, "gale": 38.0, "windstep": 32.0,
-}
-const SPELL_LABELS := {
-	"lightning_bolt": "Lightning Bolt", "fireball": "Fireball", "fire_breath": "Fire Breath",
-	"frost_lance": "Frost Lance", "cold_front": "Cold Front", "earth_wall": "Earth Wall",
-	"sunder": "Sunder", "gale": "Gale", "windstep": "Windstep",
-}
 # Placed spells land where the player tapped; aimed spells only need a heading. The tap
 # already carries a world point, and until 0.2.68 that point was reduced to a direction and
 # re-projected to a fixed 340 units -- so an Earth Wall could not be put anywhere in
 # particular, and in isometric it routinely landed off the visible floor. It was not
 # invisible; it was somewhere else.
-const PLACED_SPELLS := ["earth_wall", "sunder", "cold_front", "gale"]
-const SPELL_PLACE_RANGE := 420.0
+const SPELL_PLACE_RANGE := AbilityCatalogScript.PLACE_RANGE
 
 static func spell_is_placed(spell_id: String) -> bool:
-	return PLACED_SPELLS.has(spell_id)
+	return AbilityCatalogScript.spell_is_placed(spell_id)
 
 # How far a spell reaches, for the ring the renderer draws when one is armed. Placed spells
 # reach as far as they may be put; the bolt reaches as far as it strikes; everything else is
 # a heading rather than a distance and has no ring to draw.
 func spell_reach(spell_id: String) -> float:
-	if spell_is_placed(spell_id): return SPELL_PLACE_RANGE
-	if spell_id == "lightning_bolt": return LIGHTNING_RANGE
-	return 0.0
+	return float(AbilityCatalogScript.spell(spell_id).get("reach", 0.0))
 
 func spell_target_for(spell_id: String, world_point: Vector2) -> Vector2:
 	if not spell_is_placed(spell_id): return world_point
@@ -457,16 +441,32 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 # snapshot, so a caster mid-cone reads as danger the same way a Blade mid-swing does.
 # Player actions that are a swing at something -- what a Bandit reads to know it is
 # being attacked. Kept beside the enemy list so the two stay recognisably a pair.
-const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
-const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
-const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.74"
+const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
+const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
+const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
+const SAVE_VERSION := 34
+const GAME_VERSION := "0.2.75"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
+const COOLDOWN_DODGE := "dodge"
+const COOLDOWN_BLOCK := "block"
+const COOLDOWN_ENDURE := "endure"
+const COOLDOWN_SKILL := "skill"
+const COOLDOWN_RALLY := "rally"
+const COOLDOWN_ADVANCE := "advance"
+const COOLDOWN_MAIN := "main_ability"
+const COOLDOWN_SUBCLASS := "subclass_ability"
+const COOLDOWN_WEAPON_SEQUENCE := "weapon_sequence"
+const COOLDOWN_SPELL := "spell"
+const COOLDOWN_SLOT_DEFAULTS := {
+	COOLDOWN_DODGE: DODGE_COOLDOWN, COOLDOWN_BLOCK: BLOCK_COOLDOWN, COOLDOWN_ENDURE: ENDURE_COOLDOWN,
+	COOLDOWN_SKILL: 6.5, COOLDOWN_RALLY: 12.0, COOLDOWN_ADVANCE: 6.0,
+	COOLDOWN_MAIN: 12.0, COOLDOWN_SUBCLASS: 8.0,
+	COOLDOWN_WEAPON_SEQUENCE: 0.0001, COOLDOWN_SPELL: 8.0,
+}
 const CONSUMABLES := {
 	"throwing_knife": {"label": "Throwing Knife", "short": "KNIFE", "targeted": true, "max_stack": 2, "color": "d7dddd"},
 	"firebomb": {"label": "Firebomb", "short": "FIRE", "targeted": true, "max_stack": 2, "color": "f28b4b"},
@@ -512,15 +512,34 @@ var player_action := _idle_action()
 var enemies: Array[Dictionary] = []
 var projectiles: Array[Dictionary] = []
 var walls: Array[Rect2] = []
-var dodge_cooldown := 0.0
-var block_cooldown := 0.0
-var endure_cooldown := 0.0
-var skill_cooldown := 0.0
-var rally_cooldown := 0.0
-var advance_cooldown := 0.0
-var main_ability_cooldown := 0.0
-var subclass_ability_cooldown := 0.0
-var weapon_sequence_cooldown := 0.0
+var cooldowns: Dictionary = _new_cooldown_slots()
+var dodge_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_DODGE)
+	set(value): _set_cooldown_remaining(COOLDOWN_DODGE, value)
+var block_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_BLOCK)
+	set(value): _set_cooldown_remaining(COOLDOWN_BLOCK, value)
+var endure_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_ENDURE)
+	set(value): _set_cooldown_remaining(COOLDOWN_ENDURE, value)
+var skill_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_SKILL)
+	set(value): _set_cooldown_remaining(COOLDOWN_SKILL, value)
+var rally_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_RALLY)
+	set(value): _set_cooldown_remaining(COOLDOWN_RALLY, value)
+var advance_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_ADVANCE)
+	set(value): _set_cooldown_remaining(COOLDOWN_ADVANCE, value)
+var main_ability_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_MAIN)
+	set(value): _set_cooldown_remaining(COOLDOWN_MAIN, value)
+var subclass_ability_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_SUBCLASS)
+	set(value): _set_cooldown_remaining(COOLDOWN_SUBCLASS, value)
+var weapon_sequence_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_WEAPON_SEQUENCE)
+	set(value): _set_cooldown_remaining(COOLDOWN_WEAPON_SEQUENCE, value)
 var stealth_remaining := 0.0
 var stealth_cooldown_pending := false
 # What this hide has cost so far. Accrues in BOTH profiles: Recovery never deducts it
@@ -538,10 +557,18 @@ var stealth_last_end_reason := ""
 var _last_energy_spend := 0.0
 # What each cooldown started at, so the readiness bar is drawn against the real
 # maximum rather than against a hardcoded guess that derived values now break.
-var skill_cooldown_max := 6.5
-var advance_cooldown_max := 6.0
-var main_ability_cooldown_max := 12.0
-var subclass_ability_cooldown_max := 8.0
+var skill_cooldown_max: float:
+	get: return cooldown_maximum(COOLDOWN_SKILL)
+	set(value): _set_cooldown_maximum(COOLDOWN_SKILL, value)
+var advance_cooldown_max: float:
+	get: return cooldown_maximum(COOLDOWN_ADVANCE)
+	set(value): _set_cooldown_maximum(COOLDOWN_ADVANCE, value)
+var main_ability_cooldown_max: float:
+	get: return cooldown_maximum(COOLDOWN_MAIN)
+	set(value): _set_cooldown_maximum(COOLDOWN_MAIN, value)
+var subclass_ability_cooldown_max: float:
+	get: return cooldown_maximum(COOLDOWN_SUBCLASS)
+	set(value): _set_cooldown_maximum(COOLDOWN_SUBCLASS, value)
 # How long a ranged body survives before the player is standing on top of it. "An
 # archer that spawns next to me is just a blob I have to hit before fighting the rest
 # of the room" -- that is a claim about time, and until now it was unmeasurable.
@@ -594,8 +621,12 @@ var circle_remaining := 0.0
 # adds one element per subclass rank, so this is never empty and never longer than five.
 var player_spells: Array[String] = []
 var selected_spell := ""
-var spell_cooldown := 0.0
-var spell_cooldown_max := 8.0
+var spell_cooldown: float:
+	get: return cooldown_remaining(COOLDOWN_SPELL)
+	set(value): _set_cooldown_remaining(COOLDOWN_SPELL, value)
+var spell_cooldown_max: float:
+	get: return cooldown_maximum(COOLDOWN_SPELL)
+	set(value): _set_cooldown_maximum(COOLDOWN_SPELL, value)
 var survey_circle_casts := 0
 var survey_spell_casts := 0
 var player_condition_buildup: Dictionary = {}
@@ -704,6 +735,7 @@ var message := "Time is frozen. Choose an action."
 var last_timeline: Array[Dictionary] = []
 var rng := RandomNumberGenerator.new()
 var _next_enemy_id := 1
+var _next_presentation_id := 1
 var navigation := AStarGrid2D.new()
 var run_active := false
 var mode_id := ModeRulesScript.EXPEDITION
@@ -919,6 +951,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	bow_followup_consumed = false
 	_condition_tick_accumulator = 0.0
 	_next_combo_instance_id = 1
+	_next_presentation_id = 1
 	rally_remaining = 0.0
 	rally_end_after_action = false
 	rally_break_extension_used = false
@@ -1508,7 +1541,7 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	return chosen
 
 func _survey_enemy_cost(kind: String) -> int:
-	return int({"ox": 5, "shield": 3, "boar": 1, "hound": 1, "knife": 1, "bandit": 2, "blade": 2, "archer": 2, "ice_caster": 3, "fire_caster": 3, "polearm": 3, "brute": 4, "chanter": 4, "javelineer": 2, "earth_caster": 3, "air_caster": 3, "duellist": 4, "knight": 5}.get(kind, 2))
+	return int(CombatCatalogScript.enemy_fact(kind, "survey_cost"))
 
 func _survey_composition_cost(enemies_plan: Array[Dictionary]) -> int:
 	var result := 0
@@ -2035,6 +2068,7 @@ func _capture_survey_room_entry() -> void:
 		"dodge_recovery_damage": dodge_recovery_damage_total,
 		"strike_diagnostic_count": survey_strike_diagnostics.size(),
 	}
+	survey_room_entry.merge(SurveyCounterCatalogScript.capture(self), true)
 	survey_last_damage_source = ""
 
 func record_survey_view_mode(mode: String, switched: bool) -> void:
@@ -2177,6 +2211,9 @@ func _complete_survey_room(outcome: String) -> void:
 		"strike_diagnostics": survey_strike_diagnostics.slice(int(survey_room_entry.get("strike_diagnostic_count", 0))).duplicate(true),
 		"ratings": {}, "tags": [], "notes": "", "subjective_skipped": false,
 	}, true)
+	# Counter descriptors are authoritative. The explicit fields above remain during
+	# this migration only as a compatibility audit: descriptor values overwrite them.
+	survey_pending_record.merge(SurveyCounterCatalogScript.room_values(self, survey_room_entry), true)
 	survey_feedback_pending = true
 	survey_run_ending = outcome in ["death", "manual_end"]
 	survey_end_reason = outcome
@@ -2352,7 +2389,7 @@ func _enemy_base_hp(kind: String) -> int:
 	# as a support unit, which does not read: an enemy that size needs a boss's move
 	# set to earn it. Dropped to an ordinary humanoid frame so its reach is the thing
 	# that makes it dangerous.
-	return {"ox": 96, "boar": 35, "bandit": 25, "knife": 20, "blade": 35, "hound": 30, "archer": 25, "shield": 50, "polearm": 34, "ice_caster": 40, "fire_caster": 40, "brute": 80, "knight": 140, "chanter": 40, "javelineer": 30, "earth_caster": 36, "air_caster": 32, "duellist": 45, "warden": 130, "werewolf": 210}.get(kind, 35)
+	return int(CombatCatalogScript.enemy_fact(kind, "base_hp"))
 
 func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> Dictionary:
 	var combat_profile := CombatCatalogScript.archetype(kind)
@@ -2361,6 +2398,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 	var posture_max := _enemy_posture_base(kind) + float(attributes.get("resolve", 5))
 	var enemy := {
 		"id": _next_enemy_id,
+		"faction": "enemy",
 		"kind": kind,
 		"pos": position,
 		"spawn_pos": position,
@@ -2368,7 +2406,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"facing": Vector2.DOWN,
 		"hp": hp,
 		"max_hp": hp,
-		"radius": 52.0 if kind == "ox" else 62.0 if kind == "werewolf" else 52.0 if kind == "warden" else 49.0 if kind == "knight" else 46.0 if kind == "brute" else 42.0 if kind == "boar" else 25.0 if kind == "hound" else 23.0 if kind == "bandit" else 22.0 if kind == "knife" else ENEMY_RADIUS,
+		"radius": float(combat_profile["radius"]),
 		"posture": posture_max,
 		"posture_max": posture_max,
 		"posture_recovery_delay": 0.0,
@@ -2409,7 +2447,7 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 	return enemy
 
 func _respawn_enemies() -> void:
-	enemies.clear()
+	_replace_enemy_actors([])
 	projectiles.clear()
 	hazards.clear()
 	_next_enemy_id = 1
@@ -2425,19 +2463,19 @@ func _respawn_enemies() -> void:
 				var authored_facing := Vector2(template["facing"])
 				if authored_facing.length_squared() > 0.001: enemy["facing"] = authored_facing.normalized()
 			enemy["heard_sound_sequence"] = _sound_sequence
-			enemies.append(enemy)
-	_invalidate_active_enemy_cache()
+			_add_enemy_actor(enemy)
 
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
 	# and equipment identity without creating another visible character stat.
-	return {"ox": 6.0, "bandit": 0.5, "knife": 0.0, "hound": 0.0, "boar": 0.0, "archer": 0.0, "ice_caster": 0.5, "fire_caster": 0.5, "blade": 0.0, "chanter": 0.0, "javelineer": 0.0, "earth_caster": 0.0, "air_caster": 0.0, "duellist": 1.5, "shield": 1.0, "polearm": 1.0, "brute": 5.0, "knight": 10.0, "warden": 8.0, "werewolf": 7.0}.get(kind, 0.0)
+	return float(CombatCatalogScript.enemy_fact(kind, "posture_base"))
 
 func _enemy_posture_max(kind: String) -> float:
 	var profile := CombatCatalogScript.archetype(kind)
 	return _enemy_posture_base(kind) + float(Dictionary(profile["attributes"]).get("resolve", 5))
 
 func _hydrate_enemy_combat_profile(enemy: Dictionary) -> Dictionary:
+	if not enemy.has("faction"): enemy["faction"] = "enemy"
 	var profile := CombatCatalogScript.archetype(String(enemy.get("kind", "blade")))
 	if not enemy.has("weapon_frame"): enemy["weapon_frame"] = String(profile["weapon_frame"])
 	if not enemy.has("weapon_art_ids"): enemy["weapon_art_ids"] = Array(profile["weapon_arts"]).duplicate()
@@ -2653,7 +2691,7 @@ func player_is_inside_circle() -> bool:
 	return circle_remaining > 0.0 and player_pos.distance_to(circle_pos) <= circle_radius()
 
 func spell_energy_cost(spell_id: String) -> float:
-	var raw := float(SPELL_ENERGY.get(spell_id, 24.0))
+	var raw := float(AbilityCatalogScript.spell(spell_id).get("energy", 24.0))
 	var discount := 1.0 - float(player_intelligence() - INTELLIGENCE_BASELINE) * SPELL_COST_PER_INTELLIGENCE
 	return energy_cost(raw * maxf(SPELL_COST_FLOOR, discount))
 
@@ -2665,21 +2703,49 @@ func _cooldown_for(spend: float) -> float:
 func _cooldown_for_last_spend() -> float:
 	return _cooldown_for(_last_energy_spend)
 
+func _new_cooldown_slots() -> Dictionary:
+	var result := {}
+	for slot in COOLDOWN_SLOT_DEFAULTS:
+		result[slot] = {"remaining": 0.0, "maximum": float(COOLDOWN_SLOT_DEFAULTS[slot])}
+	return result
+
+func _cooldown_slot(slot: String) -> Dictionary:
+	if not cooldowns.has(slot):
+		push_error("Unknown cooldown slot: %s" % slot)
+		cooldowns[slot] = {"remaining": 0.0, "maximum": 0.0001}
+	return Dictionary(cooldowns[slot])
+
+func cooldown_remaining(slot: String) -> float:
+	return float(_cooldown_slot(slot).get("remaining", 0.0))
+
+func cooldown_maximum(slot: String) -> float:
+	return float(_cooldown_slot(slot).get("maximum", 0.0001))
+
+func _set_cooldown_remaining(slot: String, seconds: float) -> void:
+	var value := _cooldown_slot(slot)
+	value["remaining"] = maxf(0.0, seconds)
+	cooldowns[slot] = value
+
+func _set_cooldown_maximum(slot: String, seconds: float) -> void:
+	var value := _cooldown_slot(slot)
+	value["maximum"] = maxf(0.0001, seconds)
+	cooldowns[slot] = value
+
+func begin_cooldown(slot: String, seconds: float) -> void:
+	_set_cooldown_remaining(slot, seconds)
+	_set_cooldown_maximum(slot, seconds)
+
 func _begin_skill_cooldown(seconds: float) -> void:
-	skill_cooldown = seconds
-	skill_cooldown_max = maxf(0.0001, seconds)
+	begin_cooldown(COOLDOWN_SKILL, seconds)
 
 func _begin_advance_cooldown(seconds: float) -> void:
-	advance_cooldown = seconds
-	advance_cooldown_max = maxf(0.0001, seconds)
+	begin_cooldown(COOLDOWN_ADVANCE, seconds)
 
 func _begin_main_ability_cooldown(seconds: float) -> void:
-	main_ability_cooldown = seconds
-	main_ability_cooldown_max = maxf(0.0001, seconds)
+	begin_cooldown(COOLDOWN_MAIN, seconds)
 
 func _begin_subclass_cooldown(seconds: float) -> void:
-	subclass_ability_cooldown = seconds
-	subclass_ability_cooldown_max = maxf(0.0001, seconds)
+	begin_cooldown(COOLDOWN_SUBCLASS, seconds)
 
 # `scaled = false` charges the authored number directly. Sweeping Cut uses it:
 # see the note on SWEEPING_CUT_ENERGY for why price parity with the combo could
@@ -3389,6 +3455,61 @@ func _enemy_by_id(enemy_id: int) -> Dictionary:
 		if int(enemy.get("id", -1)) == enemy_id: return enemy
 	return {}
 
+func _actor_id(actor: Variant) -> int:
+	return int(Dictionary(actor).get("id", -1)) if actor is Dictionary else int(actor)
+
+func _actor_storage(actor: Variant) -> Dictionary:
+	if actor is Dictionary: return Dictionary(actor)
+	var actor_id := int(actor)
+	return {} if actor_id == 0 else _enemy_by_id(actor_id)
+
+func _faction_of(actor: Variant) -> String:
+	var actor_id := _actor_id(actor)
+	if actor_id == 0: return "player"
+	var storage := _actor_storage(actor)
+	return String(storage.get("faction", "enemy")) if not storage.is_empty() else "neutral"
+
+func _opposes(first: Variant, second: Variant) -> bool:
+	var first_faction := _faction_of(first)
+	var second_faction := _faction_of(second)
+	return first_faction != "neutral" and second_faction != "neutral" and first_faction != second_faction
+
+func actor_view(actor: Variant) -> Dictionary:
+	var actor_id := _actor_id(actor)
+	if actor_id == 0:
+		return {"id":0, "kind":"player", "faction":"player", "pos":player_pos, "radius":PLAYER_RADIUS, "hp":player_hp, "posture":player_posture}
+	var storage := _actor_storage(actor)
+	if storage.is_empty(): return {}
+	return {"id":actor_id, "kind":String(storage.get("kind", "")), "faction":_faction_of(storage), "pos":Vector2(storage.get("pos", Vector2.ZERO)), "radius":float(storage.get("radius", ENEMY_RADIUS)), "hp":int(storage.get("hp", 0)), "posture":float(storage.get("posture", 0.0))}
+
+func _change_actor_hp(actor: Variant, delta: int) -> int:
+	var actor_id := _actor_id(actor)
+	if actor_id == 0:
+		var before := player_hp
+		player_hp = clampi(player_hp + delta, 0, player_max_hp)
+		return player_hp - before
+	var storage := _actor_storage(actor)
+	if storage.is_empty(): return 0
+	var before := int(storage.get("hp", 0))
+	storage["hp"] = before + delta
+	return int(storage["hp"]) - before
+
+func _apply_actor_condition_buildup(actor: Variant, condition_id: String, amount: float) -> bool:
+	return apply_player_condition_buildup(condition_id, amount) if _actor_id(actor) == 0 else apply_enemy_condition_buildup(_actor_storage(actor), condition_id, amount)
+
+func _apply_actor_posture_damage(actor: Variant, amount: float, contact: Vector2 = Vector2.INF) -> bool:
+	if _actor_id(actor) == 0:
+		player_posture = maxf(0.0, player_posture - amount)
+		player_posture_recovery_delay = 1.15
+		return player_posture <= 0.0001
+	return _apply_posture_damage(_actor_storage(actor), amount, contact)
+
+func _set_actor_impulse(actor: Variant, velocity: Vector2) -> void:
+	if _actor_id(actor) == 0: player_gale_velocity = velocity
+	else:
+		var storage := _actor_storage(actor)
+		if not storage.is_empty(): storage["gale_velocity"] = velocity
+
 func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> void:
 	if not _spend_energy(18.0): return
 	player_facing = direction.normalized()
@@ -3593,7 +3714,7 @@ func knows_spell(spell_id: String) -> bool:
 	return player_spells.has(spell_id)
 
 func spell_label(spell_id: String) -> String:
-	return String(SPELL_LABELS.get(spell_id, spell_id.capitalize()))
+	return String(AbilityCatalogScript.spell(spell_id).get("label", spell_id.capitalize()))
 
 func spell_is_available() -> bool:
 	return is_player_ready() and not player_spells.is_empty() and spell_cooldown <= 0.0001 and not energy_actions_locked()
@@ -3623,15 +3744,8 @@ func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool
 	selected_spell = spell_id
 	player_facing = direction
 	survey_spell_casts += 1
-	match spell_id:
-		"lightning_bolt": player_action = _spell_action(spell_id, direction, 0.34, 0.86)
-		"windstep": player_action = _spell_action(spell_id, direction, 0.22, 0.78)
-		"gale": player_action = _spell_action(spell_id, direction, 0.30, 0.82)
-		"lightning_bolt2": pass
-		"fire_breath": player_action = _spell_action(spell_id, direction, 0.74, 1.62)
-		"cold_front": player_action = _spell_action(spell_id, direction, 0.96, 1.94)
-		"earth_wall": player_action = _spell_action(spell_id, direction, 1.02, 1.74)
-		_: player_action = _spell_action(spell_id, direction, 0.66, 1.44)
+	var spell_definition := AbilityCatalogScript.spell(spell_id)
+	player_action = _spell_action(spell_id, direction, float(spell_definition["player_startup"]), float(spell_definition["player_duration"]))
 	player_action["target"] = target
 	_begin_spell_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("spell")
@@ -3642,36 +3756,25 @@ func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool
 	return true
 
 func _begin_spell_cooldown(seconds: float) -> void:
-	spell_cooldown = seconds
-	spell_cooldown_max = maxf(0.0001, seconds)
+	begin_cooldown(COOLDOWN_SPELL, seconds)
 
 # The player's spells are the enemies' spells. Every one of these reuses the spawner the
 # enemy version already calls, with the player standing in as the source, which is what
 # keeps "the spellbook is the bestiary" true in the code and not only in the design.
 func _resolve_player_spell(spell_id: String, target: Vector2, direction: Vector2) -> void:
 	var caster := {"id": 0, "pos": player_pos, "layer": current_layer, "kind": "player"}
-	match spell_id:
+	var definition := AbilityCatalogScript.spell(spell_id)
+	match String(definition["resolver"]):
 		"lightning_bolt": _resolve_lightning_bolt(direction)
-		"fireball":
-			projectiles.append({
-				"pos": player_pos + direction * 36.0, "vel": direction * 465.0, "radius": 13.0,
-				"damage": 20, "posture": 1.6, "kind": "firebolt", "friendly": true, "source_id": 0,
-				"travelled": 0.0, "max_range": 700.0, "hit_ids": [], "elevation_profile": "flat",
-				"elevation": PROJECTILE_GROUND_ELEVATION, "layer": current_layer,
-			})
-		"frost_lance":
-			projectiles.append({
-				"pos": player_pos + direction * 36.0, "vel": direction * 610.0, "radius": 11.0,
-				"damage": 16, "posture": 1.4, "kind": "frost_lance", "friendly": true, "source_id": 0,
-				"travelled": 0.0, "max_range": 660.0, "hit_ids": [], "elevation_profile": "flat",
-				"elevation": PROJECTILE_GROUND_ELEVATION, "layer": current_layer,
-			})
-		"fire_breath": _spawn_fire_breath(caster, direction)
-		"cold_front": _spawn_cold_front(caster, target)
-		"sunder": _spawn_sundered_ground(target, 0, current_layer)
-		"earth_wall": _raise_player_earth_wall(target)
-		"gale": _spawn_gale(caster, target)
-		"windstep": pass
+		"projectile": _spawn_spell_projectile(caster, String(definition["projectile"]), direction)
+		"hazard":
+			match String(definition["hazard"]):
+				"fire_breath": _spawn_fire_breath(caster, direction)
+				"cold_front": _spawn_cold_front(caster, target)
+				"sundered_ground": _spawn_sundered_ground(target, 0, current_layer)
+				"gale": _spawn_gale(caster, target)
+		"barrier": _raise_player_earth_wall(target)
+		"movement": pass
 
 func _resolve_lightning_bolt(direction: Vector2) -> void:
 	# An instant line to the first thing in it. Not a travelling projectile and not a cone,
@@ -3703,7 +3806,7 @@ func _resolve_lightning_bolt(direction: Vector2) -> void:
 	best["hp"] = int(best["hp"]) - damage
 	damage_dealt += damage
 	_on_player_hit_landed(best)
-	var posture_broken := _apply_posture_damage(best, float(resolved["posture"]), contact)
+	var posture_broken := _apply_actor_posture_damage(best, float(resolved["posture"]), contact)
 	if not posture_broken:
 		_apply_enemy_hit_reaction(best, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
 	_register_enemy_hit_awareness(best, resolved, source_action)
@@ -3723,7 +3826,7 @@ func _raise_player_earth_wall(target: Vector2) -> void:
 	var segment_span := EARTH_WALL_SPAN / float(EARTH_WALL_SEGMENTS)
 	for index in range(EARTH_WALL_SEGMENTS):
 		var offset := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
-		barriers.append({
+		_add_barrier({
 			"pos": target + axis * offset, "axis": axis, "half_length": segment_span * 0.5,
 			"thickness": EARTH_WALL_THICKNESS, "hp": EARTH_WALL_SEGMENT_HP,
 			"remaining": EARTH_WALL_PLAYER_DURATION, "lowered": false, "source_id": 0, "layer": current_layer,
@@ -4090,7 +4193,7 @@ func _drop_belt_item(stored: Dictionary) -> void:
 	while world_pickups.any(func(value: Dictionary) -> bool: return String(value.get("id", "")) == pickup_id):
 		serial += 1
 		pickup_id = "discard_%d_%d" % [roundi(simulation_time * 120.0), serial]
-	world_pickups.append({
+	_add_pickup({
 		"id": pickup_id,
 		"item_id": String(stored["id"]),
 		"count": int(stored["count"]),
@@ -4390,7 +4493,7 @@ func _update_secret_passages() -> bool:
 		secret_passages[index] = secret
 		var reward := Dictionary(secret.get("reward", {})).duplicate(true)
 		if not reward.is_empty() and not world_pickups.any(func(value: Dictionary) -> bool: return String(value.get("id", "")) == String(reward.get("id", ""))):
-			world_pickups.append(reward)
+			_add_pickup(reward)
 		_add_effect("discover", Vector2(secret.get("gate_pos", player_pos)))
 		_set_message("Your Awareness reveals a concealed passage through the thicket." if awareness_reveal else "Up close, the brush gives way to a concealed passage.")
 		_apply_shortcut_world_state()
@@ -4455,6 +4558,49 @@ func nearby_render_walls(position: Vector2, radius: float) -> Array[Rect2]:
 func _invalidate_active_enemy_cache() -> void:
 	_active_enemy_cache_dirty = true
 	_enemy_spatial_cache_dirty = true
+
+func _add_enemy_actor(enemy: Dictionary) -> void:
+	enemies.append(enemy)
+	_invalidate_active_enemy_cache()
+
+func _replace_enemy_actors(values: Array) -> void:
+	enemies.assign(values)
+	_invalidate_active_enemy_cache()
+
+func _set_enemy_position(enemy: Dictionary, position: Vector2) -> void:
+	enemy["pos"] = position
+	_update_enemy_bucket_membership(enemy)
+
+func _append_presented(collection: Array, value: Dictionary) -> Dictionary:
+	if not value.has("presentation_id"):
+		value["presentation_id"] = _next_presentation_id
+		_next_presentation_id += 1
+	collection.append(value)
+	return value
+
+func _add_projectile(value: Dictionary) -> Dictionary:
+	return _append_presented(projectiles, RuntimeSchemaScript.construct("projectile", value))
+
+func _add_hazard(value: Dictionary) -> Dictionary:
+	return _append_presented(hazards, RuntimeSchemaScript.construct("hazard", value))
+
+func _add_barrier(value: Dictionary) -> Dictionary:
+	return _append_presented(barriers, RuntimeSchemaScript.construct("barrier", value))
+
+func _add_effect_entity(value: Dictionary) -> Dictionary:
+	return _append_presented(effects, RuntimeSchemaScript.construct("effect", value))
+
+func _add_pickup(value: Dictionary) -> Dictionary:
+	return _append_presented(world_pickups, RuntimeSchemaScript.construct("pickup", value))
+
+func _normalize_presentation_ids() -> void:
+	_next_presentation_id = 1
+	for collection in [projectiles, hazards, effects, world_pickups, barriers]:
+		for value in collection:
+			var item := Dictionary(value)
+			if not item.has("presentation_id"):
+				item["presentation_id"] = _next_presentation_id
+			_next_presentation_id = maxi(_next_presentation_id, int(item["presentation_id"]) + 1)
 
 func _refresh_active_enemy_cache() -> void:
 	if not _active_enemy_cache_dirty: return
@@ -4967,16 +5113,8 @@ func _tick(dt: float) -> void:
 	if mode_id == ModeRulesScript.COMBAT_SURVEY: _sample_engagement()
 	_player_reaction_completed_this_tick = false
 	var player_dt := dt * _player_personal_tempo()
-	dodge_cooldown = maxf(0.0, dodge_cooldown - player_dt)
-	block_cooldown = maxf(0.0, block_cooldown - player_dt)
-	endure_cooldown = maxf(0.0, endure_cooldown - player_dt)
-	skill_cooldown = maxf(0.0, skill_cooldown - player_dt)
-	rally_cooldown = maxf(0.0, rally_cooldown - player_dt)
-	advance_cooldown = maxf(0.0, advance_cooldown - player_dt)
-	main_ability_cooldown = maxf(0.0, main_ability_cooldown - player_dt)
-	spell_cooldown = maxf(0.0, spell_cooldown - player_dt)
-	subclass_ability_cooldown = maxf(0.0, subclass_ability_cooldown - player_dt)
-	weapon_sequence_cooldown = maxf(0.0, weapon_sequence_cooldown - player_dt)
+	for slot in cooldowns:
+		_set_cooldown_remaining(String(slot), cooldown_remaining(String(slot)) - player_dt)
 	counterstep_remaining = maxf(0.0, counterstep_remaining - dt)
 	turnabout_remaining = maxf(0.0, turnabout_remaining - dt)
 	# World time, matching hit reactions themselves. Personal tempo must not buy a
@@ -5060,7 +5198,7 @@ func apply_player_condition_buildup(condition_id: String, amount: float) -> bool
 func _trigger_player_condition(condition_id: String) -> void:
 	match condition_id:
 		"laceration":
-			player_hp = maxi(0, player_hp - 15)
+			_change_actor_hp(0, -15)
 			survey_last_damage_source = "laceration"
 		"poison": player_conditions[condition_id] = 8.0
 		"sleep":
@@ -5087,7 +5225,7 @@ func apply_enemy_condition_buildup(enemy: Dictionary, condition_id: String, amou
 	buildup[condition_id] = 0.0
 	enemy["condition_buildup"] = buildup
 	var conditions := Dictionary(enemy.get("conditions", {}))
-	if condition_id == "laceration": enemy["hp"] = int(enemy["hp"]) - 15
+	if condition_id == "laceration": _change_actor_hp(enemy, -15)
 	else: conditions[condition_id] = {"poison": 8.0, "sleep": 3.0, "frost": 6.0, "burning": 4.0, "frenzy": 5.0}.get(condition_id, 4.0)
 	enemy["conditions"] = conditions
 	return true
@@ -5101,7 +5239,7 @@ func _update_conditions(dt: float) -> void:
 		if _player_burn_debt >= 1.0:
 			var applied := int(floor(_player_burn_debt))
 			_player_burn_debt -= float(applied)
-			player_hp = maxi(0, player_hp - applied)
+			_change_actor_hp(0, -applied)
 			damage_received_total += applied
 			survey_burn_damage_total += applied
 			survey_last_damage_source = "burning"
@@ -5118,7 +5256,7 @@ func _update_conditions(dt: float) -> void:
 		_condition_tick_accumulator -= 1.0
 		ongoing_tick = true
 		if float(player_conditions.get("poison", 0.0)) > 0.0:
-			player_hp = maxi(0, player_hp - 3)
+			_change_actor_hp(0, -3)
 			survey_last_damage_source = "poison"
 		# Burning is charged per world-second above, not in this once-a-second sweep. Both
 		# were running, so fire cost 27 health across two seconds while reporting 21 --
@@ -5139,8 +5277,8 @@ func _update_conditions(dt: float) -> void:
 			if float(conditions[condition_id]) <= 0.0: conditions.erase(condition_id)
 		enemy["conditions"] = conditions
 		if ongoing_tick:
-			if float(conditions.get("poison", 0.0)) > 0.0: enemy["hp"] = int(enemy["hp"]) - 3
-			if float(conditions.get("burning", 0.0)) > 0.0: enemy["hp"] = int(enemy["hp"]) - 6
+			if float(conditions.get("poison", 0.0)) > 0.0: _change_actor_hp(enemy, -3)
+			if float(conditions.get("burning", 0.0)) > 0.0: _change_actor_hp(enemy, -6)
 
 func _try_recover_xp() -> void:
 	if bool(lost_xp.get("active", false)) and String(lost_xp.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(lost_xp.get("pos", Vector2.ZERO))) <= 58.0:
@@ -5322,12 +5460,12 @@ func _resolve_advance_impact() -> void:
 		var raw_damage := int(player_action.get("damage_min", 10)) + _rally_damage_bonus()
 		var resolved := _resolve_player_physical_values(enemy, raw_damage, float(player_action["posture_damage"]) + _rally_posture_bonus(), player_action)
 		var damage := int(resolved["damage"])
-		enemy["hp"] = int(enemy["hp"]) - damage
+		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
-		var posture_broken := _apply_posture_damage(enemy, float(resolved["posture"]), impact)
-		enemy["pos"] = _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"]))
+		var posture_broken := _apply_actor_posture_damage(enemy, float(resolved["posture"]), impact)
+		_set_enemy_position(enemy, _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"])))
 		_register_enemy_hit_awareness(enemy, resolved, player_action)
 		_add_effect("hit", impact, damage, {"direction": direction})
 		_handle_player_contact_aftermath(enemy, resolved)
@@ -5447,6 +5585,7 @@ func _follow_the_opening(phase_index: int) -> void:
 		"duration": 1.0,
 		"reach": reach,
 	}
+
 	var current_sample := AttackGeometryScript.pose(test_action, player_pos, player_facing, _nearby_walls(player_pos, reach + 90.0))
 	for existing in _nearby_enemies(player_pos, reach + 120.0):
 		if _enemy_on_current_layer(existing) and enemy_visible_to_player(existing) and AttackGeometryScript.hits_circle(current_sample, Vector2(existing["pos"]), float(existing.get("radius", ENEMY_RADIUS))):
@@ -5472,6 +5611,17 @@ func _follow_the_opening(phase_index: int) -> void:
 	if best_direction.length_squared() > 0.001:
 		player_facing = best_direction
 		player_action["direction"] = best_direction
+
+func _enemy_ability_action(ability_id: String, direction: Vector2) -> Dictionary:
+	var definition := AbilityCatalogScript.enemy_ability(ability_id)
+	if definition.is_empty():
+		push_error("Unknown enemy ability '%s'." % ability_id)
+		return _idle_action()
+	var action := _action(String(definition["action_kind"]), float(definition["duration"]), direction)
+	action["startup"] = float(definition["startup"])
+	action["ability_id"] = ability_id
+	if ability_id == "fireball": action["label"] = "fireball"
+	return action
 
 func _resolve_twin_fang_tick(elapsed: float) -> void:
 	if bool(player_action.get("contact_done", false)): return
@@ -5513,10 +5663,10 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		var resolved := _resolve_player_physical_values(enemy, per_blade_damage * blade_count, float(player_action.get("posture_per_blade", 2.0)) * float(blade_count), player_action)
 		var damage := int(resolved["damage"])
 		var posture := float(resolved["posture"])
-		enemy["hp"] = int(enemy["hp"]) - damage
+		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
-		var posture_broken := _apply_posture_damage(enemy, posture, hit_point)
+		var posture_broken := _apply_actor_posture_damage(enemy, posture, hit_point)
 		var reaction_applied := false
 		if not posture_broken and _player_hit_can_interrupt(): reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
 		pending_awareness.append({"enemy": enemy, "result": resolved})
@@ -5699,7 +5849,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			_set_message("The bandit slips through the attack.")
 		elif _enemy_blocks_attack(enemy):
 			_survey_mark_strike_resolution(enemy, "blocked")
-			_apply_posture_damage(enemy, 2.0 if is_sweep else 0.5)
+			_apply_actor_posture_damage(enemy, 2.0 if is_sweep else 0.5)
 			_add_effect("block", hit_point)
 			_set_message("The shield catches your weapon.")
 		else:
@@ -5721,10 +5871,10 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			contact_result = resolved
 			var dealt := int(resolved["damage"])
 			posture_damage = float(resolved["posture"])
-			enemy["hp"] = int(enemy["hp"]) - dealt
+			_change_actor_hp(enemy, -dealt)
 			damage_dealt += dealt
 			_on_player_hit_landed(enemy)
-			var posture_broken := _apply_posture_damage(enemy, posture_damage, hit_point)
+			var posture_broken := _apply_actor_posture_damage(enemy, posture_damage, hit_point)
 			var reaction_applied := false
 			if not posture_broken and _player_hit_can_interrupt():
 				reaction_applied = _apply_enemy_hit_reaction(enemy, posture_damage, awareness_before, action_before, hit_point, player_action)
@@ -5842,8 +5992,7 @@ func _apply_whirlwind_push(enemy: Dictionary, distance: float) -> void:
 	if _enemy_mass(String(enemy.get("kind", ""))) >= PUSHABLE_MASS: return
 	var offset := Vector2(enemy["pos"]) - player_pos
 	var away := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
-	enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * distance, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
-	_update_enemy_bucket_membership(enemy)
+	_set_enemy_position(enemy, _move_actor(Vector2(enemy["pos"]), away * distance, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"])))
 
 func _handle_player_contact_aftermath(enemy: Dictionary, contact_result: Dictionary = {}) -> void:
 	var conditions := Dictionary(enemy.get("conditions", {}))
@@ -6131,28 +6280,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	var in_active_contact := action_before.has("startup") and action_before.has("active_end") and elapsed >= float(action_before["startup"]) and elapsed <= float(action_before["active_end"])
 	if in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind not in ["hound", "bandit"]:
 		return false
-	var duration: float = float({
-		"knife": 0.64,
-		"bandit": 0.64,
-		"hound": 0.64,
-		"ox": 0.46,
-		"boar": 0.58,
-		"archer": 0.56,
-		"ice_caster": 0.56,
-		"fire_caster": 0.56,
-		"blade": 0.48,
-		"duellist": 0.44,
-		"chanter": 0.58,
-		"javelineer": 0.54,
-		"earth_caster": 0.56,
-		"air_caster": 0.74,
-		"polearm": 0.38,
-		"shield": 0.38,
-		"brute": 0.24,
-		"knight": 0.24,
-		"warden": 0.24,
-		"werewolf": 0.26,
-	}.get(enemy_kind, 0.48))
+	var duration := float(CombatCatalogScript.enemy_fact(enemy_kind, "hit_reaction"))
 	if awareness_before != "alerted": duration += 0.16
 	if high_impact: duration += 0.10
 	# A light body cannot recover and act INSIDE the swing that hit it. A posture break
@@ -6279,7 +6407,7 @@ func _raise_earth_wall(origin: Vector2, source_id: int) -> void:
 	var segment_span := EARTH_WALL_SPAN / float(EARTH_WALL_SEGMENTS)
 	for index in range(EARTH_WALL_SEGMENTS):
 		var offset := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
-		barriers.append({
+		_add_barrier({
 			"pos": centre + axis * offset,
 			"axis": axis,
 			"half_length": segment_span * 0.5,
@@ -6320,8 +6448,7 @@ func _barrier_blocks(segment: Dictionary, point: Vector2, radius: float) -> bool
 # player -- so an Earth Caster's wall cuts your retreat and yours gates their approach, and
 # the same object reads as help or hindrance purely by who put it there.
 func _barrier_opposes(segment: Dictionary, actor_id: int) -> bool:
-	var raised_by_player := int(segment.get("source_id", -1)) == 0
-	return raised_by_player != (actor_id == 0)
+	return _opposes(int(segment.get("source_id", -1)), actor_id)
 
 func _point_in_barrier(point: Vector2, radius: float = 0.0, actor_id: int = 0) -> bool:
 	for segment in barriers:
@@ -6352,15 +6479,15 @@ func _resolve_player_hazard_hit(hazard: Dictionary, source_label: String, hit_te
 		var source_action := {"kind": "cast", "ability_id": source_label, "duration": 0.35, "elapsed": 0.0, "allow_hit_reaction": true}
 		var resolved := _resolve_player_physical_values(enemy, int(hazard["damage"]), float(hazard.get("posture", 1.4)), source_action)
 		var damage := int(resolved["damage"])
-		enemy["hp"] = int(enemy["hp"]) - damage
+		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
-		if not _apply_posture_damage(enemy, float(resolved["posture"]), contact):
+		if not _apply_actor_posture_damage(enemy, float(resolved["posture"]), contact):
 			_apply_enemy_hit_reaction(enemy, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
 		_register_enemy_hit_awareness(enemy, resolved, source_action)
 		_add_effect("hit", contact, damage, {"direction": (contact - Vector2(hazard["pos"])).normalized()})
 		var charge := float(CONDITION_BUILDUP_BY_SOURCE.get(source_label, 0.0))
-		if charge > 0.0: apply_enemy_condition_buildup(enemy, "burning" if "fire" in source_label else "frost", charge)
+		if charge > 0.0: _apply_actor_condition_buildup(enemy, "burning" if "fire" in source_label else "frost", charge)
 		_handle_player_contact_aftermath(enemy, resolved)
 	hazard["player_hit_ids"] = struck
 
@@ -6588,14 +6715,14 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				# it the Bandit closed ~59 units instead of the ~117 its 390 x 0.30 implies,
 				# i.e. every dodge-strike travelled at exactly half its authored speed.
 				# `charge` and `pounce_combo` are not gated on this flag and were correct.
-				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), Vector2(action.get("dodge_direction", action["direction"])) * float(action.get("speed", 390.0)) * enemy_dt * 2.0, float(enemy["radius"]), int(enemy["id"]))
+				_set_enemy_position(enemy, _move_actor(Vector2(enemy["pos"]), Vector2(action.get("dodge_direction", action["direction"])) * float(action.get("speed", 390.0)) * enemy_dt * 2.0, float(enemy["radius"]), int(enemy["id"])))
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]): _resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "claw_combo":
 			_resolve_enemy_combo_tick(enemy, elapsed)
 		elif kind == "pounce_combo":
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["pounce_end"]):
 				var pounce_origin := Vector2(enemy["pos"])
-				enemy["pos"] = _move_actor(pounce_origin, Vector2(action["direction"]) * float(action.get("speed", 410.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]))
+				_set_enemy_position(enemy, _move_actor(pounce_origin, Vector2(action["direction"]) * float(action.get("speed", 410.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"])))
 				if not bool(action.get("pounce_hit", false)) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0:
 					action["pounce_hit"] = true
 					_resolve_incoming_hit(int(enemy["id"]), int(action.get("pounce_damage", 16)), String(enemy["kind"]))
@@ -6616,7 +6743,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				# that dodge_strike sat in for several versions.
 				var advance_speed := float(action.get("advance_distance", 0.0)) / advance_end
 				var step := Vector2(action["direction"]) * advance_speed * enemy_dt * 2.0
-				enemy["pos"] = _move_actor(Vector2(enemy["pos"]), step, float(enemy["radius"]), int(enemy["id"]))
+				_set_enemy_position(enemy, _move_actor(Vector2(enemy["pos"]), step, float(enemy["radius"]), int(enemy["id"])))
 				enemy["is_moving"] = true
 				enemy["last_motion"] = step
 			_observe_capture(enemy, action, elapsed)
@@ -6625,7 +6752,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 			var charge_origin := Vector2(enemy["pos"])
 			var ploughs_through := bool(action.get("unstoppable", false))
-			enemy["pos"] = _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]), ploughs_through)
+			_set_enemy_position(enemy, _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]), ploughs_through))
 			if ploughs_through: _gore_allies_in_path(enemy, charge_origin, Vector2(enemy["pos"]), action)
 			if Vector2(enemy["pos"]).is_equal_approx(charge_origin):
 				# Released before the action is replaced -- afterwards the charge
@@ -6686,7 +6813,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			var step := Vector2(action["direction"]).normalized() * float(action.get("speed", 1250.0)) * enemy_dt
 			var landing := Vector2(enemy["pos"]) + step
 			if _teleport_allowed(landing, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"])):
-				enemy["pos"] = landing
+				_set_enemy_position(enemy, landing)
 		elif kind == "cold_front" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_cold_front(enemy, Vector2(action.get("target", player_pos)))
@@ -6707,6 +6834,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			enemy["action"] = _idle_action()
 		_update_enemy_bucket_membership(enemy)
 		enemies[index] = enemy
+	_normalize_presentation_ids()
 
 func _update_bandit_concealment(enemy: Dictionary, world_dt: float) -> void:
 	if String(enemy.get("kind", "")) != "bandit": return
@@ -6731,7 +6859,8 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	var distance := offset.length()
 	var direction := offset.normalized() if distance > 0.01 else Vector2.DOWN
 	enemy["facing"] = direction
-	var enemy_kind := String(enemy["kind"])
+	var authored_kind := String(enemy["kind"])
+	var enemy_kind := String(CombatCatalogScript.enemy_fact(authored_kind, "ai_id"))
 	if enemy_kind == "bandit" and (not bool(enemy.get("revealed_to_player", false)) or float(enemy.get("revealed_elapsed", 0.0)) < 0.35):
 		enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.24)
 		return
@@ -6998,16 +7127,14 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# through walls or barriers, because Air moves you through the crowd and not
 		# through the world.
 		if distance <= 190.0 and float(enemy.get("pounce_cooldown", 0.0)) <= 0.0:
-			enemy["action"] = _action("windstep", 0.86, -direction)
-			enemy["action"]["startup"] = 0.26
+			enemy["action"] = _enemy_ability_action("windstep", -direction)
 			enemy["action"]["move_start"] = 0.26
 			enemy["action"]["move_end"] = 0.58
 			enemy["action"]["speed"] = 1250.0
 			enemy["pounce_cooldown"] = 4.60
 		elif distance <= STAFF_POKE_RANGE and _try_staff_poke(enemy, distance, direction): pass
 		elif float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 640.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("gale", 1.64, direction)
-			enemy["action"]["startup"] = 0.80
+			enemy["action"] = _enemy_ability_action("gale", direction)
 			# Placed between itself and the player, so the blast shoves the player back and
 			# any shot crossing that space is spoiled on the way through.
 			enemy["action"]["target"] = Vector2(enemy["pos"]).lerp(player_pos, 0.62)
@@ -7024,12 +7151,10 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# far enough away for cutting the retreat to mean something; up close there is
 			# no retreat to cut, so the ground opens instead.
 			if barriers.is_empty() and distance >= 300.0:
-				enemy["action"] = _action("earth_wall", 1.94, direction)
-				enemy["action"]["startup"] = 1.10
+				enemy["action"] = _enemy_ability_action("earth_wall", direction)
 				enemy["shot_cooldown"] = 6.40
 			else:
-				enemy["action"] = _action("sunder", 1.72, direction)
-				enemy["action"]["startup"] = 0.92
+				enemy["action"] = _enemy_ability_action("sunder", direction)
 				enemy["action"]["target"] = _sunder_target(enemy)
 				enemy["shot_cooldown"] = 4.20
 		else:
@@ -7046,25 +7171,20 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 	elif enemy_kind == "ice_caster":
 		if distance <= 310.0 and float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# Close in, the front: wide and repeating, so backing off is not enough.
-			enemy["action"] = _action("cold_front", 2.34, direction)
-			enemy["action"]["startup"] = 1.12
+			enemy["action"] = _enemy_ability_action("cold_front", direction)
 			enemy["action"]["target"] = player_pos + player_facing * 40.0
 			enemy["shot_cooldown"] = 3.40
 		elif _try_staff_poke(enemy, distance, direction): pass
 		elif distance <= 650.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("frost_lance", 1.66, direction)
-			enemy["action"]["startup"] = 0.78
+			enemy["action"] = _enemy_ability_action("frost_lance", direction)
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.48)
 	elif enemy_kind == "fire_caster":
 		if distance <= 250.0 and float(enemy.get("shot_cooldown", 0.0)) <= 0.0:
-			enemy["action"] = _action("fire_breath", 1.82, direction)
-			enemy["action"]["startup"] = 0.74
+			enemy["action"] = _enemy_ability_action("fire_breath", direction)
 			enemy["shot_cooldown"] = 3.00
 		elif _try_staff_poke(enemy, distance, direction): pass
 		elif distance <= 670.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _action("shoot", 1.58, direction)
-			enemy["action"]["startup"] = 0.64
-			enemy["action"]["label"] = "fireball"
+			enemy["action"] = _enemy_ability_action("fireball", direction)
 		else:
 			var fire_target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 210.0 if distance < 480.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
@@ -7434,7 +7554,7 @@ func _advance_enemy_locomotion(enemy: Dictionary, action: Dictionary, step_dista
 	var motion := finish - origin
 	var moved := motion.length_squared() > ENEMY_MOVE_EPSILON * ENEMY_MOVE_EPSILON
 	if moved:
-		enemy["pos"] = finish
+		_set_enemy_position(enemy, finish)
 		enemy["last_motion"] = motion
 		enemy["facing"] = motion.normalized()
 		enemy["stalled_time"] = 0.0
@@ -7452,7 +7572,7 @@ func _advance_enemy_locomotion(enemy: Dictionary, action: Dictionary, step_dista
 					var recovery_finish := _move_actor(origin, recovery_direction * step_distance, float(enemy["radius"]), int(enemy["id"]))
 					var recovery_motion := recovery_finish - origin
 					if recovery_motion.length_squared() > ENEMY_MOVE_EPSILON * ENEMY_MOVE_EPSILON:
-						enemy["pos"] = recovery_finish
+						_set_enemy_position(enemy, recovery_finish)
 						enemy["last_motion"] = recovery_motion
 						enemy["facing"] = recovery_motion.normalized()
 						enemy["stalled_time"] = 0.0
@@ -7478,7 +7598,7 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
-	var speed: float = float({"boar": 245.0, "bandit": 285.0, "knife": 290.0, "blade": 230.0, "polearm": 120.0, "archer": 175.0, "shield": 145.0, "hound": 325.0, "brute": 105.0, "knight": 68.0, "ice_caster": 150.0, "fire_caster": 160.0, "chanter": 150.0, "javelineer": 170.0, "earth_caster": 140.0, "duellist": 265.0, "warden": 125.0, "werewolf": 285.0}.get(kind, 175.0))
+	var speed := float(CombatCatalogScript.enemy_fact(kind, "move_speed"))
 	# The Captain's invisible x1.14 aura is gone. What replaces it is the Chanter's
 	# Quickening -- same idea, but you can see which enemies have it and you can end it
 	# by killing the caster.
@@ -7822,19 +7942,48 @@ func _javelin_lead(enemy: Dictionary) -> Vector2:
 
 # The moment, not the condition: fast, aimed, and answerable by moving. It carries most
 # of the element's frost, so evading it is the difference between being slowed and not.
+func _spawn_spell_projectile(caster: Dictionary, spell_id: String, direction: Vector2) -> void:
+	var source_id := int(caster.get("id", -1))
+	var player_cast := source_id == 0
+	var facing := direction.normalized()
+	var layer := String(caster.get("layer", current_layer))
+	if spell_id == "fireball":
+		if not player_cast: facing = facing.rotated(0.065 if source_id % 2 == 0 else -0.065)
+		var fireball := {
+			"pos": Vector2(caster["pos"]) + facing * (36.0 if player_cast else 42.0),
+			"vel": facing * 465.0,
+			"radius": 13.0,
+			"damage": 20,
+			"kind": "firebolt",
+			"source_id": source_id,
+			"layer": layer,
+		}
+		if player_cast:
+			fireball.merge({"posture": 1.6, "friendly": true, "travelled": 0.0, "max_range": 700.0, "hit_ids": [], "elevation_profile": "flat", "elevation": PROJECTILE_GROUND_ELEVATION})
+		else:
+			fireball.merge({"launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
+		_add_projectile(fireball)
+		return
+	if spell_id == "frost_lance":
+		var lance := {
+			"pos": Vector2(caster["pos"]) + facing * (36.0 if player_cast else 40.0),
+			"vel": facing * 610.0,
+			"radius": 11.0,
+			"damage": 16,
+			"kind": "frost_lance",
+			"source_id": source_id,
+			"layer": layer,
+		}
+		if player_cast:
+			lance.merge({"posture": 1.4, "friendly": true, "travelled": 0.0, "max_range": 660.0, "hit_ids": [], "elevation_profile": "flat", "elevation": PROJECTILE_GROUND_ELEVATION})
+		else:
+			lance.merge({"launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
+		_add_projectile(lance)
+		return
+	push_error("Spell '%s' does not define a projectile spawner." % spell_id)
+
 func _spawn_frost_lance(enemy: Dictionary, direction: Vector2) -> void:
-	projectiles.append({
-		"pos": Vector2(enemy["pos"]) + direction * 40.0,
-		"vel": direction.normalized() * 610.0,
-		"radius": 11.0,
-		"damage": 16,
-		"kind": "frost_lance",
-		"launch_direction": direction,
-		"turn_rate": 0.0,
-		"max_track_angle": 0.0,
-		"source_id": int(enemy["id"]),
-		"layer": String(enemy.get("layer", current_layer)),
-	})
+	_spawn_spell_projectile(enemy, "frost_lance", direction)
 	_set_message("A lance of ice is loosed.")
 
 func _spawn_javelin(enemy: Dictionary) -> void:
@@ -7843,7 +7992,7 @@ func _spawn_javelin(enemy: Dictionary) -> void:
 	# escapes it, which is what makes the telegraph worth reading.
 	var direction := Vector2(Dictionary(enemy.get("action", {})).get("direction", Vector2(enemy["facing"]))).normalized()
 	if direction.length_squared() < 0.001: direction = _javelin_lead(enemy)
-	projectiles.append({
+	_add_projectile({
 		# The one projectile in the game that arcs. High early so it clears whatever is
 		# standing beside the thrower, descending late so it still reaches -- which is the
 		# Javelineer's whole shape as a lane denier rather than a second archer.
@@ -7877,7 +8026,7 @@ func _sunder_target(enemy: Dictionary) -> Vector2:
 	return target
 
 func _spawn_sundered_ground(position: Vector2, source_id: int, layer: String) -> void:
-	hazards.append({
+	_add_hazard({
 		"kind": "sundered_ground",
 		"pos": position,
 		"radius": SUNDERED_RADIUS,
@@ -7909,16 +8058,18 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 	# A firebolt is a fast, lightly canted shot—not a homing missile. The tiny
 	# alternating launch bias gives it character while preserving one readable,
 	# committed trajectory once it has left the caster.
-	if firebolt: direction = direction.rotated(0.065 if int(enemy["id"]) % 2 == 0 else -0.065)
-	projectiles.append({
+	if firebolt:
+		_spawn_spell_projectile(enemy, "fireball", direction)
+		return
+	_add_projectile({
 		"pos": Vector2(enemy["pos"]) + direction * 42.0,
-		"vel": direction * (465.0 if firebolt else 700.0),
-		"radius": 13.0 if firebolt else 9.0,
+		"vel": direction * 700.0,
+		"radius": 9.0,
 		# The ball hits harder than the breath and barely kindles; the breath buries you in
 		# burn for moderate damage. Near or far is a real choice only if the two differ in
 		# what they cost you, not just in reach.
-		"damage": 20 if firebolt else 14,
-		"kind": "firebolt" if firebolt else "arrow",
+		"damage": 14,
+		"kind": "arrow",
 		# Fireballs retain their launch vector for their entire flight. The fields
 		# remain on the projectile for older-save compatibility and future variants.
 		"launch_direction": direction,
@@ -7931,7 +8082,7 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 func _spawn_player_projectile(kind: String, direction: Vector2) -> void:
 	var facing := direction.normalized()
 	if facing.length_squared() < 0.01: facing = player_facing
-	projectiles.append({
+	_add_projectile({
 		"pos": player_pos + facing * 34.0,
 		"vel": facing * (520.0 if kind == "firebomb" else 780.0),
 		"radius": 15.0 if kind == "firebomb" else 7.0,
@@ -7947,7 +8098,7 @@ func _spawn_player_projectile(kind: String, direction: Vector2) -> void:
 
 func _spawn_bow_projectile(action: Dictionary) -> void:
 	var direction := Vector2(action.get("direction", player_facing)).normalized()
-	projectiles.append({
+	_add_projectile({
 		"pos": player_pos + direction * 34.0,
 		"vel": direction * float(action.get("projectile_speed", 480.0)),
 		"radius": 7.0,
@@ -7972,11 +8123,11 @@ func _spawn_bow_projectile(action: Dictionary) -> void:
 func _spawn_bow_art_projectiles(piercing: bool, direction: Vector2) -> void:
 	var base := direction.normalized()
 	if piercing:
-		projectiles.append({"pos": player_pos + base * 34.0, "vel": base * 900.0, "radius": 8.0, "damage": 22, "posture": 5.0, "kind": "piercing_arrow", "friendly": true, "aimed_projectile": true, "source_id": 0, "travelled": 0.0, "max_range": 780.0 * _aimed_projectile_range_multiplier(), "piercing": true, "hit_ids": [], "layer": current_layer})
+		_add_projectile({"pos": player_pos + base * 34.0, "vel": base * 900.0, "radius": 8.0, "damage": 22, "posture": 5.0, "kind": "piercing_arrow", "friendly": true, "aimed_projectile": true, "source_id": 0, "travelled": 0.0, "max_range": 780.0 * _aimed_projectile_range_multiplier(), "piercing": true, "hit_ids": [], "layer": current_layer})
 	else:
 		for offset in [-0.16, 0.0, 0.16]:
 			var ray := base.rotated(float(offset))
-			projectiles.append({"pos": player_pos + ray * 34.0, "vel": ray * 720.0, "radius": 7.0, "damage": 6, "posture": 0.7, "kind": "fan_arrow", "friendly": true, "aimed_projectile": true, "source_id": 0, "travelled": 0.0, "max_range": 380.0 * _aimed_projectile_range_multiplier(), "piercing": false, "hit_ids": [], "layer": current_layer})
+			_add_projectile({"pos": player_pos + ray * 34.0, "vel": ray * 720.0, "radius": 7.0, "damage": 6, "posture": 0.7, "kind": "fan_arrow", "friendly": true, "aimed_projectile": true, "source_id": 0, "travelled": 0.0, "max_range": 380.0 * _aimed_projectile_range_multiplier(), "piercing": false, "hit_ids": [], "layer": current_layer})
 	survey_shots_fired += 1
 	_break_stealth_for_hostile_action()
 	_emit_sound(player_pos, 520.0)
@@ -8019,7 +8170,7 @@ func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
 	player_action["vault_crossed_ids"] = crossed_ids
 
 func _spawn_player_fire(pos: Vector2) -> void:
-	hazards.append({"kind": "player_fire", "pos": pos, "radius": 124.0, "elapsed": 0.0, "trigger_at": 0.16, "duration": 0.56, "damage": 20, "posture": 2.8, "source_id": 0, "triggered": false, "friendly": true, "layer": current_layer})
+	_add_hazard({"kind": "player_fire", "pos": pos, "radius": 124.0, "elapsed": 0.0, "trigger_at": 0.16, "duration": 0.56, "damage": 20, "posture": 2.8, "source_id": 0, "triggered": false, "friendly": true, "layer": current_layer})
 
 # Ice decides EVADABILITY: a threat that is a moment, versus a threat that is a condition
 # of being there. The front is the second -- wide, slow and repeating, so leaving it is a
@@ -8054,7 +8205,7 @@ const GALE_DECELERATION := 1165.0
 const GALE_DRIFT_FLOOR := 24.0
 
 func _spawn_gale(enemy: Dictionary, target: Vector2) -> void:
-	hazards.append({
+	_add_hazard({
 		"kind": "gale", "pos": target, "radius": GALE_RADIUS,
 		"elapsed": 0.0, "trigger_at": 0.08 if int(enemy.get("id", -1)) == 0 else 0.52, "duration": 0.88, "damage": 0,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
@@ -8097,8 +8248,7 @@ func _update_gale_drift(dt: float) -> void:
 		if not _teleport_allowed(target, radius, int(enemy["id"])):
 			enemy.erase("gale_velocity")
 			continue
-		enemy["pos"] = target
-		_update_enemy_bucket_membership(enemy)
+		_set_enemy_position(enemy, target)
 		enemy["gale_velocity"] = velocity.move_toward(Vector2.ZERO, GALE_DECELERATION * dt)
 
 func _resolve_gale(centre: Vector2) -> void:
@@ -8118,7 +8268,7 @@ func _resolve_gale(centre: Vector2) -> void:
 		var shove := GALE_BODY_PUSH * (0.25 + 0.75 * falloff * falloff)
 		# The launch speed is derived from the distance rather than authored beside it, so
 		# the tuning from 0.2.72 survives intact and only the delivery changes.
-		enemy["gale_velocity"] = away * _gale_launch_speed(shove)
+		_set_actor_impulse(enemy, away * _gale_launch_speed(shove))
 		# Being physically thrown is not something a body sleeps through. It learns where the
 		# player is, the same way it would from being hit -- an enemy that is shoved across a
 		# room and then keeps idling is the room telling an obvious lie.
@@ -8127,7 +8277,7 @@ func _resolve_gale(centre: Vector2) -> void:
 	if player_offset.length() <= GALE_RADIUS:
 		var push := player_offset.normalized() if player_offset.length_squared() > 0.001 else Vector2.LEFT
 		var player_falloff := 1.0 - clampf(player_offset.length() / GALE_RADIUS, 0.0, 1.0)
-		player_gale_velocity = push * _gale_launch_speed(GALE_PLAYER_PUSH * (0.25 + 0.75 * player_falloff * player_falloff))
+		_set_actor_impulse(0, push * _gale_launch_speed(GALE_PLAYER_PUSH * (0.25 + 0.75 * player_falloff * player_falloff)))
 	for projectile in projectiles:
 		var to_shot := Vector2(projectile["pos"]) - centre
 		if to_shot.length() > GALE_RADIUS: continue
@@ -8146,7 +8296,7 @@ func _resolve_gale(centre: Vector2) -> void:
 			_set_message("The javelin is torn out of the air.")
 
 func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
-	hazards.append({
+	_add_hazard({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
 		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
 		"damage": 9, "posture": 1.1, "ticks_done": 0, "next_tick": 0.10 if int(enemy.get("id", -1)) == 0 else 0.70,
@@ -8156,11 +8306,11 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 
 func _spawn_hex(enemy: Dictionary, target: Vector2, hazard_kind: String = "hex") -> void:
 	var ice := hazard_kind == "ice_hex"
-	hazards.append({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 16 if ice else 14, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	_add_hazard({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 16 if ice else 14, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("Ice gathers beneath you." if ice else "A hex gathers beneath you.")
 
 func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
-	hazards.append({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	_add_hazard({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("A fan of ice surges forward.")
 
 # A cone, not a ring. A ring centred on the caster asks "are you close?", which the
@@ -8168,7 +8318,7 @@ func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
 # asks "are you in front of it?", so the answer is to leave the arc, which is a different
 # decision and one the caster's own facing telegraphs.
 func _spawn_fire_breath(enemy: Dictionary, direction: Vector2) -> void:
-	hazards.append({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 16, "posture": 2.0, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
+	_add_hazard({"kind": "fire_breath", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 232.0, "half_angle": 0.52, "elapsed": 0.0, "trigger_at": 0.72, "duration": 1.06, "damage": 16, "posture": 2.0, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
 	_set_message("The caster breathes fire.")
 
 func _update_hazards(dt: float) -> void:
@@ -8329,12 +8479,12 @@ func _damage_enemy_from_stray_projectile(enemy: Dictionary, projectile: Dictiona
 	var authored := int(projectile.get("damage", 0))
 	var defence := int(Dictionary(enemy.get("attributes", {})).get("defense", 0)) + int(Dictionary(enemy.get("properties", {})).get("armor", 0))
 	var damage := maxi(0, authored - defence)
-	enemy["hp"] = int(enemy["hp"]) - damage
+	_change_actor_hp(enemy, -damage)
 	damage_dealt += damage
 	survey_stray_projectile_hits += 1
 	_note_player_reached(enemy)
 	_add_effect("hurt", contact, damage)
-	_apply_posture_damage(enemy, float(projectile.get("posture", 0.0)), contact)
+	_apply_actor_posture_damage(enemy, float(projectile.get("posture", 0.0)), contact)
 	enemy["awareness"] = "alerted"
 	enemy["alert_remaining"] = 3.0
 	enemy["last_known_player"] = player_pos
@@ -8370,10 +8520,10 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var resolved := _resolve_player_physical_values(enemy, int(projectile.get("damage", 0)), float(projectile.get("posture", 0.0)), source_action)
 	var damage := int(resolved["damage"])
 	var posture := float(resolved["posture"])
-	enemy["hp"] = int(enemy["hp"]) - damage
+	_change_actor_hp(enemy, -damage)
 	damage_dealt += damage
 	_on_player_hit_landed(enemy)
-	var posture_broken := _apply_posture_damage(enemy, posture, contact)
+	var posture_broken := _apply_actor_posture_damage(enemy, posture, contact)
 	var reaction_applied := false
 	if not posture_broken:
 		reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, contact, source_action)
@@ -8408,7 +8558,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		var leakage := 0.25 if guard_profile in ["dual", "awkward"] else 0.0
 		var chip_damage := roundi(float(mitigated_damage) * leakage)
 		if chip_damage > 0: survey_last_damage_source = source_name
-		player_hp = maxi(0, player_hp - chip_damage)
+		_change_actor_hp(0, -chip_damage)
 		damage_received_total += chip_damage
 		hits_received_total += 1
 		player_posture = maxf(0.0, player_posture - posture_damage)
@@ -8429,7 +8579,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		player_action["effect_done"] = true
 		var endured_damage := int(ceil(float(mitigated_damage) * 0.50))
 		survey_last_damage_source = source_name
-		player_hp = maxi(0, player_hp - endured_damage)
+		_change_actor_hp(0, -endured_damage)
 		damage_received_total += endured_damage
 		hits_received_total += 1
 		strength_remaining = maxf(strength_remaining, 5.0)
@@ -8458,7 +8608,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		_add_effect("condition", impact, 0, {"condition": "frost_shatter"})
 	var was_protected := player_hit_protection_remaining > 0.0
 	survey_last_damage_source = source_name
-	player_hp = maxi(0, player_hp - damage_received)
+	_change_actor_hp(0, -damage_received)
 	damage_received_total += damage_received
 	if was_protected: protected_damage_total += damage_received
 	if uses_energy_rules() and interrupted_kind == "dodge" and float(interrupted_action.get("elapsed", 0.0)) > float(interrupted_action.get("evade_end", 0.0)):
@@ -8553,8 +8703,8 @@ const CONDITION_BUILDUP_BY_SOURCE := {
 func _apply_source_condition_to_player(source_name: String) -> void:
 	var lowered := source_name.to_lower()
 	var authored := float(CONDITION_BUILDUP_BY_SOURCE.get(lowered, 4.0))
-	if "ice" in lowered or "frost" in lowered or "cold" in lowered: apply_player_condition_buildup("frost", authored)
-	elif "fire" in lowered or "burn" in lowered: apply_player_condition_buildup("burning", authored)
+	if "ice" in lowered or "frost" in lowered or "cold" in lowered: _apply_actor_condition_buildup(0, "frost", authored)
+	elif "fire" in lowered or "burn" in lowered: _apply_actor_condition_buildup(0, "burning", authored)
 
 func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 	if not bool(player_action.get("clean_dodge_triggered", false)):
@@ -8618,7 +8768,7 @@ func _begin_death() -> void:
 func _counter_source(source_id: int) -> void:
 	for enemy in enemies:
 		if _enemy_on_current_layer(enemy) and int(enemy["id"]) == source_id and Vector2(enemy["pos"]).distance_to(player_pos) <= 155.0:
-			enemy["hp"] = int(enemy["hp"]) - 2
+			_change_actor_hp(enemy, -2)
 			_add_effect("hit", Vector2(enemy["pos"]), 2)
 			counter_hits += 1
 			return
@@ -8664,7 +8814,7 @@ func _add_effect(kind: String, position: Vector2, amount: int = 0, details: Dict
 	var duration := 1.10 if kind == "anchor" else 0.90 if kind == "recover" else 0.62 if kind in ["hit", "hurt", "endure"] else 0.42
 	var effect := {"kind": kind, "pos": position, "elapsed": 0.0, "duration": duration, "amount": amount, "layer": current_layer}
 	effect.merge(details, true)
-	effects.append(effect)
+	_add_effect_entity(effect)
 
 func _remove_dead_enemies() -> void:
 	var has_dead := false
@@ -8703,8 +8853,7 @@ func _remove_dead_enemies() -> void:
 					_set_message("The %s falls. The expedition is complete." % ("Werewolf" if kind == "werewolf" else "Warden"))
 				else: _set_message("The Warden falls. The path beyond remains anchored.")
 			else: _set_message("The %s falls. XP gained." % kind)
-	enemies = living
-	_invalidate_active_enemy_cache()
+	_replace_enemy_actors(living)
 	if mode_id == ModeRulesScript.COMBAT_SURVEY and enemies.is_empty():
 		_complete_survey_room("victory")
 		return
@@ -8716,7 +8865,7 @@ func _remove_dead_enemies() -> void:
 			rooms_cleared = maxi(rooms_cleared, _cleared_area_count())
 
 func _xp_for_enemy(kind: String) -> int:
-	return int({"boar": 2, "bandit": 2, "knife": 1, "blade": 2, "archer": 2, "hound": 2, "polearm": 4, "ice_caster": 4, "fire_caster": 4, "brute": 5, "knight": 7, "chanter": 6, "javelineer": 3, "earth_caster": 5, "duellist": 6, "warden": 12, "werewolf": 18}.get(kind, 2))
+	return int(CombatCatalogScript.enemy_fact(kind, "xp"))
 
 func _cleared_area_count() -> int:
 	var occupied: Dictionary = {}
@@ -8876,8 +9025,8 @@ func _local_avoidance_direction(enemy: Dictionary, desired: Vector2) -> Vector2:
 			# Check both the next physical step and a short look-ahead. This
 			# prevents choosing a direction that is technically free one frame
 			# at a time but immediately feeds the actor back into the blockage.
-			if _position_blocked_with_context(origin + candidate * 10.0, radius, actor_id, local_walls, local_enemies): continue
-			if not _position_blocked_with_context(origin + candidate * 42.0, radius, actor_id, local_walls, local_enemies): return candidate
+			if not _can_occupy_with_context(origin + candidate * 10.0, radius, actor_id, local_walls, local_enemies): continue
+			if _can_occupy_with_context(origin + candidate * 42.0, radius, actor_id, local_walls, local_enemies): return candidate
 	return Vector2.ZERO
 
 func _crowd_separation_direction(enemy: Dictionary, nearby: Array[Dictionary] = []) -> Vector2:
@@ -8898,16 +9047,16 @@ func _crowd_separation_direction(enemy: Dictionary, nearby: Array[Dictionary] = 
 		pressure += away * (comfort - distance) / comfort
 	return pressure.limit_length(1.0) if pressure.length_squared() > 0.001 else Vector2.ZERO
 
-func _position_blocked_with_context(position: Vector2, radius: float, actor_id: int, local_walls: Array[Rect2], local_enemies: Array[Dictionary]) -> bool:
-	if not _inside_world(position, radius): return true
+func _can_occupy_with_context(position: Vector2, radius: float, actor_id: int, local_walls: Array[Rect2], local_enemies: Array[Dictionary]) -> bool:
+	if not _inside_world(position, radius): return false
 	# A barrier stops whichever side did not raise it, so enemies must route around the
 	# player's wall exactly as the player routes around theirs.
 	if _point_in_barrier(position, radius, actor_id):
 		survey_barrier_blocks += 1
-		return true
+		return false
 	for wall in local_walls:
-		if _circle_intersects_rect(position, radius, wall): return true
-	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true
+		if _circle_intersects_rect(position, radius, wall): return false
+	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return false
 	for enemy in local_enemies:
 		if not _enemy_on_current_layer(enemy) or int(enemy["id"]) == actor_id or int(enemy["hp"]) <= 0: continue
 		# Light bodies do not block the PLAYER -- they are displaced instead, in
@@ -8925,8 +9074,22 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 				enemy["touch_revealed"] = true
 				survey_blind_collisions += 1
 				_set_message("You walk into something you had not seen.")
-			return true
-	return not _actor_footprint_on_floor(position, radius)
+			return false
+	return _actor_footprint_on_floor(position, radius)
+
+func _can_occupy(position: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false) -> bool:
+	if not _inside_world(position, radius): return false
+	if _point_in_barrier(position, radius, actor_id): return false
+	for wall in _nearby_walls(position, radius + 8.0):
+		if _circle_intersects_rect(position, radius, wall): return false
+	if not _actor_footprint_on_floor(position, radius): return false
+	if ignore_bodies: return true
+	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return false
+	for enemy in _nearby_enemies(position, radius + 80.0):
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("id", -1)) == actor_id or int(enemy.get("hp", 0)) <= 0: continue
+		if actor_id == 0 and _enemy_is_pushable(enemy): continue
+		if position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]): return false
+	return true
 
 func _enemy_is_pushable(enemy: Dictionary) -> bool:
 	# A committed charge is a mass in motion and is never shoved aside, whatever the body
@@ -8955,8 +9118,7 @@ func _displace_light_bodies(position: Vector2, radius: float, local_enemies: Arr
 		var away := enemy_pos - position
 		if away.length_squared() < 0.001: away = Vector2(enemy.get("facing", Vector2.DOWN))
 		if away.length_squared() < 0.001: away = Vector2.RIGHT
-		enemy["pos"] = _move_actor(enemy_pos, away.normalized() * overlap, float(enemy["radius"]), int(enemy["id"]))
-		_update_enemy_bucket_membership(enemy)
+		_set_enemy_position(enemy, _move_actor(enemy_pos, away.normalized() * overlap, float(enemy["radius"]), int(enemy["id"])))
 
 func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false) -> Vector2:
 	# Both axis candidates share the same nearby geometry. Querying the spatial
@@ -8969,30 +9131,16 @@ func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, 
 	var blocking_bodies := no_bodies if ignore_bodies else local_enemies
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
+	if _can_occupy_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if not _position_blocked_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
+	if _can_occupy_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.y = candidate.y
 	if actor_id == 0: _displace_light_bodies(result, radius, local_enemies)
 	return result
 
 func _position_blocked(position: Vector2, radius: float, actor_id: int) -> bool:
-	if not _inside_world(position, radius): return true
-	for wall in _nearby_walls(position, radius + 8.0):
-		if _circle_intersects_rect(position, radius, wall):
-			return true
-	if actor_id == 0:
-		for enemy in _nearby_enemies(position, radius + 80.0):
-			if _enemy_on_current_layer(enemy) and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
-				return true
-	else:
-		if position.distance_to(player_pos) < radius + PLAYER_RADIUS:
-			return true
-		for enemy in _nearby_enemies(position, radius + 80.0):
-			if _enemy_on_current_layer(enemy) and int(enemy["id"]) != actor_id and int(enemy["hp"]) > 0 and position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
-				return true
-	return not _actor_footprint_on_floor(position, radius)
+	return not _can_occupy(position, radius, actor_id)
 
 func _inside_world(position: Vector2, radius: float) -> bool:
 	return position.x >= radius and position.y >= radius and position.x <= world_size.x - radius and position.y <= world_size.y - radius
@@ -9012,10 +9160,7 @@ func _circle_intersects_rect(center: Vector2, radius: float, rect: Rect2) -> boo
 # could clear the arena entirely and still be "inside the world", which is how an Air Caster
 # threw itself off the edge of the map. The floor is the boundary that matters.
 func _teleport_allowed(position: Vector2, radius: float, actor_id: int) -> bool:
-	if not _inside_world(position, radius): return false
-	if _point_in_wall(position): return false
-	if _point_in_barrier(position, radius, actor_id): return false
-	return _actor_footprint_on_floor(position, radius)
+	return _can_occupy(position, radius, actor_id, true)
 
 func _point_in_wall(point: Vector2) -> bool:
 	for wall in _nearby_walls(point, 2.0):
@@ -9256,7 +9401,7 @@ func _segment_distance_to_point(a: Vector2, b: Vector2, point: Vector2) -> float
 	return point.distance_to(a + segment * t)
 
 func snapshot(lightweight: bool = false) -> Dictionary:
-	return {
+	var result := {
 		"time": simulation_time,
 		"player_pos": player_pos,
 		"player_facing": player_facing,
@@ -9283,6 +9428,7 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"circle_remaining": circle_remaining,
 		"circle_radius": circle_radius(),
 		"effects": effects.duplicate(true),
+		"cooldowns": cooldowns.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,
 		"endure_cooldown": endure_cooldown,
@@ -9420,6 +9566,9 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"anchor_state": {} if lightweight else anchor_state.duplicate(true),
 		"performance_metrics": performance_metrics.duplicate(),
 	}
+	result.merge(StateFieldSchemaScript.capture(self, StateFieldSchemaScript.SNAPSHOT), true)
+	if lightweight: result["enemies"] = _timeline_enemies()
+	return result
 
 func _sensed_enemy_presentations() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -9484,7 +9633,7 @@ func _build_save_payload() -> Dictionary:
 	# Generated geography is reconstructed from mode + seed during load. Keeping
 	# it out of every autosave avoids repeatedly copying and serializing immutable
 	# floor, wall, feature, connection, layer, and Waystone definitions.
-	return {
+	var result := {
 		"save_version": SAVE_VERSION,
 		"time": simulation_time,
 		"player_pos": player_pos,
@@ -9528,6 +9677,7 @@ func _build_save_payload() -> Dictionary:
 		"circle_remaining": circle_remaining,
 		"circle_radius": circle_radius(),
 		"effects": effects.duplicate(true),
+		"cooldowns": cooldowns.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,
 		"endure_cooldown": endure_cooldown,
@@ -9662,6 +9812,9 @@ func _build_save_payload() -> Dictionary:
 		"survey_strike_diagnostics": survey_strike_diagnostics.duplicate(true),
 		"rng_state": rng.state,
 	}
+	result.merge(StateFieldSchemaScript.capture(self, StateFieldSchemaScript.SAVE), true)
+	for error in SaveMigrationsScript.validate_current(result, SAVE_VERSION): push_error(String(error))
+	return result
 
 func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	if not FileAccess.file_exists(path): return false
@@ -9680,11 +9833,13 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		var renamed := key_name.replace("stamina", "energy")
 		if not payload.has(renamed): payload[renamed] = payload[saved_key]
 	var save_version := int(payload.get("save_version", 0))
+	var normalized_payload := SaveMigrationsScript.normalize(payload, SAVE_VERSION)
+	if normalized_payload.is_empty(): return false
+	payload = normalized_payload
 	var migration_notices: Array[String] = []
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
 	# invalid build, so old prototype runs deliberately start fresh.
-	if save_version not in [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, SAVE_VERSION]: return false
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
@@ -9773,7 +9928,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		_migrate_v25_temperament_to_energy()
 	# Actions in older saves used the retired forced-Winded state. Migration ends
 	# any in-progress commitment and starts the new rule set from a clear resource.
-	if save_version < SAVE_VERSION: player_energy = player_max_energy
+	if save_version < 33: player_energy = player_max_energy
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_energy_regen_delay = 0.0
@@ -9787,7 +9942,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	# Older dynamic actors are regenerated so they cannot survive off-floor in the
 	# rewritten geography; learned progression and run statistics remain intact.
 	if save_version >= 13:
-		enemies.assign(Array(payload.get("enemies", enemies)).duplicate(true))
+		_replace_enemy_actors(Array(payload.get("enemies", enemies)).duplicate(true))
 		projectiles.assign(Array(payload.get("projectiles", [])).duplicate(true))
 		hazards.assign(Array(payload.get("hazards", [])).duplicate(true))
 		barriers.assign(Array(payload.get("barriers", [])).duplicate(true))
@@ -9948,6 +10103,13 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	advance_cooldown_max = float(payload.get("advance_cooldown_max", 6.0))
 	main_ability_cooldown_max = float(payload.get("main_ability_cooldown_max", 12.0))
 	subclass_ability_cooldown_max = float(payload.get("subclass_ability_cooldown_max", 8.0))
+	if payload.has("cooldowns"):
+		var saved_cooldowns := Dictionary(payload["cooldowns"])
+		for slot in COOLDOWN_SLOT_DEFAULTS:
+			if not saved_cooldowns.has(slot): continue
+			var saved_slot := Dictionary(saved_cooldowns[slot])
+			_set_cooldown_remaining(String(slot), float(saved_slot.get("remaining", cooldown_remaining(String(slot)))))
+			_set_cooldown_maximum(String(slot), float(saved_slot.get("maximum", cooldown_maximum(String(slot)))))
 	terminal_combo_recovery_time_total = float(payload.get("terminal_combo_recovery_time_total", 0.0))
 	direct_attack_uses_total = int(payload.get("direct_attack_uses_total", 0))
 	dodge_style_uses_total = Dictionary(payload.get("dodge_style_uses_total", {})).duplicate(true)

@@ -1,6 +1,6 @@
 # Code structure audit
 
-**Status:** Decisions recorded below. Two items were live defects and are already fixed in `0.2.74`; everything else is agreed but unimplemented.
+**Status:** Implemented in `0.2.75`. The two live defects remain recorded as the `0.2.74` prelude; all accepted structural work below is now in source and covered by focused contracts.
 
 **Recorded:** 2026-08-31 after `0.2.73`. Second audit and decisions added 2026-09-01.
 
@@ -19,7 +19,7 @@
 - **Two test failures are documented and expected**, and must not be "fixed" by weakening them:
   - `run_state_test.gd` — `test_clean_opening_hit_preserves_a_defensive_choice`. The bandit strafes out of the arc; a pursuit question, not a post-hit one.
   - `capture_telemetry_test.gd` — `a late sidestep at mid range must fail`. The Boar misses by 9.6 of a 72-unit contact width; an open tuning question.
-  - A green run of `run-tests.ps1` therefore reads `FAILED (2): run_state_test, capture_telemetry_test`. **Anything else is a regression.**
+  - These live in `tests/expected_failures.json`. A green `run-tests.ps1` run reports both as `EXPECTED FAIL`; an extra failure in either file is a regression, and an unexpected pass is surfaced as `XPASS` for contract review.
 - **Beware the already-red file.** Three times in one session a stale or broken assertion hid inside a file that was already failing for one of the two reasons above, and reported nothing new. When touching a system, run its test file alone and read the assertion line numbers, not the summary.
 
 ## Already fixed — do not redo
@@ -76,6 +76,21 @@ Everything below was checked against the source before being accepted. File and 
 8. **Stable IDs for dynamic presentation entities**, blending by ID, and one time authority per frame. This also repays the debt knowingly taken in `0.2.72`, where barriers and the Circle were moved to live state to stop them being invisible — correct at the time, and it does mean objects drawn together can represent different moments.
 9. **Save migrations and audience-flagged schemas** (C5).
 10. **The shared actor/effect boundary and factions** (C4 plus original item 5), last because it is the change most likely to look like it should alter gameplay.
+
+## Implementation record — `0.2.75`
+
+All accepted items above are implemented. The ownership points are:
+
+- `determinism_snapshot.gd` and `golden_run_test.gd` for named semantic checkpoints;
+- `combat_catalog.gd`, `ability_catalog.gd`, `runtime_schema.gd`, and `structure_audit_test.gd` for canonical facts and fail-fast registration/schema checks;
+- `_can_occupy`, actor repository methods, `actor_view`, `_faction_of`, and `_opposes` in `run_state.gd` for spatial and actor/effect boundaries;
+- `survey_counter_catalog.gd` and cooldown slot constants/accessors for registry-driven plumbing;
+- stable `presentation_id` values plus ID-based blending in `presentation_frame.gd`, with barriers and the Circle taken from the same frame as other dynamic objects;
+- `state_field_schema.gd` for explicit snapshot/presentation/save audiences;
+- `save_migrations.gd` for sequential schema normalization before hydration;
+- `tests/expected_failures.json` and the runner's exact-signature handling for the temporary failure ledger.
+
+The declined items remain declined: no single version source was introduced, occupancy remains a boolean predicate until a caller needs blocking reasons, and `run_state.gd` was not mechanically split.
 
 Steps 1 and 2 change no behaviour and should be verifiable by the existing suite alone. Nothing from step 4 onward should be attempted before step 3 exists.
 

@@ -1,6 +1,12 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.74` (Android version code `274`).
+Current prototype version: `0.2.75` (Android version code `275`).
+
+## v0.2.75 — one rule, one owner
+
+This release implements the accepted work in `docs/code-structure-audit.md` without changing the authored combat rules. The simulation now has a checkpointed golden-run harness and fail-fast catalog/runtime validation; enemy facts and presentation identity live in the enemy catalog; elemental abilities share canonical definitions and projectile construction; movement validity, actor membership, position, health, posture, conditions, impulses and factions have owned boundaries; cooldowns and survey measurements use declared registries; dynamic presentation objects have stable IDs and one frame-time authority; snapshot/presentation/save fields declare their audiences; and saves migrate sequentially into the current schema.
+
+The two open combat questions remain open. They now live in `tests/expected_failures.json`, and the test runner accepts only their exact signatures: an extra failure in either already-red file is a regression, while an unexpected pass is also surfaced for review rather than silently changing the contract.
 
 ## v0.2.74 — two defects a second audit found
 

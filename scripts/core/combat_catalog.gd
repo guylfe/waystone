@@ -1,6 +1,8 @@
 class_name CombatCatalog
 extends RefCounted
 
+const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+
 # This is intentionally a data catalogue rather than a second combat simulator.
 # RunState still owns timing, collision, and current prototype balancing.  The
 # catalogue gives every actor the same vocabulary so future character tracks,
@@ -349,19 +351,19 @@ const CHARACTER_TRACKS := {
 }
 
 const ARCHETYPES := {
-	"boar": {"role": "frontline", "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25}},
-	"ox": {"role": "breaker", "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4}},
-	"hound": {"role": "flanker", "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75}},
-	"bandit": {"role": "flanker", "weapon_frame": "twin_knives", "weapon_arts": ["twin_evasive_counter"], "equipped_weapon_art": "twin_evasive_counter", "defense_id": "dodge", "attributes": {"health": 4, "speed": 6, "stealth": 3, "awareness": 5, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}},
-	"knife": {"role": "flanker", "weapon_frame": "twin_knives", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 3, "speed": 6, "stealth": 2, "awareness": 4, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}},
-	"blade": {"role": "frontline", "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 5, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}},
-	"archer": {"role": "ranged_pressure", "weapon_frame": "bow", "weapon_arts": ["bow_drawn_shot"], "equipped_weapon_art": "bow_drawn_shot", "defense_id": "", "attributes": {"health": 4, "speed": 4, "stealth": 2, "awareness": 7, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"vision_range": 620.0}},
-	"shield": {"role": "screen", "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "block", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 4, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.35, "offhand": "shield"}},
-	"polearm": {"role": "reach", "weapon_frame": "spear", "weapon_arts": ["spear_lunge"], "equipped_weapon_art": "spear_lunge", "defense_id": "", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 5, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.15}},
-	"ice_caster": {"role": "area_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"ice": 2}, "vision_range": 620.0}},
-	"fire_caster": {"role": "area_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"fire": 2}, "vision_range": 620.0}},
-	"brute": {"role": "frontline", "weapon_frame": "impact", "weapon_arts": ["impact_ground_smash"], "equipped_weapon_art": "impact_ground_smash", "defense_id": "", "attributes": {"health": 9, "speed": 1, "stealth": 0, "awareness": 3, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.65}},
-	"knight": {"role": "frontline", "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep", "zweihander_half_sword"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 1, "stealth": 0, "awareness": 5, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 2, "mass": 1.7}},
+	"boar": {"role": "frontline", "ai_id": "boar", "base_hp": 35, "radius": 42.0, "posture_base": 0.0, "move_speed": 245.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.58, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25}, "presentation": {"name": "Boar", "color": "9b6541", "speed": "Medium", "reach": "Medium", "trait": "Pounce only", "signature_technique": ""}},
+	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Unstoppable gore; runs its line until it hits something", "signature_technique": ""}},
+	"hound": {"role": "flanker", "ai_id": "hound", "base_hp": 30, "radius": 25.0, "posture_base": 0.0, "move_speed": 325.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75}, "presentation": {"name": "Hound", "color": "6f91b8", "speed": "Fast", "reach": "Medium", "trait": "Pounce; agile retreat", "signature_technique": ""}},
+	"bandit": {"role": "flanker", "ai_id": "bandit", "base_hp": 25, "radius": 23.0, "posture_base": 0.5, "move_speed": 285.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": ["twin_evasive_counter"], "equipped_weapon_art": "twin_evasive_counter", "defense_id": "dodge", "attributes": {"health": 4, "speed": 6, "stealth": 3, "awareness": 5, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Bandit", "color": "d2b05c", "speed": "Fast", "reach": "Short", "trait": "Quick knife; evasive", "signature_technique": "quick_cut"}},
+	"knife": {"role": "flanker", "ai_id": "knife", "base_hp": 20, "radius": 22.0, "posture_base": 0.0, "move_speed": 290.0, "survey_cost": 1, "xp": 1, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 3, "speed": 6, "stealth": 2, "awareness": 4, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Knife", "color": "e5be55", "speed": "Fast", "reach": "Short", "trait": "Low stability", "signature_technique": "quick_cut"}},
+	"blade": {"role": "frontline", "ai_id": "blade", "base_hp": 35, "radius": 28.0, "posture_base": 0.0, "move_speed": 230.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.48, "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 5, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Blade", "color": "e46c63", "speed": "Medium", "reach": "Medium", "trait": "Balanced melee", "signature_technique": "diagonal_cut"}},
+	"archer": {"role": "ranged_pressure", "ai_id": "archer", "base_hp": 25, "radius": 28.0, "posture_base": 0.0, "move_speed": 175.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.56, "weapon_frame": "bow", "weapon_arts": ["bow_drawn_shot"], "equipped_weapon_art": "bow_drawn_shot", "defense_id": "", "attributes": {"health": 4, "speed": 4, "stealth": 2, "awareness": 7, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Archer", "color": "c68be4", "speed": "Medium", "reach": "Long", "trait": "Faster arrows; formation support", "signature_technique": ""}},
+	"shield": {"role": "screen", "ai_id": "shield", "base_hp": 50, "radius": 28.0, "posture_base": 1.0, "move_speed": 145.0, "survey_cost": 3, "xp": 2, "hit_reaction": 0.38, "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "block", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 4, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.35, "offhand": "shield"}, "presentation": {"name": "Shieldbearer", "color": "6aa9c9", "speed": "Slow", "reach": "Medium", "trait": "Frontal guard", "signature_technique": ""}},
+	"polearm": {"role": "reach", "ai_id": "polearm", "base_hp": 34, "radius": 28.0, "posture_base": 1.0, "move_speed": 120.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.38, "weapon_frame": "spear", "weapon_arts": ["spear_lunge"], "equipped_weapon_art": "spear_lunge", "defense_id": "", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 5, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.15}, "presentation": {"name": "Polearm", "color": "d08a48", "speed": "Slow", "reach": "Long", "trait": "Heavy long reach", "signature_technique": "thrust"}},
+	"ice_caster": {"role": "area_denial", "ai_id": "ice_caster", "base_hp": 40, "radius": 28.0, "posture_base": 0.5, "move_speed": 150.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"ice": 2}, "vision_range": 620.0}, "presentation": {"name": "Ice Caster", "color": "70bddd", "speed": "Medium", "reach": "Long", "trait": "Ice hex; expanding frost cone", "signature_technique": ""}},
+	"fire_caster": {"role": "area_denial", "ai_id": "fire_caster", "base_hp": 40, "radius": 28.0, "posture_base": 0.5, "move_speed": 160.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"fire": 2}, "vision_range": 620.0}, "presentation": {"name": "Fire Caster", "color": "db7447", "speed": "Medium", "reach": "Long", "trait": "Fire ring; tracking firebolt", "signature_technique": ""}},
+	"brute": {"role": "frontline", "ai_id": "brute", "base_hp": 80, "radius": 46.0, "posture_base": 5.0, "move_speed": 105.0, "survey_cost": 4, "xp": 5, "hit_reaction": 0.24, "weapon_frame": "impact", "weapon_arts": ["impact_ground_smash"], "equipped_weapon_art": "impact_ground_smash", "defense_id": "", "attributes": {"health": 9, "speed": 1, "stealth": 0, "awareness": 3, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.65}, "presentation": {"name": "Brute", "color": "9f554d", "speed": "Slow", "reach": "Medium", "trait": "Grounded heavy attacks", "signature_technique": "forward_smash"}},
+	"knight": {"role": "frontline", "ai_id": "knight", "base_hp": 140, "radius": 49.0, "posture_base": 10.0, "move_speed": 68.0, "survey_cost": 5, "xp": 7, "hit_reaction": 0.24, "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep", "zweihander_half_sword"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 1, "stealth": 0, "awareness": 5, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 2, "mass": 1.7}, "presentation": {"name": "Two-Handed Knight", "color": "77838e", "speed": "Very slow", "reach": "Long", "trait": "High health; grounded greatsword", "signature_technique": "heavy_cleave"}},
 	# The Captain is gone. Its identity was "strengthens nearby movement", which was
 	# a x1.14 locomotion buff inside 720 units -- invisible on the enemies it touched,
 	# imperceptible in size, and effectively always on for a whole room. Strip that
@@ -370,28 +372,28 @@ const ARCHETYPES := {
 	#
 	# The Chanter is what that role was supposed to be: it buffs explicitly, visibly,
 	# and one effect at a time, so killing it first is a real decision with a price.
-	"chanter": {"role": "support", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 4, "intelligence": 8, "faith": 6}, "properties": {"vision_range": 620.0}},
+	"chanter": {"role": "support", "ai_id": "chanter", "base_hp": 40, "radius": 28.0, "posture_base": 0.0, "move_speed": 150.0, "survey_cost": 4, "xp": 6, "hit_reaction": 0.58, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 4, "intelligence": 8, "faith": 6}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Chanter", "color": "c9a3e6", "speed": "Medium", "reach": "None", "trait": "Buffs allies; no attack of its own; hides behind them", "signature_technique": ""}},
 	# Lane denial, not damage. A javelin is easy to sidestep and that is the point --
 	# while it is in the air one direction is unavailable, so it is weak alone and
 	# strong in a room where something else has already spent your options. It throws
 	# where the player is GOING, which punishes the straight-line running that beats
 	# an Archer.
-	"javelineer": {"role": "ranged_pressure", "weapon_frame": "spear", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 3, "stealth": 0, "awareness": 6, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}},
+	"javelineer": {"role": "ranged_pressure", "ai_id": "javelineer", "base_hp": 30, "radius": 28.0, "posture_base": 0.0, "move_speed": 170.0, "survey_cost": 2, "xp": 3, "hit_reaction": 0.54, "weapon_frame": "spear", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 3, "stealth": 0, "awareness": 6, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Javelineer", "color": "bfa870", "speed": "Medium", "reach": "Long", "trait": "Slow throw that leads your movement; denies a lane", "signature_technique": ""}},
 	# The third currency. Fire and Ice deny ground by threatening damage; sundered
 	# earth costs you TIME, which in frozen time is the same as giving every other
 	# enemy in the room a free move.
 	# Air decides where things go -- bodies, and the things bodies throw. Its role is
 	# movement_denial like Earth's, but the verbs do not collide: Earth taxes crossing a
 	# place, Air changes which place you are in.
-	"air_caster": {"role": "movement_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 5, "stealth": 2, "awareness": 7, "resolve": 4, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0, "mass": 0.9}},
-	"earth_caster": {"role": "movement_denial", "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 5, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0}},
+	"air_caster": {"role": "movement_denial", "ai_id": "air_caster", "base_hp": 32, "radius": 28.0, "posture_base": 0.0, "move_speed": 175.0, "survey_cost": 3, "xp": 2, "hit_reaction": 0.74, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 5, "stealth": 2, "awareness": 7, "resolve": 4, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0, "mass": 0.9}, "presentation": {"name": "Air Caster", "color": "bcd3e0", "speed": "Fast", "reach": "Long", "trait": "Gale shoves bodies and spoils shots; steps away when cornered", "signature_technique": ""}},
+	"earth_caster": {"role": "movement_denial", "ai_id": "earth_caster", "base_hp": 36, "radius": 28.0, "posture_base": 0.0, "move_speed": 140.0, "survey_cost": 3, "xp": 5, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 5, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Earth Caster", "color": "6f9b6a", "speed": "Slow", "reach": "Long", "trait": "Sundered ground; costs time, not health", "signature_technique": ""}},
 	# The Bandit slips AROUND you and relocates; the Duellist holds its ground and
 	# takes your turn away. Its two attacks put their openings in different places --
 	# the poke is safe on the wind-up and exposed on the recovery, the swing is the
 	# reverse -- so it cannot be solved by repeating one answer.
-	"duellist": {"role": "flanker", "weapon_frame": "sword", "weapon_arts": ["sword_thrust"], "equipped_weapon_art": "sword_thrust", "defense_id": "", "attributes": {"health": 6, "speed": 5, "stealth": 0, "awareness": 7, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}},
-	"warden": {"role": "boss", "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.6}},
-	"werewolf": {"role": "boss", "weapon_frame": "natural", "weapon_arts": ["natural_pounce", "natural_flurry"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 10, "speed": 7, "stealth": 4, "awareness": 8, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.45}},
+	"duellist": {"role": "flanker", "ai_id": "duellist", "base_hp": 45, "radius": 28.0, "posture_base": 1.5, "move_speed": 265.0, "survey_cost": 4, "xp": 6, "hit_reaction": 0.44, "weapon_frame": "sword", "weapon_arts": ["sword_thrust"], "equipped_weapon_art": "sword_thrust", "defense_id": "", "attributes": {"health": 6, "speed": 5, "stealth": 0, "awareness": 7, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}, "presentation": {"name": "Duellist", "color": "e0c24e", "speed": "Fast", "reach": "Medium", "trait": "Parries a swing it reads; two attacks, two different openings", "signature_technique": "rapier_thrust"}},
+	"warden": {"role": "boss", "ai_id": "warden", "base_hp": 130, "radius": 52.0, "posture_base": 8.0, "move_speed": 125.0, "survey_cost": 2, "xp": 12, "hit_reaction": 0.24, "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.6}, "presentation": {"name": "Warden", "color": "d84b65", "speed": "Slow", "reach": "Long", "trait": "Grounded boss", "signature_technique": "heavy_cleave"}},
+	"werewolf": {"role": "boss", "ai_id": "werewolf", "base_hp": 210, "radius": 62.0, "posture_base": 7.0, "move_speed": 285.0, "survey_cost": 2, "xp": 18, "hit_reaction": 0.26, "weapon_frame": "natural", "weapon_arts": ["natural_pounce", "natural_flurry"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 10, "speed": 7, "stealth": 4, "awareness": 8, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.45}, "presentation": {"name": "Werewolf", "color": "7f5965", "speed": "Fast", "reach": "Long", "trait": "Pounce; claw chain; evasive", "signature_technique": "quick_cut"}},
 }
 
 # Melee attack plans. Each entry is one complete committed option: the technique,
@@ -555,7 +557,10 @@ static func loadout_profile(id: String) -> Dictionary:
 # flanker. Recipes compose in terms of roles rather than authoring one per entry,
 # so a recipe and a kind can no longer disagree about what an enemy does.
 static func role(id: String) -> String:
-	return String(Dictionary(ARCHETYPES.get(id, {})).get("role", "frontline"))
+	if not ARCHETYPES.has(id):
+		push_error("Unknown enemy archetype '%s'." % id)
+		return ""
+	return String(Dictionary(ARCHETYPES[id])["role"])
 
 # Every enemy kind the catalog knows, for the custom room's picker. Sorted so the
 # grid is stable between sessions rather than following dictionary insertion order.
@@ -566,7 +571,52 @@ static func enemy_kinds() -> Array[String]:
 	return kinds
 
 static func archetype(id: String) -> Dictionary:
-	return _profile_with_defaults(Dictionary(ARCHETYPES.get(id, ARCHETYPES["blade"])))
+	if not ARCHETYPES.has(id):
+		push_error("Unknown enemy archetype '%s'." % id)
+		return {}
+	return _profile_with_defaults(Dictionary(ARCHETYPES[id]))
+
+static func has_archetype(id: String) -> bool:
+	return ARCHETYPES.has(id)
+
+static func enemy_fact(id: String, key: String) -> Variant:
+	var profile := archetype(id)
+	if profile.is_empty(): return null
+	if not profile.has(key):
+		push_error("Enemy archetype '%s' is missing required fact '%s'." % [id, key])
+		return null
+	return profile[key]
+
+static func presentation(id: String) -> Dictionary:
+	var value: Variant = enemy_fact(id, "presentation")
+	return Dictionary(value) if value is Dictionary else {}
+
+static func validate_catalog() -> Array[String]:
+	var errors: Array[String] = []
+	var required := ["role", "ai_id", "base_hp", "radius", "posture_base", "move_speed", "survey_cost", "xp", "hit_reaction", "weapon_frame", "weapon_arts", "equipped_weapon_art", "defense_id", "attributes", "properties", "presentation"]
+	var presentation_required := ["name", "color", "speed", "reach", "trait", "signature_technique"]
+	for kind_value in ARCHETYPES:
+		var kind := String(kind_value)
+		var profile := Dictionary(ARCHETYPES[kind])
+		for key in required:
+			if not profile.has(key): errors.append("%s is missing %s" % [kind, key])
+		var attributes := Dictionary(profile.get("attributes", {}))
+		for key in ATTRIBUTE_KEYS:
+			if not attributes.has(key) and not ATTRIBUTE_DEFAULTS.has(key): errors.append("%s attributes are missing %s" % [kind, key])
+		var frame_id := String(profile.get("weapon_frame", ""))
+		if not WEAPON_FRAMES.has(frame_id): errors.append("%s names unknown weapon frame %s" % [kind, frame_id])
+		var presentation_data := Dictionary(profile.get("presentation", {}))
+		for key in presentation_required:
+			if not presentation_data.has(key): errors.append("%s presentation is missing %s" % [kind, key])
+		var signature := String(presentation_data.get("signature_technique", ""))
+		if signature != "" and not AttackGeometryScript.TECHNIQUES.has(signature): errors.append("%s names unknown signature technique %s" % [kind, signature])
+	for kind_value in MELEE_ATTACK_PLANS:
+		var kind := String(kind_value)
+		if not ARCHETYPES.has(kind): errors.append("melee plan names unknown archetype %s" % kind)
+		for option_value in Array(MELEE_ATTACK_PLANS[kind]):
+			var technique_id := String(Dictionary(option_value).get("technique", ""))
+			if not AttackGeometryScript.TECHNIQUES.has(technique_id): errors.append("%s melee plan names unknown technique %s" % [kind, technique_id])
+	return errors
 
 static func _profile_with_defaults(source: Dictionary) -> Dictionary:
 	var result := source.duplicate(true)

@@ -65,6 +65,8 @@ $HeadlessSuite = @(
     'warrior_character_test',
     'rogue_characters_test',
     'mage_elementalist_test',
+	'golden_run_test',
+	'structure_audit_test',
     'combat_survey_test',
     'combat_survey_ui_test',
     'weapon_geometry_test',
@@ -81,6 +83,10 @@ if ($All) {
 
 $Failed = @()
 $Missing = @()
+$ExpectedSeen = @()
+$UnexpectedlyPassing = @()
+$ExpectedFailuresPath = Join-Path $ProjectRoot 'tests\expected_failures.json'
+$ExpectedFailures = if (Test-Path $ExpectedFailuresPath) { Get-Content $ExpectedFailuresPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
 
 foreach ($name in $Selected) {
     $path = Join-Path $ProjectRoot "tests\$name.gd"
@@ -122,8 +128,17 @@ foreach ($name in $Selected) {
     # capture_telemetry_test, the file carrying most of the milestone coverage.
     $problems = ([regex]::Matches($output, 'Assertion failed|SCRIPT ERROR|FAILED:')).Count
     $ok = (-not $timedOut) -and ($problems -eq 0) -and ($code -eq 0)
+    $expectedProperty = $ExpectedFailures.PSObject.Properties[$name]
+    $expected = if ($null -ne $expectedProperty) { $expectedProperty.Value } else { $null }
+    $matchesExpected = (-not $ok) -and (-not $timedOut) -and ($null -ne $expected) -and ($problems -eq [int]$expected.problemCount) -and ($output -match [regex]::Escape([string]$expected.match))
 
-    if ($ok) {
+    if ($matchesExpected) {
+        $ExpectedSeen += $name
+        Write-Host ("{0,-34} EXPECTED FAIL  {1}" -f $name, [string]$expected.match) -ForegroundColor Yellow
+    } elseif ($ok -and $null -ne $expected) {
+        $UnexpectedlyPassing += $name
+        Write-Host ("{0,-34} XPASS  review and remove its expected-failure ledger entry" -f $name) -ForegroundColor Yellow
+    } elseif ($ok) {
         Write-Host ("{0,-34} PASS" -f $name) -ForegroundColor Green
     } elseif ($timedOut) {
         $Failed += $name
@@ -140,9 +155,13 @@ foreach ($name in $Selected) {
 
 Write-Host ''
 if ($Missing) { Write-Host ("Missing: {0}" -f ($Missing -join ', ')) -ForegroundColor Yellow }
+if ($UnexpectedlyPassing) {
+    Write-Host ("UNEXPECTED PASS ({0}): {1}" -f $UnexpectedlyPassing.Count, ($UnexpectedlyPassing -join ', ')) -ForegroundColor Red
+    exit 1
+}
 if ($Failed) {
     Write-Host ("FAILED ({0}): {1}" -f $Failed.Count, ($Failed -join ', ')) -ForegroundColor Red
     exit 1
 }
-Write-Host ("All {0} test files passed." -f $Selected.Count) -ForegroundColor Green
+Write-Host ("All {0} test files passed ({1} documented expected failures)." -f $Selected.Count, $ExpectedSeen.Count) -ForegroundColor Green
 exit 0
