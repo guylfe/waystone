@@ -148,6 +148,13 @@ var custom_add_rect := Rect2()
 # affordable: no world time passes while you decide, so more buttons cost nothing in
 # dexterity and the only real cost is screen space.
 var spell_rects: Dictionary = {}
+# The spellbook is a drawer, not a permanent row. Open, it takes real space and pushes the
+# belt and everything above it up; closed, that space goes back. Persistent either way,
+# because a caster picks a spell and then works from it -- a panel that closed itself after
+# every cast would charge a tap for every spell in a fight.
+var spellbook_open := true
+var spellbook_panel := Rect2()
+var spellbook_arrow_x := 0.0
 # Each element keeps the colour its enemy caster uses, so a spell you learned off something
 # looks like the thing you learned it from.
 const SPELL_COLORS := {
@@ -813,32 +820,42 @@ func _layout() -> void:
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
 	var loadouts := ["warrior"]
 	if portrait:
-		var hud_top := layout_origin.y + layout_size.y * 0.745
 		var gap := layout_size.x * 0.025
 		var tab_height := clampf(layout_size.y * 0.038, 38.0, 58.0)
-		loadout_rects["warrior"] = Rect2(layout_origin.x + gap, hud_top, layout_size.x - gap * 2.0, tab_height)
-		var wait_height := clampf(layout_size.y * 0.045, 44.0, 66.0)
-		interaction_rect = Rect2(layout_origin.x + gap, hud_top + tab_height + gap * 0.45, layout_size.x - gap * 2.0, wait_height)
-		var belt_top := interaction_rect.end.y + gap * 0.45
-		var belt_height := clampf(layout_size.y * 0.075, 50.0, 82.0)
+		# Laid out from the bottom up. The action row used to absorb whatever vertical space
+		# was left over, so adding a spell row above it squeezed the buttons and the spells
+		# ended up larger than the skills they sit beside. Both are now the same authored
+		# height and the drawer is what moves everything else.
+		var action_height := clampf(layout_size.y * 0.058, 46.0, 78.0)
+		var action_top := safe_layout_rect.end.y - gap - action_height
+		var action_width := (layout_size.x - gap * float(names.size() + 1)) / float(names.size())
+		for i in range(names.size()):
+			buttons[names[i]] = Rect2(layout_origin.x + gap + i * (action_width + gap), action_top, action_width, action_height)
+		var cursor := action_top - gap * 0.55
+		var spells := _spell_row()
+		if spellbook_open and not spells.is_empty():
+			var pad := gap * 0.4
+			var panel_height := action_height + pad * 2.0
+			spellbook_panel = Rect2(layout_origin.x + gap, cursor - panel_height, layout_size.x - gap * 2.0, panel_height)
+			var chip_gap := gap * 0.55
+			var chip_width := (spellbook_panel.size.x - pad * 2.0 - chip_gap * float(spells.size() - 1)) / float(spells.size())
+			for i in range(spells.size()):
+				spell_rects[spells[i]] = Rect2(spellbook_panel.position.x + pad + float(i) * (chip_width + chip_gap), spellbook_panel.position.y + pad, chip_width, action_height)
+			# The arrow notches into the button the drawer belongs to, so the panel reads as
+			# that slot opening rather than as five more unexplained controls.
+			spellbook_arrow_x = Rect2(buttons["advance"]).get_center().x
+			cursor = spellbook_panel.position.y - gap * 0.55
+		else:
+			spellbook_panel = Rect2()
+		var belt_height := clampf(layout_size.y * 0.070, 46.0, 78.0)
+		var belt_top := cursor - belt_height
 		var belt_width := (layout_size.x - gap * float(belt_names.size() + 1)) / float(belt_names.size())
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(layout_origin.x + gap + i * (belt_width + gap), belt_top, belt_width, belt_height)
-		var top := belt_top + belt_height + gap * 0.55
-		# The spellbook sits directly above the action row and is tethered to the subclass
-		# slot it belongs to, so it reads as that slot opening rather than as five more
-		# unexplained controls.
-		var spells := _spell_row()
-		if not spells.is_empty():
-			var spell_height := clampf(layout_size.y * 0.052, 40.0, 62.0)
-			var spell_width := (layout_size.x - gap * float(spells.size() + 1)) / float(spells.size())
-			for i in range(spells.size()):
-				spell_rects[spells[i]] = Rect2(layout_origin.x + gap + i * (spell_width + gap), top, spell_width, spell_height)
-			top += spell_height + gap * 0.45
-		var width := (layout_size.x - gap * float(names.size() + 1)) / float(names.size())
-		for i in range(names.size()):
-			buttons[names[i]] = Rect2(layout_origin.x + gap + i * (width + gap), top, width, safe_layout_rect.end.y - top - gap)
+		var wait_height := clampf(layout_size.y * 0.045, 44.0, 66.0)
+		interaction_rect = Rect2(layout_origin.x + gap, belt_top - gap * 0.45 - wait_height, layout_size.x - gap * 2.0, wait_height)
+		loadout_rects["warrior"] = Rect2(layout_origin.x + gap, interaction_rect.position.y - gap * 0.45 - tab_height, layout_size.x - gap * 2.0, tab_height)
 		var upgrade_width := (layout_size.x - gap * 4.0) / 3.0
-		for i in range(3): upgrade_rects[i] = Rect2(layout_origin.x + gap + i * (upgrade_width + gap), top, upgrade_width, safe_layout_rect.end.y - top - gap)
+		for i in range(3): upgrade_rects[i] = Rect2(layout_origin.x + gap + i * (upgrade_width + gap), action_top, upgrade_width, action_height)
 	else:
 		var left := layout_origin.x + layout_size.x * 0.755
 		var gap := layout_size.y * 0.025
@@ -852,12 +869,17 @@ func _layout() -> void:
 		for i in range(belt_names.size()): consumable_rects[belt_names[i]] = Rect2(left + i * (belt_width + gap), belt_top, belt_width, belt_height)
 		var action_top := belt_top + belt_height + gap
 		var spells := _spell_row()
-		if not spells.is_empty():
-			var spell_height := clampf(layout_size.y * 0.048, 34.0, 52.0)
-			var spell_width := (safe_layout_rect.end.x - left - gap * float(spells.size() + 1)) / float(spells.size())
+		if spellbook_open and not spells.is_empty():
+			var pad := gap * 0.35
+			var chip_height := clampf(layout_size.y * 0.052, 34.0, 56.0)
+			spellbook_panel = Rect2(left, action_top, safe_layout_rect.end.x - left - gap, chip_height + pad * 2.0)
+			var chip_gap := gap * 0.4
+			var chip_width := (spellbook_panel.size.x - pad * 2.0 - chip_gap * float(spells.size() - 1)) / float(spells.size())
 			for i in range(spells.size()):
-				spell_rects[spells[i]] = Rect2(left + i * (spell_width + gap), action_top, spell_width, spell_height)
-			action_top += spell_height + gap * 0.6
+				spell_rects[spells[i]] = Rect2(spellbook_panel.position.x + pad + float(i) * (chip_width + chip_gap), spellbook_panel.position.y + pad, chip_width, chip_height)
+			action_top = spellbook_panel.end.y + gap * 0.6
+		else:
+			spellbook_panel = Rect2()
 		var action_bottom := safe_layout_rect.end.y - gap
 		var height := (action_bottom - action_top - gap * float(names.size() + 1)) / float(names.size())
 		for i in range(names.size()):
@@ -1927,7 +1949,10 @@ func _handle_button(name: String) -> void:
 			else:
 				_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
 		"advance" when state.loadout_id == "mage_elementalist":
-			if state.spell_is_available(): selected_action = "" if selected_action == "advance" else "advance"
+			# The button opens and closes the drawer; a chip inside it is what arms a cast.
+			spellbook_open = not spellbook_open
+			if not spellbook_open and selected_action == "advance": selected_action = ""
+			_layout()
 		"advance":
 			var remaining := state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown
 			var energy_locked := state.loadout_id == "warrior" and state.energy_actions_locked()
@@ -2228,7 +2253,17 @@ func _defense_cooldown() -> float:
 func _on_state_changed() -> void:
 	_mark_autosave()
 	_sync_setup_controls()
+	# Buying an element changes what the drawer holds, and the drawer's rects are built in
+	# _layout(). Without this the row kept the geometry it had at run start, so a spell
+	# learned mid-run had no rect to be drawn or tapped in and its locked slot stayed on
+	# screen -- the element was bought, owned, and unreachable.
+	if _spell_row() != _spell_row_keys(): _layout()
 	queue_redraw()
+
+func _spell_row_keys() -> Array[String]:
+	var keys: Array[String] = []
+	for key in spell_rects: keys.append(String(key))
+	return keys
 
 func _presentation_snapshot() -> Dictionary:
 	return state.snapshot(true)
@@ -2316,6 +2351,25 @@ func _draw_world() -> void:
 		if String(hazard.get("layer", state.current_layer)) != state.current_layer: continue
 		if not _world_point_on_camera(Vector2(hazard["pos"]), float(hazard.get("radius", 100.0))): continue
 		if state.is_visible(Vector2(hazard["pos"]), visible): _draw_hazard(hazard)
+	# The Circle. Drawn on the ground as a ring with a faint fill, and brighter while the
+	# player is standing in it, because "am I still on my ground" is the question the
+	# ability exists to ask and it must be answerable at a glance.
+	var circle_left := float(visual.get("circle_remaining", state.circle_remaining))
+	if circle_left > 0.0:
+		var circle_centre := Vector2(visual.get("circle_pos", state.circle_pos))
+		var circle_radius := float(visual.get("circle_radius", state.circle_radius()))
+		var standing := state.player_is_inside_circle()
+		var fade := clampf(circle_left / 4.0, 0.35, 1.0)
+		var ring := _world_ring(circle_centre, circle_radius, 40)
+		draw_colored_polygon(ring, Color(0.18, 0.72, 0.62, (0.10 if standing else 0.05) * fade))
+		draw_polyline(_closed_points(ring), Color(0.36, 0.88, 0.76, (0.95 if standing else 0.55) * fade), maxf(2.0, world_scale * (5.0 if standing else 3.0)))
+		var inner_ring := _world_ring(circle_centre, circle_radius * 0.16, 20)
+		draw_polyline(_closed_points(inner_ring), Color(0.42, 0.92, 0.80, 0.6 * fade), maxf(1.5, world_scale * 2.5))
+		for spoke in range(6):
+			var angle := TAU * float(spoke) / 6.0
+			var a_in := _world_to_screen(circle_centre + Vector2.RIGHT.rotated(angle) * circle_radius * 0.82)
+			var a_out := _world_to_screen(circle_centre + Vector2.RIGHT.rotated(angle) * circle_radius)
+			draw_line(a_in, a_out, Color(0.36, 0.88, 0.76, 0.55 * fade), maxf(1.5, world_scale * 2.5))
 	for segment in Array(visual.get("barriers", [])):
 		if String(segment.get("layer", state.current_layer)) != state.current_layer: continue
 		var centre := Vector2(segment["pos"])
@@ -3084,7 +3138,11 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) in ["hit_reaction", "stagger"]: _draw_interrupted_weapon(world_pos, action, false)
 	elif String(action["kind"]) in ["claw_combo", "pounce_combo"]: _draw_claw_combo(world_pos, action, color)
 	elif String(action["kind"]) == "shoot":
-		if String(action.get("label", "")) == "firebolt": _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
+		# 0.2.56 renamed the Fire Caster's shot from "firebolt" to "fireball" and this test
+		# kept naming the old label, so the caster fell through to _draw_bow and spent the
+		# whole wind-up visibly drawing a bow it does not carry. Same root cause as the cone
+		# drawn as a circle: the renderer keying on a name the simulation had moved on from.
+		if String(action.get("label", "")) in ["firebolt", "fireball"]: _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
 		else: _draw_bow(pos, facing, radius, action, world_pos)
 	elif String(action["kind"]) in ["charge", "pounce_combo"]: draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "evade": draw_line(pos, pos - _screen_direction(Vector2(action.get("direction", Vector2.ZERO))) * radius * 1.8, Color(color, 0.42), maxf(3.0, radius * 0.22))
@@ -3430,6 +3488,24 @@ func _draw_effect(effect: Dictionary) -> void:
 			var direction := Vector2.RIGHT.rotated(TAU * float(index) / 12.0)
 			draw_line(center + direction * radius * 0.22, center + direction * radius * 1.35, Color(color, alpha), maxf(2.0, 6.0 * alpha))
 		draw_circle(center, lerpf(24.0, 8.0, progress), Color(color, alpha * 0.32))
+	elif kind == "lightning":
+		# The bolt is instantaneous, so there is no projectile to watch and nothing was
+		# drawn at all -- the strongest thing a caster does looked like nothing happening.
+		# It is drawn as the line it actually is, jagged, fading over the effect's life.
+		var from_point := _world_to_screen(Vector2(effect.get("origin", Vector2(effect["pos"]))))
+		var to_point := center
+		var bolt_alpha := 1.0 - progress
+		var segments := 7
+		var previous := from_point
+		var perpendicular := (to_point - from_point).orthogonal().normalized()
+		for step in range(1, segments + 1):
+			var along := from_point.lerp(to_point, float(step) / float(segments))
+			var jitter := 0.0 if step == segments else sin(float(step) * 2.7 + float(int(center.x)) * 0.13) * 9.0
+			var point := along + perpendicular * jitter
+			draw_line(previous, point, Color(0.85, 0.95, 1.0, 0.92 * bolt_alpha), maxf(2.0, world_scale * 4.0))
+			draw_line(previous, point, Color(1.0, 1.0, 1.0, 0.6 * bolt_alpha), maxf(1.0, world_scale * 1.6))
+			previous = point
+		draw_circle(to_point, maxf(4.0, world_scale * 7.0 * (1.0 - progress * 0.5)), Color(0.9, 0.97, 1.0, 0.75 * bolt_alpha))
 	elif kind == "strain":
 		for index in range(4):
 			var direction := Vector2.RIGHT.rotated(float(index) * 1.57 + progress * 1.2)
@@ -3838,7 +3914,7 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["active_end"]): return "STRIKING"
 		return "RECOVERING"
 	if kind == "shoot":
-		if String(action.get("label", "")) == "firebolt": return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
+		if String(action.get("label", "")) in ["firebolt", "fireball"]: return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
 		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
 	if kind == "gale": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
@@ -4771,6 +4847,16 @@ func _spell_row() -> Array[String]:
 
 func _draw_spell_row() -> void:
 	if spell_rects.is_empty(): return
+	if spellbook_panel.size.x > 1.0:
+		draw_rect(spellbook_panel, Color("101c24"))
+		draw_rect(spellbook_panel, Color("2f4a56"), false, 2.0)
+		# A small triangle on the lower edge, notched into the button the drawer belongs
+		# to. Without it the panel is five more controls appearing out of nowhere; with it,
+		# it is that slot opening.
+		if spellbook_arrow_x > 0.0:
+			var tip := Vector2(spellbook_arrow_x, spellbook_panel.end.y + 11.0)
+			draw_colored_polygon(PackedVector2Array([tip, Vector2(spellbook_arrow_x - 11.0, spellbook_panel.end.y - 1.0), Vector2(spellbook_arrow_x + 11.0, spellbook_panel.end.y - 1.0)]), Color("2bb8e0"))
+			draw_colored_polygon(PackedVector2Array([tip + Vector2(0.0, -3.4), Vector2(spellbook_arrow_x - 7.6, spellbook_panel.end.y - 3.0), Vector2(spellbook_arrow_x + 7.6, spellbook_panel.end.y - 3.0)]), Color("101c24"))
 	var castable := state.spell_is_available()
 	for spell_value in spell_rects:
 		var spell_id := String(spell_value)
@@ -4848,9 +4934,9 @@ func _draw_button(name: String, rect: Rect2) -> void:
 			available = state.rally_is_available()
 			subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
 	elif name == "advance" and state.loadout_id == "mage_elementalist":
-		title = state.spell_label(state.selected_spell).to_upper() if state.selected_spell != "" else "SPELLBOOK"
+		title = "SPELLBOOK %s" % ("\u25be" if spellbook_open else "\u25b4")
 		available = state.spell_is_available()
-		subtitle = "CAST" if available else "EXHAUSTED" if state.energy_actions_locked() else "COOLING"
+		subtitle = state.spell_label(state.selected_spell).to_upper() if state.selected_spell != "" else "CLOSED" if not spellbook_open else "OPEN"
 	elif name == "advance":
 		title = "VAULT" if state.loadout_id == "rogue_acrobat" else "TAKE AIM" if state.loadout_id == "rogue_sharpshooter" else "ADVANCE"
 		available = (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown) <= 0.0001 and not (state.loadout_id == "warrior" and state.energy_actions_locked())

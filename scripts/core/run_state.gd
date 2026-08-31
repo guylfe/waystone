@@ -406,7 +406,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.64"
+const GAME_VERSION := "0.2.65"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -3595,7 +3595,9 @@ func _resolve_lightning_bolt(direction: Vector2) -> void:
 		if not _has_line_of_sight(player_pos, Vector2(enemy["pos"])): continue
 		best = enemy
 		best_distance = along
-	_add_effect("strain", player_pos + direction * minf(best_distance, LIGHTNING_RANGE))
+	var strike_point := player_pos + direction * minf(best_distance, LIGHTNING_RANGE)
+	if not best.is_empty(): strike_point = Vector2(best["pos"])
+	_add_effect("lightning", strike_point, 0, {"origin": player_pos + direction * 26.0})
 	if best.is_empty():
 		_set_message("The bolt earths itself on nothing.")
 		return
@@ -9009,6 +9011,9 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"projectiles": projectiles.duplicate(true),
 		"hazards": hazards.duplicate(true),
 		"barriers": barriers.duplicate(true),
+		"circle_pos": circle_pos,
+		"circle_remaining": circle_remaining,
+		"circle_radius": circle_radius(),
 		"effects": effects.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,
@@ -9251,6 +9256,9 @@ func _build_save_payload() -> Dictionary:
 		"projectiles": projectiles.duplicate(true),
 		"hazards": hazards.duplicate(true),
 		"barriers": barriers.duplicate(true),
+		"circle_pos": circle_pos,
+		"circle_remaining": circle_remaining,
+		"circle_radius": circle_radius(),
 		"effects": effects.duplicate(true),
 		"dodge_cooldown": dodge_cooldown,
 		"block_cooldown": block_cooldown,

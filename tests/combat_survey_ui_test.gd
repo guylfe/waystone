@@ -10,6 +10,47 @@ func _initialize() -> void:
 	board.visual = board.state.snapshot(true)
 	board._sync_setup_controls()
 
+	# --- the Elementalist spellbook drawer ---------------------------------------------
+	board.state.start_run("mage_elementalist", "combat_survey", 4242, "encounter", "energy")
+	board.spellbook_open = true
+	board.visual = board.state.snapshot(true)
+	board._layout()
+	# Chips are the same authored height as the action buttons beside them. The action row
+	# used to absorb whatever space was left over, so adding a spell row squeezed the
+	# buttons and the spells ended up larger than the skills.
+	var bolt_rect: Rect2 = Rect2(board.spell_rects["lightning_bolt"])
+	var action_rect: Rect2 = Rect2(board.buttons["advance"])
+	assert(is_equal_approx(bolt_rect.size.y, action_rect.size.y))
+	assert(board.spellbook_panel.size.x > 0.0)
+	# The drawer takes real space: closing it moves everything above it down.
+	var belt_open: float = Rect2(board.consumable_rects["healing"]).position.y
+	var action_open: float = action_rect.position.y
+	board.spellbook_open = false
+	board._layout()
+	assert(board.spellbook_panel.size.x <= 0.0)
+	assert(board.spell_rects.is_empty())
+	assert(Rect2(board.consumable_rects["healing"]).position.y > belt_open)
+	# ...and the action row itself does not move, because it is anchored to the bottom.
+	assert(is_equal_approx(Rect2(board.buttons["advance"]).position.y, action_open))
+	board.spellbook_open = true
+	board._layout()
+
+	# Learning an element mid-run must reach the drawer. The rects are built in _layout(),
+	# and _on_state_changed only queued a redraw -- so a spell that was bought and owned had
+	# no rect to be drawn or tapped in, and its locked slot stayed on screen. The element
+	# was unreachable for the rest of the run.
+	assert(board.spell_rects.has("locked:element_fire"))
+	assert(not board.spell_rects.has("fireball"))
+	board.state._apply_character_stage("element_fire", "fireball")
+	board._on_state_changed()
+	assert(board.spell_rects.has("fireball"))
+	assert(not board.spell_rects.has("locked:element_fire"))
+	assert(board.spell_rects.has("locked:element_ice"))
+	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
+	board.visual = board.state.snapshot(true)
+	board._layout()
+	assert(board.spell_rects.is_empty())
+
 	# --- the custom room picker -------------------------------------------------------
 	# Built so a new enemy can be judged the moment it exists rather than waited for. The
 	# Chanter sat unplayed from 0.2.33 to 0.2.39 because nothing ever drew it.

@@ -1,7 +1,44 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.64` (Android version code `264`).
+Current prototype version: `0.2.65` (Android version code `265`).
 
+## v0.2.65 — the spellbook becomes a drawer, and three more things that were only wrong on screen
+
+### The spellbook is a drawer now
+
+The spell row was laid out after the action row, and the action row absorbed whatever vertical space was left over — so adding spells squeezed the buttons, and the spells ended up larger than the skills they sit beside. The HUD is now laid out **from the bottom up**: the action row has an authored height and never moves, spell chips are that same height, and the drawer is what pushes everything else.
+
+The spells sit in **one bordered panel with a small triangle on its lower edge**, notched into the Spellbook button below it. Without the tether the panel is five more controls appearing from nowhere; with it, it reads as that slot opening.
+
+The Spellbook button now **toggles the drawer** rather than arming a cast, and the state is persistent — a panel that closed itself after every cast would charge a tap for every spell in a fight. Open, the belt and everything above it shift up; closed, that space comes back. Selecting a chip is what arms a cast.
+
+### Learning an element did nothing
+
+The worst of the batch. The drawer's rects are built in `_layout()`, and `_on_state_changed()` only queued a redraw — so buying an element left the row with the geometry it had at run start. The new spell had no rect to be drawn or tapped in, and its locked slot stayed on screen. The element was bought, owned, and **unreachable for the rest of the run**.
+
+The row is now rebuilt whenever its contents change, and a test pins it.
+
+### Lightning Bolt was invisible
+
+The bolt is instantaneous — no projectile to watch — and it emitted a small generic `strain` puff at the point of impact. The strongest thing the class does looked like nothing happening.
+
+It now emits an effect carrying **both ends of the line**, drawn as the jagged bolt it is, fading over its life. While fixing it I hit a related trap worth recording: the first version read `position` for the effect's location, which compiled and ran because `GameBoard extends Control` and Control *has* a `position` property — so the bolt was drawn at the origin of the world, off screen, with no error anywhere.
+
+### The Circle was invisible
+
+Never drawn at all. It is now a ring on the ground with a faint fill, spokes at the rim, and a centre mark — **brighter while you are standing in it**, because "am I still on my ground" is the question the ability exists to ask and it has to be answerable at a glance. It fades as it expires.
+
+### The Fire Caster was firing a bow
+
+`0.2.56` renamed the Fire Caster's shot from `firebolt` to `fireball`, and the renderer's pose test still named the old label. So the caster fell through to the bow-drawing branch and spent its whole wind-up visibly nocking an arrow it does not carry, with a phase readout of "DRAWING" instead of "KINDLING".
+
+That is the third instance this week of the same root cause — the renderer keyed on a name the simulation had moved on from, after the cone drawn as a circle and the cone renderer belonging to a hazard nothing spawns any more. All three were invisible to a headless suite, by construction.
+
+### Gale, which is not a bug
+
+Gale deals no damage and never has: its hazard is authored at zero and its branch returns before the damage path. What almost certainly happened is a **Fire Caster's fireball, bent by the Gale into the Air Caster** — fireball is authored at 20 and the Air Caster carries no Defense, so it lands for exactly 20.
+
+That is the friendly-fire rule working as designed. A projectile hits whoever it hits; there is no friend-or-foe flag, and archers already refuse to shoot through their own people, so this only happens when something changes *after* the shot was committed — which is precisely what a Gale is for. The survey already counts it under "Shots that struck their own side".
 ## v0.2.64 — four things that were only wrong on screen
 
 Three real bugs and one thing that was working exactly as designed and reading as broken. Every one of them was invisible to the headless suite, which is what the renderer-validation rule in `CLAUDE.md` exists for and what these versions did not get.
