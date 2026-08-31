@@ -2469,6 +2469,21 @@ func _draw_projectile(projectile: Dictionary) -> void:
 		var jav_tip := center + direction * shaft * 0.38
 		var jav_side := direction.rotated(PI * 0.5)
 		draw_colored_polygon(PackedVector2Array([jav_tip + direction * shaft * 0.16, jav_tip + jav_side * shaft * 0.10, jav_tip - jav_side * shaft * 0.10]), Color("f3e3b4"))
+	elif kind == "frost_lance":
+		# It fell through to the generic arrow and was drawn as a gold shaft with a fletched
+		# tail -- the same silhouette and very nearly the same colour as an Archer's shot,
+		# for a projectile whose whole identity is that it is the ONE ice attack you can
+		# dodge. Ice pays for its own shape: a pale shard with a cold trail.
+		var shard := maxf(18.0, world_scale * 30.0)
+		var lance_side := direction.rotated(PI * 0.5)
+		draw_line(center - direction * shard * 0.9, center, Color(0.55, 0.86, 1.0, 0.42), maxf(3.0, world_scale * 7.0))
+		draw_colored_polygon(PackedVector2Array([
+			center + direction * shard * 0.42,
+			center + lance_side * shard * 0.16,
+			center - direction * shard * 0.30,
+			center - lance_side * shard * 0.16,
+		]), Color("bdeaff"))
+		draw_line(center - direction * shard * 0.30, center + direction * shard * 0.42, Color("f2fdff"), maxf(1.5, world_scale * 2.4))
 	elif kind == "firebolt":
 		draw_line(center - direction * 22.0 * world_scale, center, Color(0.94, 0.31, 0.10, 0.48), maxf(3.0, world_scale * 9.0))
 		draw_circle(center, maxf(5.0, radius * 0.72), Color("f06b24"))
@@ -3149,7 +3164,19 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) == "slam":
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, float(action.get("reach", 205.0)), Color.TRANSPARENT, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
 		else: draw_arc(pos, float(action.get("reach", 205.0)) * world_scale, 0.0, TAU, 28, Color(color, 0.45), maxf(3.0, collision_radius * 0.13))
-	elif String(action["kind"]) == "gale": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 18.0, Color("d8ecf6"))
+	elif String(action["kind"]) == "gale":
+		_draw_spell_cast(pos, facing, radius, action, Color("d8ecf6"))
+		draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 18.0, Color("d8ecf6"))
+	# Earth, the lance, the breath and the chant all wound up with nothing drawn at all, so
+	# four of the roster's abilities gave the player no tell to read -- in a game whose
+	# entire defensive layer is reading a wind-up and choosing an answer. Each takes the
+	# colour of the thing it is about to become.
+	elif String(action["kind"]) in ["earth_wall", "sunder"]:
+		_draw_spell_cast(pos, facing, radius, action, Color("87ac7d"))
+		if action.has("target"): draw_circle(_world_to_screen(Vector2(action["target"])), 14.0, Color(0.53, 0.67, 0.49, 0.75))
+	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color("9be7ff"))
+	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color("ff8a45"))
+	elif String(action["kind"]) == "chant": _draw_spell_cast(pos, facing, radius, action, Color("e0c46a"))
 	elif String(action["kind"]) in ["hex", "ice_hex", "cold_front"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0 if String(action["kind"]) == "cold_front" else 12.0, Color("b57bea") if String(action["kind"]) == "hex" else Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
 	if awareness in ["suspicious", "alerted"]:
@@ -3160,7 +3187,9 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_health(pos, radius, int(enemy["hp"]), int(enemy["max_hp"]), color)
 	_draw_posture(pos, radius, float(enemy.get("posture", 1.0)), float(enemy.get("posture_max", 1.0)))
 	var phase := _phase(action)
-	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
+	# Width was radius x 4.4, which clipped "DRAWING BREATH" to "DRAWING BREAT". A telegraph
+	# that cannot finish its own word is not a telegraph.
+	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
 
 func _draw_actor(pos: Vector2, foot: Vector2, facing: Vector2, radius: float, color: Color, marker_color: Color, reeling: bool = false, body_scale: Vector2 = Vector2.ONE, stride: float = 0.0) -> void:
 	if view_mode == "isometric":
@@ -3917,7 +3946,12 @@ func _phase(action: Dictionary) -> String:
 		if String(action.get("label", "")) in ["firebolt", "fireball"]: return "KINDLING" if elapsed < float(action.get("startup", 0.64)) else "RECOVERING"
 		return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
 	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
-	if kind == "gale": return "DRAWING BREATH" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
+	if kind == "gale": return "BREATHING IN" if elapsed < float(action.get("startup", 0.80)) else "TEARING"
+	if kind == "earth_wall": return "HEAVING" if elapsed < float(action.get("startup", 1.10)) else "RECOVERING"
+	if kind == "sunder": return "BREAKING" if elapsed < float(action.get("startup", 0.92)) else "RECOVERING"
+	if kind == "frost_lance": return "AIMING" if elapsed < float(action.get("startup", 0.78)) else "RECOVERING"
+	if kind == "fire_breath": return "INHALING" if elapsed < float(action.get("startup", 0.74)) else "BREATHING"
+	if kind == "chant": return "CHANTING" if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
 	if kind == "windstep": return "GONE"
 	if kind == "cold_front": return "THE AIR STILLS" if elapsed < float(action.get("startup", 1.12)) else "FREEZING"
 	if kind == "frost_lance": return "CONDENSING" if elapsed < float(action.get("startup", 0.78)) else "LOOSED"

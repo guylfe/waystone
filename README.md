@@ -1,7 +1,26 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.65` (Android version code `265`).
+Current prototype version: `0.2.66` (Android version code `266`).
 
+## v0.2.66 — a deliberate look at every caster ability
+
+Four renderer bugs shipped in three versions — a cone drawn as a circle, a caster drawing a bow it does not carry, an invisible Lightning Bolt, an invisible Circle — and every one of them was the same failure: the simulation moved and the drawing stayed where it was. Each was found by being played, one at a time, rather than by being looked at.
+
+So this version looks at all of them at once. `tests/caster_visual_audit.gd` puts every caster ability on screen across seven frames — enemy hazards, caster wind-ups, the staff arts, the player's spells. It is render-dependent and deliberately not a pass/fail instrument, because no assertion can tell you a cone was drawn as a circle. Its value is that a person can check the whole roster in a minute instead of discovering the failures one at a time in play.
+
+It found five more.
+
+**The Frost Lance was an arrow.** The projectile renderer has branches for the javelin and the firebolt, and everything else falls through to a generic gold shaft with a fletched tail — so Ice's one dodgeable attack had the same silhouette and very nearly the same colour as an Archer's shot. For a projectile whose entire identity is *this is the ice you can answer*, that is the identity deleted. It is now a pale shard with a cold trail.
+
+**Four abilities had no wind-up at all.** Earth Wall, Sunder, Frost Lance and Fire Breath were drawn as a caster standing still until the effect simply appeared. In a game whose whole defensive layer is reading a wind-up and choosing an answer, four of the roster's abilities were giving the player nothing to read. Each now shows a cast, in the colour of the thing it is about to become.
+
+**Those four also had no phase readout** — no "HEAVING", no "AIMING" — where every other action in the game names what it is doing.
+
+**And the readout was clipping.** It was allotted `radius × 4.4` of width, which cut "DRAWING BREATH" to "DRAWING BREAT". A telegraph that cannot finish its own word is not a telegraph. The Gale's is now "BREATHING IN", and the field is wide enough for all of them.
+
+Verified by re-running the audit and reading the frames rather than by the suite passing, since the suite could not see any of this and never will.
+
+**One thing found and deliberately left alone.** Gale and Cold Front are both drawn as large expanding discs and are told apart only by colour, which sits badly against the rule the Chanter's spellbook was built on — that each effect gets its own silhouette so colour is never load-bearing. They are different sizes and different elements and I would rather change one of their shapes deliberately than reach for the nearest fix; it is recorded here so it is not rediscovered as new.
 ## v0.2.65 — the spellbook becomes a drawer, and three more things that were only wrong on screen
 
 ### The spellbook is a drawer now
