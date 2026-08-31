@@ -32,6 +32,8 @@ func _init() -> void:
 	test_every_element_is_a_permanent_fork()
 	test_the_staff_is_reach_and_ground_not_damage()
 	test_steadier_cast_holds_against_a_light_hit()
+	test_the_staff_arts_actually_commit()
+	test_a_cone_hazard_tells_the_renderer_it_is_a_cone()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -181,3 +183,60 @@ func test_steadier_cast_holds_against_a_light_hit() -> void:
 	# the frailest class in the game the hardest one to interrupt.
 	steady._resolve_incoming_hit(1, 28, "knight", Vector2.LEFT, steady.player_pos, 6.0)
 	check(String(steady.player_action["kind"]) != "cast", "a heavy blow should still break the working")
+
+func test_the_staff_arts_actually_commit() -> void:
+	# 0.2.62 authored both arts in the catalog and implemented neither, so choosing one
+	# armed a button that did nothing and left time frozen. In a game where world time only
+	# advances on commitment that is the worst possible failure mode: nothing at all tells
+	# the player the commitment did not happen.
+	for art in ["staff_whirlwind", "staff_leg_sweep"]:
+		var state := fresh()
+		state.player_equipped_weapon_art = String(art)
+		check(state.request_skill(Vector2.RIGHT, false), "%s should commit" % art)
+		check(String(state.player_action.get("technique_id", "")) == String(art), "%s should use its own geometry" % art)
+		check(state.player_energy < state.player_max_energy, "%s should actually cost something" % art)
+	# Sweep the Legs reaches further and breaks posture; Whirlwind covers the circle and
+	# shoves. Neither is a better version of the other, which is the whole point of the fork.
+	var sweep := fresh()
+	sweep.player_equipped_weapon_art = "staff_leg_sweep"
+	sweep.request_skill(Vector2.RIGHT, false)
+	var whirl := fresh()
+	whirl.player_equipped_weapon_art = "staff_whirlwind"
+	whirl.request_skill(Vector2.RIGHT, false)
+	check(float(sweep.player_action["reach"]) > float(whirl.player_action["reach"]), "the low sweep reaches further")
+	check(float(sweep.player_action["posture_damage"]) > float(whirl.player_action["posture_damage"]), "and it is the one that takes them off their feet")
+	check(float(whirl.player_action.get("staff_push", 0.0)) > 0.0, "Whirlwind is the one that moves bodies")
+	check(float(sweep.player_action.get("staff_push", 0.0)) == 0.0, "the low sweep does not")
+	# The shove is gated on the same PUSHABLE_MASS line as every other push in the game, so
+	# a Shield, Brute, Knight or Ox stands in it. That is the art's honest limit.
+	var state := fresh()
+	var hound := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 90.0, 30)
+	var ox := state._make_enemy("ox", state.player_pos + Vector2.LEFT * 90.0, 96)
+	state.enemies.append(hound)
+	state.enemies.append(ox)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._apply_whirlwind_push(hound, 104.0)
+	state._apply_whirlwind_push(ox, 104.0)
+	check(Vector2(hound["pos"]).distance_to(state.player_pos) > 150.0, "a light body is shoved out")
+	check(is_equal_approx(Vector2(ox["pos"]).distance_to(state.player_pos), 90.0), "a heavy one is not")
+
+func test_a_cone_hazard_tells_the_renderer_it_is_a_cone() -> void:
+	# The renderer decides how to draw a hazard by whether it carries a half_angle. It used
+	# to test the hazard's NAME, so when 0.2.56 replaced the Fire Caster's ring with a cone
+	# the simulation resolved a cone while the renderer drew a 232-unit expanding disc --
+	# and the only cone it could draw belonged to `ice_cone`, which 0.2.57 stopped spawning.
+	# Both halves were invisible to this suite, because a headless test cannot see a shape.
+	# What it CAN pin is the contract the renderer keys on.
+	var state := fresh()
+	state.hazards.clear()
+	state._spawn_fire_breath({"id": 1, "pos": state.player_pos, "layer": state.current_layer}, Vector2.UP)
+	check(state.hazards.size() == 1, "fire breath should place a hazard")
+	var cone: Dictionary = state.hazards[0]
+	check(cone.has("half_angle"), "and it must declare itself a cone")
+	check(float(cone["half_angle"]) < PI * 0.5, "with an angle narrow enough to have a direction worth dodging")
+	check(cone.has("direction"), "and the direction it faces")
+	# Cold Front is the counter-case: a front is a disc and must NOT be drawn as a wedge.
+	state.hazards.clear()
+	state._spawn_cold_front({"id": 1, "pos": state.player_pos, "layer": state.current_layer}, state.player_pos + Vector2.UP * 120.0)
+	check(not Dictionary(state.hazards[0]).has("half_angle"), "a front is not a cone")

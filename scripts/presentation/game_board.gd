@@ -2329,10 +2329,24 @@ func _draw_world() -> void:
 		# A lowered segment is drawn as a scar on the ground rather than removed: the gap
 		# is information -- it is where an enemy is -- and hiding it would make the wall
 		# read as randomly broken instead of as pressure you can see.
-		var thickness := maxf(2.0, float(segment.get("thickness", 17.0)) * world_scale * (0.35 if lowered else 1.0))
-		draw_line(a, b, Color(0.42, 0.32, 0.20, 0.45 if lowered else 0.95 * integrity), thickness)
-		if not lowered:
-			draw_line(a, b, Color(0.74, 0.58, 0.34, 0.85 * integrity), maxf(1.0, thickness * 0.35))
+		var thickness := maxf(3.0, float(segment.get("thickness", 17.0)) * world_scale * (0.30 if lowered else 1.45))
+		if lowered:
+			# A ground scar, and drawn as rubble rather than as a thin version of the wall.
+			# The gap is information -- it is where an enemy is -- and a faint copy of the
+			# raised state reads as the wall being badly drawn instead of as a hole in it.
+			draw_line(a, b, Color(0.34, 0.26, 0.17, 0.55), thickness)
+			for notch in range(4):
+				var t := (float(notch) + 0.5) / 4.0
+				var p := a.lerp(b, t)
+				draw_line(p + Vector2(-3.0, 0.0), p + Vector2(3.0, 0.0), Color(0.60, 0.47, 0.29, 0.5), maxf(1.0, thickness * 0.3))
+		else:
+			# Standing stone: a dark base, a lit body, and a bright cap along the top so it
+			# reads as something with height rather than a line painted on the floor. It was
+			# a single dark-brown line before, which against the floor was nearly nothing.
+			var lift := Vector2(0.0, -thickness * 0.55)
+			draw_line(a, b, Color(0.16, 0.12, 0.08, 0.85), thickness * 1.1)
+			draw_line(a + lift, b + lift, Color(0.58, 0.44, 0.26, 0.98 * integrity), thickness)
+			draw_line(a + lift * 1.7, b + lift * 1.7, Color(0.86, 0.72, 0.46, 0.95 * integrity), maxf(2.0, thickness * 0.34))
 	if view_mode == "isometric":
 		_draw_isometric_solids(visible, discovered)
 	else:
@@ -3530,16 +3544,32 @@ func _draw_hazard(hazard: Dictionary) -> void:
 	var trigger_at := float(hazard["trigger_at"])
 	var progress := clampf(elapsed / trigger_at, 0.0, 1.0)
 	var kind := String(hazard.get("kind", "hex"))
-	if kind == "ice_cone":
+	# Keyed on the hazard carrying a half_angle rather than on its name. This used to test
+	# `kind == "ice_cone"`, so when 0.2.56 replaced the Fire Caster's ring with a cone the
+	# simulation started resolving a 0.52-radian cone while the renderer kept drawing a
+	# 232-unit expanding disc -- a "large fire circle" that was neither of the caster's
+	# abilities, and the reason the cones had never once been seen. Meanwhile the only
+	# cone the renderer could draw belonged to `ice_cone`, which 0.2.57 stopped spawning.
+	# Both halves of that were invisible to the headless suite, which is exactly what the
+	# renderer-validation rule exists for.
+	if hazard.has("half_angle"):
 		var direction := Vector2(hazard.get("direction", Vector2.UP)).normalized()
-		var half_angle := float(hazard.get("half_angle", 0.62))
+		var half_angle := float(hazard["half_angle"])
+		var cone_fill := Color(0.30, 0.73, 0.94, 0.10 + progress * 0.06)
+		var cone_edge := Color("a8e9ff")
+		if kind in ["fire_breath", "player_fire"]:
+			cone_fill = Color(0.94, 0.32, 0.10, 0.12 + progress * 0.10)
+			cone_edge = Color("ff9b4f")
 		var current_range := float(hazard["radius"]) * progress
 		var cone := _project_world_sector(world_center, current_range, direction.angle() - half_angle, half_angle * 2.0, 18)
 		if cone.size() >= 3:
-			_draw_sector_fill(cone, current_range, half_angle * 2.0, Color(0.30, 0.73, 0.94, 0.10 + progress * 0.06))
-			draw_polyline(_closed_points(cone), Color("a8e9ff"), maxf(2.0, world_scale * 5.0))
+			_draw_sector_fill(cone, current_range, half_angle * 2.0, cone_fill)
+			draw_polyline(_closed_points(cone), cone_edge, maxf(2.0, world_scale * 5.0))
+		# The full extent, faint, from the first frame. A cone that only shows how far it
+		# has already reached tells you where it has been; the player needs to know where
+		# it is going while there is still time to leave.
 		var terminus := _project_world_sector(world_center, float(hazard["radius"]), direction.angle() - half_angle, half_angle * 2.0, 18)
-		draw_polyline(_closed_points(terminus), Color(0.48, 0.78, 0.93, 0.20), maxf(1.0, world_scale * 2.0))
+		draw_polyline(_closed_points(terminus), Color(cone_edge, 0.24), maxf(1.0, world_scale * 2.0))
 		return
 	if kind == "sundered_ground":
 		# Drawn as broken ground rather than as a threat zone: it deals no damage, and
@@ -4721,10 +4751,22 @@ func _draw_loadout_tab(choice: String, rect: Rect2) -> void:
 	var font := maxi(9, int(minf(rect.size.x, rect.size.y) * 0.25))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.62), choice.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font, Color("eef0e9") if selected else Color("718087"))
 
+# Known spells first, then a locked slot for every element still to come. A row holding
+# one button does not read as a spellbook -- it reads as a single ability, which is why the
+# spellbook appeared to be missing entirely at level 1. The framework already asks that
+# future nodes stay visible so a build can be planned; this is that rule applied to the
+# thing the player actually looks at.
+const ELEMENT_SLOT_LABELS := {"element_fire": "FIRE", "element_ice": "ICE", "element_earth": "EARTH", "element_air": "AIR"}
+
 func _spell_row() -> Array[String]:
 	if state.loadout_id != "mage_elementalist": return []
 	var row: Array[String] = []
 	for spell_value in state.player_spells: row.append(String(spell_value))
+	for stage_id in ["element_fire", "element_ice", "element_earth", "element_air"]:
+		var learned := false
+		for choice in Array(state.ELEMENT_STAGE_SPELLS[stage_id]):
+			if state.knows_spell(String(choice)): learned = true
+		if not learned: row.append("locked:%s" % stage_id)
 	return row
 
 func _draw_spell_row() -> void:
@@ -4733,6 +4775,15 @@ func _draw_spell_row() -> void:
 	for spell_value in spell_rects:
 		var spell_id := String(spell_value)
 		var rect := Rect2(spell_rects[spell_id])
+		if spell_id.begins_with("locked:"):
+			var stage_id := spell_id.trim_prefix("locked:")
+			var gate := int(Dictionary(CombatCatalogScript.character_stage_by_id(stage_id)).get("gate", 0))
+			draw_rect(rect, Color("101a20"))
+			draw_rect(rect, Color("39474e"), false, 2.0)
+			var slot_font := maxi(9, int(rect.size.y * 0.32))
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.46), String(ELEMENT_SLOT_LABELS.get(stage_id, "?")), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, slot_font, Color("5d6a71"))
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.86), "LV %d" % gate, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(slot_font * 0.78)), Color("46545b"))
+			continue
 		var chosen := spell_id == state.selected_spell
 		var colour := SPELL_COLORS.get(spell_id, Color("c8d6de")) as Color
 		draw_rect(rect, Color("16222a") if castable else Color("11191d"))
@@ -4750,6 +4801,10 @@ func _handle_spell_press(position: Vector2) -> bool:
 	for spell_value in spell_rects:
 		var spell_id := String(spell_value)
 		if not Rect2(spell_rects[spell_id]).has_point(position): continue
+		if spell_id.begins_with("locked:"):
+			state.message = "That element is learned from the casters that use it, at level %d." % int(Dictionary(CombatCatalogScript.character_stage_by_id(spell_id.trim_prefix("locked:"))).get("gate", 0))
+			queue_redraw()
+			return true
 		state.select_spell(spell_id)
 		# Selecting arms the subclass slot rather than casting, because every spell needs a
 		# direction and the board is where directions come from.

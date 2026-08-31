@@ -1,7 +1,43 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.63` (Android version code `263`).
+Current prototype version: `0.2.64` (Android version code `264`).
 
+## v0.2.64 — four things that were only wrong on screen
+
+Three real bugs and one thing that was working exactly as designed and reading as broken. Every one of them was invisible to the headless suite, which is what the renderer-validation rule in `CLAUDE.md` exists for and what these versions did not get.
+
+### The Fire Caster's cone was drawn as a circle
+
+The worst of the four, and the oldest: it has been wrong since `0.2.56`.
+
+The renderer decided how to draw a hazard by testing its **name**. There was a cone branch, and it was keyed to `ice_cone`. When `0.2.56` replaced the Fire Caster's ring with a cone, the simulation began resolving a 0.52-radian wedge while the renderer kept drawing a 232-unit expanding disc — so what appeared on screen was a large fire circle that was neither of the caster's two abilities. And when `0.2.57` replaced `ice_cone` with Cold Front, the one cone the renderer could draw belonged to a hazard nothing spawned any more.
+
+Two elements' worth of "near or far" and "a spike or a drip" have therefore never once been legible in play. The cone is now keyed on whether the hazard **carries a `half_angle`**, so any cone draws as one and a disc draws as a disc. The faint full-extent outline is drawn from the first frame as well: a cone that only shows how far it has already reached tells you where it has been, and the player needs to know where it is going while there is still time to leave.
+
+### The staff Weapon Art did nothing
+
+`0.2.62` authored Whirlwind and Sweep the Legs in the catalog and implemented neither. `request_skill` had a branch for every sword, knife and bow art and none for the staff, so choosing one armed a button that did nothing and left time frozen. In a game where world time only advances on commitment that is the worst available failure: nothing tells you the commitment did not happen.
+
+Both now exist, and they are priced apart to match what they buy:
+
+- **Whirlwind** — a full circle, 62 Energy, shoves light bodies out. Slow, because it answers being surrounded, and an instant answer would erase the mistake that produced the situation.
+- **Sweep the Legs** — 40 Energy, reaches 214 units against Whirlwind's 168, almost no damage, and heavy posture. It takes one body off its feet before it arrives.
+
+Whirlwind's shove is gated on the same `PUSHABLE_MASS` line as every other push in the game, so a Shield, Brute, Knight or Ox simply stands in it. That is the art's honest limit: it buys room from a crowd of ordinary bodies and does nothing about a wall of heavy ones.
+
+### The Earth wall was a brown line on a dark floor
+
+It was being drawn — as a single flat dark-brown line lying on an isometric floor, at an alpha that made it easy to miss entirely, and its lowered segments were drawn as a fainter copy of the same line, which reads as bad drawing rather than as a hole.
+
+A raised segment is now a standing stone: a dark base, a lit body, and a bright cap along the top, so it reads as something with height. A lowered one is drawn as rubble with notches — the gap is information, it is where an enemy is, and it should look like a deliberate hole in a wall rather than like the wall failing to render.
+
+### The spellbook did not look like a spellbook
+
+This one was working as designed. The Elementalist starts holding only Lightning Bolt and learns one element per subclass rank, so at level 1 the row contained exactly one button — which reads as a single ability rather than as a spellbook with a bolt in it.
+
+The row now shows a **locked slot for every element still to come**, labelled with the element and the level it arrives at. The framework already asks that future nodes stay visible so a build can be planned; this is that rule applied to the thing the player actually looks at. Tapping a locked slot says where the element comes from.
+
+Nothing about progression changed. The elements are still learned at 4, 6, 8 and 10, and a custom room still grants XP so a build can be bought and tested through the ordinary character sheet.
 ## v0.2.63 — the Energy bar looks like what it pays for
 
 One bar pays for swinging a sword and for casting a spell, and since 0.2.61 it has been called Energy for exactly that reason. It was still drawn in stamina green.

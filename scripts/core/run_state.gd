@@ -406,7 +406,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.63"
+const GAME_VERSION := "0.2.64"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2925,6 +2925,7 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 	if player_equipped_weapon_art == "knife_twin_fang": return request_twin_fang(direction, simulate_immediately)
 	if player_equipped_weapon_art == "bow_piercing_shot": return request_bow_art(direction, true, simulate_immediately)
 	if player_equipped_weapon_art == "bow_fan_shot": return request_bow_art(direction, false, simulate_immediately)
+	if player_equipped_weapon_art in ["staff_whirlwind", "staff_leg_sweep"]: return request_staff_art(direction, simulate_immediately)
 	_set_message("No Weapon Art has been learned yet.")
 	changed.emit()
 	return false
@@ -3422,6 +3423,55 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 470.0)
 	_set_message("You commit to a broad, posture-breaking cut.")
+	if simulate_immediately: _simulate_until_ready()
+	else: _streamed_action_cpu_usec = 0
+	return true
+
+# 0.2.62 authored both of these in the catalog and implemented neither, so choosing one
+# armed a button that did nothing and left time frozen -- the worst possible failure in a
+# game where time only moves when you commit, because nothing tells you the commitment did
+# not happen.
+#
+# Whirlwind buys SPACE and Sweep the Legs buys TIME. They are priced apart to match: the
+# circle costs about half again what the sweep does, because shoving a crowd off you is
+# worth more than taking one body off its feet.
+const WHIRLWIND_ENERGY := 62.0
+const LEG_SWEEP_ENERGY := 40.0
+const WHIRLWIND_PUSH := 104.0
+
+func request_staff_art(direction: Vector2, simulate_immediately: bool = true) -> bool:
+	var whirlwind := player_equipped_weapon_art == "staff_whirlwind"
+	var cost := WHIRLWIND_ENERGY if whirlwind else LEG_SWEEP_ENERGY
+	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01: return false
+	if skill_cooldown > 0.0001 and not uses_energy_rules(): return false
+	if not _spend_energy(cost): return false
+	_break_player_combo()
+	_reset_building_force()
+	player_facing = direction.normalized()
+	var mastered := has_track_rank("staff", 4)
+	var reach_bonus := 18.0 if has_track_rank("staff", 2) else 0.0
+	if whirlwind:
+		# Slow, because it is the answer to being surrounded and an instant answer to that
+		# would remove the mistake that produced it.
+		player_action = _melee_action(1.62, 0.58, 0.82, 168.0 + reach_bonus, 9, player_facing, "staff_whirlwind", "sweep")
+		player_action["duration"] = 1.62
+		player_action["posture_damage"] = 3.0
+		player_action["staff_push"] = WHIRLWIND_PUSH * (1.45 if mastered else 1.0)
+		player_action["staff_knockdown"] = mastered
+		_set_message("You sweep the staff in a full circle.")
+	else:
+		# Long and low. Almost no damage; what it does is take one body off its feet, and
+		# the reach is what lets you do it before they arrive.
+		player_action = _melee_action(1.24, 0.42, 0.60, 214.0 + reach_bonus, 5, player_facing, "staff_leg_sweep", "sweep")
+		player_action["duration"] = 1.24
+		player_action["posture_damage"] = 11.0 if mastered else 8.5
+		_set_message("You take their legs out from under them.")
+	player_action["damage_min"] = int(player_action["damage"])
+	player_action["damage_max"] = int(player_action["damage"])
+	_apply_action_poise(player_action)
+	_annotate_player_action(player_equipped_weapon_art)
+	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
+	_emit_sound(player_pos, 440.0)
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
@@ -5684,12 +5734,25 @@ func _update_enemy_alarm(enemy: Dictionary, dt: float) -> void:
 	enemy.erase("alarm_position")
 	if int(enemy.get("hp", 0)) > 0: _broadcast_enemy_alarm(enemy, known_position)
 
+# Whirlwind is the only player attack that moves bodies, and it is gated on the same
+# PUSHABLE_MASS line as everything else that does -- so a Shield, Brute, Knight or Ox
+# stands in it and everything lighter goes out. That is the art's honest limit: it buys
+# room from a crowd of ordinary bodies and does nothing at all about a wall of heavy ones.
+func _apply_whirlwind_push(enemy: Dictionary, distance: float) -> void:
+	if distance <= 0.0 or int(enemy.get("hp", 0)) <= 0: return
+	if _enemy_mass(String(enemy.get("kind", ""))) >= PUSHABLE_MASS: return
+	var offset := Vector2(enemy["pos"]) - player_pos
+	var away := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
+	enemy["pos"] = _move_actor(Vector2(enemy["pos"]), away * distance, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"]))
+	_update_enemy_bucket_membership(enemy)
+
 func _handle_player_contact_aftermath(enemy: Dictionary, contact_result: Dictionary = {}) -> void:
 	var conditions := Dictionary(enemy.get("conditions", {}))
 	if float(conditions.get("sleep", 0.0)) > 0.0:
 		conditions["sleep"] = maxf(0.0, float(conditions["sleep"]) - 1.0)
 		enemy["conditions"] = conditions
 	if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
+	_apply_whirlwind_push(enemy, float(player_action.get("staff_push", 0.0)))
 	if int(enemy.get("hp", 0)) > 0: return
 	if has_track_rank("sharpshooter", 4) and bool(contact_result.get("aimed", false)) and subclass_ability_cooldown > 0.0:
 		subclass_ability_cooldown = 0.0
