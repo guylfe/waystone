@@ -1,7 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.62` (Android version code `262`).
+Current prototype version: `0.2.63` (Android version code `263`).
 
+## v0.2.63 — the Energy bar looks like what it pays for
+
+One bar pays for swinging a sword and for casting a spell, and since 0.2.61 it has been called Energy for exactly that reason. It was still drawn in stamina green.
+
+It is now a gradient: green at the empty end running into cyan at the full end. That makes it literally both colours rather than a compromise between them, and it does something a flat fill cannot — the gradient is positional across the bar's full width and then clipped to the current level, so hue tracks fullness alongside length. A nearly empty bar reads green; a full one reads green into cyan. Two channels agreeing, rather than a decoration.
+
+Both ends stay green-of-cyan on purpose. `PLAYER_COLOR` is `#39ddff`, and a bar that reached it would start competing with the marker that represents you on the board.
+
+**Half the problem was never the fill colour.** The trough was `#17311f` — a dark version of the fill's own hue. Fill and empty shared a hue family, so the whole bar read as one soft mass and the boundary between them did far less work than it should have. The trough is now a cool near-black, and that change alone buys more visibility at a glance than the hue does.
+
+Verified in a real renderer at 22%, 64% and 100% fill rather than headless, since a colour that compiles is not a colour that reads.
 ## v0.2.62 — Mage · Elementalist
 
 The fourth class, and the one the last seven versions were built for. Everything in 0.2.55 through 0.2.59 — barriers, the burn meter, the frost meter, projectile elevation, the staff — existed so this class could be assembled out of parts that already worked and had already been played against.

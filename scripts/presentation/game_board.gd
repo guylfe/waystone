@@ -9,6 +9,11 @@ const BG := Color("0d151b")
 const FLOOR := Color("17272d")
 const WALL := Color("344148")
 const PLAYER_COLOR := Color("39ddff")
+# Energy pays for dodging and for casting, so the bar is deliberately neither green nor
+# blue but the hue where the two fuse. Both ends stay green-of-cyan: PLAYER_COLOR above is
+# bright cyan, and a bar that reached it would compete with the player's own marker.
+const ENERGY_EMPTY_COLOR := Color("2fd08c")
+const ENERGY_FULL_COLOR := Color("2bb8e0")
 const BLADE_COLOR := Color("e46c63")
 const ARCHER_COLOR := Color("c68be4")
 const POLEARM_COLOR := Color("d08a48")
@@ -3455,13 +3460,33 @@ func _draw_player_health_bar(header_font: int) -> void:
 	draw_string(ThemeDB.fallback_font, bar.position + Vector2(0.0, height * 0.77), "HEALTH  %d / %d" % [hp, maximum], HORIZONTAL_ALIGNMENT_CENTER, width, label_font, Color("fff3f3"))
 	var energy := float(visual.get("player_energy", state.player_energy))
 	var energy_max := maxf(1.0, float(visual.get("player_max_energy", state.player_max_energy)))
-	draw_rect(energy_bar, Color("17311f"))
+	# The trough is a cool near-black rather than a dark green. Until 0.2.63 it was a dark
+	# version of the fill's own hue, so fill and empty shared a hue family and the whole bar
+	# read as one soft mass -- half the reason it was hard to find at a glance had nothing
+	# to do with which colour the fill was.
+	draw_rect(energy_bar, Color("10202a"))
 	if state.uses_energy_rules():
-		draw_rect(Rect2(energy_bar.position, Vector2(energy_bar.size.x * clampf(energy / energy_max, 0.0, 1.0), energy_bar.size.y)), Color("48b866"))
+		# One bar pays for swinging and for casting, so it should look like both. The
+		# gradient runs green at the empty end into cyan at the full end: hue then tracks
+		# fullness alongside length, a second channel agreeing with the first rather than a
+		# decoration. It stops short of the player's own #39ddff -- the bar must not start
+		# competing with the thing that represents you on the board.
+		var energy_ratio := clampf(energy / energy_max, 0.0, 1.0)
+		if energy_ratio > 0.0:
+			var fill_rect := Rect2(energy_bar.position, Vector2(energy_bar.size.x * energy_ratio, energy_bar.size.y))
+			# The gradient is positional across the bar's FULL width and then clipped to the
+			# current level, so the colour at any point on the bar is fixed. Interpolating
+			# across the drawn width instead would push cyan to the leading edge at every
+			# level and the hue would stop meaning anything.
+			var leading := ENERGY_EMPTY_COLOR.lerp(ENERGY_FULL_COLOR, energy_ratio)
+			draw_polygon(PackedVector2Array([
+				fill_rect.position, Vector2(fill_rect.end.x, fill_rect.position.y),
+				fill_rect.end, Vector2(fill_rect.position.x, fill_rect.end.y),
+			]), PackedColorArray([ENERGY_EMPTY_COLOR, leading, leading, ENERGY_EMPTY_COLOR]))
 		var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
-		draw_rect(energy_bar, Color("c3ebcc"), false, 2.0)
+		draw_rect(energy_bar, Color("a8ead8"), false, 2.0)
 		var energy_label := "EXHAUSTED  %d / %d" % [roundi(energy), roundi(energy_max)] if exhaustion > 0.0001 else "ENERGY  %d / %d" % [roundi(energy), roundi(energy_max)]
-		draw_string(ThemeDB.fallback_font, energy_bar.position + Vector2(0.0, energy_height * 0.79), energy_label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(energy_height * 0.70)), Color("effff2"))
+		draw_string(ThemeDB.fallback_font, energy_bar.position + Vector2(0.0, energy_height * 0.79), energy_label, HORIZONTAL_ALIGNMENT_CENTER, width, maxi(11, int(energy_height * 0.70)), Color("eafffa"))
 	else:
 		draw_rect(energy_bar, Color("243038"))
 		draw_rect(energy_bar, Color("718087"), false, 2.0)
