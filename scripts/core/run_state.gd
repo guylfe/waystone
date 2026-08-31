@@ -429,7 +429,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.68"
+const GAME_VERSION := "0.2.69"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -518,6 +518,16 @@ var subclass_ability_cooldown_max := 8.0
 # could see least, and the one carrying an open "might be too strong" against it.
 # Friendly fire only happens when something changed after commitment, so counting it is
 # how we find out whether that ever actually occurs in play rather than on paper.
+# Three versions of "the wall is invisible" have now been diagnosed from the code and two
+# of those diagnoses were wrong. Both walls render correctly in isolation and the camera
+# cull keeps them at every distance the player can touch one, so the next theory needs
+# evidence rather than another reading of the source. These count what actually happened:
+# how many walls went up, and how many times the player was physically stopped by one.
+# A run that reports collisions the player never saw is a rendering fault; a run that
+# reports none while the player insists they hit something means they hit terrain and the
+# Earth Caster was a coincidence.
+var survey_barriers_raised := 0
+var survey_barrier_blocks := 0
 var survey_javelins_grounded := 0
 var survey_stray_projectile_hits := 0
 var survey_shots_fired := 0
@@ -955,6 +965,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_reach_times.clear()
 	survey_stray_projectile_hits = 0
 	survey_javelins_grounded = 0
+	survey_barriers_raised = 0
+	survey_barrier_blocks = 0
 	survey_burn_damage_total = 0
 	survey_frost_amplified_hits = 0
 	survey_shots_fired = 0
@@ -1918,6 +1930,8 @@ func _capture_survey_room_entry() -> void:
 		# combat time, which is where it was caught.
 		"stray_projectile_hits": survey_stray_projectile_hits,
 		"javelins_grounded": survey_javelins_grounded,
+		"barriers_raised": survey_barriers_raised,
+		"barrier_blocks": survey_barrier_blocks,
 		"burn_damage": survey_burn_damage_total,
 		"frost_amplified_hits": survey_frost_amplified_hits,
 		"damage_received": damage_received_total,
@@ -2102,6 +2116,8 @@ func _complete_survey_room(outcome: String) -> void:
 		"reach_times": survey_reach_times.duplicate(true),
 		"stray_projectile_hits": survey_stray_projectile_hits - int(survey_room_entry.get("stray_projectile_hits", survey_stray_projectile_hits)),
 		"javelins_grounded": survey_javelins_grounded - int(survey_room_entry.get("javelins_grounded", survey_javelins_grounded)),
+		"barriers_raised": survey_barriers_raised - int(survey_room_entry.get("barriers_raised", survey_barriers_raised)),
+		"barrier_blocks": survey_barrier_blocks - int(survey_room_entry.get("barrier_blocks", survey_barrier_blocks)),
 		"burn_damage": survey_burn_damage_total - int(survey_room_entry.get("burn_damage", survey_burn_damage_total)),
 		"frost_amplified_hits": survey_frost_amplified_hits - int(survey_room_entry.get("frost_amplified_hits", survey_frost_amplified_hits)),
 		"shots_fired": survey_shots_fired,
@@ -3671,7 +3687,10 @@ func _raise_player_earth_wall(target: Vector2) -> void:
 			"thickness": EARTH_WALL_THICKNESS, "hp": EARTH_WALL_SEGMENT_HP,
 			"remaining": EARTH_WALL_PLAYER_DURATION, "lowered": false, "source_id": 0, "layer": current_layer,
 		})
-	_add_effect("earth_wall", target)
+	survey_barriers_raised += 1
+	for index in range(EARTH_WALL_SEGMENTS):
+		var mark := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
+		_add_effect("earth_wall", target + axis * mark)
 
 func request_circle(simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or loadout_id != "mage_elementalist": return false
@@ -6229,7 +6248,13 @@ func _raise_earth_wall(origin: Vector2, source_id: int) -> void:
 			"source_id": source_id,
 			"layer": current_layer,
 		})
-	_add_effect("earth_wall", centre)
+	survey_barriers_raised += 1
+	# One effect per segment along the length, so the raise itself is visible even if the
+	# standing wall somehow is not. A wall that appears without an event to mark it is a
+	# wall the player has no reason to look at.
+	for index in range(EARTH_WALL_SEGMENTS):
+		var mark := (float(index) - float(EARTH_WALL_SEGMENTS - 1) * 0.5) * segment_span
+		_add_effect("earth_wall", centre + axis * mark)
 	_set_message("The ground heaves into a wall.")
 
 func _barrier_blocks(segment: Dictionary, point: Vector2, radius: float) -> bool:
@@ -8742,7 +8767,9 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 	if not _inside_world(position, radius): return true
 	# Barriers stop the player alone. Enemies walk through, which is why the navigation
 	# grid can stay ignorant of them.
-	if actor_id == 0 and _point_in_barrier(position, radius): return true
+	if actor_id == 0 and _point_in_barrier(position, radius):
+		survey_barrier_blocks += 1
+		return true
 	for wall in local_walls:
 		if _circle_intersects_rect(position, radius, wall): return true
 	if actor_id != 0 and position.distance_to(player_pos) < radius + PLAYER_RADIUS: return true

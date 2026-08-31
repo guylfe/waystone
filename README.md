@@ -1,7 +1,27 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.68` (Android version code `268`).
+Current prototype version: `0.2.69` (Android version code `269`).
 
+## v0.2.69 — instrumenting the wall instead of guessing at it again
+
+Three versions have now carried a fix for "the Earth Wall is invisible" and two of those diagnoses were wrong. `0.2.67` decided it was the duration and lengthened it. `0.2.68` decided it was placement — which was a real bug, and worth fixing, but it was the *player's* wall being put 340 units away in a direction they had not chosen, and the wall that was actually walked into belonged to an Earth Caster.
+
+So this version stops guessing. What was checked this time, and ruled out:
+
+- **Both walls render.** An Earth Caster's wall, raised through its own action rather than by calling the helper, draws as six standing segments. So does the player's.
+- **The camera cull is not dropping it.** Probed at 120, 170, 220 and 300 units in six directions around the player: every one passes. A wall close enough to walk into is close enough to draw.
+- **The layer matches**, the segments are not lowered, and the snapshot the renderer reads contains all six.
+- **Barriers do stop the player** — the collision path really does test them, so what was hit was a barrier and not something else pretending to be one.
+
+That exhausts what can be established by reading the source, which is exactly where the previous two wrong answers came from. The next theory needs evidence, so the survey now records two numbers per room:
+
+**`Walls raised: N; times the player was stopped by one: M`**
+
+A run that reports collisions against a wall the player never saw is a rendering fault and says where to look. A run that reports zero collisions while the player is certain they hit something means they hit terrain and the Earth Caster was a coincidence — which would be worth knowing too, because it would mean three versions of this have been chasing the wrong object entirely.
+
+Raising a wall now also emits an effect at every segment along its length rather than one at the centre, so the moment it goes up is visible along the whole line. That is not offered as the fix; it is the cheapest way to make sure the event is never silent while the question is open.
+
+Report format moves to 26.
 ## v0.2.68 — placed spells land where you put them
 
 ### The Earth Wall was never invisible. It was somewhere else.

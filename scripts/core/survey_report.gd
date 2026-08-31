@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 25
+const FORMAT_VERSION := 26
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -128,6 +128,11 @@ static func build_text(session: Dictionary) -> String:
 			# If this stays at zero in rooms fielding an Air Caster beside a Javelineer, the
 			# interaction exists in the code and not in the game.
 			lines.append("Javelins torn out of the air: %d" % int(room.get("javelins_grounded", 0)))
+		if int(room.get("barriers_raised", 0)) > 0 or int(room.get("barrier_blocks", 0)) > 0:
+			# Raised versus actually walked into. A wall reported as invisible while this counts
+			# collisions is a rendering fault; collisions of zero means whatever stopped the
+			# player was terrain, not a barrier.
+			lines.append("Walls raised: %d; times the player was stopped by one: %d" % [int(room.get("barriers_raised", 0)), int(room.get("barrier_blocks", 0))])
 		if int(room.get("stealth_entries", 0)) > 0:
 			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f energy paid" % [
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
