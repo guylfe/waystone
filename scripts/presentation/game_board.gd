@@ -2412,7 +2412,16 @@ func _draw_world() -> void:
 		# is information -- it is where an enemy is -- and hiding it would make the wall
 		# read as randomly broken instead of as pressure you can see.
 		var thickness := maxf(3.0, float(segment.get("thickness", 17.0)) * world_scale * (0.30 if lowered else 1.45))
-		if lowered:
+		var rise := state.barrier_rise_fraction(segment)
+		if lowered and rise > 0.02:
+			# Mid-rise: drawn at its real height so far, and still passable. The player can
+			# see it coming and decide, which is the whole point of it taking a beat.
+			var partial := thickness * (0.30 + 0.70 * rise)
+			var partial_lift := Vector2(0.0, -partial * 0.55 * rise)
+			draw_line(a, b, Color(0.16, 0.12, 0.08, 0.85), partial * 1.1)
+			draw_line(a + partial_lift, b + partial_lift, Color(0.58, 0.44, 0.26, 0.55 + 0.43 * rise), partial)
+			draw_line(a + partial_lift * 1.7, b + partial_lift * 1.7, Color(0.86, 0.72, 0.46, 0.5 + 0.45 * rise), maxf(2.0, partial * 0.34))
+		elif lowered:
 			# A ground scar, and drawn as rubble rather than as a thin version of the wall.
 			# The gap is information -- it is where an enemy is -- and a faint copy of the
 			# raised state reads as the wall being badly drawn instead of as a hole in it.

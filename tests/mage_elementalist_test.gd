@@ -37,6 +37,7 @@ func _init() -> void:
 	test_a_player_cast_zone_hurts_enemies()
 	test_a_spell_is_priced_once()
 	test_world_time_advances_through_a_cast()
+	test_a_wall_never_stands_up_without_warning()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -309,3 +310,47 @@ func test_world_time_advances_through_a_cast() -> void:
 	state.request_spell("lightning_bolt", state.player_pos + Vector2.UP * 300.0, true)
 	check(state.simulation_time > started, "world time should advance across a cast")
 	check(float(Dictionary(enemy["action"]).get("elapsed", 0.0)) > 0.5, "and the enemy should have been acting throughout it")
+
+func test_a_wall_never_stands_up_without_warning() -> void:
+	# The "invisible wall". A segment lowers while a pursuer is beside it -- drawn as a scar
+	# and passable -- and used to stand back up on the very tick that enemy moved on. Since
+	# committing to move is what advances world time, the player would look at flat ground,
+	# commit, and arrive at a wall. Nothing was mis-drawn: the state they could see had
+	# stopped being true by the time they got there.
+	var state := fresh()
+	var caster := state._make_enemy("earth_caster", state.player_pos + Vector2.UP * 420.0, 36)
+	state.enemies.append(caster)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._raise_earth_wall(Vector2(caster["pos"]), int(caster["id"]))
+	check(state.barriers.size() == state.EARTH_WALL_SEGMENTS, "the caster should raise a wall")
+	var segment: Dictionary = state.barriers[0]
+	var pursuer := state._make_enemy("hound", Vector2(segment["pos"]) + Vector2.RIGHT * 40.0, 30)
+	state.enemies.append(pursuer)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._update_barriers(0.02)
+	check(bool(segment["lowered"]), "a body beside a segment lowers it")
+	# The pursuer moves on, with the player a short distance off.
+	pursuer["pos"] = Vector2(segment["pos"]) + Vector2(700, 700)
+	state.player_pos = Vector2(segment["pos"]) + Vector2(0, 120)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._update_barriers(0.02)
+	check(bool(segment["lowered"]), "and it does not snap back up the moment they leave")
+	check(not state._point_in_barrier(Vector2(segment["pos"]), state.PLAYER_RADIUS), "it is still passable while it rises")
+	check(state.barrier_rise_fraction(segment) > 0.0, "and it is visibly rising while it does")
+	var elapsed := 0.0
+	while bool(segment["lowered"]) and elapsed < 3.0:
+		state._update_barriers(0.02)
+		elapsed += 0.02
+	check(elapsed > 0.5 and elapsed < 1.2, "the rise takes a beat the player can act inside, took %.2fs" % elapsed)
+	check(state._point_in_barrier(Vector2(segment["pos"]), state.PLAYER_RADIUS), "and then it is a wall again")
+	# It also refuses to stand up against someone's back.
+	state.barriers.clear()
+	state._raise_earth_wall(Vector2(caster["pos"]), int(caster["id"]))
+	var beside: Dictionary = state.barriers[0]
+	beside["lowered"] = true
+	state.player_pos = Vector2(beside["pos"]) + Vector2(0, 40)
+	for tick in range(200): state._update_barriers(0.02)
+	check(bool(beside["lowered"]), "a segment must not rise within a step of the player")

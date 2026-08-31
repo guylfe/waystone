@@ -253,6 +253,22 @@ const EARTH_WALL_SHATTER_IMPACT := 3.5
 # create. Because it is placed in the escape direction, pursuers reach it from the
 # player's side: the gap opens where the threat is, and the way out runs through it.
 const EARTH_WALL_LOWER_RANGE := 90.0
+# A lowered segment does not snap back up the instant its enemy walks on. It used to, and
+# that produced the one thing a wall must never be: a wall you cannot see.
+#
+# The sequence was exact. A pursuer stands near a segment, so the segment lowers to a scar
+# on the ground and stops blocking. The player looks at the gap and commits to moving
+# through it -- and committing is what advances world time, so the pursuer moves on, the
+# segment stands back up on the very next tick, and the player arrives at a wall that was
+# flat ground when they chose to walk there. Nothing was mis-drawn; the state the player
+# could see had simply stopped being true by the time they got there.
+#
+# So rising takes a beat, and during that beat the segment is visibly rising and still
+# passable. Whatever the player can see is now something they can act on.
+const EARTH_WALL_RISE_TIME := 0.75
+# And it will not stand up in someone's face. PLAYER_RADIUS alone only refused to rise
+# through the player; this refuses to rise within a step of them.
+const EARTH_WALL_RISE_CLEARANCE := 46.0
 
 # Arrows stay flat, which gives the two ranged enemies a third axis of difference on top
 # of speed and lead. Javelins arc: high early to clear the melee standing near the
@@ -429,7 +445,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.69"
+const GAME_VERSION := "0.2.70"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -6257,6 +6273,10 @@ func _raise_earth_wall(origin: Vector2, source_id: int) -> void:
 		_add_effect("earth_wall", centre + axis * mark)
 	_set_message("The ground heaves into a wall.")
 
+func barrier_rise_fraction(segment: Dictionary) -> float:
+	if not bool(segment.get("lowered", false)): return 1.0
+	return clampf(float(segment.get("rising", 0.0)) / EARTH_WALL_RISE_TIME, 0.0, 1.0)
+
 func _barrier_blocks(segment: Dictionary, point: Vector2, radius: float) -> bool:
 	if bool(segment.get("lowered", false)) or float(segment.get("hp", 0.0)) <= 0.0: return false
 	if String(segment.get("layer", current_layer)) != current_layer: return false
@@ -6321,10 +6341,20 @@ func _update_barriers(dt: float) -> void:
 				break
 		if near_enemy:
 			segment["lowered"] = true
+			segment["rising"] = 0.0
 		elif bool(segment.get("lowered", false)):
-			# Never rise underneath the player -- being pushed out of a wall you were
-			# standing in is the one outcome this must not produce.
-			segment["lowered"] = _barrier_blocks({"pos": segment["pos"], "axis": segment["axis"], "half_length": segment["half_length"], "thickness": segment["thickness"], "hp": 1.0, "lowered": false, "layer": segment["layer"]}, player_pos, PLAYER_RADIUS)
+			# Never rise underneath the player, nor within a step of them -- being shut in by
+			# something that was open ground when you committed is the outcome this exists to
+			# prevent, and standing up against someone's back is the same failure by inches.
+			var standing := {"pos": segment["pos"], "axis": segment["axis"], "half_length": segment["half_length"], "thickness": segment["thickness"], "hp": 1.0, "lowered": false, "layer": segment["layer"]}
+			if _barrier_blocks(standing, player_pos, PLAYER_RADIUS + EARTH_WALL_RISE_CLEARANCE):
+				segment["rising"] = 0.0
+			else:
+				# Rising is a state of its own: visible, and still passable until it finishes.
+				segment["rising"] = float(segment.get("rising", 0.0)) + dt
+				if float(segment["rising"]) >= EARTH_WALL_RISE_TIME:
+					segment["lowered"] = false
+					segment["rising"] = 0.0
 		survivors.append(segment)
 	barriers = survivors
 

@@ -1,7 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.69` (Android version code `269`).
+Current prototype version: `0.2.70` (Android version code `270`).
 
+## v0.2.70 — the invisible wall was never a drawing problem
+
+Four versions have carried a fix for this and three of them were wrong, because every one of them assumed the wall was being drawn incorrectly. It was not. A screenshot of a standing wall looks exactly as it should, which is what finally made the question the right one: not *why is it not drawn*, but *why was it not there when the player looked*.
+
+Here is the sequence, and it is exact.
+
+A pursuer stands near a segment. The segment lowers — that is deliberate, it is how a wall placed across your retreat opens where the pressure actually is — so it draws as a scar on the ground and stops blocking. The player looks at that gap and commits to moving through it. **Committing is what advances world time.** The pursuer moves on during the movement, the segment stands back up on the very next tick, and the player arrives at a wall that was flat ground at the moment they chose to walk there.
+
+Nothing was ever mis-drawn. The state the player could see had simply stopped being true by the time they reached it — which in a game where time only moves when you commit is the worst possible way for anything to behave, because the whole contract is that you decide from what is in front of you.
+
+**Rising now takes a beat.** A lowered segment climbs over 0.75 world-seconds, is drawn at its real height the whole way, and stays passable until it finishes. Whatever the player can see is something they can still act on.
+
+**And a segment will not stand up in someone's face.** Refusing to rise *through* the player was already there; it now refuses to rise within a step of them as well. Being shut in by ground that was open when you committed is the failure this exists to prevent, and standing up against someone's back is the same failure by inches.
+
+The instrumentation added in `0.2.69` stays. `Walls raised: N; times the player was stopped by one: M` is still worth having, and now it should read as walls that were visible when they stopped you.
 ## v0.2.69 — instrumenting the wall instead of guessing at it again
 
 Three versions have now carried a fix for "the Earth Wall is invisible" and two of those diagnoses were wrong. `0.2.67` decided it was the duration and lengthened it. `0.2.68` decided it was placement — which was a real bug, and worth fixing, but it was the *player's* wall being put 340 units away in a direction they had not chosen, and the wall that was actually walked into belonged to an Earth Caster.
