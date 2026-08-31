@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 26
+const FORMAT_VERSION := 27
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -133,6 +133,8 @@ static func build_text(session: Dictionary) -> String:
 			# collisions is a rendering fault; collisions of zero means whatever stopped the
 			# player was terrain, not a barrier.
 			lines.append("Walls raised: %d; times the player was stopped by one: %d" % [int(room.get("barriers_raised", 0)), int(room.get("barrier_blocks", 0))])
+		if int(room.get("blind_collisions", 0)) > 0:
+			lines.append("Stopped by a body the player could not see: %d" % int(room.get("blind_collisions", 0)))
 		if int(room.get("stealth_entries", 0)) > 0:
 			lines.append("Stealth: %d entries (%d cancelled, %d re-entered within 3s); %.2fs hidden; %.0f energy paid" % [
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),

@@ -38,6 +38,7 @@ func _init() -> void:
 	test_a_spell_is_priced_once()
 	test_world_time_advances_through_a_cast()
 	test_a_wall_never_stands_up_without_warning()
+	test_walking_into_an_unseen_body_reveals_it()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -354,3 +355,35 @@ func test_a_wall_never_stands_up_without_warning() -> void:
 	state.player_pos = Vector2(beside["pos"]) + Vector2(0, 40)
 	for tick in range(200): state._update_barriers(0.02)
 	check(bool(beside["lowered"]), "a segment must not rise within a step of the player")
+
+func test_walking_into_an_unseen_body_reveals_it() -> void:
+	# The invisible wall, finally. Heavy bodies stop the player dead -- that is what
+	# PUSHABLE_MASS is for -- and the renderer draws an enemy only where the player can see
+	# one. An unseen Shield, Brute, Knight or Ox was therefore a solid object with nothing on
+	# screen, in a spot that was open before it arrived and open again after it left. That is
+	# the no-invisible-combat-math rule broken in its most literal form.
+	var state := fresh()
+	var ox := state._make_enemy("ox", state.player_pos + Vector2.RIGHT * 120.0, 96)
+	ox["awareness"] = "idle"
+	ox["revealed_to_player"] = false
+	state.enemies.append(ox)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	check(not state._enemy_is_pushable(ox), "an Ox is heavy enough to stop the player")
+	check(not state.is_visible(Vector2(ox["pos"]), {}), "and this one is not visible")
+	check(not bool(ox.get("touch_revealed", false)), "nor yet known by touch")
+	# Walk into it.
+	for step in range(30): state.player_pos = state._move_actor(state.player_pos, Vector2.RIGHT * 8.0, state.PLAYER_RADIUS, 0)
+	check(bool(ox.get("touch_revealed", false)), "walking into it should reveal it")
+	check(state.survey_blind_collisions > 0, "and the room should record that it happened")
+	# A body the player can already see is not counted -- the figure measures rooms hiding
+	# solid objects in the player's path, not ordinary crowding.
+	var seen := fresh()
+	var shield := seen._make_enemy("shield", seen.player_pos + Vector2.RIGHT * 120.0, 50)
+	shield["touch_revealed"] = true
+	seen.enemies.append(shield)
+	seen._invalidate_active_enemy_cache()
+	seen._build_enemy_spatial_index()
+	var before := seen.survey_blind_collisions
+	for step in range(30): seen.player_pos = seen._move_actor(seen.player_pos, Vector2.RIGHT * 8.0, seen.PLAYER_RADIUS, 0)
+	check(seen.survey_blind_collisions == before, "a body already known should not count again")

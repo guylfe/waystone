@@ -1,7 +1,24 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.70` (Android version code `270`).
+Current prototype version: `0.2.71` (Android version code `271`).
 
+## v0.2.71 — the invisible wall was a body you could not see
+
+Five versions of this were spent on the Earth Wall, and the Earth Wall was never involved. Two things finally settled it: the wall renders perfectly in a screenshot, and the obstruction was **in a place that was traversible before and after**. Transient rules out the floor edge, the wall rects and the arena bounds; all three are static. Something that comes and goes, blocks, and is not drawn is a body.
+
+Heavy bodies stop the player dead — that is exactly what `PUSHABLE_MASS` is for, and it is why a Shield, Brute, Knight or Ox is the only thing in the game that can physically hold a line. The renderer draws an enemy only where the player can *see* one.
+
+Those two rules had never been put side by side. An unseen heavy body was a solid object with nothing on screen: open ground before it arrived, a wall while it stood there, open ground again once it moved on. Measured directly — an unrevealed Ox reports `is_visible = false` to the renderer and `blocks_player = true` to the simulation, and walking into it stops the player 88 units short of nothing at all.
+
+That is `no invisible combat math` broken in the most literal form available. Every other case the rule covers is a hidden number; this was a hidden object.
+
+**Walking into a body now reveals it.** You bumped into it, so you know it is there — it is drawn from that moment whatever the fog says, and the log says "You walk into something you had not seen." Learning by touch is fair, and it is a great deal fairer than being stopped by nothing.
+
+The survey records it too: **`Stopped by a body the player could not see: N`**. That figure should sit at zero. While it does not, it measures how often a room hides a solid object in the player's path. Bodies already known do not count, so it tracks the failure rather than ordinary crowding.
+
+Report format moves to 27.
+
+**On the four versions that preceded this one.** 0.2.67 blamed the wall's duration, 0.2.68 blamed its placement, 0.2.69 gave up and instrumented it, 0.2.70 blamed the lowering-and-rising timing. Two of those were real bugs worth fixing on their own; none was this. Every wrong answer came from reasoning about the code, and the two observations that actually mattered — *the screenshot looks right* and *the spot was traversible before and after* — both came from the person playing it.
 ## v0.2.70 — the invisible wall was never a drawing problem
 
 Four versions have carried a fix for this and three of them were wrong, because every one of them assumed the wall was being drawn incorrectly. It was not. A screenshot of a standing wall looks exactly as it should, which is what finally made the question the right one: not *why is it not drawn*, but *why was it not there when the player looked*.

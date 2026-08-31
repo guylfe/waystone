@@ -2442,7 +2442,10 @@ func _draw_world() -> void:
 		_draw_isometric_solids(visible, discovered)
 	else:
 		for enemy in Array(visual.get("enemies", [])):
-			if String(enemy.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5) and state.is_visible(Vector2(enemy["pos"]), visible): _draw_enemy(enemy)
+			# `touch_revealed` draws a body the player has physically walked into even when
+			# the fog says they cannot see it. Being stopped by nothing is worse than seeing
+			# something you technically should not.
+			if String(enemy.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5) and (state.is_visible(Vector2(enemy["pos"]), visible) or bool(enemy.get("touch_revealed", false))): _draw_enemy(enemy)
 		_draw_player()
 	# Supplies deliberately render after solid world geometry in both views.
 	# They are a readable interaction affordance, not scenery that foliage may hide.

@@ -445,7 +445,7 @@ const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "t
 const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTIONS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 const SAVE_VERSION := 33
-const GAME_VERSION := "0.2.70"
+const GAME_VERSION := "0.2.71"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -542,6 +542,10 @@ var subclass_ability_cooldown_max := 8.0
 # A run that reports collisions the player never saw is a rendering fault; a run that
 # reports none while the player insists they hit something means they hit terrain and the
 # Earth Caster was a coincidence.
+# Counts how often the player was stopped by a body they could not see. It should sit at
+# zero once rooms stop hiding solid objects in the player's path; while it does not, it is
+# the measure of how often the room lies about what is in front of you.
+var survey_blind_collisions := 0
 var survey_barriers_raised := 0
 var survey_barrier_blocks := 0
 var survey_javelins_grounded := 0
@@ -982,6 +986,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_stray_projectile_hits = 0
 	survey_javelins_grounded = 0
 	survey_barriers_raised = 0
+	survey_blind_collisions = 0
 	survey_barrier_blocks = 0
 	survey_burn_damage_total = 0
 	survey_frost_amplified_hits = 0
@@ -1948,6 +1953,7 @@ func _capture_survey_room_entry() -> void:
 		"javelins_grounded": survey_javelins_grounded,
 		"barriers_raised": survey_barriers_raised,
 		"barrier_blocks": survey_barrier_blocks,
+		"blind_collisions": survey_blind_collisions,
 		"burn_damage": survey_burn_damage_total,
 		"frost_amplified_hits": survey_frost_amplified_hits,
 		"damage_received": damage_received_total,
@@ -2133,6 +2139,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"stray_projectile_hits": survey_stray_projectile_hits - int(survey_room_entry.get("stray_projectile_hits", survey_stray_projectile_hits)),
 		"javelins_grounded": survey_javelins_grounded - int(survey_room_entry.get("javelins_grounded", survey_javelins_grounded)),
 		"barriers_raised": survey_barriers_raised - int(survey_room_entry.get("barriers_raised", survey_barriers_raised)),
+		"blind_collisions": survey_blind_collisions - int(survey_room_entry.get("blind_collisions", survey_blind_collisions)),
 		"barrier_blocks": survey_barrier_blocks - int(survey_room_entry.get("barrier_blocks", survey_barrier_blocks)),
 		"burn_damage": survey_burn_damage_total - int(survey_room_entry.get("burn_damage", survey_burn_damage_total)),
 		"frost_amplified_hits": survey_frost_amplified_hits - int(survey_room_entry.get("frost_amplified_hits", survey_frost_amplified_hits)),
@@ -8809,7 +8816,18 @@ func _position_blocked_with_context(position: Vector2, radius: float, actor_id: 
 		# _displace_light_bodies. Enemies still collide with each other normally, so
 		# formations keep their shape and only the player parts a crowd.
 		if actor_id == 0 and _enemy_is_pushable(enemy): continue
-		if position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]): return true
+		if position.distance_to(Vector2(enemy["pos"])) < radius + float(enemy["radius"]):
+			# You have just walked into it, so you know it is there. Heavy bodies stop the
+			# player dead, and the renderer draws an enemy only when the player can SEE it --
+			# so an unseen Shield, Brute, Knight or Ox was a wall with nothing on screen, in a
+			# spot that was open before it arrived and open again once it moved. That is the
+			# invisible-combat-math rule broken in its most literal form: a solid object with
+			# no representation. Touching it reveals it.
+			if actor_id == 0 and not bool(enemy.get("touch_revealed", false)):
+				enemy["touch_revealed"] = true
+				survey_blind_collisions += 1
+				_set_message("You walk into something you had not seen.")
+			return true
 	return not _actor_footprint_on_floor(position, radius)
 
 func _enemy_is_pushable(enemy: Dictionary) -> bool:
