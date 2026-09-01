@@ -32,7 +32,11 @@ param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]] $Tests,
     [switch] $All,
-    [int] $TimeoutSeconds = 180
+    [int] $TimeoutSeconds = 180,
+    # How long a run that has already printed a failure may produce nothing further before
+    # it is treated as hung. Generous enough that a slow test mid-work is never cut off,
+    # short enough that a dead run costs seconds instead of the whole timeout.
+    [int] $QuiescenceSeconds = 12
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,26 +104,57 @@ foreach ($name in $Selected) {
     # before reaching their own quit(0) when an assertion fails, so the process
     # never exits -- a failure presents as an indefinite hang rather than a
     # failure. Without this the runner would block forever on a red test.
+    # Output goes to a file rather than being buffered until the process exits, so a hung
+    # run can be watched while it hangs. A file that asserts directly in _init()/_initialize()
+    # aborts before its own quit(0) and the process then never exits at all -- the failure is
+    # printed within a second and the runner used to sit out the whole timeout to see it.
+    $log = [System.IO.Path]::GetTempFileName()
     $job = Start-Job -ScriptBlock {
-        param($godot, $root, $file)
-        $text = & $godot --headless --path $root --script $file 2>&1 | Out-String
-        [pscustomobject]@{ Output = $text; Code = $LASTEXITCODE }
-    } -ArgumentList $Godot, $ProjectRoot, "tests/$name.gd"
+        param($godot, $root, $file, $logPath)
+        & $godot --headless --path $root --script $file *>&1 | Out-File -FilePath $logPath -Encoding utf8
+        $LASTEXITCODE
+    } -ArgumentList $Godot, $ProjectRoot, "tests/$name.gd", $log
 
-    if (Wait-Job $job -Timeout $TimeoutSeconds) {
-        $result = Receive-Job $job
-        $output = ($result | ForEach-Object { $_.Output }) -join "`n"
-        $code = ($result | ForEach-Object { $_.Code } | Select-Object -Last 1)
-        if ($null -eq $code) { $code = 0 }
-        $timedOut = $false
-    } else {
-        Stop-Job $job
-        $output = ''
-        $code = -1
-        $timedOut = $true
-        Get-Process Godot_v4.7-stable_win64 -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Killing on the first sign of failure would truncate a file that keeps running other
+    # tests after one of them fails, and the ledger needs every distinct failure to judge
+    # whether they are all documented. So the rule is quiescence: a run that has already
+    # failed and has produced nothing further for a while is hung, and there is nothing left
+    # to wait for.
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastSize = -1
+    $idleSince = Get-Date
+    $hungAfterFailure = $false
+    while ($job.State -eq 'Running' -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 400
+        $size = if (Test-Path $log) { (Get-Item $log).Length } else { 0 }
+        if ($size -ne $lastSize) {
+            $lastSize = $size
+            $idleSince = Get-Date
+            continue
+        }
+        if ($size -le 0) { continue }
+        if (((Get-Date) - $idleSince).TotalSeconds -lt $QuiescenceSeconds) { continue }
+        $sofar = Get-Content -Path $log -Raw -ErrorAction SilentlyContinue
+        if ($sofar -match 'Assertion failed|SCRIPT ERROR|FAILED:') {
+            $hungAfterFailure = $true
+            break
+        }
     }
+
+    $timedOut = $false
+    if ($job.State -eq 'Running') {
+        Stop-Job $job
+        Get-Process Godot_v4.7-stable_win64 -ErrorAction SilentlyContinue | Stop-Process -Force
+        $timedOut = -not $hungAfterFailure
+        $code = -1
+    } else {
+        $code = Receive-Job $job | Select-Object -Last 1
+        if ($null -eq $code) { $code = 0 }
+    }
+    $output = if (Test-Path $log) { (Get-Content -Path $log -Raw -ErrorAction SilentlyContinue) } else { '' }
+    if ($null -eq $output) { $output = '' }
     Remove-Job $job -Force
+    Remove-Item $log -Force -ErrorAction SilentlyContinue
 
     # Two reporting conventions exist in tests/. Files that assert() surface
     # "Assertion failed"; files that collect into a failures array surface "FAILED:"
@@ -166,9 +201,13 @@ foreach ($name in $Selected) {
         Write-Host ("{0,-34} XPASS  review and remove its expected-failure ledger entry" -f $name) -ForegroundColor Yellow
     } elseif ($ok) {
         Write-Host ("{0,-34} PASS" -f $name) -ForegroundColor Green
+    } elseif ($hungAfterFailure) {
+        $Failed += $name
+        Write-Host ("{0,-34} FAIL (hung after failing)  it aborted before its own quit()" -f $name) -ForegroundColor Red
+        $failureLines | Select-Object -First 6 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
     } elseif ($timedOut) {
         $Failed += $name
-        Write-Host ("{0,-34} HANG  no exit within {1}s -- likely a failed assert inside _init()" -f $name, $TimeoutSeconds) -ForegroundColor Red
+        Write-Host ("{0,-34} HANG  no exit within {1}s and nothing failed -- a genuinely slow or stuck run" -f $name, $TimeoutSeconds) -ForegroundColor Red
     } else {
         $Failed += $name
         Write-Host ("{0,-34} FAIL  exit={1} failures={2}" -f $name, $code, $problems) -ForegroundColor Red
