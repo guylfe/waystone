@@ -6,7 +6,7 @@
 
 **Scope:** Where the source repeats itself, what that has already cost, and what to unify. Every proposal must leave gameplay identical — this is about how the rules are written, never about what they are.
 
-**How to read this file.** Four audits, a two-round exchange between Claude and Sol 5.6, and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation**, Sol 5.6's response to it, and the **Assessment** that closes the file — that assessment carries the merged reading order and records which third-audit claims were withdrawn. The exchange converges: **Claude's close** at the very end states the seven agreed points, and is the shortest useful entry to what was decided. None of that group is planned or executed work.
+**How to read this file.** **If you are here to work, read the `Consolidated work plan` at the very end — it is the whole conversation collapsed into one ordered list, and it supersedes every priority list above it.** Everything before it is the reasoning: four audits, a two-round exchange between Claude and Sol 5.6, and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation**, Sol 5.6's response to it, and the **Assessment** that closes the file — that assessment carries the merged reading order and records which third-audit claims were withdrawn. The exchange converges: **Claude's close** at the very end states the seven agreed points, and is the shortest useful entry to what was decided. None of that group is planned or executed work.
 
 ---
 
@@ -1292,3 +1292,236 @@ The methodological residue of the whole exchange is two lines, one from each sid
 > A sweep is only as complete as the shape its method can express — and an audit that states a
 > priority order should say whether it is ordering evaluation or ordering work, because the two
 > get read as the same thing.
+
+---
+
+# Consolidated work plan
+
+**Recorded:** 2026-09-02 by Claude, against `0.2.78`. **Proposed, not approved.** This collapses the
+third audit, the Sol 5.6 follow-up, both replies and the survey findings into one ordered list. It
+supersedes the individual priority lists above as the thing to work from; those remain as the
+reasoning behind it.
+
+Every item names what "done" means, because several of these are the kind of change whose only
+evidence of success is that nothing changed.
+
+**Two conventions.** *Structural* items change how rules are written and must not change gameplay.
+*Gameplay* items deliberately change what the game does. No version should mix the two — a survey
+cannot falsify a tuning change that shipped alongside a refactor.
+
+---
+
+## Phase 0 — make the instruments trustworthy
+
+Everything after this is measured by these three instruments. All are currently blind in ways that
+matter, and two of the blind spots sit directly over the systems Phase 4 would rewrite.
+
+**0.1 — Close the determinism projection's holes.** *(Structural. B4, B5, B6.)*
+`DeterminismSnapshot` is the safety net for exactly the refactor this plan ends with, and its own
+comment says structural refactors should preserve its hashes. It cannot currently see:
+
+- `ACTOR_FIELDS`: `chants`, `chant_source_id`, `condition_buildup`, `gale_velocity`;
+- the player block: `player_conditions`, `player_condition_buildup`, `player_gale_velocity`, every
+  cooldown, `stealth_remaining`;
+- `WORLD_FIELDS`: `elevation`, `elevation_profile`.
+
+**Done when** a deliberate change to any of those values makes `golden_run_test` go red.
+
+**0.2 — Give the golden run a caster.** *(Structural.)*
+`golden_run_test.gd` scripts a **Warrior in recovery rules**. It never casts a spell, applies a
+condition, raises a barrier or launches an arcing projectile — so even the fields that *are* hashed
+are never exercised by the systems most likely to break. Add a second scripted run: a Mage ·
+Elementalist under Energy rules that casts, burns, freezes, raises a wall and takes a javelin.
+
+**Done when** the suite has two golden runs and the caster one covers spells, conditions, barriers
+and projectile elevation.
+
+**Note on ordering within Phase 0:** adding fields to the projection changes the recorded hashes, so
+the baseline must be re-recorded. Re-baselining is only safe when current behaviour is believed
+correct, so do 0.1 and 0.2 **before** the Phase 2 gameplay changes, and re-baseline once more after
+them rather than trying to avoid a second pass.
+
+**0.3 — Correct hostile-action classification.** *(Structural. M6.)*
+`hurl` (`7141`), `sunder` (`7180`) and `slam` (`7252`) are produced but absent from
+`ENEMY_ATTACK_ACTION_KINDS`, which `_threat_snapshot` consults at `2832`. Javelineer and Earth
+Caster wind-ups are invisible to survey threat telemetry today; the Warden inherits it later. **The
+Brute is not affected** — it commits through ordinary `melee`.
+
+**Done when** a room with a winding-up Javelineer reports a pending attack.
+
+**0.4 — Decide the per-spell telemetry question.** *(Structural.)*
+`survey_spell_casts` is an orphan aggregate already duplicated by `Action usage: spell xN`. Either
+delete it as redundant, or replace it with usage keyed by stable spell ID. Not promoted merely
+because it exists.
+
+**Done when** the counter is gone, or the report names spells individually.
+
+---
+
+## Phase 1 — single-authority fixes that are small and unblock the rest
+
+**1.1 — Catalogued `vision_range` becomes the only authority.** *(Structural. M4.)*
+`_enemy_vision_range` (`3364`) hardcodes six long-sighted kinds; the Chanter is absent despite the
+catalog authoring `620.0` for it, so ordinary sight and death-witness perception disagree about the
+same enemy.
+
+**Done when** the hardcoded list is gone and every kind's sight comes from `properties.vision_range`.
+
+**1.2 — Retire the dead ability family.** *(Structural. Shape D.)*
+`hex`, `ice_hex`, `ice_cone` and `fire_circle` have no producer — the Hexer was retired in `0.2.35`.
+They carry an executor branch, `_spawn_hex()`, hazard handling, effect labels, phase text and nine
+renderer branches. Note that catalog validation currently *requires* the dead executors, because the
+kinds are declared.
+
+**1.3 — Make catalog validation check both directions.** *(Structural. Shape D, M6.)*
+Every declared kind needs an implementation **and** a producer. Requires per-namespace reachability
+(actions, hazards, projectiles, effects and enemy kinds are separate even where IDs share text) and
+an explicit lifecycle — `active` needs a producer, `reserved` states why it is retained, `legacy`
+names the migration that consumes it. `werewolf` and `warden` are the legitimate `reserved` case.
+
+**Done when** deleting a producer fails the suite, and 1.2's kinds cannot silently return.
+
+---
+
+## Phase 2 — the presentation contract, with the Chanter as its acceptance case
+
+One piece of work, not four patches. Building it as a contract is the point; adding `chants` by hand
+to each projection is the convention-based fix every audit here rejects.
+
+**2.1 — A per-enemy field schema**, alongside the top-level one, from which
+`_enemy_presentation`, `PresentationFrame._copy_enemy` and `DeterminismSnapshot.ACTOR_FIELDS` are
+generated rather than transcribed. *(B1, B3.)* The three lists have already drifted: the streamed
+path lacks `revealed_to_player`, `revealed_elapsed`, `attributes`, `weapon_frame` and
+`equipped_weapon_art`.
+
+**2.2 — An exhaustive top-level presentation contract.** *(M1, B2.)* `sensed_enemies`,
+`aimed_enemy_id`, `player_conditions`, `player_condition_buildup`, `player_exhaustion_remaining`,
+`visible_cells` and `discovered_cells` are in `snapshot()` and not in the schema; the renderer
+either loses them in streamed frames (Keen Eye silhouettes, the aimed-enemy outline) or bypasses
+`visual` and reads live state, drawing objects from two different simulation times in one frame.
+`blend()` must derive from the schema instead of hand-listing what `capture()` already gets from it.
+
+**2.3 — Per-field copy policy below the entity level.** *(M2.)* `_copy_flat_dictionary` discards
+every Array and Dictionary, so the nested `interrupted_action` the renderer uses to draw an
+interrupted pose survives a full snapshot and vanishes from streamed frames.
+
+**2.4 — Draw what is now carried.** *(Gameplay-visible, but no rules change.)* Enemy burn and frost
+as a body-level halo — **this is the part that gates the Elementalist survey**, because conditions
+are the caster's own feedback loop and apply in every room where the player casts. Chant marks ride
+along on the same data at the same layer and make the Chanter a complete vertical case; they are not
+themselves survey-gating, since `chanted_line` is tier-4 and a given survey may never draw one.
+
+**Done when** a burning enemy is visibly burning in both frozen and streamed frames, a chanted ally
+shows which chant and how much longer, and adding a new per-enemy field requires editing one place.
+
+---
+
+## Phase 3 — the gameplay changes, then the survey
+
+Shipped separately from everything above, one version, so the survey can falsify them.
+
+**3.1 — Lightning Bolt damage 11 → 6.** *(Gameplay.)* Cost went 16 → 26 and range 560 → 340
+already; damage is the untouched lever. At 0.65 damage per Energy it is the most efficient attack in
+the kit and the only risk-free one, against 35–40 HP bodies, while its own comment calls it "the
+weakest".
+
+**3.2 — Every shooter checks its firing lane, evaluated at release.** *(Gameplay.)*
+`_archer_has_clear_lane` is called from one site; the Javelineer and casters fire blind, and the
+projectile loop's comment justifies its friend-blind collision rule *by* a check only one kind
+performs. Re-evaluating at release rather than at decision matters because the archer's own 0.60s
+wind-up is ample time for a body to walk into a clear lane. **Frequency, not magnitude** — the
+"hits whoever it hits" rule and its damage scaling are deliberately unchanged.
+
+**3.3 — Deterministic formation-preserving spawn relaxation.** *(Gameplay.)* `_survey_settle_spawn`
+resolves each body against obstacles, the player and the rim with no term for other bodies, and both
+its rules collapse toward common points — which is why enemies arrive huddled in `central_cover`
+regardless of the formation chosen. A one-pass separation against already-placed bodies is
+order-dependent and can shear a formation; prefer a small relaxation with each body attracted to its
+authored seat.
+
+**3.4 — Survey telemetry.** *(Structural.)* Crowding (mean nearest-ally distance among active
+enemies; share of combat with a pair inside comfort distance), friendly-fire hits/damage/kills, and
+interruption attribution — what interrupted which attack, with which tool. The last exists to
+falsify the claim that interruption, not Energy, is why the Elementalist never dodges.
+
+**3.5 — Run the standard-profile Elementalist survey.** Played to win, on the standard profile, not
+a custom room. The question it exists to falsify: **does casting compete with dodging?** The
+`0.2.77` run said no — 4 dodges in 215 seconds, 0 clean evades, both exhaustions walked off at ~160
+units — but with a third of enemy attacks dying before they resolved, and that is the reading 3.4
+tests.
+
+**3.6 — Tune on what it says.** Deliberately unspecified.
+
+---
+
+## Phase 4 — the deeper structural programme
+
+Ordered so each item makes the next safer. Phase 0 must be complete before 4.3.
+
+**4.1 — Typed effect payloads.** *(M5.)* `_apply_source_condition_to_player` decides which condition
+an ability applies by substring-matching `ice`/`frost`/`cold`/`fire`/`burn` against a **display
+label**, defaulting unregistered sources to `4.0`; `CONDITION_BUILDUP_BY_SOURCE` is keyed on prose
+with spaces (`"fire breath"`) while the catalog holds real IDs. Renaming text changes combat.
+Abilities should carry `condition_id` and `condition_buildup`; labels become presentation only.
+
+**4.2 — Effect routing through faction.** *(M7.)* `_opposes()` is consumed only by barrier
+collision; projectiles and hazards still branch on `source_id == 0` and `friendly`. Any ally, summon,
+charm or neutral hazard would need new special cases at each site.
+
+**4.3 — One actor representation.** *(A1–A5, and Sol's additions.)* `_actor_storage()` returns `{}`
+for the player, so all six actor-generic functions are translation layers over 32 loose scalars
+versus a dictionary. Includes the condition dispatcher (A2), the posture-recovery asymmetry (A3),
+`_player_/_enemy_personal_tempo` (A4), `_set_actor_impulse` (A5), the two inline paths inside
+`_update_conditions()`, and `current_move_speed()` / `_enemy_move_speed()`.
+
+**Done when** `_actor_storage(0)` returns a real record and the boundary functions are field access.
+
+**4.4 — Production validation boundaries.** *(M3.)* `RuntimeSchema.construct()` pushes errors and
+returns the invalid dictionary anyway; `validate()` checks key presence only; `_add_enemy_actor()`,
+`_replace_enemy_actors()` and load hydration bypass it. **Authored-now must fail loudly; a save from
+disk must migrate, or be refused whole with a message** — never silently repaired one record at a
+time, which produces a deceptively successful corrupted load.
+
+**4.5 — Capabilities as properties.** *(Shape C.)* Eleven rules gate on a name: Shield blocking,
+Duellist parry (×2), Bandit ambush and `dodge_strike` (×7), Fire Caster firebolt. `properties`
+already exists in the catalog and `mass`/`PUSHABLE_MASS` is the model. Live cost: a Knight cannot
+raise a guard, and neither can either boss. Further candidates Sol names: `_shield_patience_budget`,
+Archer-specific shot-cooldown init, Boar momentum armour, the Hound/Bandit contact-trade exemption.
+
+**4.6 — Registry ownership, both directions.** *(M9.)* `_capture_survey_room_entry`, `snapshot()`
+and `_build_save_payload` hand-list fields and then merge a registry capture over the top. Validation
+proves every descriptor has a source; nothing proves every live measurement has a descriptor.
+
+**4.7 — Save migrations.** *(M8.)* Steps `21 → 33` are pass-throughs while semantic migration sits
+inline in `load_run()` behind version predicates; `< 21` branches are unreachable given
+normalization. **`SUPPORTED_START_VERSIONS` omits `32` while `_v32_to_v33()` exists**, so a save
+beginning at 32 is refused — resolve whether 32 ever shipped, and record it either way.
+
+**4.8 — `_normalize_presentation_ids()`, after a profile.** *(M10.)* Rescans five collections every
+`_update_enemies()` to recompute a high-water mark, and does not validate uniqueness. Recorded
+negative result: it does **not** destabilise IDs — assignment is guarded by
+`if not item.has("presentation_id")` — so blending pairs correctly and this is a cost question only.
+
+---
+
+## Phase 5 — the roadmap this unblocks
+
+Unchanged from `CLAUDE.md`, restated so the plan is complete:
+
+1. **Werewolf and Warden as real bosses.** Both carry a `boss` role with no behaviour. **This step
+   must specify its own evaluation before any of it is built** — the Combat Survey is a room-coverage
+   instrument and a boss is not a room.
+2. **Survey the boss instrument**, whose first run is a falsification test of the instrument.
+3. **Recovery versus Energy**, a matched-seed *pair* of surveys. Last deliberately: a boss is the
+   situation that separates the two resource models most sharply.
+
+## What is deliberately not here
+
+- **Splitting `run_state.gd`.** All three audits agree: ownership boundaries first, files shrink
+  along them afterwards or not at all.
+- **A global `ENERGY_COST_SCALE` change.** Shared with every class; the Elementalist question is not
+  yet evidence about the kernel.
+- **Enemy friendly-fire damage scaling.** The complaint is frequency, and 3.2 addresses frequency.
+  Halving same-side damage would reverse a recorded decision to fix a different problem.
+- **Removing `cluster` from the formation pool.** Room 3 huddled under `screen_line + picket`; the
+  cause is 3.3, and deleting the control condition costs the baseline.
