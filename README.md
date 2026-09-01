@@ -1,7 +1,26 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.77` (Android version code `277`).
+Current prototype version: `0.2.78` (Android version code `278`).
 
+## v0.2.78 — a late read is punished
+
+A design question that had been parked as a test failure since the capture work is now answered: **reading an attack at the instant its wind-up ends must fail.** How late a read may be and still work is a tuning question the surveys own; that a late one is punished at all is settled.
+
+The Boar was where it bit. A sidestep begun exactly as its charge's wind-up ended escaped — by 9.6 units of a 72-unit contact when the case was first recorded, and the test that described it sat in the expected-failure ledger rather than being fixed, because nobody had decided whether the escape was a bug or the intent.
+
+A charging body is wider than the circle it collides on; the shoulders carry past the centre line. The charge now runs a line 22 units wider than the Boar, and that number was measured rather than picked. At the 14 that first looked sufficient a late sidestep still cleared by 1.9 units, which is a knife-edge rather than a rule. At 22 the late read is caught by about six units while an **early** sidestep still clears by fifty-eight — the two answers stay far apart, which is what makes the timing a decision rather than a coin toss.
+
+The ledger is down to one entry. `capture_telemetry_test` passes outright.
+
+### Also in this version
+
+**`CLAUDE.md`'s priority section was rewritten**, because it was materially wrong and it is the first file anyone reads. It still described G1 as the next thing to do, listed the entire caster programme as upcoming, and claimed the Acrobat had never been surveyed and the Chanter never played — four statements, all false, in the document a fresh session starts from.
+
+It now records what is built through `0.2.77`, the five things left in order, and two standing design decisions: that a late read is punished, and that new enemy kinds stay gated on a demonstrated gap rather than an anticipated one.
+
+**The test runner no longer waits out a hang.** A file that asserts inside `_init()` or `_initialize()` aborts before its own `quit(0)`, so the process never exits and a failure presents as an indefinite hang — 180 seconds to see a line that was printed in the first second. Output now streams to a file and the runner watches it: a run that has already failed and then goes quiet for twelve seconds is hung, and it is killed and reported with its assertion line. Measured, that turns 180-plus seconds into 22.
+
+The rule is quiescence rather than first-failure, deliberately. Killing on the first failure marker would truncate a file that keeps running its other tests after one fails, and the ledger needs every distinct failure to judge whether they are all documented — a truncated run could turn a genuine regression into a false `EXPECTED FAIL`.
 ## v0.2.77 — milestones A to D finally get looked at
 
 Milestones A through D — combo continuation, post-hit hyperarmor, attack capture and the Wait rework, Sweeping Cut — have been in the game since `0.2.33` and had only ever been verified headless. The caster equivalent of this pass found five defects in one sitting, so the odds that four milestones of player-facing mechanics were clean without anyone ever looking were never good.

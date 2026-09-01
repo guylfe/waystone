@@ -445,7 +445,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.77"
+const GAME_VERSION := "0.2.78"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -6915,6 +6915,18 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.70, 1.50):
 			enemy["action"] = _charge_action(1.95, 0.70, 1.50, 360.0, 5, direction)
 			enemy["action"]["label"] = "pounce"
+			# A charging body is wider than the circle it collides on: the shoulders carry
+			# past the centre line. Without this the Boar missed a sidestep begun at the
+			# instant its wind-up ended -- by 9.6 units of a 72-unit contact -- so the last
+			# possible read escaped a committed line, which is the one read the design says
+			# must not work. How late is late enough to survive is a tuning question and the
+			# surveys own it; that a late read is punished at all is not.
+			# 22 rather than the 14 that first looked sufficient: measured, a late sidestep
+			# still cleared the line by 1.9 units at 14, which is a knife-edge rather than a
+			# rule. At 22 the late read is caught by about 6 units and an EARLY sidestep still
+			# clears by 58 -- the two answers stay far apart, which is what makes the timing a
+			# decision rather than a coin toss.
+			enemy["action"]["contact_bonus"] = 22.0
 			enemy["action"]["momentum_armour_start"] = 0.88
 			enemy["action"]["tracking_end"] = 0.70 * 0.95
 			_attach_charge_capture(enemy["action"], 0.50, "pounce")
