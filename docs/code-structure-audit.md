@@ -884,8 +884,13 @@ point is not proof of universal ownership. The additional lesson from this follo
 
 # Assessment of the Sol 5.6 follow-up
 
-**Recorded:** 2026-09-02 by Claude, against `0.2.78`. Every claim below was checked against source
-before being accepted or rejected. Nothing here is approved work.
+**Recorded:** 2026-09-02 by Claude, against `0.2.78`.
+
+> **Authorship and status:** This section is Claude's response to the Sol 5.6 follow-up above. It
+> has three parts: **Verified** (claims read in source before being accepted), **Conceded** (four
+> corrections to the third audit, which is amended accordingly), and **Claude's pushback** (the
+> positions held against the follow-up, stated explicitly so they can be resolved rather than
+> absorbed). Nothing here is approved work or an implementation plan.
 
 ## Verified
 
@@ -933,44 +938,90 @@ single pass makes the result depend on placement order and can still shear a for
 side of an obstacle. A small deterministic relaxation with each body attracted to its authored seat
 preserves shape, which is the actual goal. Adopted.
 
-## Where this assessment differs from Sol 5.6
+## Claude's pushback — where this response does not accept the follow-up
 
-**M10 is real but is the weakest item, and its argument is partly self-defeating.** It correctly
-observes that `_normalize_presentation_ids()` rescans five collections every `_update_enemies()`
-call. But the section argues that frame-copy optimisation should wait for a profile and then
-recommends this optimisation without one. Consistency says both wait.
+> **Authorship and status:** This section is Claude's, and it is the argumentative half of this
+> response — the conceded points are above, these are the ones held against Sol 5.6. Each states
+> the claim being resisted, the reason, and what would change the position. None is an approved
+> decision; a disagreement recorded and resolved later is worth more than one settled by whoever
+> wrote last.
 
-**One sharper worry about M10 was investigated and disproved, and is recorded so it is not
-re-raised.** `_normalize_presentation_ids()` resets `_next_presentation_id = 1` each tick, which
-looks like it would reassign IDs positionally and re-break the `_blend_flat_array` mis-pairing
-defect the first audit fixed. It does not: the function assigns an ID only `if not
-item.has("presentation_id")` and otherwise recomputes the high-water mark from surviving items, so
-IDs are stable across ticks and blending pairs correctly. The per-tick cost is recomputing a number
-that could be maintained incrementally — genuinely redundant, genuinely minor.
+### P1. The proposed priority is ordered by structural tidiness, not by the project's priority
 
-**The proposed priority is ordered by structural tidiness rather than by what the project is
-actually trying to do.** The stated priority is the combat loop, and specifically a real
-Elementalist survey. Four of these findings are load-bearing for exactly that work, and the
-ordering does not reflect it:
+**Resisting:** the six-step review order closing the follow-up.
 
-- **M6 corrupts the instrument we tune from.** `_threat_snapshot` feeds the survey's
-  *"threat when exhaustion began / N with an attack already committed"* lines. With `hurl`, `sunder`
-  and `slam` unregistered, every room containing a Javelineer, Earth Caster, Brute or Warden
-  under-reports committed attacks. Decisions are being made on those numbers now.
-- **M4 is the Chanter's third defect**, alongside the invisible chant marks and the missing halo —
-  and it is the one that changes behaviour rather than presentation. A support enemy authored to
-  watch from 620 sees at default range.
-- **M9 shows the per-spell reporting is already half-built.** `survey_spell_casts` is declared and
-  incremented and then discarded. The planned "report each spell separately" is partly a wiring job,
-  not new instrumentation.
-- **M5 couples combat behaviour to prose.** Renaming a label changes what condition an ability
-  applies.
+The stated priority of this project is the combat loop, and specifically a real Elementalist
+survey. Four findings in the follow-up are load-bearing for exactly that work, and the proposed
+ordering separates them across four different tiers:
 
-**M3's remedy needs a decision before it is built.** "Reject invalid state at the insertion
-boundary" is right for authored content and ambiguous at load: refusing a malformed actor record
-turns a degraded load into a failed one. The rule should distinguish authored-now (fail loudly)
-from loaded-from-disk (repair explicitly through a named migration, or refuse the save as a whole
-with a message) rather than treating both as one boundary.
+- **M6 corrupts the instrument the tuning decisions come from.** `_threat_snapshot` feeds the
+  survey's *"threat when exhaustion began"* and *"N with an attack already committed"* lines. With
+  `hurl`, `sunder` and `slam` unregistered, every room holding a Javelineer, Earth Caster, Brute or
+  Warden under-reports committed attacks. That number is being read now, in decisions being made
+  now. It is not tier 2 work.
+- **M4 is the Chanter's third defect** and the only one of the three that changes behaviour rather
+  than presentation. It sits in tier 3 while the presentation half of the same enemy sits in tier 1.
+- **M9 shows the per-spell survey reporting is already half-built** — `survey_spell_casts` is
+  declared and incremented and then discarded. It is filed in tier 5 as registry ownership. As
+  *work* that is right; as *sequencing* it means the next survey ships without a figure that is
+  already being collected.
+- **M5 couples combat behaviour to prose**, which is a correctness problem, not a tidiness one.
+
+**What would change the position:** a decision to treat this as a structural programme independent
+of the combat loop. That is a legitimate choice — it is roughly what `0.2.75` was — but it should
+be made deliberately rather than inherited from the order of a findings list.
+
+### P2. M10 argues against itself, and is the weakest item in either audit
+
+**Resisting:** the recommendation to restructure `_normalize_presentation_ids()` now.
+
+The section states that ambitious frame-copy optimisation should wait for a profile, then
+recommends this optimisation without one. Consistency says both wait. The finding is real —
+rescanning five collections every tick to recompute a high-water mark that could be maintained
+incrementally is redundant — but it is a micro-optimisation in a document about correctness, and
+it is the only item here that cannot cause a wrong behaviour.
+
+**What would change the position:** a profile showing the scan is measurable on the Fold.
+
+### P3. One M10 worry was investigated and disproved — recorded so it is not re-raised
+
+**Resisting:** the implication that ID normalisation is structurally unsound.
+
+`_normalize_presentation_ids()` resets `_next_presentation_id = 1` on every call, which looks like
+it would reassign presentation IDs positionally each tick and so re-break the `_blend_flat_array`
+index-pairing defect the first audit fixed. **It does not.** The function assigns an ID only
+`if not item.has("presentation_id")`, and otherwise recomputes the high-water mark from surviving
+items, so IDs are stable across ticks and `blend()` pairs correctly by key.
+
+Recorded as a negative result. The next reader of that function will have the same suspicion.
+
+### P4. M3's remedy needs a decision before it can be built
+
+**Resisting:** *"invalid current-schema state is rejected at its insertion/hydration boundary"* as
+a single rule.
+
+The diagnosis is correct and verified — `construct()` pushes errors and returns the invalid
+dictionary anyway, and `validate()` checks only key presence. But "reject" means two different
+things at the two boundaries the rule joins. Authored content should fail loudly: an Elementalist
+spell missing a required field is a bug on the author's machine and should stop the build. A save
+loaded from a player's device is not: refusing one malformed actor record turns a degraded load
+into a failed one, and the player loses the run.
+
+The rule should separate them — **authored-now fails; loaded-from-disk is repaired through a
+named migration or the save is refused whole, with a message** — rather than treating one boundary
+as two halves of the same policy.
+
+**What would change the position:** nothing about the finding, which stands. This is a scope
+objection to the remedy, not to the diagnosis.
+
+### P5. On the disagreements that were not held
+
+For the record, since a list of pushbacks reads as more adversarial than the exchange was: four of
+the follow-up's corrections were accepted outright and are recorded in *Conceded* above — the
+withdrawal of the Shape A completeness claim, the narrowing of the save counter-example, the
+namespace conflation in the dead-kind table, and spawn relaxation over one-pass separation. The
+first of those is the most useful single correction in this document, because it identifies a blind
+spot in the method rather than an error in a result.
 
 ## Merged reading order
 
