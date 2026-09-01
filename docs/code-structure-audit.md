@@ -1390,6 +1390,16 @@ because it exists.
 
 **Done when** the counter is gone, or the report names spells individually.
 
+**0.5 — Ship and verify the survey telemetry before any gameplay experiment.** *(Structural.)*
+Moved here from Phase 3 on Sol's amendment: this is instrumentation, and instrumentation must not
+ride in the same version as the changes it measures. Crowding (mean nearest-ally distance among
+active enemies; share of combat with a pair inside comfort distance), friendly-fire hits, damage and
+kills, and **interruption attribution** — what interrupted which attack, with which tool. The last
+exists to falsify the claim that interruption, not Energy, is why the Elementalist never dodges.
+
+**Done when** a room whose numbers are known by hand reproduces them, and the counters appear in the
+report.
+
 ---
 
 ## Phase 1 — single-authority fixes that are small and unblock the rest
@@ -1411,7 +1421,16 @@ kinds are declared.
 Every declared kind needs an implementation **and** a producer. Requires per-namespace reachability
 (actions, hazards, projectiles, effects and enemy kinds are separate even where IDs share text) and
 an explicit lifecycle — `active` needs a producer, `reserved` states why it is retained, `legacy`
-names the migration that consumes it. `werewolf` and `warden` are the legitimate `reserved` case.
+names the migration that consumes it.
+
+**Correction, on Sol's amendment 8: `werewolf` and `warden` are NOT the reserved case.** Both are
+produced by `floor_generator.gd` (`283`, `680`) and both have live AI branches (`run_state.gd:7235`,
+`7249`) — the Warden's `slam` carries a 1.02s startup behind a 0.46 probability. In reachability
+terms they are active content whose behaviour is provisional. **`CLAUDE.md` is stale on this**: it
+says both carry "a `boss` role with no behaviour behind it", and that is false. What is true is that
+they never appear in a Combat Survey room — no encounter recipe names either — so nobody has seen
+them. A genuine `reserved` example must be found elsewhere, or the lifecycle can carry only `active`
+and `legacy` until one arises.
 
 **Done when** deleting a producer fails the suite, and 1.2's kinds cannot silently return.
 
@@ -1422,9 +1441,13 @@ names the migration that consumes it. `werewolf` and `warden` are the legitimate
 One piece of work, not four patches. Building it as a contract is the point; adding `chants` by hand
 to each projection is the convention-based fix every audit here rejects.
 
-**2.1 — A per-enemy field schema**, alongside the top-level one, from which
+**2.1 — A per-enemy field schema with audiences**, alongside the top-level one, from which
 `_enemy_presentation`, `PresentationFrame._copy_enemy` and `DeterminismSnapshot.ACTOR_FIELDS` are
-generated rather than transcribed. *(B1, B3.)* The three lists have already drifted: the streamed
+generated rather than transcribed. **On Sol's amendment 6: one descriptor source, not identical
+field sets.** The top-level schema already carries `SNAPSHOT`/`PRESENTATION`/`SAVE`; the per-enemy
+one needs at least `presentation` and `determinism`, since a cache or a cooldown may matter to one
+and not the other. Each descriptor also carries its interpolation policy (lerp, carry-forward, or
+neither) and its nested-copy policy, which is what 2.3 consumes. *(B1, B3.)* The three lists have already drifted: the streamed
 path lacks `revealed_to_player`, `revealed_elapsed`, `attributes`, `weapon_frame` and
 `equipped_weapon_art`.
 
@@ -1434,6 +1457,12 @@ path lacks `revealed_to_player`, `revealed_elapsed`, `attributes`, `weapon_frame
 either loses them in streamed frames (Keen Eye silhouettes, the aimed-enemy outline) or bypasses
 `visual` and reads live state, drawing objects from two different simulation times in one frame.
 `blend()` must derive from the schema instead of hand-listing what `capture()` already gets from it.
+
+**Performance caveat, on Sol's amendment 6.** `visible_cells` and `discovered_cells` are Dictionaries
+sized by the floor, not by the actors on it. Deep-copying them into every streamed frame at 120 Hz
+would fix the time-authority problem by creating a worse one. They need a **revisioned or
+copy-on-change frame value** — the frame carries a revision number and a reference, and copies only
+when the underlying set actually changes, which during combat is rarely.
 
 **2.3 — Per-field copy policy below the entity level.** *(M2.)* `_copy_flat_dictionary` discards
 every Array and Dictionary, so the nested `interrupted_action` the renderer uses to draw an
@@ -1450,47 +1479,99 @@ shows which chant and how much longer, and adding a new per-enemy field requires
 
 ---
 
-## Phase 3 — the gameplay changes, then the survey
+## Phase 3 — a corrected baseline, then one experiment at a time
 
-Shipped separately from everything above, one version, so the survey can falsify them.
+**Revised after the Sol 5.6 review.** The first draft bundled three gameplay changes into one
+version and one survey, which violated this plan's own rule: Lightning damage, lane behaviour and
+spawn spacing can each move *does casting compete with dodging*, and one survey cannot attribute the
+result to any of them. The telemetry that was here has moved to Phase 0, where instrumentation
+belongs.
 
-**3.1 — Lightning Bolt damage 11 → 6.** *(Gameplay.)* Cost went 16 → 26 and range 560 → 340
-already; damage is the untouched lever. At 0.65 damage per Energy it is the most efficient attack in
-the kit and the only risk-free one, against 35–40 HP bodies, while its own comment calls it "the
-weakest".
+**3.0 — The corrected baseline survey.** Standard profile, played to win, run once Phase 0 and
+Phase 2 are complete and **before any gameplay change**.
 
-**3.2 — Every shooter checks its firing lane, evaluated at release.** *(Gameplay.)*
-`_archer_has_clear_lane` is called from one site; the Javelineer and casters fire blind, and the
-projectile loop's comment justifies its friend-blind collision rule *by* a check only one kind
-performs. Re-evaluating at release rather than at decision matters because the archer's own 0.60s
-wind-up is ample time for a body to walk into a clear lane. **Frequency, not magnitude** — the
-"hits whoever it hits" rule and its damage scaling are deliberately unchanged.
+This is the amendment that matters most. Every tuning hypothesis currently on the table — Lightning
+above all — was derived from a run in which the player could not see burn or frost land, the threat
+telemetry under-counted, and spell usage was reported as one aggregate. Making enemy conditions
+visible may itself change how the class is played: a readable elemental payload is a reason to cast
+something other than the bolt.
 
-**3.3 — Deterministic formation-preserving spawn relaxation.** *(Gameplay.)* `_survey_settle_spawn`
-resolves each body against obstacles, the player and the rim with no term for other bodies, and both
-its rules collapse toward common points — which is why enemies arrive huddled in `central_cover`
-regardless of the formation chosen. A one-pass separation against already-placed bodies is
-order-dependent and can shear a formation; prefer a small relaxation with each body attracted to its
-authored seat.
+**Expect this run to look like `0.2.77`, and do not treat that as failure.** If Lightning is
+dominant, a player trying to win will use it, and the ratings may barely move. Its value is the
+telemetry, not the scores — interruption attribution, per-spell usage and crowding are figures the
+last run could not produce. And if the bolt does remain dominant with the kit finally legible, that
+is precisely the falsification that licenses 3.1.
 
-**3.4 — Survey telemetry.** *(Structural.)* Crowding (mean nearest-ally distance among active
-enemies; share of combat with a pair inside comfort distance), friendly-fire hits/damage/kills, and
-interruption attribution — what interrupted which attack, with which tool. The last exists to
-falsify the claim that interruption, not Energy, is why the Elementalist never dodges.
-
-**3.5 — Run the standard-profile Elementalist survey.** Played to win, on the standard profile, not
-a custom room. The question it exists to falsify: **does casting compete with dodging?** The
-`0.2.77` run said no — 4 dodges in 215 seconds, 0 clean evades, both exhaustions walked off at ~160
-units — but with a third of enemy attacks dying before they resolved, and that is the reading 3.4
-tests.
-
-**3.6 — Tune on what it says.** Deliberately unspecified.
+**Done when** the run is recorded on the standard profile with Phase 0 telemetry intact, and the
+three figures that answer the falsification question — exhaustion lockouts, dodge forms used,
+whether Energy is ever binding — are reported alongside interruption attribution.
 
 ---
+
+The three changes below are **separate experiments**, each its own version, each measured against
+3.0. Run them one variable at a time, or through explicitly matched profiles if they are combined.
+
+**3.1 — Lightning Bolt.** *(Gameplay. Conditional on 3.0.)*
+The recorded design judgement stands: the problem is cheap, instantaneous damage at range, and it is
+upstream of any argument about interruption. What 3.0 decides is the **magnitude**, not the
+direction. At 11 damage and ~16.9 real Energy the bolt returns 0.65 damage per Energy against the
+staff poke's 0.55 — comparable efficiency, except the staff pays in standing at 150 units and the
+bolt pays nothing at 340. Proposed change: damage `11 → 6`.
+
+**Done when** a survey after the change shows the bolt used as an opener and a finisher rather than
+as the default action, measured as: bolt casts as a share of all offensive actions falls below its
+3.0 share, and per-spell usage shows at least one elemental spell in regular use.
+
+**3.2 — Lane policy as authored capability.** *(Gameplay. Needs design approval before build.)*
+Sol's amendment is adopted over the original blanket rule. Lane behaviour becomes per-kind metadata
+rather than one universal check, because a disciplined Archer and a reckless Javelineer is
+characterisation, while one rule for all of them is homogenisation.
+
+The authored vocabulary, and the release-time outcome must be named for each kind rather than left
+to the implementation:
+
+- `ignores_allies` — fires regardless;
+- `checks_before_commitment` — the current Archer behaviour;
+- `checks_at_release` — re-evaluates when the wind-up ends;
+- and for the last, what happens when the lane is blocked: **hold** (keeps the telegraph, delays the
+  shot), **cancel** (abandons after a full telegraph, which hands the player a free opening), or
+  **redirect** (violates the telegraph the player just read).
+
+**Recommendation:** Archer `checks_at_release` + hold; Javelineer `ignores_allies`, since its arc
+already carries it over bodies and recklessness is its character; casters `checks_before_commitment`.
+This serves the stated lean — *misdirected arrows should have friendly fire, but not every shot* —
+without flattening the roster.
+
+**Done when** friendly-fire telemetry from Phase 0 shows stray hits concentrated in shots that were
+clear at release and blocked in flight, rather than in shots that were blocked when fired.
+
+**3.3 — Formation-preserving spawn relaxation.** *(Gameplay. Its own experiment.)*
+Deterministic relaxation after all seats are authored, each body attracted to its seat while
+resolving obstacles, the player, the rim and its peers. It changes the geometry of every encounter,
+so it does not share a first evaluation with a damage change or altered ranged AI.
+
+**Done when** Phase 0's crowding telemetry shows mean nearest-ally distance rising toward the
+authored seat spacing, with the formation's shape preserved — and when a `central_cover` room no
+longer reports three bodies inside one Sweep-the-Legs footprint.
+
+**3.4 — Tune on what the experiments say.** Deliberately unspecified.
 
 ## Phase 4 — the deeper structural programme
 
 Ordered so each item makes the next safer. **Phase 0 must be complete before 4.3**, and 4.3 alone should not run concurrently with Track G. Nothing here waits for the survey.
+
+**4.0 — Production validation boundaries — moved ahead of everything else in this phase.**
+*(M3. On Sol's amendment 7.)* The first draft placed this at 4.4, after the representation rewrite,
+while claiming each item makes the next safer — an internal contradiction. **The validation
+mechanism must protect the migration, not inspect it afterwards.** `RuntimeSchema.construct()`
+pushes errors and returns the invalid dictionary anyway; `validate()` checks key presence only, not
+types, allowed kinds, value invariants or ID uniqueness; and `_add_enemy_actor()`,
+`_replace_enemy_actors()` and load hydration all bypass it. **Authored-now must fail loudly; a save
+from disk must migrate, or be refused whole with a message** — never silently repaired one record at
+a time, which produces a deceptively successful corrupted load.
+
+**Done when** an actor record missing a required field cannot enter `enemies` from any path, and a
+malformed save is refused with a message rather than partially loaded.
 
 **4.1 — Typed effect payloads.** *(M5.)* `_apply_source_condition_to_player` decides which condition
 an ability applies by substring-matching `ice`/`frost`/`cold`/`fire`/`burn` against a **display
@@ -1509,12 +1590,6 @@ versus a dictionary. Includes the condition dispatcher (A2), the posture-recover
 `_update_conditions()`, and `current_move_speed()` / `_enemy_move_speed()`.
 
 **Done when** `_actor_storage(0)` returns a real record and the boundary functions are field access.
-
-**4.4 — Production validation boundaries.** *(M3.)* `RuntimeSchema.construct()` pushes errors and
-returns the invalid dictionary anyway; `validate()` checks key presence only; `_add_enemy_actor()`,
-`_replace_enemy_actors()` and load hydration bypass it. **Authored-now must fail loudly; a save from
-disk must migrate, or be refused whole with a message** — never silently repaired one record at a
-time, which produces a deceptively successful corrupted load.
 
 **4.5 — Capabilities as properties.** *(Shape C.)* Eleven rules gate on a name: Shield blocking,
 Duellist parry (×2), Bandit ambush and `dodge_strike` (×7), Fire Caster firebolt. `properties`
