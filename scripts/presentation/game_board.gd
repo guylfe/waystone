@@ -176,6 +176,13 @@ var custom_kind_rects: Dictionary = {}
 var custom_formation_rects: Dictionary = {}
 var custom_hp_rects: Dictionary = {}
 var custom_level_rects: Dictionary = {}
+# The custom room used to sit behind a section chip that revealed a button that opened a
+# panel you then had to back out of before you could press Start -- four screens to set up
+# one room. It is a toggle on the options screen now, and the panel it opens can start the
+# run itself.
+var custom_room_repeat := false
+var custom_repeat_rect := Rect2()
+var custom_start_rect := Rect2()
 var custom_clear_rect := Rect2()
 var custom_done_rect := Rect2()
 var archive_button_rect := Rect2()
@@ -949,9 +956,6 @@ func _layout() -> void:
 		var half := (setup_width - setup_gap) * 0.5
 		var option_height := clampf(layout_size.y * 0.045, 40.0, 52.0)
 		if setup_mode == "combat_survey":
-			dev_section_rects["survey"] = Rect2(setup_left, row, half, option_height)
-			dev_section_rects["custom"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
-			row += option_height + 8.0
 			survey_profile_rects["encounter"] = Rect2(setup_left, row, half, option_height)
 			survey_profile_rects["attrition"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
 			row += option_height + 8.0
@@ -960,7 +964,7 @@ func _layout() -> void:
 			row += option_height + 8.0
 		# Before the seed field, never under it: seed_input is a real LineEdit node and
 		# paints over anything the canvas draws beneath it.
-		if _custom_section_active():
+		if setup_mode == "combat_survey":
 			custom_open_rect = Rect2(setup_left, row, setup_width, option_height)
 			row += option_height + 8.0
 		else:
@@ -1253,13 +1257,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 				setup_loadout = choice
 				queue_redraw()
 				return
-		if setup_mode == "combat_survey":
-			for section in dev_section_rects:
-				if Rect2(dev_section_rects[section]).has_point(position):
-					setup_dev_section = String(section)
-					_layout()
-					return
-		if custom_open_rect.has_point(position) and _custom_section_active():
+		if custom_open_rect.has_point(position) and setup_mode == "combat_survey":
 			custom_room_open = true
 			custom_page = "room"
 			custom_editing_slot = -1
@@ -2137,7 +2135,19 @@ func _handle_custom_room_press(position: Vector2) -> void:
 			custom_room_level = clampi(custom_room_level + (1 if String(direction) == "up" else -1), 1, 15)
 			queue_redraw()
 			return
-	if custom_clear_rect.has_point(position):
+	if custom_repeat_rect.has_point(position):
+		custom_room_repeat = not custom_room_repeat
+		queue_redraw()
+		return
+	if custom_start_rect.has_point(position) and not custom_room_roster.is_empty():
+		# Starting from here is the point of the rework: the room you just composed is the
+		# room you want to play, and walking back out to press Start elsewhere was a step
+		# that existed only because the panel was built as a sub-screen.
+		custom_room_open = false
+		_layout()
+		_start_run()
+		return
+	if custom_clear_rect.size.x > 0.0 and custom_clear_rect.has_point(position):
 		custom_room_roster.clear()
 		custom_room_formation = ""
 		_layout()
@@ -2163,6 +2173,7 @@ func _start_run() -> void:
 	state.custom_room_formation = custom_room_formation
 	state.custom_room_hp_percent = custom_room_hp
 	state.custom_room_xp = RunStateScript.xp_for_character_level(custom_room_level)
+	state.custom_room_repeat = custom_room_repeat
 	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
@@ -2419,6 +2430,14 @@ func _draw_world() -> void:
 		var b := _world_to_screen(centre + axis * reach)
 		var lowered := bool(segment.get("lowered", false))
 		var integrity := clampf(float(segment.get("hp", 10.0)) / 10.0, 0.15, 1.0)
+		# Since 0.2.72 a wall stops whichever side did not raise it, so the player walks
+		# through their own. Drawn identically to an enemy's, that reads as clipping through
+		# solid stone. Yours is drawn as a raised ward instead -- lit from within, its cap in
+		# the Circle's own green -- so passing through it looks intended.
+		var mine := int(segment.get("source_id", -1)) == 0
+		var body_color := Color(0.30, 0.62, 0.52) if mine else Color(0.58, 0.44, 0.26)
+		var cap_color := Color(0.52, 0.90, 0.76) if mine else Color(0.86, 0.72, 0.46)
+		var base_color := Color(0.10, 0.20, 0.18, 0.80) if mine else Color(0.16, 0.12, 0.08, 0.85)
 		# A lowered segment is drawn as a scar on the ground rather than removed: the gap
 		# is information -- it is where an enemy is -- and hiding it would make the wall
 		# read as randomly broken instead of as pressure you can see.
@@ -2429,9 +2448,9 @@ func _draw_world() -> void:
 			# see it coming and decide, which is the whole point of it taking a beat.
 			var partial := thickness * (0.30 + 0.70 * rise)
 			var partial_lift := Vector2(0.0, -partial * 0.55 * rise)
-			draw_line(a, b, Color(0.16, 0.12, 0.08, 0.85), partial * 1.1)
-			draw_line(a + partial_lift, b + partial_lift, Color(0.58, 0.44, 0.26, 0.55 + 0.43 * rise), partial)
-			draw_line(a + partial_lift * 1.7, b + partial_lift * 1.7, Color(0.86, 0.72, 0.46, 0.5 + 0.45 * rise), maxf(2.0, partial * 0.34))
+			draw_line(a, b, base_color, partial * 1.1)
+			draw_line(a + partial_lift, b + partial_lift, Color(body_color, 0.55 + 0.43 * rise), partial)
+			draw_line(a + partial_lift * 1.7, b + partial_lift * 1.7, Color(cap_color, 0.5 + 0.45 * rise), maxf(2.0, partial * 0.34))
 		elif lowered:
 			# A ground scar, and drawn as rubble rather than as a thin version of the wall.
 			# The gap is information -- it is where an enemy is -- and a faint copy of the
@@ -2446,9 +2465,9 @@ func _draw_world() -> void:
 			# reads as something with height rather than a line painted on the floor. It was
 			# a single dark-brown line before, which against the floor was nearly nothing.
 			var lift := Vector2(0.0, -thickness * 0.55)
-			draw_line(a, b, Color(0.16, 0.12, 0.08, 0.85), thickness * 1.1)
-			draw_line(a + lift, b + lift, Color(0.58, 0.44, 0.26, 0.98 * integrity), thickness)
-			draw_line(a + lift * 1.7, b + lift * 1.7, Color(0.86, 0.72, 0.46, 0.95 * integrity), maxf(2.0, thickness * 0.34))
+			draw_line(a, b, base_color, thickness * 1.1)
+			draw_line(a + lift, b + lift, Color(body_color, (0.72 if mine else 0.98) * integrity), thickness)
+			draw_line(a + lift * 1.7, b + lift * 1.7, Color(cap_color, 0.95 * integrity), maxf(2.0, thickness * 0.34))
 	if view_mode == "isometric":
 		_draw_isometric_solids(visible, discovered)
 	else:
@@ -4627,7 +4646,7 @@ func _draw_setup() -> void:
 		if desktop_controls and portrait:
 			draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
 	else:
-		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else "DEV · SURVEY ROOMS" if setup_dev_section == "survey" else "DEV · CUSTOM ROOM"
+		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else ("DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS")
 		draw_rect(setup_back_rect, Color("17272d"))
 		draw_rect(setup_back_rect, Color("718087"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, 14, Color("d7dddd"))
@@ -4648,15 +4667,6 @@ func _draw_setup() -> void:
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	if setup_mode == "combat_survey":
-		for section in dev_section_rects:
-			var rect := Rect2(dev_section_rects[section])
-			var selected := setup_dev_section == String(section)
-			draw_rect(rect, Color("17272d"))
-			draw_rect(rect, Color("c9a3e6") if selected else Color("45545a"), false, 2.0)
-			var label := "SURVEY ROOMS" if String(section) == "survey" else "CUSTOM ROOMS"
-			var subtitle := "GENERATED • RATED • ARCHIVED" if String(section) == "survey" else "PICK ROSTER • FORMATION • HEALTH"
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
-			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.50)), Color("9fb2b7"))
 		for profile in survey_profile_rects:
 			var rect := Rect2(survey_profile_rects[profile])
 			var selected := setup_survey_profile == String(profile)
@@ -4679,7 +4689,7 @@ func _draw_setup() -> void:
 		var picked := _custom_room_total()
 		draw_rect(custom_open_rect, Color("17272d"))
 		draw_rect(custom_open_rect, Color("c9a3e6") if picked > 0 else Color("45545a"), false, 2.0)
-		var custom_label := "CUSTOM ROOM · OFF" if picked == 0 else "CUSTOM ROOM · %d ENEMIES" % picked
+		var custom_label := "CUSTOM ROOM · OFF — TAP TO COMPOSE" if picked == 0 else "CUSTOM ROOM · ON — %d ENEMIES%s" % [picked, "" if custom_room_repeat else " · ONE ROOM"]
 		draw_string(ThemeDB.fallback_font, custom_open_rect.position + Vector2(0, custom_open_rect.size.y * 0.66), custom_label, HORIZONTAL_ALIGNMENT_CENTER, custom_open_rect.size.x, 13, Color("eef0e9") if picked > 0 else Color("9fb2b7"))
 	draw_rect(archive_button_rect, Color("10191e"))
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
@@ -5123,10 +5133,14 @@ func _layout_custom_room_panel() -> void:
 	custom_level_rects["down"] = Rect2(left, y, step_w, row_h)
 	custom_level_rects["up"] = Rect2(left + width - step_w, y, step_w, row_h)
 	var half := (width - 8.0) * 0.5
-	custom_clear_rect = Rect2(left, custom_panel_rect.end.y - 60.0, half, 48.0)
+	custom_repeat_rect = Rect2(left, custom_panel_rect.end.y - 118.0, width, 46.0)
+	custom_start_rect = Rect2(left, custom_panel_rect.end.y - 60.0, half, 48.0)
+	custom_clear_rect = Rect2()
 	custom_done_rect = Rect2(left + half + 8.0, custom_panel_rect.end.y - 60.0, half, 48.0)
+# A custom room is on when one has been composed. There is no separate mode flag to fall
+# out of step with the roster.
 func _custom_section_active() -> bool:
-	return setup_mode == "combat_survey" and setup_dev_section == "custom"
+	return setup_mode == "combat_survey" and not custom_room_roster.is_empty()
 
 func _custom_room_kind_list() -> Array[String]:
 	var kinds: Array[String] = []
@@ -5207,9 +5221,16 @@ func _draw_custom_room_panel() -> void:
 		# useful to know how much a level actually bought.
 		draw_string(ThemeDB.fallback_font, span.position + Vector2(0, span.size.y * 0.54), "LEVEL %d" % custom_room_level, HORIZONTAL_ALIGNMENT_CENTER, span.size.x, 15, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, span.position + Vector2(0, span.size.y * 0.88), "%d XP · %d UPGRADES" % [RunStateScript.xp_for_character_level(custom_room_level), custom_room_level - 1], HORIZONTAL_ALIGNMENT_CENTER, span.size.x, 10, Color("9fb2b7"))
-	draw_rect(custom_clear_rect, Color("2a1a1c"))
-	draw_rect(custom_clear_rect, Color("ee6645"), false, 2.0)
-	draw_string(ThemeDB.fallback_font, custom_clear_rect.position + Vector2(0, custom_clear_rect.size.y * 0.64), "CLEAR", HORIZONTAL_ALIGNMENT_CENTER, custom_clear_rect.size.x, 14, Color("eef0e9"))
+	# Repeat, then start. The room you just composed is the room you want to play, so the
+	# panel finishes the job rather than sending you back out to a Start button elsewhere.
+	draw_rect(custom_repeat_rect, Color("17272d"))
+	draw_rect(custom_repeat_rect, Color("c9a3e6") if custom_room_repeat else Color("45545a"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, custom_repeat_rect.position + Vector2(0, custom_repeat_rect.size.y * 0.42), "REPEAT · %s" % ("ON" if custom_room_repeat else "OFF"), HORIZONTAL_ALIGNMENT_CENTER, custom_repeat_rect.size.x, 14, Color("eef0e9") if custom_room_repeat else Color("9fb2b7"))
+	draw_string(ThemeDB.fallback_font, custom_repeat_rect.position + Vector2(0, custom_repeat_rect.size.y * 0.80), "ROOM AFTER ROOM" if custom_room_repeat else "ONE ROOM, THEN THE END SCREEN", HORIZONTAL_ALIGNMENT_CENTER, custom_repeat_rect.size.x, 10, Color("9fb2b7"))
+	var can_start := not custom_room_roster.is_empty()
+	draw_rect(custom_start_rect, Color("17272d"))
+	draw_rect(custom_start_rect, Color("6be3c6") if can_start else Color("45545a"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, custom_start_rect.position + Vector2(0, custom_start_rect.size.y * 0.64), "START", HORIZONTAL_ALIGNMENT_CENTER, custom_start_rect.size.x, 15, Color("eef0e9") if can_start else Color("5d6a71"))
 	draw_rect(custom_done_rect, Color("24433f"))
 	draw_rect(custom_done_rect, Color("58d2cf"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, custom_done_rect.position + Vector2(0, custom_done_rect.size.y * 0.64), "BACK", HORIZONTAL_ALIGNMENT_CENTER, custom_done_rect.size.x, 14, Color("eef0e9"))

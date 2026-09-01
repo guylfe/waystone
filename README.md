@@ -1,7 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.75` (Android version code `275`).
+Current prototype version: `0.2.76` (Android version code `276`).
 
+## v0.2.76 — the four repairs the 0.2.72 survey asked for
+
+**Cold Front costs a fraction of what it did.** 9 per tick down to 3 — about 15 damage a second against a Mage, and the listed death source of that run. Frost is what the ability is for: it slows the whole action and softens the next hit, and the damage was never the payload. A heavily armoured body now walks through taking almost nothing and is frosted anyway, which is the correct reading of it.
+
+A repeating zone is also the one hazard where frozen time works *against* the player — leaving costs world time, and spending world time is what advances the ticks. Its per-tick damage has to be low precisely because its duration is partly self-inflicted.
+
+**The "−1" was Cold Front reporting per tick.** Reproduced by driving a real Ice Caster at a Mage and tallying every damage number: nineteen figures of 1 from the front, four of 14 from the lance. Four small numbers per cast, none of which add up to what the health bar does, read exactly like a hidden calculation even though nothing was hidden.
+
+Anything that damages repeatedly from one source now accumulates into a single figure while that figure is still on screen. Cold Front reports 4 for a whole cast rather than 1 four times, and the number shown equals the health lost — which is what the test pins.
+
+**Your own walls look like yours.** Since `0.2.72` a wall stops whichever side did not raise it, so the player walks through their own. Drawn identically to an enemy's, that read as clipping through solid stone. Yours is a raised ward now — lit from within, its cap in the Circle's own green — so passing through looks intended rather than broken.
+
+**The custom room is one screen.** It used to be a section chip that revealed a button that opened a panel you then had to back out of before pressing Start: four screens to set up one room. It is a toggle on the options screen now, showing what it holds, and the panel it opens finishes the job — **Start lives inside it**.
+
+And a custom room is an instrument, so it answers one question at a time. **One room, then the end screen**, with repeat as an explicit toggle that defaults to off. Testing a composition no longer means ending the run by hand every time.
 ## v0.2.75 — one rule, one owner
 
 This release implements the accepted work in `docs/code-structure-audit.md` without changing the authored combat rules. The simulation now has a checkpointed golden-run harness and fail-fast catalog/runtime validation; enemy facts and presentation identity live in the enemy catalog; elemental abilities share canonical definitions and projectile construction; movement validity, actor membership, position, health, posture, conditions, impulses and factions have owned boundaries; cooldowns and survey measurements use declared registries; dynamic presentation objects have stable IDs and one frame-time authority; snapshot/presentation/save fields declare their audiences; and saves migrate sequentially into the current schema.

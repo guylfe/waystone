@@ -445,7 +445,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.75"
+const GAME_VERSION := "0.2.76"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -852,6 +852,11 @@ var custom_room_kinds: Array[String] = []
 var custom_room_formation := ""
 var custom_room_hp_percent := 1.0
 var custom_room_xp := 0
+# A custom room is an instrument, and an instrument answers one question at a time. It used
+# to roll straight into a second room and a third, so testing one composition meant ending
+# the run by hand every time. One room and then the end screen is the default; repeating is
+# something you ask for.
+var custom_room_repeat := false
 var custom_room_used_kinds: Dictionary = {}
 var custom_room_last_roster: Array[String] = []
 var survey_room_seed := 0
@@ -2215,7 +2220,8 @@ func _complete_survey_room(outcome: String) -> void:
 	# this migration only as a compatibility audit: descriptor values overwrite them.
 	survey_pending_record.merge(SurveyCounterCatalogScript.room_values(self, survey_room_entry), true)
 	survey_feedback_pending = true
-	survey_run_ending = outcome in ["death", "manual_end"]
+	# A one-shot custom room finishes the run when its room finishes, whatever the outcome.
+	survey_run_ending = outcome in ["death", "manual_end"] or (_custom_room_active() and not custom_room_repeat)
 	survey_end_reason = outcome
 	player_action = _idle_action()
 	projectiles.clear()
@@ -8299,7 +8305,16 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	_add_hazard({
 		"kind": "cold_front", "pos": target, "radius": 268.0,
 		"elapsed": 0.0, "trigger_at": 0.70, "duration": 0.70 + COLD_FRONT_INTERVAL * float(COLD_FRONT_TICKS),
-		"damage": 9, "posture": 1.1, "ticks_done": 0, "next_tick": 0.10 if int(enemy.get("id", -1)) == 0 else 0.70,
+		# 3, down from 9. At 9 the front dealt 7 per tick to a Mage -- about 15 a second
+		# across its life, and the listed death source of the 0.2.72 survey. Frost is what
+		# this ability is for: it slows the whole action and softens the next hit, and the
+		# damage was never the payload. A heavily armoured body now walks through taking
+		# almost nothing and is frosted anyway, which is the correct reading of it.
+		#
+		# A repeating zone is also the one hazard where frozen time works against the player:
+		# leaving costs world time, and spending world time is what advances the ticks. Its
+		# per-tick damage has to be low precisely because its duration is self-inflicted.
+		"damage": 3, "posture": 1.1, "ticks_done": 0, "next_tick": 0.10 if int(enemy.get("id", -1)) == 0 else 0.70,
 		"source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer)),
 	})
 	_set_message("The air goes bitter and still.")
@@ -8361,7 +8376,7 @@ func _update_hazards(dt: float) -> void:
 					_resolve_player_hazard_hit(hazard, "cold front", func(enemy: Dictionary) -> bool:
 						return Vector2(enemy["pos"]).distance_to(front_centre) <= front_reach + float(enemy.get("radius", ENEMY_RADIUS)))
 				elif player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + PLAYER_RADIUS:
-					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos)
+					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos, Vector2.INF, -1.0, "cold_front:%d" % int(hazard.get("hazard_id", hazard.get("source_id", 0))))
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
 		# One cone, two elements. The shape is the same question -- are you in front of it
@@ -8535,7 +8550,23 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	var source_label := "projectile" if String(projectile.get("kind", "")) != "consumable" else "consumable"
 	_set_message("The %s is struck by the %s." % [String(enemy["kind"]), source_label])
 
-func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0) -> void:
+# A repeating zone reports one running total rather than a stream of tiny numbers. Cold
+# Front ticks four times per cast, and four separate figures over the player's head add up
+# to nothing they can read -- the number said 1 while the health bar moved by four times
+# that, which is the same complaint as a hidden calculation even though nothing was hidden.
+# Anything that damages repeatedly from one source passes a key and accumulates into a
+# single figure while that figure is still on screen.
+func _aggregate_damage_effect(key: String, impact: Vector2, amount: int) -> bool:
+	if key == "": return false
+	for effect in effects:
+		if String(effect.get("kind", "")) != "hurt" or String(effect.get("aggregate", "")) != key: continue
+		effect["amount"] = int(effect.get("amount", 0)) + amount
+		effect["pos"] = impact
+		effect["elapsed"] = 0.0
+		return true
+	return false
+
+func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0, aggregate_key: String = "") -> void:
 	# Zero authored damage is not an attack -- sundered ground and the disengage shove both
 	# arrive here with nothing to deal.
 	if damage <= 0: return
@@ -8618,7 +8649,8 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	player_posture = maxf(0.0, player_posture - posture_damage)
 	player_posture_recovery_delay = 1.15
 	player_energy_regen_delay = maxf(player_energy_regen_delay, ENERGY_REGEN_DELAY)
-	_add_effect("hurt", impact, damage_received)
+	if not _aggregate_damage_effect(aggregate_key, impact, damage_received):
+		_add_effect("hurt", impact, damage_received, {"aggregate": aggregate_key} if aggregate_key != "" else {})
 	_break_stealth_for_hostile_action()
 	_apply_source_condition_to_player(source_name)
 	if player_hp <= 0:

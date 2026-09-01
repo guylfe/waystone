@@ -42,6 +42,7 @@ func _init() -> void:
 	test_a_wall_stops_the_side_that_did_not_raise_it()
 	test_nothing_steps_off_the_floor()
 	test_gale_shoves_with_momentum()
+	test_a_repeating_zone_reports_one_number()
 	if failures.is_empty():
 		print("MAGE ELEMENTALIST sheet, spells, circle and staff: PASS")
 		# quit() requests a quit, it does not return -- so the explicit return is what stops
@@ -481,3 +482,34 @@ func test_gale_shoves_with_momentum() -> void:
 	check(Vector2(heavy["pos"]).distance_to(Vector2(origins[int(heavy["id"])])) < 0.01, "a heavy body stands in it")
 	# Being thrown across a room is not something a body sleeps through.
 	check(String(near.get("awareness", "idle")) == "alerted", "the wind should announce the caster")
+
+func test_a_repeating_zone_reports_one_number() -> void:
+	# Cold Front ticks four times per cast, and it used to put a separate figure over the
+	# player for each one. Four small numbers that never add up to what the health bar does
+	# read exactly like a hidden calculation, even though nothing was hidden -- reported as
+	# "a huge -1 over my head but the damage is far higher".
+	var state := fresh()
+	state.hazards.clear()
+	state.effects.clear()
+	var caster := state._make_enemy("ice_caster", state.player_pos + Vector2.UP * 240.0, 40)
+	state.enemies.append(caster)
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state._spawn_cold_front(caster, state.player_pos)
+	var health_before := state.player_hp
+	for tick in range(400):
+		state._update_hazards(state.SIM_DT)
+		state._update_effects(state.SIM_DT)
+		if state.hazards.is_empty(): break
+	var lost := health_before - state.player_hp
+	check(lost > 0, "the front should have hurt at all")
+	var reported := 0
+	for effect in state.effects:
+		if String(effect.get("kind", "")) == "hurt": reported = maxi(reported, int(effect.get("amount", 0)))
+	# One figure, and it is the figure the health bar moved by.
+	check(reported == lost, "the number shown (%d) should equal the health lost (%d)" % [reported, lost])
+	# Frost is the payload, not the damage. A repeating zone is the one hazard where frozen
+	# time works against the player -- leaving costs world time, and spending world time is
+	# what advances the ticks -- so its per-tick damage is deliberately small.
+	check(lost <= 8, "the front should cost little health across a whole cast, cost %d" % lost)
+	check(float(state.player_condition_buildup.get("frost", 0.0)) > 0.0, "and it should still charge frost")

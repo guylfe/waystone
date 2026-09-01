@@ -60,16 +60,18 @@ func _initialize() -> void:
 	# taps, and three-to-two was impossible.
 	board.setup_mode = "combat_survey"
 	board.setup_stage = "options"
-	board.setup_dev_section = "custom"
 	board._layout()
+	# One toggle on the options screen, always present under Combat Survey. It used to be a
+	# section chip that revealed a button that opened a panel you then backed out of before
+	# pressing Start -- four screens to set up one room.
 	assert(board.custom_open_rect.size.x > 0.0)
 	assert(not board.custom_open_rect.intersects(Rect2(board.seed_input.position, board.seed_input.size)))
 	assert(not board.custom_open_rect.intersects(board.start_rect))
-	assert(board.dev_section_rects.has("survey") and board.dev_section_rects.has("custom"))
+	assert(board.dev_section_rects.is_empty())
 	assert(board.start_rect.end.y <= board.safe_layout_rect.end.y + 1.0)
 	var options_class_rect: Rect2 = board._setup_class_rect("warrior")
 	assert(options_class_rect.size.y > 0.0)
-	for other in [board.dev_section_rects["survey"], board.survey_profile_rects["encounter"], board.combat_rule_rects["recovery"]]:
+	for other in [board.custom_open_rect, board.survey_profile_rects["encounter"], board.combat_rule_rects["recovery"]]:
 		assert(not options_class_rect.intersects(Rect2(other)))
 
 	board.custom_room_open = true
@@ -77,6 +79,12 @@ func _initialize() -> void:
 	board._layout()
 	board._sync_setup_controls()
 	assert(not board.seed_input.visible)
+	# The panel finishes the job: repeat is a toggle inside it, defaulting off, and Start
+	# lives here rather than back on the screen you came from.
+	assert(not board.custom_room_repeat)
+	assert(board.custom_repeat_rect.size.x > 0.0 and board.custom_start_rect.size.x > 0.0)
+	assert(not board.custom_repeat_rect.intersects(board.custom_start_rect))
+	assert(board.custom_panel_rect.encloses(board.custom_start_rect))
 
 	# Add opens the kind page; choosing appends.
 	assert(board.custom_add_rect.size.x > 0.0)
@@ -142,12 +150,17 @@ func _initialize() -> void:
 	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))
 	assert(board.state.carried_xp == RunStateScript.xp_for_character_level(4))
 	board.setup_stage = "root"
-	board.setup_dev_section = "survey"
 	board.custom_room_roster.clear()
 	board.custom_room_formation = ""
 	board.custom_room_hp = 1.0
 	board.custom_room_level = 1
 
+	# This block exercises an ordinary survey. The board clears the custom roster on every
+	# _start_run(); a direct state.start_run() does not, so the harness must say so itself
+	# or it inherits the composition the previous block built -- and a one-shot custom room
+	# would then end the run where this expects a second room.
+	board.state.custom_room_kinds.clear()
+	board.state.custom_room_repeat = false
 	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
 	board.visual = board.state.snapshot(true)
 	board._sync_setup_controls()
@@ -170,6 +183,7 @@ func _initialize() -> void:
 	var selected_button: Button = board.survey_rating_buttons["want_again"][3]
 	assert(selected_button.get_theme_color("font_pressed_color").get_luminance() > 0.9)
 	board._submit_survey_feedback()
+	# An ordinary survey rolls on to the next room.
 	assert(board.state.survey_room_number == 2)
 	assert(not board.state.survey_feedback_pending)
 	board._build_survey_end_confirmation()
