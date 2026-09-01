@@ -445,7 +445,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.76"
+const GAME_VERSION := "0.2.77"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 7
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2641,10 +2641,15 @@ func basic_attack_is_available() -> bool:
 func _can_start_basic_attack() -> bool:
 	return is_player_ready() and not trial_complete and weapon_sequence_cooldown <= 0.0001 and _can_commit_physical_action()
 
+# The log is one line, occasionally two. These used to run to four sentences and arrived
+# truncated mid-word however the renderer shrank or wrapped them, which is the game
+# explaining its own rules halfway. What survives is what a player needs on entering a
+# room; the rest is discoverable by playing, which is where it was always going to be
+# learned anyway.
 func _combat_rules_intro() -> String:
 	if not uses_energy_rules():
-		return "Recovery rules: abilities and defensive techniques use cooldowns; Energy is inactive. Weapon commitment is shared with Energy rules."
-	return "Energy rules: physical actions and Dodge spend Energy, and it regenerates continuously — only a hit interrupts it. Emptying it exhausts you: attacks lock and you move at less than half speed until your breath returns. A Dodge is still available while exhausted, but it empties the bar again and restarts the clock."
+		return "Recovery rules: abilities and defences run on cooldowns. Energy is inactive."
+	return "Energy rules: acting and dodging spend Energy, which refills unless you are hit. Empty it and you are exhausted."
 
 func _can_commit_physical_action() -> bool:
 	return not uses_energy_rules() or not energy_actions_locked()

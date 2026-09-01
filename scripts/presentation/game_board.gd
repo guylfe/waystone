@@ -3125,7 +3125,10 @@ func _draw_player() -> void:
 	elif float(visual.get("weapon_sequence_cooldown", state.weapon_sequence_cooldown)) > 0.0001 and state.player_weapon_frame == "twin_knives":
 		_draw_sequence_recovery(pos, radius, float(visual.get("weapon_sequence_cooldown", state.weapon_sequence_cooldown)))
 	var phase := _phase(action)
-	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.2, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 4.4, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
+	# radius x 4.4 clipped "FOLLOWING THROUGH" to "FOLLOWING THR". 0.2.66 widened the enemy
+	# readout for exactly this and never checked the player's, which is its own draw site --
+	# the same defect surviving on the side the player looks at most.
+	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
 	var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
 	if exhaustion > 0.0001:
 		var lock_ratio := clampf(exhaustion / state.EXHAUSTION_DURATION, 0.0, 1.0)
@@ -3626,6 +3629,30 @@ func _draw_effect(effect: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, center + Vector2(-100.0, -40.0 - progress * 35.0), label, HORIZONTAL_ALIGNMENT_CENTER, 200.0, maxi(14, int(18.0 * world_scale)), Color(color, alpha))
 	draw_arc(center, radius, 0.0, TAU, 18, Color(color, alpha), maxf(2.0, 5.0 * alpha))
 
+# The log line is one line, and draw_string simply stops when it runs out of room -- the
+# room-intro message was arriving as "...physical actions and Dodge spe". A telegraph that
+# cannot finish its own sentence is the same defect as a phase readout that cannot finish
+# its own word, and the game says things here the player is meant to act on. Shrink to fit
+# rather than truncate, down to a floor where it would stop being readable.
+func _message_font_for(text: String, allowance: float, preferred: int) -> int:
+	var chosen := preferred
+	while chosen > 11 and ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, chosen).x > allowance:
+		chosen -= 1
+	return chosen
+
+# Shrink a little, then wrap. The room-intro line explains the rules of the profile being
+# played and was arriving as "...and it regenerates continuously - o": long enough that no
+# readable single-line size fits it. A second line costs nothing here and the alternative is
+# the game explaining itself halfway.
+func _draw_log_line(text: String, baseline: Vector2, allowance: float, preferred: int) -> void:
+	var chosen := _message_font_for(text, allowance, preferred)
+	var fits := ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, chosen).x <= allowance
+	if fits:
+		draw_string(ThemeDB.fallback_font, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, allowance, chosen, Color("d9ded8"))
+		return
+	var lifted := baseline - Vector2(0.0, float(chosen) * 1.15)
+	draw_multiline_string(ThemeDB.fallback_font, lifted, text, HORIZONTAL_ALIGNMENT_LEFT, allowance, chosen, 2, Color("d9ded8"))
+
 func _draw_player_damage_overlay() -> void:
 	var intensity := 0.0
 	for effect in Array(visual.get("effects", [])):
@@ -4084,11 +4111,11 @@ func _draw_hud() -> void:
 	var y := board_rect.end.y - font * 0.7
 	if size.y >= size.x:
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + 10, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.25, font, Color("f0ddd7"))
-		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.7, font, Color("d9ded8"))
+		_draw_log_line(text, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), board_rect.size.x * 0.7, font)
 	else:
 		var left := board_rect.position.x + 10.0
 		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 1.75), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, font, Color("f0ddd7"))
-		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 0.40), text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, maxi(10, font - 2), Color("d9ded8"))
+		_draw_log_line(text, Vector2(left, board_rect.end.y - font * 0.40), board_rect.size.x - 20.0, maxi(10, font - 2))
 	if held_movement and pointer_down:
 		draw_line(touch_start, touch_current, Color(DODGE_COLOR, 0.55), 4.0)
 		draw_circle(touch_current, 8.0, DODGE_COLOR)

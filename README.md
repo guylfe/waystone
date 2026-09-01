@@ -1,7 +1,28 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.76` (Android version code `276`).
+Current prototype version: `0.2.77` (Android version code `277`).
 
+## v0.2.77 — milestones A to D finally get looked at
+
+Milestones A through D — combo continuation, post-hit hyperarmor, attack capture and the Wait rework, Sweeping Cut — have been in the game since `0.2.33` and had only ever been verified headless. The caster equivalent of this pass found five defects in one sitting, so the odds that four milestones of player-facing mechanics were clean without anyone ever looking were never good.
+
+`tests/milestone_visual_audit.gd` joins the caster audit as a standing instrument: ten frames covering a combo mid-swing and at its link point, a hit landing under post-hit protection, a Boar's charge wind-up, Wait, both Sword Arts, and — for the first time in the project — **the Ox**, the last roster kind that had never been seen in play.
+
+It is render-dependent and not in the headless list, and like the caster audit it is deliberately not pass/fail. No assertion can tell you a telegraph is unreadable.
+
+### What it found
+
+**The player's phase readout was clipping.** "FOLLOWING THROUGH" arrived as "FOLLOWING THR". `0.2.66` widened this exact field for enemies after "DRAWING BREATH" came out as "DRAWING BREAT" — and the player's readout is a separate draw site that was never checked. The same defect surviving on the side the player looks at most.
+
+**The log line could not finish a sentence.** The room-intro message arrived as "...physical actions and Dodge spe". It shrinks to fit now, and wraps to a second line when shrinking is not enough.
+
+**And the message itself was a paragraph.** Even wrapped it ran off the end, because the Energy-rules intro was four sentences long. A log line is a line, occasionally two. What survives is what a player needs on entering a room; the rest was always going to be learned by playing, which is where it was being learned anyway.
+
+### What held up
+
+Post-hit protection reads clearly — "REELING", the figure, the vignette, and a message that says exactly what just happened. Sweeping Cut's arc covers its three targets legibly. The Boar's crouch and the Ox's charge both announce themselves. The combo's held state is unambiguous on the attack control.
+
+Four milestones, three defects, all of them in text rather than in geometry — which is its own finding, and a mildly encouraging one.
 ## v0.2.76 — the four repairs the 0.2.72 survey asked for
 
 **Cold Front costs a fraction of what it did.** 9 per tick down to 3 — about 15 damage a second against a Mage, and the listed death source of that run. Frost is what the ability is for: it slows the whole action and softens the next hit, and the damage was never the payload. A heavily armoured body now walks through taking almost nothing and is frosted anyway, which is the correct reading of it.
