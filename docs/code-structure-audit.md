@@ -6,7 +6,7 @@
 
 **Scope:** Where the source repeats itself, what that has already cost, and what to unify. Every proposal must leave gameplay identical — this is about how the rules are written, never about what they are.
 
-**How to read this file.** Two audits, then a decision layer that resolves them. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan. The two audits below it are the evidence and the reasoning, kept intact and attributed.
+**How to read this file.** Three audits and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation** at the end: it is the newest, it is not yet planned or executed, and it explains why the second audit's own instruments could not see the class of defect it describes.
 
 ---
 
@@ -369,3 +369,132 @@ This ordering is offered for comparison with the original **4 → 2 → 6 → 3 
 10. Expand faction handling through the shared actor/effect-resolution boundary.
 
 As in the original audit, mechanically splitting `run_state.gd` should not be the first move. These changes should create real ownership boundaries first; files can then shrink along those boundaries instead of becoming several smaller modules with the same hidden coupling.
+
+---
+
+# Third audit — a boundary is not a representation
+
+**Recorded:** 2026-09-02, against `0.2.78`. Prompted by a Chanter legibility bug that turned out to be structural rather than cosmetic.
+
+**Note on scope:** this was written against `0.2.78` in the local checkout. The long optimization pass was not present in the tree when this was audited, so every line reference below needs re-checking against it. The *shapes* are independent of that work; the line numbers are not.
+
+## The bug that started it
+
+Chant marks — haste, bulwark, ward, each with an authored colour and a distinct shape so the colour is never load-bearing — have never once been drawn. `_draw_chant_marks()` is correct and is called correctly. It reads `enemy.get("chants", {})` from the dictionary the renderer was handed, and that dictionary is built by `_enemy_presentation()`, a hand-written list of seventeen keys. `chants` is not one of them, so the function returns on its first line, every frame, in every room, since it shipped.
+
+Enemy `conditions` — burn and frost — are missing from the same list, and have no drawing code at all. The Elementalist's entire payload is invisible on the target it is applied to.
+
+## The root, which is one line
+
+`_actor_storage()` is the function whose stated job is *give me this actor's state* (`run_state.gd:3472`):
+
+```gdscript
+func _actor_storage(actor: Variant) -> Dictionary:
+	if actor is Dictionary: return Dictionary(actor)
+	var actor_id := int(actor)
+	return {} if actor_id == 0 else _enemy_by_id(actor_id)
+```
+
+**For the player it returns nothing.** Enemy state is a dictionary; player state is thirty-two `var player_*` scalars on `RunState`. There is no shared representation, so every actor-generic function in the boundary is a translation layer, and each one has to branch:
+
+| function | player branch | enemy branch |
+|---|---|---|
+| `_change_actor_hp` | `player_hp` clamped inline | `storage["hp"]` |
+| `_apply_actor_posture_damage` | `player_posture` **and** `player_posture_recovery_delay` inline | delegates to `_apply_posture_damage` |
+| `_set_actor_impulse` | `player_gale_velocity` | `storage["gale_velocity"]` |
+| `_apply_actor_condition_buildup` | `apply_player_condition_buildup` | `apply_enemy_condition_buildup` |
+| `actor_view` | seven fields assembled by hand | seven fields read from storage |
+| `_faction_of` | literal `"player"` | `storage["faction"]` |
+
+Note the asymmetry in the posture row: the player's recovery delay is authored *inside the boundary function* and the enemy's is not, so the two already differ in more than storage.
+
+The condition row is the one that broke. It is a **dispatcher**, not a generalisation — one name over two complete implementations, one of which grew accessors, a fraction, a meter and a renderer while the other grew none of those things. It is also, literally, the line `CLAUDE.md` forbids:
+
+> A rule about who an effect may touch → `_faction_of()` / `_opposes()` / `actor_view()` — **never `if actor_id == 0`**
+
+## Why the second audit did not find it
+
+Three reasons, and all three are reusable.
+
+**1. It unified the verbs and left the nouns split.** `_change_actor_hp(actor, -damage)` reads as finished from every call site. So does `_apply_actor_condition_buildup(actor, id, amount)`. An audit that greps for *duplicated call sites* finds nothing, because there is exactly one call site. The duplication is behind the door, and the door looks shut.
+
+The distinguishing question is not *"is there one entry point?"* but **"is there one representation?"** A boundary over an unshared representation is a place duplication is guaranteed to accumulate, because every new per-actor fact costs a new branch in a new `_x_actor_y()`. Conditions is what that looks like after a few rounds.
+
+**2. The schema's scope stops at the top level.** `state_field_schema.gd` contains **zero** occurrences of the string "enemy". It governs top-level `RunState` scalars — which is precisely why `barriers` was found and fixed in that pass, and precisely why the per-enemy projection was not looked at. The instrument built to prevent field-drop bugs cannot see the nested case.
+
+**3. Tests assert behaviour, and both implementations behaved.** Nothing was wrong with either condition system on its own. The defect is an *absence* — one of them never acquired a presentation. No assertion fails on an absence nobody wrote.
+
+## The three shapes, stated generally
+
+**Shape A — a boundary over an unshared representation.** One actor-generic function name; two storages behind it. Recognisable by a branch on identity (`actor_id == 0`) inside something whose signature promises not to care.
+
+**Shape B — a hand-listed projection.** A dictionary literal that enumerates fields for a consumer. Adding a field elsewhere does not add it here, and the failure is silent: no error, no warning, just something absent from the picture.
+
+**Shape C — a capability expressed as an identity.** A rule gated on `kind == "shield"` rather than on a property the archetype carries. Correct until a second kind needs the same capability, then quietly wrong.
+
+## Findings
+
+### Shape A — boundaries over split state
+
+| # | Where | What |
+|---|---|---|
+| A1 | `_actor_storage` `run_state.gd:3472` | Returns `{}` for the player. **The root of every row below.** Giving the player a storage dictionary of the enemy's shape collapses the whole boundary into field access. |
+| A2 | `_apply_actor_condition_buildup:3509` → `apply_player_condition_buildup:5196` / `apply_enemy_condition_buildup:5225` | Dispatcher over two implementations. Enemy conditions have no accessor, no fraction helper, no renderer. |
+| A3 | `_apply_actor_posture_damage:3512` | Player branch also owns `player_posture_recovery_delay`; the enemy branch has no equivalent. The two posture models have already diverged. |
+| A4 | `_player_personal_tempo:2618` / `_enemy_personal_tempo:2960` | The same concept, twice, for the two actor types. |
+| A5 | `_set_actor_impulse:3519` | `player_gale_velocity` vs `storage["gale_velocity"]` — one concept, two storages, which is what A1 forces. |
+
+### Shape B — hand-listed projections
+
+| # | Where | What |
+|---|---|---|
+| B1 | `_enemy_presentation:9645` (17 keys) vs `PresentationFrame._copy_enemy` (13 keys) | **Two independent hand-written enemy projections that must agree, and already do not.** The streamed path is missing `revealed_to_player`, `revealed_elapsed`, `attributes`, `weapon_frame`, `equipped_weapon_art`. None are read by the renderer today, so this is latent — but the moment one is, it will work in frozen time and fail during movement, which is the exact Earth Wall signature and the hardest shape to catch. |
+| B2 | `PresentationFrame.blend()` | `capture()` gets its scalars from the schema; `blend()` hand-lists the same keys in three literal arrays. A field added to the schema is captured and then dropped during blending. **The bug the schema was built to prevent, surviving in the sibling function.** |
+| B3 | `chants`, `conditions` | Missing from both enemy projections. B1 and B2 are why fixing one of them would not have been enough. |
+
+The fix for all three is the same: a per-enemy field schema alongside the top-level one, with both projections and `blend` generated from it rather than transcribed.
+
+### Shape C — capabilities written as names
+
+Eleven rules in `run_state.gd` gate on an enemy's name rather than on a property:
+
+| Capability | Gated on | Sites |
+|---|---|---|
+| Blocks incoming from the front | `kind == "shield"` | `6105` |
+| Parry and riposte | `kind == "duellist"` | `6128`, `6138` |
+| Ambush / opens unrevealed / `dodge_strike` | `kind == "bandit"` | `2496`, `2975`, `5837`, `6166`, `6843`, `6851`, `7712` |
+| Fires a firebolt rather than an arrow | `kind == "fire_caster"` | `8080` |
+
+`combat_catalog.gd` **already has the home for these** — a `properties` block, currently carrying `armor`, `fire`, `ice`, `mass`, `offhand` and `vision_range`. `mass` is the model to copy: `PUSHABLE_MASS` is one line deciding what can be shoved, and no rule anywhere asks whether something is an Ox. Every row above should become a property.
+
+The Shieldbearer is the live case. `_enemy_blocks_incoming` is otherwise an exemplary generalisation — its comment records being widened from melee-only after a survey found a screen that did not screen arrows — but it still opens with `if kind != "shield": return false`, so a Knight cannot raise a guard and neither can either unbuilt boss.
+
+`game_board.gd` carries **85** `kind == "…"` branches. Many are legitimate — drawing a silhouette *is* identity — but this is the file where CLAUDE.md already records "a cone drawn as a circle, a caster drawing a bow it does not carry", and the count is worth a pass of its own rather than a line in this table.
+
+### Shape C, second instance — a rule wired to one caller
+
+`_archer_has_clear_lane()` (`7545`) refuses a shot with an ally on the firing line. It is called from **exactly one place**: the archer's branch at `7215`. The Javelineer does not check. Neither does any caster.
+
+The projectile loop then justifies its friend-blind collision rule *by* that check (`run_state.gd:8447`):
+
+> "This is safe because `_archer_has_clear_lane()` already refuses a shot with an ally on the firing line — archers aim around their own people — so friendly fire happens only when something changes AFTER commitment: a shot is bent, or a body walks into the line."
+
+**The source states an invariant that is true for one enemy kind and false for every other.** This is Shape C at its most expensive: not a missing feature, but a documented guarantee the code does not provide, being used to justify a second rule.
+
+Two changes make the comment true: give every shooter the check, and evaluate it at **release** rather than at decision — the archer's own 0.60s wind-up is ample time for a Boar to walk into a lane that was clear when it committed.
+
+### Adjacent finding — spawn settling has no body term
+
+`_survey_settle_spawn()` (`1740`) resolves each body against obstacles, the player and the arena rim, **with no term for other bodies**. Both of its rules collapse toward common points: anything near an obstacle is pushed to `centre + away × (size × 0.72 + 90)`, and anything inside 360 of the player is pushed out to exactly 360. Three bodies shoved off one central obstacle land on one arc at one radius.
+
+This is why enemies arrive huddled in arenas like `central_cover` regardless of the formation chosen — the formation authors the spacing and the settler destroys it. Its neighbour already admits the failure mode: *"a formation whose seats all need pulling in arrives squashed against the edge."* It needs a separation pass against already-placed bodies.
+
+## What this changes about how to audit
+
+The second audit asked *"where does the source repeat itself?"* and found real duplication. This one came from a rendering bug and landed on a representation problem three layers down.
+
+The question that would have found it:
+
+> **For each fact an actor can carry, how many places must agree, and is there a mechanism that makes them agree — or only a convention that they should?**
+
+By that test: HP is fine (one boundary, two shallow branches). Conditions were not. The enemy projection is not, twice over. The firing-lane rule is not, and says so in a comment.
