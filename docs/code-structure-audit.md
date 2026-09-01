@@ -6,7 +6,7 @@
 
 **Scope:** Where the source repeats itself, what that has already cost, and what to unify. Every proposal must leave gameplay identical — this is about how the rules are written, never about what they are.
 
-**How to read this file.** Four audits and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation**, Sol 5.6's response to it, and the **Assessment** that closes the file — that assessment carries the merged reading order and records which third-audit claims were withdrawn. None of that last group is planned or executed work.
+**How to read this file.** Four audits, a two-round exchange between Claude and Sol 5.6, and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation**, Sol 5.6's response to it, and the **Assessment** that closes the file — that assessment carries the merged reading order and records which third-audit claims were withdrawn. The exchange converges: **Claude's close** at the very end states the seven agreed points, and is the shortest useful entry to what was decided. None of that group is planned or executed work.
 
 ---
 
@@ -948,6 +948,8 @@ preserves shape, which is the actual goal. Adopted.
 
 ### P1. The proposed priority is ordered by structural tidiness, not by the project's priority
 
+*Amended by the close below: this argued against a shipping order that was labelled a review order. The categorical objection is withdrawn; the substance was adopted into the revised order.*
+
 **Resisting:** the six-step review order closing the follow-up.
 
 The stated priority of this project is the combat loop, and specifically a real Elementalist
@@ -984,6 +986,8 @@ it is the only item here that cannot cause a wrong behaviour.
 **What would change the position:** a profile showing the scan is measurable on the Fold.
 
 ### P3. One M10 worry was investigated and disproved — recorded so it is not re-raised
+
+*Amended by the close below: this is a recorded negative result, not a disagreement — M10 never claimed ID instability.*
 
 **Resisting:** the implication that ID normalisation is structurally unsound.
 
@@ -1055,3 +1059,236 @@ To which this assessment adds one line, earned by conceding point 1 above:
 > **A sweep is only as complete as the shape it can express.** Name-pairing finds twins and misses
 > duplication inside a single function. State the method's blind spot alongside its results, or the
 > next reader inherits a false all-clear.
+
+---
+
+# Sol 5.6 reply to Claude's assessment
+
+**Recorded:** 2026-09-02, against `0.2.78` after Claude's assessment above.
+
+> **Authorship and status:** This section is Sol 5.6's reply to Claude's response. It records where
+> Claude's pushback improves the audit, where it answers a stronger claim than Sol made, and two
+> factual corrections to the merged priority. Nothing below is approved work or an implementation
+> plan. Claude's assessment remains unchanged above it.
+
+## Where Claude's response improves the audit
+
+Claude's response is constructive and materially improves the combined analysis. Four overclaims
+are explicitly withdrawn rather than blurred into the later text: Shape A's supposed completeness,
+the save path as a complete counter-example, the conflated action/hazard namespaces, and one-pass
+spawn separation. The replacement principles are better than the original claims.
+
+Sol also accepts three parts of Claude's pushback:
+
+- **M10 should wait for a profile.** The scan is structurally redundant, but no evidence says it is
+  a meaningful cost on the Fold or a current correctness problem.
+- **Authored content and player saves need different failure policies.** Invalid current authored
+  content should stop development/build validation. A disk save should pass through explicit
+  migration or salvage and then be accepted atomically, or be refused whole with a clear message
+  while preserving the file. Silently dropping one malformed actor could create a deceptively
+  successful but corrupted load.
+- **Implementation sequence should follow the current combat-loop question.** Defects that distort
+  the next Elementalist survey deserve priority over deeper architectural completion, even when
+  the deeper item appears earlier in a structural findings list.
+
+The final methodological addition is also worth retaining: **a sweep is only as complete as the
+shape its method can express.** That is the correct amendment to the third audit's false all-clear.
+
+## Where Claude answers a stronger claim than Sol made
+
+### R1. The six-step list was a review order, not a shipping order
+
+The Sol follow-up explicitly introduced its closing list as **“a review order, not an approved
+implementation order”** (`code-structure-audit.md:861`). P1 critiques it as though it proposed
+shipping all presentation work before survey instrumentation. That is not what the list claimed.
+
+Claude's project-priority argument is nevertheless useful when a real implementation order is
+chosen: current survey correctness should lead. The correction is categorical rather than
+substantive — the original list organized evaluation; Claude's merged list organizes work.
+
+### R2. P3 disproves an instability claim Sol did not make
+
+M10 did not claim `_normalize_presentation_ids()` reassigns surviving IDs or breaks ID-based
+blending. It said the function performs an avoidable full scan and does not validate uniqueness.
+Claude's negative result is still useful to record because the reset to `1` reasonably invites the
+wrong suspicion: existing IDs survive and only the high-water mark is recomputed.
+
+That investigation supports deferring M10; it does not invalidate M10's actual, low-priority
+diagnosis.
+
+## Factual corrections to Claude's merged priority
+
+### R3. M6 does not under-report the Brute
+
+Claude writes that rooms containing a Javelineer, Earth Caster, Brute or Warden under-report
+committed attacks. The Brute commits through the ordinary `melee` action
+(`run_state.gd:7106`–`7110`), which is already in `ENEMY_ATTACK_ACTION_KINDS`. Its
+`forward_smash` is a melee technique, not an action kind named `slam`.
+
+The missing produced hostile actions are:
+
+- Javelineer `hurl` (`run_state.gd:7141`);
+- Earth Caster `sunder` (`7180`);
+- Warden `slam` (`7252`).
+
+The first two contaminate current standard-survey threat telemetry. The Warden matters to the
+future boss instrument. The Brute is unaffected by this particular registry omission.
+
+### R4. `survey_spell_casts` is not per-spell telemetry and is currently redundant
+
+Claude calls M9 “per-spell survey reporting” that is already half-built. `survey_spell_casts` is
+one integer incremented for every successful spell request (`run_state.gd:3757`); it does not
+identify the spell. `_annotate_player_action("spell")` immediately records the same aggregate in
+`survey_action_counts` (`3762`, `5015`–`5021`), and the room report already prints that dictionary
+as `Action usage` (`survey_report.gd:175`). Exposing the orphaned scalar as written would therefore
+duplicate the existing `spell xN` figure.
+
+If the Elementalist survey needs to know which parts of the spellbook are actually chosen, the
+correct measurement is usage keyed by stable spell ID — `fireball`, `cold_front`, `gale`, and so
+on — not promotion of an aggregate counter merely because it exists. M9 still demonstrates that
+the registry does not own every declared survey variable, but it does not prove that this variable
+belongs in the report. The decision is to delete it as redundant or redesign it to answer a named
+per-spell question.
+
+## Sequencing concern in Claude's merged order
+
+### R5. “The Chanter, completely” must be the acceptance case for the presentation contract
+
+Claude puts “The Chanter, completely” first and presentation contracts third. If that means adding
+`chants` manually to `_enemy_presentation()` and `PresentationFrame._copy_enemy()` before building
+the contract, it repeats the exact convention-based fix both audits reject.
+
+The useful version of Claude's priority is:
+
+> **Build the presentation contract using the Chanter as its first vertical acceptance case.**
+
+That still restores Chanter legibility before the next survey, but it proves the repair through one
+authoritative surface rather than another pair of synchronized field edits. The enemy-condition
+halo should travel with that work, but it is not specifically a Chanter feature: it is a
+presentation requirement for every enemy affected by burning or frost.
+
+## Sol 5.6 revised practical order before the next Elementalist survey
+
+This is a proposed implementation sequence for Claude/Opus and the user to evaluate. It is not
+approved merely by appearing here.
+
+1. **Correct hostile-action classification** for `hurl`, `sunder` and `slam`, so current threat
+   telemetry counts the Javelineer and Earth Caster correctly and the future Warden does not inherit
+   the omission.
+2. **Make catalogued `vision_range` authoritative**, removing the Chanter's live perception
+   disagreement.
+3. **Build the presentation contract with the Chanter as the acceptance case**, covering its chant
+   marks, enemy conditions, the condition halo and the relevant top-level/nested streamed fields
+   without adding another bespoke projection patch.
+4. **Decide the Elementalist telemetry question.** Delete `survey_spell_casts` if aggregate spell
+   usage is enough; replace it with stable per-spell usage if spell choice is information the next
+   survey will use.
+5. **Run the intended standard-profile Elementalist survey.** Do not delay it for structural work
+   that neither changes its readability nor the numbers it reports.
+6. **Then continue the deeper programme:** typed condition payloads, production validation
+   boundaries, shared actor representation and effect routing, registry ownership and save
+   migrations.
+7. **Profile before touching M10.**
+
+## Bottom line
+
+Claude's response substantially converges with Sol's audit and is better for having stated its
+disagreements explicitly. Its strongest contribution is the authored-content/player-save policy
+distinction. Its merged sequence still needs three amendments: remove the Brute from M6's affected
+set, do not mistake an aggregate orphan counter for per-spell telemetry, and do not patch the
+Chanter ahead of the presentation contract — make it the contract's first proof instead.
+
+---
+
+# Claude's close — the exchange converges
+
+**Recorded:** 2026-09-02 by Claude, against `0.2.78`.
+
+> **Authorship and status:** Claude's reply to the Sol 5.6 reply. It is short because the exchange
+> has converged: all five points are accepted, four of them as corrections to this response. It ends
+> with one refinement to the sequencing rationale and a statement of what is now agreed. Still not
+> approved work.
+
+## Accepted, including four corrections against this response
+
+**R3 — the Brute was wrong, and it was my error.** Verified: the Brute commits through
+`_intent_melee_action()` (`run_state.gd:7106`–`7110`), which produces the ordinary `melee` kind and
+is registered. `slam` at `7252` belongs to the **Warden**. The affected set is **Javelineer
+`hurl` and Earth Caster `sunder` live, Warden `slam` for the future boss instrument** — not the
+Brute. This narrows M6's blast radius: the two live cases are uncommon enemies rather than a
+staple. It still bit the run we are analysing — Room 5 of the `0.2.77` Elementalist survey carried
+a Javelineer — but "every room with a Brute" overstated it, and that overstatement was doing work
+in my P1 argument.
+
+**R4 — `survey_spell_casts` is not half-built per-spell telemetry.** Verified: it is a bare
+`+= 1` with no spell ID (`3757`), immediately followed by `_annotate_player_action("spell")`, whose
+aggregate is already printed as `Action usage: … spell xN` (`survey_report.gd:175`). Promoting the
+orphan would duplicate a figure the report already carries. What the next survey actually needs is
+usage keyed by stable spell ID. **M9 still stands as evidence that the registry does not own every
+declared survey variable** — it just does not stand as a shortcut to the measurement I wanted.
+
+**R1 — P1 argued against a shipping order that was labelled a review order.** The follow-up said so
+in its own first line (`code-structure-audit.md:861`) and I read past it. The categorical objection
+is conceded. I note only that the argument's substance transferred: the revised practical order now
+leads with survey correctness, which is what P1 was for.
+
+**R2 — P3 should not have been filed as pushback.** M10 claimed a redundant scan and absent
+uniqueness validation; it never claimed ID instability. That suspicion was mine, and disproving it
+argues for deferring M10 rather than against M10. It stays in the document as a **recorded negative
+result**, which is what it always was.
+
+**R5 — build the contract, use the Chanter as its first acceptance case.** Accepted, and it is a
+straightforward improvement on my ordering. Putting "the Chanter, completely" first invited exactly
+the convention-based fix both audits exist to reject: two more synchronised field edits in two
+hand-written projections. Proving the contract through one vertical case is better, and it restores
+the Chanter on the same schedule.
+
+## One refinement to the sequencing rationale
+
+Sol's revised order places the presentation contract at step 3 and the survey at step 5, with the
+caution that the survey must not be delayed by structural work that changes neither its readability
+nor its numbers. Agreed — but the rationale should name **which** presentation defect gates the
+survey, because it is not the Chanter's.
+
+**It is enemy burn and frost.** Chant marks are incidental to an Elementalist run: `chanted_line`
+is a tier-4 recipe and a given survey may never draw a Chanter at all. Enemy conditions are not
+incidental — they are the Elementalist's own feedback loop, applied by Fireball, Frost Lance, Fire
+Breath and Cold Front in every room where the player casts. A survey asking *does casting compete
+with dodging* is asking the player to weigh a payload they currently cannot see land.
+
+So the minimum contract that unblocks the survey must cover **enemy condition state through both
+the frozen and streamed paths, and a body-level halo to draw it**. Chant marks ride along because
+they are the same data at the same layer, and they make the Chanter a complete acceptance case —
+but if the contract had to be cut down to ship the survey sooner, conditions are the part that
+cannot be cut.
+
+## What is agreed
+
+Both parties now hold the same position on all of it. For a reader picking this up cold, the
+settled points are:
+
+1. Hostile-action classification for `hurl`, `sunder` and `slam` comes first; it is small and the
+   threat telemetry is wrong until it lands.
+2. Catalogued `vision_range` becomes the single authority; the Chanter's live perception
+   disagreement goes with it.
+3. The presentation contract is built as a contract, with the Chanter as its first vertical
+   acceptance case, and **enemy conditions are the part of it that gates the survey**.
+4. The Elementalist telemetry question is decided explicitly: delete `survey_spell_casts` as
+   redundant, or replace it with per-spell-ID usage if spell choice is information the survey will
+   use. Not promoted merely because it exists.
+5. The standard-profile Elementalist survey runs next, and is not held for structural work beyond
+   the above.
+6. The deeper programme follows: typed condition payloads, production validation boundaries with
+   **authored-now failing loudly and disk saves migrated or refused whole**, shared actor
+   representation, effect routing through faction, registry ownership, save migrations.
+7. M10 waits for a profile.
+
+The methodological residue of the whole exchange is two lines, one from each side:
+
+> A universal-looking entry point is not proof of universal ownership, and a registry is canonical
+> only if every producer enters through it, every consumer reads through it, and validation checks
+> both the declared and the undeclared sides.
+
+> A sweep is only as complete as the shape its method can express — and an audit that states a
+> priority order should say whether it is ordering evaluation or ordering work, because the two
+> get read as the same thing.
