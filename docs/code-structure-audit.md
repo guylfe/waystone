@@ -1309,6 +1309,40 @@ evidence of success is that nothing changed.
 *Gameplay* items deliberately change what the game does. No version should mix the two — a survey
 cannot falsify a tuning change that shipped alongside a refactor.
 
+## These are two tracks, not five sequential phases
+
+An earlier draft of this plan numbered the phases in a line, which implied Phase 4 waits for the
+survey. It does not. **Phase 4 is behaviour-preserving by definition, so nothing in it blocks the
+survey, and nothing in Phase 3 blocks it.** The phases below are grouped by kind, and the real
+constraints are these and only these:
+
+**Track S (structural):** Phases 0, 1, 2, 4.
+**Track G (gameplay):** Phase 3.
+
+**Hard dependencies:**
+
+- `0.1`, `0.2` (golden run) → **all of Phase 4**, and especially `4.3`. The refactor's only proof is
+  that hashes do not move; the instrument must be able to see the systems it would break first.
+- `0.3` (hostile-action classification) → `3.5`. The survey reports threat telemetry that is
+  currently wrong.
+- `0.4` (telemetry decision) → `3.5`.
+- `2.4` (enemy condition halo) → `3.5`. The caster cannot weigh a payload they cannot see land.
+- `3.1`–`3.4` → `3.5` → `3.6`. Changes must ship before the survey that falsifies them.
+
+**One shared resource, which is the only reason the tracks need coordinating at all.** Both tracks
+change the golden-run baseline: Track G legitimately, Track S never. If both are in flight when the
+baseline is re-recorded, a moved hash is ambiguous — refactor bug, or intended tuning? So the rule
+is not an ordering but an interlock: **re-baseline only with one track's changes outstanding, and
+say in the commit which track moved it.**
+
+**One practical exception to parallelism.** `4.3` (one actor representation) rewrites every
+actor-generic function and the regions around them in a 10,222-line file. It should not run
+concurrently with gameplay work in the same file. The smaller structural items — `4.1`, `4.5`,
+`4.7` — are localised and parallelise fine.
+
+**Recommended:** run Track S continuously, and take Track G in one focused pass when Phase 0 and
+`2.4` are done, pausing `4.3` for its duration.
+
 ---
 
 ## Phase 0 — make the instruments trustworthy
@@ -1456,7 +1490,7 @@ tests.
 
 ## Phase 4 — the deeper structural programme
 
-Ordered so each item makes the next safer. Phase 0 must be complete before 4.3.
+Ordered so each item makes the next safer. **Phase 0 must be complete before 4.3**, and 4.3 alone should not run concurrently with Track G. Nothing here waits for the survey.
 
 **4.1 — Typed effect payloads.** *(M5.)* `_apply_source_condition_to_player` decides which condition
 an ability applies by substring-matching `ice`/`frost`/`cold`/`fire`/`burn` against a **display
