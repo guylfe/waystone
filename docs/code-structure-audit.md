@@ -1302,8 +1302,10 @@ third audit, the Sol 5.6 follow-up, both replies and the survey findings into on
 supersedes the individual priority lists above as the thing to work from; those remain as the
 reasoning behind it.
 
-Every item names what "done" means, because several of these are the kind of change whose only
-evidence of success is that nothing changed.
+**Every item that changes behaviour, and every item whose success would otherwise be invisible,
+names what "done" means.** Several Phase 4 items do not yet, because their acceptance depends on
+decisions this plan defers; they get criteria when they are scheduled, and must not be started
+without them.
 
 **Two conventions.** *Structural* items change how rules are written and must not change gameplay.
 *Gameplay* items deliberately change what the game does. No version should mix the two — a survey
@@ -1323,11 +1325,13 @@ constraints are these and only these:
 
 - `0.1`, `0.2` (golden run) → **all of Phase 4**, and especially `4.3`. The refactor's only proof is
   that hashes do not move; the instrument must be able to see the systems it would break first.
-- `0.3` (hostile-action classification) → `3.5`. The survey reports threat telemetry that is
+- `0.3` (hostile-action classification) → `3.0`. The baseline reports threat telemetry that is
   currently wrong.
-- `0.4` (telemetry decision) → `3.5`.
-- `2.4` (enemy condition halo) → `3.5`. The caster cannot weigh a payload they cannot see land.
-- `3.1`–`3.4` → `3.5` → `3.6`. Changes must ship before the survey that falsifies them.
+- `0.4` (per-spell usage) → `3.0`. The baseline cannot answer its own question without it.
+- `0.5` (survey telemetry) → `3.0`.
+- `2.4` (enemy condition halo) → `3.0`. The caster cannot weigh a payload they cannot see land.
+- `3.0` → **any** licensed experiment. The baseline decides which experiments are warranted.
+- each experiment (`3.1`, `3.2`, `3.3`) → its own evaluation → `3.4` tuning.
 
 **One shared resource, which is the only reason the tracks need coordinating at all.** Both tracks
 change the golden-run baseline: Track G legitimately, Track S never. If both are in flight when the
@@ -1372,7 +1376,7 @@ and projectile elevation.
 
 **Note on ordering within Phase 0:** adding fields to the projection changes the recorded hashes, so
 the baseline must be re-recorded. Re-baselining is only safe when current behaviour is believed
-correct, so do 0.1 and 0.2 **before** the Phase 2 gameplay changes, and re-baseline once more after
+correct, so do 0.1 and 0.2 **before** the Phase 3 gameplay changes, and re-baseline once more after
 them rather than trying to avoid a second pass.
 
 **0.3 — Correct hostile-action classification.** *(Structural. M6.)*
@@ -1383,12 +1387,17 @@ Brute is not affected** — it commits through ordinary `melee`.
 
 **Done when** a room with a winding-up Javelineer reports a pending attack.
 
-**0.4 — Decide the per-spell telemetry question.** *(Structural.)*
-`survey_spell_casts` is an orphan aggregate already duplicated by `Action usage: spell xN`. Either
-delete it as redundant, or replace it with usage keyed by stable spell ID. Not promoted merely
-because it exists.
+**0.4 — Per-spell usage, by stable spell ID.** *(Structural. Resolved decisively on Sol's
+amendment 2 — this is no longer a choice.)* The earlier draft allowed deleting the orphan and
+stopping there. It cannot: `3.0` and `3.1` both turn on **Lightning's share of casts**, and the
+aggregate `Action usage: spell xN` cannot express it. So both halves are required — delete the
+redundant `survey_spell_casts` scalar, **and** record usage keyed by stable spell ID
+(`lightning_bolt`, `fireball`, `cold_front`, `gale`, …) through the survey counter registry.
 
-**Done when** the counter is gone, or the report names spells individually.
+Without this the plan reaches its own baseline unable to answer its central question.
+
+**Done when** a room report names each spell and its count separately, and the orphan scalar is
+gone.
 
 **0.5 — Ship and verify the survey telemetry before any gameplay experiment.** *(Structural.)*
 Moved here from Phase 3 on Sol's amendment: this is instrumentation, and instrumentation must not
@@ -1404,14 +1413,26 @@ report.
 
 ## Phase 1 — single-authority fixes that are small and unblock the rest
 
-**1.1 — Catalogued `vision_range` becomes the only authority.** *(Structural. M4.)*
+**1.1 — Catalogued `vision_range` becomes the only authority.** *(**Gameplay-correctness**, not
+structural — on Sol's amendment 1.)*
 `_enemy_vision_range` (`3364`) hardcodes six long-sighted kinds; the Chanter is absent despite the
 catalog authoring `620.0` for it, so ordinary sight and death-witness perception disagree about the
 same enemy.
 
-**Done when** the hardcoded list is gone and every kind's sight comes from `properties.vision_range`.
+This **changes behaviour and will move the golden hashes**, so it cannot ship as part of Track S's
+behaviour-preserving guarantee. `SIGHT_RANGE` is `520`; the Chanter's authored value is `620`, so it
+gains 19% sight radius and will alert and reposition earlier. The evidence says `620` is intended
+rather than a value to be reconciled downward: the catalog authors it explicitly, every other
+watch-from-range kind already has it, and the Chanter's authored trait is *"hides behind them"* with
+the highest `awareness` on the roster. The omission from the hardcoded list is an oversight from
+when it was added.
 
-**1.2 — Retire the dead ability family.** *(Structural. Shape D.)*
+**Done when** the hardcoded list is gone, every kind's sight comes from `properties.vision_range`,
+and the golden baseline is re-recorded in a commit that says this moved it.
+
+**1.2 — Retire the dead ability family.** *(Structural. Shape D.)* **Done when** the four kinds,
+their executors, `_spawn_hex()`, the hazard handling, the effect labels, the phase text and the nine
+renderer branches are gone, and the golden hashes have not moved.
 `hex`, `ice_hex`, `ice_cone` and `fire_circle` have no producer — the Hexer was retired in `0.2.35`.
 They carry an executor branch, `_spawn_hex()`, hazard handling, effect labels, phase text and nine
 renderer branches. Note that catalog validation currently *requires* the dead executors, because the
@@ -1460,9 +1481,16 @@ either loses them in streamed frames (Keen Eye silhouettes, the aimed-enemy outl
 
 **Performance caveat, on Sol's amendment 6.** `visible_cells` and `discovered_cells` are Dictionaries
 sized by the floor, not by the actors on it. Deep-copying them into every streamed frame at 120 Hz
-would fix the time-authority problem by creating a worse one. They need a **revisioned or
-copy-on-change frame value** — the frame carries a revision number and a reference, and copies only
-when the underlying set actually changes, which during combat is rarely.
+would fix the time-authority problem by creating a worse one. They need a revisioned **immutable snapshot** — and on Sol's amendment 5, "a revision and a
+reference" is not enough: a frame holding a reference to the live mutable Dictionary observes later
+mutations, which is the time-authority bug intact. The mechanism must be:
+
+- duplicate visibility/discovery **only when its revision changes**;
+- retain that duplicate in a revision-keyed cache;
+- frames share the immutable snapshot;
+- **no frame ever references the authoritative mutable Dictionary.**
+
+During combat the revision rarely changes, so the copy is rare and the sharing is free.
 
 **2.3 — Per-field copy policy below the entity level.** *(M2.)* `_copy_flat_dictionary` discards
 every Array and Dictionary, so the nested `interrupted_action` the renderer uses to draw an
@@ -1512,11 +1540,24 @@ The three changes below are **separate experiments**, each its own version, each
 3.0. Run them one variable at a time, or through explicitly matched profiles if they are combined.
 
 **3.1 — Lightning Bolt.** *(Gameplay. Conditional on 3.0.)*
-The recorded design judgement stands: the problem is cheap, instantaneous damage at range, and it is
-upstream of any argument about interruption. What 3.0 decides is the **magnitude**, not the
-direction. At 11 damage and ~16.9 real Energy the bolt returns 0.65 damage per Energy against the
-staff poke's 0.55 — comparable efficiency, except the staff pays in standing at 150 units and the
-bolt pays nothing at 340. Proposed change: damage `11 → 6`.
+**On Sol's amendment 3, the previous wording precommitted to a nerf and has been withdrawn.**
+Saying the baseline decides "the magnitude, not the direction" made 3.1 unfalsifiable. **3.0 decides
+both**: whether Lightning needs intervention at all, and if so how much. If readable burn and frost
+make the elemental kit competitive and the bolt stops dominating, *no change* is a legitimate
+outcome.
+
+Two inputs are separate and both belong on the record. The **measurement** is whether the bolt
+dominates once the alternatives are legible. The **design judgement** — recorded 2026-09-02, that
+cheap instantaneous damage at range is structurally suspect regardless of whether it currently wins
+— is the user's and is not the survey's to overturn. If the baseline shows the bolt no longer
+dominating, the correct question is put back to the user: does the shape concern survive a
+non-dominant result? The plan should not answer that on its own.
+
+Supporting figures either way: at 11 damage and ~16.9 real Energy the bolt returns 0.65 damage per
+Energy against the staff poke's 0.55 — comparable efficiency, except the staff pays in standing at
+150 units and the bolt pays nothing at 340.
+
+**Proposed profile, not a settled destination: damage `11 → 6`.**
 
 **Done when** a survey after the change shows the bolt used as an opener and a finisher rather than
 as the default action, measured as: bolt casts as a share of all offensive actions falls below its
@@ -1542,8 +1583,23 @@ already carries it over bodies and recklessness is its character; casters `check
 This serves the stated lean — *misdirected arrows should have friendly fire, but not every shot* —
 without flattening the roster.
 
-**Done when** friendly-fire telemetry from Phase 0 shows stray hits concentrated in shots that were
-clear at release and blocked in flight, rather than in shots that were blocked when fired.
+**`hold` needs bounds** — on Sol's amendment 4, an unbounded hold is an indefinite telegraph. Author
+a maximum hold duration, after which the shooter abandons or repositions, and state whether facing
+stays locked during it.
+
+**Acceptance is stratified by policy, not global** — the earlier single criterion contradicted the
+policies it sat under, since a Javelineer that ignores allies produces friendly fire from a lane
+blocked at release *by design*. Per policy:
+
+- `checks_at_release` (Archer): **no** ally hits from lanes blocked at release; stray hits arise only
+  from obstruction during flight.
+- `ignores_allies` (Javelineer): ally hits from blocked lanes are expected, and its arc means most
+  clear the bodies anyway. The test is that its rate is *stable*, not that it is zero.
+- `checks_before_commitment` (casters): ally hits arise only from obstruction after commitment.
+
+**Phase 0.5 telemetry must therefore record, per shot:** shooter kind, its lane policy,
+clear/blocked at commitment, clear/blocked at release, whether obstruction arose during flight, and
+whether an ally was hit. Without those fields none of the three criteria above is measurable.
 
 **3.3 — Formation-preserving spawn relaxation.** *(Gameplay. Its own experiment.)*
 Deterministic relaxation after all seats are authored, each body attracted to its seat while
@@ -1570,8 +1626,15 @@ types, allowed kinds, value invariants or ID uniqueness; and `_add_enemy_actor()
 from disk must migrate, or be refused whole with a message** — never silently repaired one record at
 a time, which produces a deceptively successful corrupted load.
 
-**Done when** an actor record missing a required field cannot enter `enemies` from any path, and a
-malformed save is refused with a message rather than partially loaded.
+**Done when** — broadened on Sol's amendment 6, since the diagnosis covers far more than actors:
+
+- every production insertion path validates its entity class (actors, actions, projectiles, hazards,
+  barriers, effects), not just `enemies`;
+- required fields are checked for **type**, not only presence;
+- kinds are verified as registered **in the correct namespace**;
+- actor and presentation IDs are checked unique, which ID-based blending already assumes;
+- loaded current-schema collections are validated **after** migration;
+- an invalid authored entity fails the test suite and build validation rather than reaching a run.
 
 **4.1 — Typed effect payloads.** *(M5.)* `_apply_source_condition_to_player` decides which condition
 an ability applies by substring-matching `ice`/`frost`/`cold`/`fire`/`burn` against a **display
@@ -1593,8 +1656,10 @@ versus a dictionary. Includes the condition dispatcher (A2), the posture-recover
 
 **4.5 — Capabilities as properties.** *(Shape C.)* Eleven rules gate on a name: Shield blocking,
 Duellist parry (×2), Bandit ambush and `dodge_strike` (×7), Fire Caster firebolt. `properties`
-already exists in the catalog and `mass`/`PUSHABLE_MASS` is the model. Live cost: a Knight cannot
-raise a guard, and neither can either boss. Further candidates Sol names: `_shield_patience_budget`,
+already exists in the catalog and `mass`/`PUSHABLE_MASS` is the model. **On Sol's amendment 1, the "live cost" framing was wrong.** A structural refactor must not grant
+a Knight a guard. The correct structural claim is narrower: *a guard cannot currently be authored for
+another kind without adding a second identity branch.* Moving the capability into `properties` must
+**preserve "only Shieldbearers guard"** until a separate gameplay decision says otherwise. Further candidates Sol names: `_shield_patience_budget`,
 Archer-specific shot-cooldown init, Boar momentum armour, the Hound/Bandit contact-trade exemption.
 
 **4.6 — Registry ownership, both directions.** *(M9.)* `_capture_survey_room_entry`, `snapshot()`
@@ -1617,7 +1682,10 @@ negative result: it does **not** destabilise IDs — assignment is guarded by
 
 Unchanged from `CLAUDE.md`, restated so the plan is complete:
 
-1. **Werewolf and Warden as real bosses.** Both carry a `boss` role with no behaviour. **This step
+1. **Werewolf and Warden as real bosses.** Both have **provisional, unsurveyed behaviour** — not
+   none: they are produced by `floor_generator.gd` and carry live AI branches, and the Warden's
+   `slam` has a 1.02s startup. No encounter recipe names either, so nobody has played them. The work
+   is evaluating and replacing provisional behaviour, not building from nothing. **This step
    must specify its own evaluation before any of it is built** — the Combat Survey is a room-coverage
    instrument and a boss is not a room.
 2. **Survey the boss instrument**, whose first run is a falsification test of the instrument.
