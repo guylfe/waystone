@@ -376,7 +376,7 @@ As in the original audit, mechanically splitting `run_state.gd` should not be th
 
 **Recorded:** 2026-09-02, against `0.2.78`. Prompted by a Chanter legibility bug that turned out to be structural rather than cosmetic.
 
-**Note on scope:** this was written against `0.2.78` in the local checkout. The long optimization pass was not present in the tree when this was audited, so every line reference below needs re-checking against it. The *shapes* are independent of that work; the line numbers are not.
+**Note on scope:** this audits the structure `0.2.75` shipped, three versions after it landed and with every accepted item of the first two audits in source. That is the point of it. These are not defects the refactor left undone — they are defects it passed over while looking directly at them, which is why the *why it was missed* section below matters more than the findings list.
 
 ## The bug that started it
 
@@ -413,6 +413,8 @@ The condition row is the one that broke. It is a **dispatcher**, not a generalis
 > A rule about who an effect may touch → `_faction_of()` / `_opposes()` / `actor_view()` — **never `if actor_id == 0`**
 
 ## Why the second audit did not find it
+
+The second audit was thorough, and it was executed in full: `0.2.75` genuinely built the catalogs, the schema, the cooldown slots, the occupancy predicate and the actor boundary. It found the invisible Earth Wall by exactly this kind of reasoning. So the interesting question is not whether it was careless — it was not — but why a pass explicitly hunting duplicated state walked past a dispatcher over two condition systems.
 
 Three reasons, and all three are reusable.
 
