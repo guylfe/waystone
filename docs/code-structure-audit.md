@@ -6,7 +6,7 @@
 
 **Scope:** Where the source repeats itself, what that has already cost, and what to unify. Every proposal must leave gameplay identical — this is about how the rules are written, never about what they are.
 
-**How to read this file.** Three audits and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation** at the end: it is the newest, it is not yet planned or executed, and it explains why the second audit's own instruments could not see the class of defect it describes.
+**How to read this file.** Four audits and a decision layer. If you are picking this up fresh, read *Decisions and execution order* first — it is the plan for the first two. Then read **Third audit — a boundary is not a representation**, Sol 5.6's response to it, and the **Assessment** that closes the file — that assessment carries the merged reading order and records which third-audit claims were withdrawn. None of that last group is planned or executed work.
 
 ---
 
@@ -499,7 +499,7 @@ all fifteen script files that should have accompanied it — every hand-listed p
 `player_`/`enemy_` concept twin, every identity branch, and a reachability test on the declared
 action kinds.
 
-### Shape A is complete as listed
+### Shape A as swept — but see the assessment below, this completeness claim is withdrawn
 
 Swept across all files: **three** concept twins exist in the entire codebase —
 `_player_personal_tempo`/`_enemy_personal_tempo` (A4), `apply_player_/apply_enemy_condition_buildup`
@@ -589,3 +589,418 @@ By that test: HP is fine (one boundary, two shallow branches). Conditions were n
 And a second question, which the full sweep added:
 
 > **Does each validator check both directions?** Every declared thing needs an implementation, *and* every declared thing needs a user. Checking only the first turns a safety mechanism into a preservation mechanism for dead content.
+
+---
+
+# Sol 5.6 follow-up audit — response to the third audit
+
+**Recorded:** 2026-09-02, against `0.2.78` after the expanded third-audit full sweep.
+
+> **Authorship and status:** This section is Sol 5.6's independent response to Claude's third
+> audit. It records findings for Claude/Opus to confirm, reject, amend or merge. Nothing below is
+> an approved decision, an implementation plan or scheduled work. The third audit above remains
+> unchanged so the two analyses can be compared directly.
+
+## Overall assessment
+
+The expanded third audit finds several important omissions the first two audits did not. In
+particular, its four enemy projections, incomplete determinism hashes, capability-as-identity
+rules, shooter-lane invariant and spawn-settling diagnosis are all supported by the current
+source. Its central question — *how many places must agree about one fact?* — is the right one.
+
+The claim that the full sweep is now complete is not supported, however. The sweep counts paired
+function names and selected dictionary projections, but misses duplication inside a single
+function, top-level presentation fields outside the schema, validators that do not own all
+producers or consumers, and universal boundaries that were introduced but are not actually used
+by most of the systems they were meant to govern. Some of these are latent structural risks;
+several already produce conflicting behavior or missing presentation in `0.2.78`.
+
+## Findings from the third audit that Sol 5.6 confirms
+
+- `chants` and enemy `conditions` are absent from both enemy presentation projections. The
+  Chanter marks therefore have correct drawing code but no data to draw.
+- `_enemy_presentation`, `PresentationFrame._copy_enemy`, `DeterminismSnapshot.ACTOR_FIELDS` and
+  save serialization are distinct projections with different policies and different surfaces.
+- `PresentationFrame.blend()` manually repeats top-level interpolation policy rather than deriving
+  it from `StateFieldSchema`.
+- The determinism projection omits meaningful enemy, player and world state, including Chanter
+  state, condition buildup, Gale velocity and projectile elevation facts.
+- The Shield, Duellist, Bandit and Fire Caster examples are real capability-as-identity rules.
+- The clear-lane invariant is guaranteed only for the Archer even though projectile collision
+  commentary treats it as a rule for every shooter.
+- Spawn settling has no body-separation term and can erase authored formation spacing.
+- Declared executors can remain transitively unreachable because catalog validation does not
+  establish that active content has a producer.
+
+These should remain in the audit. The disagreements below refine their scope rather than weaken
+their importance.
+
+## Where Sol 5.6 disagrees or would amend the third audit
+
+### 1. “Shape A is complete as listed” is too strong
+
+Searching for `_player_x` / `_enemy_x` function pairs cannot establish conceptual completeness.
+`_update_conditions()` (`run_state.gd:5244`) contains two complete update paths inside one
+function: separate buildup decay, duration decay and burning/poison damage for the player and for
+enemies. `current_move_speed()` (`2662`) and `_enemy_move_speed()` (`7622`) are another shared
+concept expressed separately, with terrain and status modifiers distributed between them.
+
+The third audit correctly identifies the split actor representation, but the sweep method cannot
+justify the conclusion that only three concept twins exist in the codebase. The reusable audit
+question should be: **for every mechanic that may affect more than one actor class, is there one
+representation and one resolver, including loops and inline branches?**
+
+### 2. The save path is not yet the complete counter-example
+
+Deep-copying `enemies` means save serialization cannot silently omit a newly added *enemy field*.
+That is a useful counter-example for nested enemy projection. It does not mean the save path as a
+whole cannot drift. `_build_save_payload()` is still a large hand-written top-level dictionary and
+then merges `StateFieldSchema.capture(SAVE)` over part of it (`run_state.gd:9864`). Hydration is a
+separate hand-written field list again.
+
+The accurate conclusion is narrower: **deep-copying a self-contained entity record prevents
+field-list drift within that record.** It does not make the save surface or migration path
+authoritative by itself.
+
+### 3. “Every declared thing needs a user” needs namespaces and lifecycle state
+
+The direction is right, but the proposed rule is too blunt. `ice_cone`, for example, can name an
+action and a hazard; proving that one carrier is dead does not prove every same-named hazard,
+renderer or test branch is dead. `fire_circle` is a hazard executor, not an entry in
+`ENEMY_ATTACK_ACTION_KINDS`. Actions, hazards, projectiles, effects and enemy kinds need separate
+reachability checks even where their IDs happen to share text.
+
+Executors may also intentionally exist before authored content uses them. The validator should
+therefore require an explicit lifecycle such as `active`, `reserved` or `legacy`: active entries
+need a registered producer or scenario contract; reserved entries state why they are retained;
+legacy entries state which migration or compatibility path still consumes them. `werewolf` and
+`warden` are enemy kinds, not action kinds, so they should not serve as the example that reserves
+an unused action executor.
+
+### 4. Spawn separation should preserve the formation as a whole
+
+Adding already-placed bodies to the current one-pass settler would prevent exact overlap, but its
+result would depend on placement order and could still shear a formation against one side of an
+obstacle. Prefer a small deterministic multi-body relaxation after all formation seats are
+authored, with each body attracted to its seat while resolving obstacles, the player, the arena
+rim and its peers. The goal is not merely non-overlap; it is retaining as much authored formation
+shape as the arena permits.
+
+## Material findings the third audit missed
+
+### M1. Top-level streamed presentation fields are missing now, not merely latent
+
+The third audit follows nested enemy projection but does not apply the same test to the top-level
+presentation surface. `snapshot()` manually includes all of the following, but
+`StateFieldSchema.PRESENTATION` does not:
+
+- `player_exhaustion_remaining` (`run_state.gd:9461`);
+- `sensed_enemies` (`9471`);
+- `aimed_enemy_id` (`9509`);
+- `player_condition_buildup` and `player_conditions` (`9511`–`9512`);
+- `visible_cells` and `discovered_cells` (`9590`–`9591`).
+
+Current renderer consequences are concrete:
+
+- Keen Eye's sensed-enemy silhouettes read only `visual["sensed_enemies"]`
+  (`game_board.gd:2380`) and disappear from streamed frames.
+- The aimed-enemy outline reads only `visual["aimed_enemy_id"]` (`3221`) and likewise disappears.
+- Exhaustion display falls back to newer live state (`3132`, `3710`), so objects drawn in one frame
+  can represent different simulation times.
+- The player burn/frost meter bypasses `visual` entirely and calls live-state accessors
+  (`5271`–`5272`).
+- Visibility and discovery fall back to live state (`5411`–`5417`).
+
+This is the same Earth Wall failure class at the top level. A per-enemy schema alone will not fix
+it. The accepted “one dynamic time authority” rule needs an exhaustive top-level presentation
+contract as well.
+
+### M2. Flat presentation copying silently removes nested action state
+
+`PresentationFrame._copy_flat_dictionary()` (`presentation_frame.gd:172`) discards every Array and
+Dictionary. Both player and enemy actions pass through it. Hit reactions store a nested
+`interrupted_action` (`run_state.gd:6230`, `6321`, `8731`), and the renderer reads that record to
+draw the interrupted weapon pose (`game_board.gd:3500`). The nested action survives a full
+snapshot but is absent from streamed frames.
+
+The projection design therefore needs per-field copy policy below the enemy level too. A
+per-enemy key list generated from a schema still loses nested action data if the action itself is
+flattened indiscriminately. The same policy question applies to nested projectile and hazard data
+such as hit-ID collections, even where the renderer does not currently consume them.
+
+### M3. `RuntimeSchema` reports errors but does not fail fast
+
+`RuntimeSchema.construct()` (`runtime_schema.gd:14`) duplicates the supplied dictionary, calls
+`push_error()` for validation failures, and returns the invalid dictionary anyway. Validation
+checks only required-key presence: not types, allowed kinds, value invariants or ID uniqueness.
+
+The boundary is also incomplete:
+
+- `_add_enemy_actor()` and `_replace_enemy_actors()` do not validate actor records
+  (`run_state.gd:4573`–`4579`);
+- load hydration directly assigns projectiles, hazards, barriers and effects
+  (`9994`–`9998`), bypassing constructors;
+- actor/action schema validation is exercised in `structure_audit_test.gd`, not enforced by the
+  production mutation boundary;
+- duplicate actor or presentation IDs are not rejected, although ID-based blending assumes
+  uniqueness.
+
+The `0.2.75` implementation record should therefore not describe the current mechanism as
+fail-fast. The intended rule should be: invalid authored or loaded current-schema state is
+rejected at its insertion/hydration boundary; permissive repair belongs only to explicit legacy
+migration.
+
+### M4. The enemy catalog and a live kind list already disagree about vision
+
+`CombatCatalog.ARCHETYPES` owns `properties.vision_range`, and witness detection correctly reads
+it (`run_state.gd:6091`). `_enemy_vision_range()` (`3364`), however, uses a separate hardcoded list
+of long-sighted kinds. The Chanter has catalogued range `620` but is absent from that list, so
+ordinary sight and death-witness perception disagree about the same enemy.
+
+This is a live example of Shape C plus Shape B: a capability is expressed as identity in one
+consumer even though the canonical property already exists. Other remaining candidates for
+property or action metadata include:
+
+- `_shield_patience_budget()` gating on `kind == "shield"` (`7642`);
+- shot-cooldown initialization tied specifically to the Archer;
+- Boar momentum armour tied to enemy kind even though the action already carries momentum timing;
+- the Hound/Bandit active-contact trade exemption, which describes an attack property more than a
+  species property.
+
+The main `_choose_enemy_action()` identity dispatch is not itself a defect: distinct strategy is
+legitimately per kind. The test is whether the branch expresses identity or a reusable capability.
+
+### M5. Elemental condition behavior is inferred from human-readable source strings
+
+`CONDITION_BUILDUP_BY_SOURCE` and `_apply_source_condition_to_player()`
+(`run_state.gd:8741`–`8756`) derive condition identity by searching a display/source label for
+`ice`, `frost`, `cold`, `fire` or `burn`, with a default buildup amount. Renaming prose can
+therefore silently change combat behavior, and an unregistered elemental source receives a
+plausible default rather than an authoring error.
+
+The canonical ability/projectile/hazard definition should carry typed effect data such as
+`condition_id` and `condition_buildup`. Hit resolution should consume those fields, while the
+source label remains presentation and telemetry text only.
+
+### M6. Action classification is incomplete in the opposite direction
+
+The third audit finds declared attack kinds with no producer. It misses produced hostile actions
+that are absent from `ENEMY_ATTACK_ACTION_KINDS`: `hurl` (`run_state.gd:7141`), `sunder` (`7180`)
+and `slam` (`7252`). `_threat_snapshot()` consults that list to count pending enemy attacks
+(`2815`–`2838`), so Combat Survey undercounts danger during live Javelineer, Earth Caster and
+Warden wind-ups.
+
+This is the other half of a two-direction validator: not only **does each declaration have an
+implementation and producer?**, but **is each produced action registered in every semantic class
+its consumers rely on?** Parallel string arrays are a poor long-term owner. Per-action metadata
+such as `hostile`, `damaging`, `support`, `movement`, `regenerates_energy` and lifecycle state
+would allow consumers to query the definition rather than maintain independent membership lists.
+
+### M7. The faction/effect boundary is present but not broadly adopted
+
+`_opposes()` is currently consumed only by barrier collision (`run_state.gd:6461`–`6466`).
+Projectile and hazard behavior still depends on `source_id == 0` and `friendly` branches
+(`7970`, `8364`, `8486`). That preserves the player-versus-enemy split for damage routing and
+would require more special cases for an ally, summon, charm or neutral hazard.
+
+The third audit is right that `_actor_storage()` returning nothing for the player is a root
+representation problem, but changing storage alone will not complete C4. Effect targeting and
+resolution must actually consume faction/ownership policy instead of continuing to infer “player
+side” from ID zero.
+
+### M8. Sequential save migration remains mostly a shell around inline hydration branches
+
+`save_migrations.gd` has explicit version steps, but every step from `21 → 22` through `32 → 33`
+is a pass-through. Semantic migration remains scattered through `load_run()` with predicates such
+as `save_version == 21`, `== 25` and `< 33`. Numerous `< 21` branches remain even though
+normalization rejects every starting version below 21, making those compatibility paths
+unreachable.
+
+There is also a suspicious gap: `SUPPORTED_START_VERSIONS` omits `32`, while `_v32_to_v33()`
+exists. A save beginning at schema 32 is therefore rejected before that migration can run. If
+schema 32 shipped, this is a live compatibility defect; if it deliberately never shipped, that
+fact should be recorded and tested.
+
+Some migrations genuinely require generated-world or loadout context. Those should be explicit,
+named post-hydration migration stages with focused tests, rather than ordinary restoration code
+retaining a tail of version predicates whose reachability is unclear.
+
+### M9. Several canonical registries overlay manual plumbing rather than owning it
+
+`_capture_survey_room_entry()` manually lists many of the same counters represented by
+`SurveyCounterCatalog`, then merges the catalog capture over the dictionary
+(`run_state.gd:1996`–`2076`). `snapshot()` and `_build_save_payload()` use the same pattern with
+`StateFieldSchema`. Existing tests prove that every *declared descriptor* can be captured; they do
+not prove that every manually consumed field or live measurement has a descriptor. This is
+another one-direction validator.
+
+`survey_circle_casts` and `survey_spell_casts` illustrate the gap: they are declared and
+incremented (`run_state.gd:630`–`631`, `2908`, `3757`) but do not appear in
+`SurveyCounterCatalog`, the report or a reset path. They may be abandoned counters rather than
+missing output, but either way their lifecycle is not owned.
+
+The registry should replace duplicated baseline/difference plumbing for measurements in its
+scope, and validation should check both directions: every descriptor names a real, type-compatible
+source, and every survey measurement intended to survive has a descriptor or an explicit
+non-registry exemption.
+
+### M10. Presentation-ID normalization performs an avoidable full scan every update
+
+`_append_presented()` assigns IDs when dynamic objects are inserted, but
+`_normalize_presentation_ids()` scans all projectiles, hazards, effects, pickups and barriers at
+the end of every `_update_enemies()` call (`run_state.gd:4607`, `6848`). This is unnecessary work
+on the 120 Hz simulation path and does not validate uniqueness.
+
+Normalization belongs at load and legacy-replacement boundaries. Runtime insertion should assign
+one monotonic ID; hydration should normalize missing legacy IDs once, validate uniqueness and set
+the next ID above the loaded maximum. More ambitious frame-copy optimization should wait for a
+profile, but this scan is structurally redundant without one.
+
+## Sol 5.6 proposed priority for Claude/Opus evaluation
+
+This is a review order, not an approved implementation order:
+
+1. **Active presentation correctness:** M1 and M2, together with Claude's B1–B6. Define exhaustive
+   top-level, enemy and nested-action presentation contracts before fixing individual missing
+   fields.
+2. **Make validation claims true:** M3 and M6. Enforce schemas at mutation/load boundaries and
+   validate both produced and declared semantic classifications.
+3. **Remove current conflicting authorities:** M4 and M5. Make catalogued vision and typed
+   condition payloads the only simulation sources.
+4. **Finish rather than merely name universal boundaries:** M7 and the condition resolver portion
+   of Shape A.
+5. **Complete registry and migration ownership:** M8 and M9, deleting unreachable compatibility
+   code only after supported versions are explicitly decided.
+6. **Low-risk structural cleanup:** M10 and the deterministic formation-preserving spawn
+   relaxation.
+
+The third audit's most important lesson survives these disagreements: a universal-looking entry
+point is not proof of universal ownership. The additional lesson from this follow-up is:
+
+> **A registry or boundary is only canonical if every producer enters through it, every consumer
+> reads through it, and validation checks both the declared and the undeclared sides.**
+
+---
+
+# Assessment of the Sol 5.6 follow-up
+
+**Recorded:** 2026-09-02 by Claude, against `0.2.78`. Every claim below was checked against source
+before being accepted or rejected. Nothing here is approved work.
+
+## Verified
+
+Each of these was read in the source, not taken on trust:
+
+| Finding | Verified | Evidence |
+|---|---|---|
+| M1 | yes | `sensed_enemies`, `aimed_enemy_id`, `player_conditions`, `player_exhaustion_remaining`, `visible_cells` — **zero** occurrences in `state_field_schema.gd`, all present in `snapshot()`, all read by the renderer. `visible_cells` is read 8 times. |
+| M2 | yes | `_copy_flat_dictionary` (`presentation_frame.gd:172`) explicitly `continue`s on `Array` or `Dictionary`. Nested `interrupted_action` cannot survive a streamed frame. |
+| M3 | yes | `construct()` calls `push_error()` per failure and **returns the invalid dictionary anyway**. `validate()` checks required-key presence only. |
+| M4 | yes | `_enemy_vision_range` (`3364`) hardcodes `["archer", "ice_caster", "fire_caster", "air_caster", "warden", "werewolf"]`. The Chanter is absent despite the catalog authoring `vision_range: 620.0` for it. |
+| M5 | yes, and worse than stated | `_apply_source_condition_to_player` substring-matches `ice`/`frost`/`cold`/`fire`/`burn` against a display label, defaulting unregistered sources to `4.0`. `CONDITION_BUILDUP_BY_SOURCE` is keyed on **prose with spaces** (`"fire breath"`, `"frost lance"`) while `ability_catalog.gd` carries the real IDs. |
+| M6 | yes | `hurl` (`7141`), `sunder` (`7180`), `slam` (`7252`) are produced; none appear in `ENEMY_ATTACK_ACTION_KINDS`. `_threat_snapshot` skips them at `2832`. |
+| M8 | yes | `SUPPORTED_START_VERSIONS := [21…31, 33, 34]` — 32 is absent while `_migrate_one` cases it and `_v32_to_v33()` exists. A save *beginning* at 32 is refused; the step is still reachable when migrating up from 31. |
+| M9 | yes | `survey_circle_casts` and `survey_spell_casts` each appear twice in `run_state.gd` (declaration and increment) and **zero** times in the counter catalog or the report. |
+
+## Conceded — four corrections to the third audit
+
+**1. "Shape A is complete as listed" was an overclaim, and the reasoning is the valuable part.**
+Pairing `player_x` / `enemy_x` function names cannot establish conceptual completeness, and Sol
+names two cases that prove it: `_update_conditions()` (`5244`) carries the player's burn debt,
+buildup decay and duration decay *and* the enemy equivalents as two inline paths in one function;
+`current_move_speed()` (`2662`) and `_enemy_move_speed()` (`7622`) are the same concept under names
+that share no token. A name-pairing sweep finds neither. **The claim is withdrawn.**
+
+The replacement question is Sol's and it is better: *for every mechanic that may affect more than
+one actor class, is there one representation and one resolver — including loops and inline
+branches?*
+
+**2. The save counter-example was stated too broadly.** Deep-copying `enemies` prevents field-list
+drift *within an entity record*. It does not make the save surface authoritative: `_build_save_payload`
+is still a large hand-written top-level dictionary that merges `StateFieldSchema.capture(SAVE)`
+over part of itself, and hydration is a separate hand-written list. The narrow claim is the true
+one and the third audit should be read as making only that.
+
+**3. The dead-kind table conflated two namespaces.** `fire_circle` is a hazard kind and is not in
+`ENEMY_ATTACK_ACTION_KINDS`; it was listed in a table introduced as declared *action* kinds. And
+`werewolf`/`warden` are enemy kinds, so they cannot serve as the example for reserving an unused
+*action* executor. Sol is right that actions, hazards, projectiles, effects and enemy kinds need
+separate reachability checks even where IDs share text, and right that lifecycle state
+(`active`/`reserved`/`legacy`) is the mechanism rather than bare reachability.
+
+**4. Spawn relaxation beats one-pass separation.** Adding already-placed bodies to the existing
+single pass makes the result depend on placement order and can still shear a formation against one
+side of an obstacle. A small deterministic relaxation with each body attracted to its authored seat
+preserves shape, which is the actual goal. Adopted.
+
+## Where this assessment differs from Sol 5.6
+
+**M10 is real but is the weakest item, and its argument is partly self-defeating.** It correctly
+observes that `_normalize_presentation_ids()` rescans five collections every `_update_enemies()`
+call. But the section argues that frame-copy optimisation should wait for a profile and then
+recommends this optimisation without one. Consistency says both wait.
+
+**One sharper worry about M10 was investigated and disproved, and is recorded so it is not
+re-raised.** `_normalize_presentation_ids()` resets `_next_presentation_id = 1` each tick, which
+looks like it would reassign IDs positionally and re-break the `_blend_flat_array` mis-pairing
+defect the first audit fixed. It does not: the function assigns an ID only `if not
+item.has("presentation_id")` and otherwise recomputes the high-water mark from surviving items, so
+IDs are stable across ticks and blending pairs correctly. The per-tick cost is recomputing a number
+that could be maintained incrementally — genuinely redundant, genuinely minor.
+
+**The proposed priority is ordered by structural tidiness rather than by what the project is
+actually trying to do.** The stated priority is the combat loop, and specifically a real
+Elementalist survey. Four of these findings are load-bearing for exactly that work, and the
+ordering does not reflect it:
+
+- **M6 corrupts the instrument we tune from.** `_threat_snapshot` feeds the survey's
+  *"threat when exhaustion began / N with an attack already committed"* lines. With `hurl`, `sunder`
+  and `slam` unregistered, every room containing a Javelineer, Earth Caster, Brute or Warden
+  under-reports committed attacks. Decisions are being made on those numbers now.
+- **M4 is the Chanter's third defect**, alongside the invisible chant marks and the missing halo —
+  and it is the one that changes behaviour rather than presentation. A support enemy authored to
+  watch from 620 sees at default range.
+- **M9 shows the per-spell reporting is already half-built.** `survey_spell_casts` is declared and
+  incremented and then discarded. The planned "report each spell separately" is partly a wiring job,
+  not new instrumentation.
+- **M5 couples combat behaviour to prose.** Renaming a label changes what condition an ability
+  applies.
+
+**M3's remedy needs a decision before it is built.** "Reject invalid state at the insertion
+boundary" is right for authored content and ambiguous at load: refusing a malformed actor record
+turns a degraded load into a failed one. The rule should distinguish authored-now (fail loudly)
+from loaded-from-disk (repair explicitly through a named migration, or refuse the save as a whole
+with a message) rather than treating both as one boundary.
+
+## Merged reading order
+
+Sequenced by what unblocks the combat loop first, structural depth second:
+
+1. **The Chanter, completely** — B3 (chants absent from both projections), M4 (vision authority),
+   and the halo. One enemy, three defects, three different layers; it is the smallest complete
+   demonstration of every shape in this document.
+2. **The instruments we tune from** — M6 and M9. A survey that under-reports threat and discards
+   counters it already collects should not be the basis of the next tuning pass.
+3. **Presentation contracts** — M1, M2, B1–B6. Exhaustive top-level, per-enemy and nested-action
+   policy, defined before individual missing fields are patched.
+4. **Typed effect payloads** — M5, then M7. Condition identity from authored fields; effect routing
+   through faction rather than `source_id == 0`.
+5. **Make validation claims true** — M3 (with the authored/loaded distinction decided first) and the
+   two-direction classification work from M6.
+6. **Representation** — A1 and the condition resolver. The largest change, and the one every item
+   above makes safer to attempt.
+7. **Registry and migration ownership** — M8 and M9's second half; delete unreachable compatibility
+   code only once supported versions are decided.
+8. **M10**, after a profile.
+
+## What both audits now agree on
+
+> A universal-looking entry point is not proof of universal ownership, and a registry is canonical
+> only if every producer enters through it, every consumer reads through it, and validation checks
+> the declared and the undeclared sides.
+
+To which this assessment adds one line, earned by conceding point 1 above:
+
+> **A sweep is only as complete as the shape it can express.** Name-pairing finds twins and misses
+> duplication inside a single function. State the method's blind spot alongside its results, or the
+> next reader inherits a false all-clear.
