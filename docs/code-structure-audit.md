@@ -491,6 +491,91 @@ Two changes make the comment true: give every shooter the check, and evaluate it
 
 This is why enemies arrive huddled in arenas like `central_cover` regardless of the formation chosen — the formation authors the spacing and the settler destroys it. Its neighbour already admits the failure mode: *"a formation whose seats all need pulling in arrives squashed against the edge."* It needs a separation pass against already-placed bodies.
 
+
+## Full sweep
+
+The findings above came from following one bug down. This section is the systematic pass over
+all fifteen script files that should have accompanied it — every hand-listed projection, every
+`player_`/`enemy_` concept twin, every identity branch, and a reachability test on the declared
+action kinds.
+
+### Shape A is complete as listed
+
+Swept across all files: **three** concept twins exist in the entire codebase —
+`_player_personal_tempo`/`_enemy_personal_tempo` (A4), `apply_player_/apply_enemy_condition_buildup`
+(A2), and `_draw_player`/`_draw_enemy`. The last is legitimate: the two draw genuinely different
+things, and it is where the enemy condition halo belongs rather than a duplication to remove.
+
+**No identity branches exist outside `run_state.gd` at all.** The actor boundary is entirely
+contained, which is what makes A1 worth fixing: the blast radius is one file.
+
+### Shape B is worse than the first pass found — there are four projections, not two
+
+| # | Where | What |
+|---|---|---|
+| B4 | `DeterminismSnapshot.ACTOR_FIELDS` (17 keys) | **A fourth hand-listed enemy projection**, and the most consequential, because this is the instrument that decides whether two runs played identically. It carries `conditions` but **not `chants`, `condition_buildup`, `chant_source_id` or `gale_velocity`**. A run where a Chanter buffs different allies hashes identically to one where it does not. So does a run where bodies are being shoved at different velocities, until the positions diverge. |
+| B5 | `DeterminismSnapshot.checkpoint()`, player block (9 fields) | **Shape A appearing inside Shape B.** `conditions` is hashed for enemies and omitted for the player, along with `player_gale_velocity`, every cooldown and `stealth_remaining` — in the one instrument whose entire purpose is detecting divergence. The player's burn and frost are outside the determinism check. |
+| B6 | `DeterminismSnapshot.WORLD_FIELDS` (23 keys) | Missing `elevation` and `elevation_profile`. The projectile elevation system from `0.2.47` — the rule that decides whether a javelin sails over a body or hits it — is invisible to the determinism hash. |
+
+**The save path is the counter-example and the model.** `_build_save_payload` uses
+`enemies.duplicate(true)` — a full deep copy, no field list. It is the only consumer of enemy
+state that cannot drift, and it is the only one that has never had a bug of this kind. That is
+the argument for the per-enemy schema in its strongest form: the projection that enumerates
+nothing is the projection that has never been wrong.
+
+### Shape D — a validator that checks one direction
+
+`0.2.75` added catalog validation, and it is genuinely good: an unregistered enemy kind now
+fails loudly instead of shipping as a working Blade. But `ability_catalog.gd:118` checks exactly
+one direction:
+
+```gdscript
+for kind in PLAYER_ATTACK_ACTION_KINDS + ENEMY_ATTACK_ACTION_KINDS + ENERGY_REGEN_ACTION_KINDS:
+	if not ACTION_EXECUTORS.has(kind): errors.append("classified action %s has no executor" % kind)
+```
+
+Every declared kind must have an executor. **Nothing checks that a declared kind is ever
+produced.** A reachability test over the fourteen declared enemy action kinds finds four dead
+ones:
+
+| kind | status |
+|---|---|
+| `hex` | No action construction anywhere in the codebase. The Hexer was retired in `0.2.35`. |
+| `ice_hex` | Same. |
+| `ice_cone` | Constructed at exactly one site — inside `_spawn_hex`, which is only reachable from the dead `hex`/`ice_hex` executor branch at `run_state.gd:6812`. Transitively dead. |
+| `fire_circle` | Never spawned as a hazard at all. Replaced by `fire_breath`. |
+
+Between them these carry an executor branch, `_spawn_hex()` and its hazard construction, hazard
+tick and damage handling, authored effect labels (`"ice hex"`, `"hex"`), phase text
+(`"GATHERING FROST"`, `game_board.gd:4062`), and nine renderer branches.
+
+This is the mistake `CLAUDE.md` already names — *"a cone renderer belonging to a hazard nothing
+spawned any more"* — still present, and now with a twist worth stating plainly: **the validator
+is keeping it alive.** Because `hex` and `ice_hex` are declared in `ENEMY_ATTACK_ACTION_KINDS`,
+the validator demands executors for them, so the dead executors cannot be deleted without first
+editing the catalog. A mechanism added to catch authoring errors is enforcing the presence of
+dead content.
+
+The fix is one more loop in the same validator: every declared kind must be produced somewhere,
+or be explicitly marked as reserved. `werewolf` and `warden` are the legitimate reserved case —
+kinds that exist ahead of their behaviour by decision — and marking them says so in the one place
+that can check it.
+
+### Shape C in the renderer — mostly a false alarm, worth recording
+
+The 85 `kind == "…"` branches in `game_board.gd` are not 85 instances of the defect. Sampled and
+categorised, the overwhelming majority dispatch on **action and effect kinds** — `strain`,
+`recover`, `posture_break`, `interrupt`, `combo`, `block`, `endure`, `vault`, `stagger`, `slam`,
+`take_aim`, `bow_draw`, `sweep` — which is legitimate presentation dispatch: an effect *is* its
+kind, and there is no property underneath it to branch on instead.
+
+The genuine Shape C instances are the enemy-capability rules already listed, and they live in
+`run_state.gd`, not here. The renderer's real problem is the dead branches under Shape D, not
+the branching style.
+
+Recording this because the raw count of 85 in the first pass was alarming and misleading, and
+the next person to grep for it deserves the categorisation rather than the number.
+
 ## What this changes about how to audit
 
 The second audit asked *"where does the source repeat itself?"* and found real duplication. This one came from a rendering bug and landed on a representation problem three layers down.
@@ -499,4 +584,8 @@ The question that would have found it:
 
 > **For each fact an actor can carry, how many places must agree, and is there a mechanism that makes them agree — or only a convention that they should?**
 
-By that test: HP is fine (one boundary, two shallow branches). Conditions were not. The enemy projection is not, twice over. The firing-lane rule is not, and says so in a comment.
+By that test: HP is fine (one boundary, two shallow branches). Conditions were not. The enemy projection is not — **four times over**, and the one that enumerates nothing is the one that has never been wrong.
+
+And a second question, which the full sweep added:
+
+> **Does each validator check both directions?** Every declared thing needs an implementation, *and* every declared thing needs a user. Checking only the first turns a safety mechanism into a preservation mechanism for dead content.
