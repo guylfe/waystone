@@ -1702,3 +1702,375 @@ Unchanged from `CLAUDE.md`, restated so the plan is complete:
   Halving same-side damage would reverse a recorded decision to fix a different problem.
 - **Removing `cluster` from the formation pool.** Room 3 huddled under `screen_line + picket`; the
   cause is 3.3, and deleting the control condition costs the baseline.
+
+---
+
+# Sol 5.6 consolidation — executable implementation plan
+
+**Recorded:** 2026-09-02 by Sol 5.6, against game version `0.2.78` and consolidated-plan revision 3
+(`8ca06e7`). **Proposed, not approved or scheduled.** This is Sol 5.6's own consolidation of the
+entire audit exchange. It does not erase the evidence or disagreements above; it replaces the
+Claude-authored consolidated work plan as the shortest document to execute once the user approves
+it.
+
+The central correction is organizational. There are not five equal phases and there should not be
+two continuously moving tracks sharing a baseline. There is one short **measurement spine** that
+must end in a trustworthy baseline, two **optional one-variable experiments** licensed by that
+baseline, and a **deeper architecture programme** that is valuable but is not allowed to delay or
+contaminate the baseline. Boss work follows with its own instrument.
+
+**Supersession recorded after Claude's projectile review and the user's ruling:** the earlier
+per-kind lane-policy proposal (`checks_before_commitment`, `checks_at_release`, `ignores_allies`,
+hold/cancel/redirect and its six telemetry fields) is withdrawn. It diagnosed an AI problem where
+the intended design is a collision rule. Earlier occurrences remain above only as audit history and
+must not be implemented.
+
+## Rules that govern every work package
+
+1. **One release, one interpretable reason to change.** A behaviour-preserving refactor and a
+   gameplay change do not share a version. A visible-presentation change may preserve simulation
+   hashes while still changing player decisions, so it is recorded as presentation behaviour, not
+   hidden inside a structural release.
+2. **Golden hashes move only on purpose.** Structural work must preserve them. When an intended
+   gameplay or perception correction moves them, record the before/after reason and re-baseline
+   with no unrelated work outstanding.
+3. **An experiment may fail successfully.** “Done” means the hypothesis was isolated and measured,
+   not that the preferred result appeared. Accept, reject or revise the change from its evidence.
+4. **Authored-now and loaded-from-disk have different failure contracts.** Invalid authored data
+   fails tests/build validation. Old saves migrate completely or are refused completely with a
+   useful message; they are never partially repaired into a deceptively valid run.
+5. **Every acceptance claim must be observable.** A field in a report needs a hand-checkable fixture;
+   a visual contract needs frozen and streamed-frame checks; a structural contract needs a test
+   that fails when a producer, consumer or required field is removed.
+6. **No version numbers are reserved here.** Assign them when a work package is actually approved
+   and begun. The labels below are dependency labels, not promised releases.
+
+## Spine M — make measurement trustworthy
+
+This is the first implementation package. It changes instruments, not combat rules.
+
+### M1. Complete the determinism projection
+
+Add the missing enemy state (`chants`, `chant_source_id`, `condition_buildup`, `gale_velocity`) and
+player conditions/buildup/gale velocity, cooldowns and stealth. Add focused tests that deliberately
+mutate each family and prove the hash changes. Do **not** hand-add world-object fields here: C5 makes
+their descriptor schema authoritative and generates their determinism projection, including
+`elevation`, `elevation_profile` and `misdirected`.
+
+**Done:** each newly covered family can independently make the golden run fail, while unchanged
+current behaviour reproduces the newly recorded baseline.
+
+### M2. Add an Elementalist golden run
+
+Keep the Warrior/Recovery run and add a Mage · Elementalist/Energy run that deterministically casts,
+applies at least burn and frost, raises a wall, and interacts with an elevated javelin.
+
+**Done:** both scripted runs are stable across repeated test executions, and the Elementalist path
+exercises spells, conditions, barriers and projectile elevation rather than merely storing their
+default values.
+
+### M3. Correct hostile-action classification
+
+Register `hurl`, `sunder` and `slam` in the canonical hostile-action classification used by threat
+telemetry. Do not add the Brute; its attack already uses ordinary `melee`.
+
+**Done:** fixtures containing a winding-up Javelineer, Earth Caster and Warden each report the
+pending hostile action, and removing any one classification fails the fixture.
+
+### M4. Record per-spell usage by stable ID
+
+Delete the redundant aggregate `survey_spell_casts` scalar and route spell usage through the survey
+counter registry keyed by canonical spell ID. Human-readable labels may be rendered afterwards but
+must not be the stored identity.
+
+**Done:** a known sequence of casts reports separate exact counts for `lightning_bolt`, `fireball`,
+`cold_front`, `gale` and any other spell used; the generic action total still reconciles with them.
+
+### M5. Add experiment-neutral combat telemetry
+
+Add:
+
+- crowding: mean nearest-active-ally distance and share of combat time with at least one enemy pair
+  inside the chosen comfort threshold;
+- misdirection: one `misdirected_ally_hits` event counter in `survey_counter_catalog.gd`. “Ally” is
+  evaluated against the projectile's original source side and includes the source itself: an enemy
+  shot redirected into an enemy and a player shot redirected into the player are both counted;
+- interruption attribution: interrupted action, interrupter and tool/effect used.
+
+Do not add lane-at-commitment/release fields or authored lane-policy metadata. A projectile's
+`misdirected` state belongs to the world-object descriptor; the survey counter is a distinct event
+tally with different lifetime, differencing and formatting.
+
+**Done:** small deterministic fixtures whose outcomes are calculated by hand reproduce every
+counter, and report totals reconcile with their per-event records.
+
+## Spine C — establish the canonical read and presentation paths
+
+This is the second package. It contains structural changes, one explicit gameplay-correctness
+change, and one explicit presentation-behaviour change. Those categories require separate commits
+and, where noted, separate versions.
+
+### C1. Retire the unreachable ability family and validate lifecycle both ways
+
+Remove `hex`, `ice_hex`, `ice_cone` and `fire_circle` together with their executors, spawning,
+hazards, text and renderer branches. Replace one-way “declared has implementation” validation with
+per-namespace lifecycle validation: an `active` definition needs a producer and consumer;
+`reserved` needs a recorded reason; `legacy` needs the migration that consumes it.
+
+Werewolf and Warden are `active`, not `reserved`: floor generation produces them and live AI drives
+them. Their real gap is encounter/survey coverage.
+
+**Done:** the dead family is absent from code and tests, deleting an active producer or consumer
+fails validation, and golden hashes do not move.
+
+### C2. Make catalogued vision the sole authority
+
+Remove `_enemy_vision_range`'s kind list and read `properties.vision_range` for every enemy. Treat
+the Chanter's authored `620` rather than the fallback `520` as the intended value unless the user
+explicitly decides otherwise.
+
+This is a **gameplay-correctness release**, not a refactor: the Chanter will perceive from farther
+away. It must not be bundled with C1 or the presentation work.
+
+**Done:** every enemy's perception and witness logic read the same catalog field; a Chanter fixture
+distinguishes 620 from 520; any moved golden hash is explained and deliberately re-recorded.
+
+### C3. Build one schema-driven presentation contract
+
+Create descriptor sources for top-level and per-enemy state. Descriptors declare their audiences
+(presentation, determinism and where appropriate save), interpolation policy, and nested-copy
+policy. Generate capture/copy/blend/projection field handling from those descriptors instead of
+maintaining parallel hand lists.
+
+For `visible_cells` and `discovered_cells`, copy only when the revision changes and retain the copy
+as an immutable revision-keyed snapshot. A presentation frame must never point at the live mutable
+Dictionary. Preserve nested action state such as `interrupted_action` according to its declared
+copy policy.
+
+**Done:** streamed and frozen frames agree on aimed enemy, sensed enemies, conditions, exhaustion,
+visibility and discovery; interrupted poses survive streaming; adding a presentation field requires
+one descriptor edit; golden hashes do not move.
+
+### C4. Render the state the contract now carries
+
+Add readable enemy burn/frost body feedback and chant identity/duration at the same presentation
+layer. Do not infer either from display text.
+
+This is **presentation behaviour**. It changes no simulation rule but may change spell choice, which
+is why it must land before the baseline and be named as part of that baseline.
+
+**Done:** burn and frost are distinguishable on enemies in frozen and streamed frames; a chanted
+ally shows chant identity and remaining duration; removing any carried field breaks the vertical
+acceptance test.
+
+### C5. Give world objects the same descriptor authority
+
+Create a per-world-object schema, with audiences, defaults, copy policy and interpolation policy,
+covering projectiles, hazards, barriers and effects. Use it to generate their determinism fields and
+both presentation projections instead of synchronizing `_capture_flat_array`,
+`_copy_flat_dictionary` and `DeterminismSnapshot.WORLD_FIELDS` by hand.
+
+`misdirected` is the acceptance field: authored default `false`, audiences `presentation` and
+`determinism`, and never recovered through a permissive bare `.get()`. The same schema must own
+`elevation` and `elevation_profile`, subsuming the world-field portion previously assigned to M1.
+
+**Done:** authoring one descriptor carries `misdirected`, `elevation` and `elevation_profile`
+through frozen presentation, streamed presentation and determinism projection; deleting the
+descriptor or omitting the authored default fails validation rather than silently becoming false.
+
+### C6. Make misdirection the only route to same-side projectile collision
+
+This is an **approved gameplay rule**, not an AI experiment:
+
+- every projectile passes through actors allied with its original source by default;
+- a projectile may collide with that side only while `misdirected == true`;
+- Gale sets `misdirected = true` at the existing velocity-turn site, regardless of who fired the
+  projectile;
+- therefore an enemy projectile Gale redirects can hit enemies, and a player projectile an enemy
+  Air Caster redirects can hit the player. The rule is deliberately symmetric;
+- Gale's existing javelin grounding composes with the flag: the javelin becomes low enough to reach
+  bodies and permitted to hit its original side, with no elevation special case;
+- same-side damage scaling remains unchanged: a redirected shot means the same thing to any body it
+  actually reaches.
+
+Remove `_archer_has_clear_lane()` and its sole call unless a future, separately approved Archer
+identity gives it a reason unrelated to friendly-fire prevention. Rewrite the projectile-loop
+comment so it states the new invariant. Restrict `_damage_enemy_from_stray_projectile()` to flagged
+shots.
+
+Draw a clear misdirected-projectile cue. Gale is currently the sole writer, but collision permission
+must not become invisible combat math when another redirector is added. The drawing remains an
+explicit presentation implementation; the schema eliminates silent projection omissions, not the
+need to author visuals.
+
+**Done:** deterministic tests prove that unflagged enemy and player shots pass through their source
+side, Gale flags either side's shot, a flagged enemy shot can hit an enemy, a flagged player shot can
+hit the player, the grounded Gale-javelin case works without special collision code, and the survey
+increments `misdirected_ally_hits` only for those same-side impacts. Frozen and streamed frames show
+the same visible misdirection cue.
+
+## Gate B — freeze a trustworthy baseline
+
+Do not begin a gameplay experiment until all of the following are true:
+
+- the normal suite passes with exactly the project's documented expected failures and no new ones;
+- both golden runs repeat stably;
+- the hostile-action and telemetry fixtures pass;
+- per-spell counts reconcile with action totals;
+- burn/frost and chant presentation pass frozen/streamed acceptance;
+- world-object descriptors carry elevation and misdirection through determinism and both
+  presentation paths;
+- ordinary projectiles produce zero same-side hits, while Gale-redirected enemy and player
+  projectiles pass the symmetric same-side collision fixtures;
+- the exact commit, game version, generator version, presentation version, profile and seed are
+  recorded for the survey.
+
+Then run the standard Elementalist survey **to win**, without trying to manufacture use of every
+spell. The baseline must report:
+
+1. per-spell shares and spell outcomes;
+2. Energy depletion, binding moments and exhaustion lockouts;
+3. dodge forms and defensive outcomes;
+4. hostile interruptions by source/tool;
+5. crowding and `misdirected_ally_hits`, which must be zero without Gale and attributable to Gale
+   when nonzero;
+6. qualitative legibility: whether the player could tell that burn, frost and chants were active.
+
+The baseline produces a short decision record. It may license none, one or several experiments
+below, but it does not silently authorize any of them.
+
+## Experiments E — one variable at a time
+
+Each licensed experiment gets its own version or an explicitly selected debug profile against the
+same baseline seed. The result is compared with Gate B before any integration build combines
+changes.
+
+### E1. Lightning Bolt shape
+
+Run only if the baseline shows Lightning remains dominant, **or** if the user decides the spell's
+low-risk instantaneous-ranged-damage shape deserves testing even without statistical dominance.
+The proposed test value is damage `11 → 6`; it is not a balance decision.
+
+Compare Lightning's share of offensive actions, damage and kills per Energy, elemental-spell use,
+room time, damage taken, dodges and Energy-binding moments. Do not define success as “players used
+another spell”: the experiment can instead show that 6 is too low, that Lightning's shape is not the
+cause, or that its alternatives need work.
+
+### E2. Formation-preserving spawn relaxation
+
+Resolve bodies after all seats are authored while attracting each body back toward its own seat and
+respecting obstacles, player clearance and arena rim. This must be deterministic and must preserve
+formation topology, not merely increase pairwise distance.
+
+Compare crowding, seat displacement, formation shape, multi-target footprint occupancy and room
+outcomes with Gate B. A relaxation that spreads enemies but erases authored fronts/flanks fails even
+if its nearest-neighbour metric improves.
+
+### E3. Integration and tuning
+
+Only accepted experiments enter the integration build. Re-run matched seeds to test interactions;
+then tune magnitudes. If two individually useful changes combine badly, preserve the evidence and
+revise the combination rather than concealing the interaction in a new global adjustment.
+
+## Programme A — deeper architecture after the baseline
+
+This programme is real work, but none of it is required to learn from Gate B. Begin it after the
+baseline unless a narrowly scoped item is needed to implement an approved experiment. Never run the
+actor-representation migration concurrently with gameplay work in `run_state.gd`.
+
+### A0. Enforce production validation boundaries
+
+All insertion paths for actors, actions, projectiles, hazards, barriers and effects validate field
+presence, types, invariants, correct-namespace kind registration and ID uniqueness. Loaded
+collections validate after migration. Invalid authored content fails loudly; invalid saves migrate
+whole or fail whole.
+
+### A1. Replace prose-derived effects with typed payloads
+
+Abilities author `condition_id` and `condition_buildup`; gameplay never substring-matches display
+labels or silently supplies an unregistered default.
+
+### A2. Route effects through faction/opposition
+
+Projectile, hazard, barrier and condition resolution use one faction-aware boundary instead of
+independent `source_id == 0` and `friendly` branches. Existing player-versus-hostile behaviour must
+remain identical in golden and focused tests, while ally/neutral fixtures prove the boundary is
+actually general.
+
+### A3. Give the player and enemies one actor representation
+
+`_actor_storage(0)` returns a real actor record. Conditions, posture, tempo, impulse and movement
+read/write through the same field interface without player-ID translation branches. Both golden runs
+must remain unchanged.
+
+### A4. Express capabilities as catalog properties
+
+Move guard, parry, ambush, dodge-strike and firebolt eligibility out of kind-name tests while
+preserving the current roster exactly. This refactor must not grant guard to Knights, bosses or any
+other enemy; future capability changes are separate gameplay decisions.
+
+### A5. Make registries own projections in both directions
+
+Snapshot, save and survey capture derive registered fields from descriptors, and validation proves
+both that every descriptor has a source and that every live captured measurement has a descriptor.
+
+### A6. Make save migration sequential and explicit
+
+Move semantic version branches out of `load_run()` into real step migrations with fixtures. Resolve
+whether schema 32 shipped; support it with a tested `32 → 33` step or document and test its deliberate
+rejection. Current-schema validation occurs after the final step.
+
+### A7. Profile presentation-ID normalization before changing it
+
+Uniqueness validation belongs in A0. The repeated high-water scan is only a performance candidate:
+profile it first, optimize only if material, and retain the recorded finding that it does not
+currently destabilize assigned IDs.
+
+Every A item is complete only when both golden runs are unchanged, focused contract tests pass, and
+no compatibility behaviour was altered without being split into a separately approved gameplay
+change.
+
+## Programme R — content roadmap after the experiment cycle
+
+1. Define Werewolf and Warden boss identities from their **provisional, unsurveyed** current
+   behaviour rather than pretending they have none.
+2. Design a boss-specific evaluation instrument and acceptance case before replacing that behaviour.
+3. Use the first boss evaluation to test the instrument itself.
+4. Compare Recovery and Energy with a matched-seed boss pair only after the boss scenario is stable.
+
+## Approval boundaries and deliberate exclusions
+
+Approving this plan would authorize planning order, not automatically choose experimental outcomes.
+The following still require a user decision at their gate: treating Chanter `620` as intended,
+running E1 and choosing its profile, running E2, and accepting either experiment into E3. The C6
+collision rule and its symmetry for player projectiles are already approved by the user.
+
+Still excluded unless new evidence changes the question:
+
+- splitting `run_state.gd` before ownership boundaries exist;
+- a global `ENERGY_COST_SCALE` change;
+- changing same-side projectile damage scaling; C6 changes eligibility for collision, not what a
+  redirected shot means after it connects;
+- adding the withdrawn per-kind lane policies, hold/cancel behaviour or lane-state telemetry;
+- removing `cluster` to hide a spawn-settling problem;
+- changing the roster while moving name-gated behaviour into capabilities;
+- optimizing `_normalize_presentation_ids()` without a profile;
+- unrelated enemy timing, movement, damage or encounter tuning in any measurement or structural
+  release.
+
+## Recommended execution order
+
+`M1–M5 → C1 → C2 (separate correction release) → C3 → C4 → C5 → C6 (approved gameplay release) → Gate B`
+
+After Gate B:
+
+`licensed E experiment → evaluate → next licensed E experiment → evaluate → E3 integration`
+
+In parallel only where files and baselines cannot become ambiguous:
+
+`A0 → A1 → A2 → A3 → A4 → A5 → A6 → A7`
+
+The practical recommendation is simpler than the arrows: **finish the measurement spine and take
+the baseline before opening the actor rewrite.** That gets the project an answer to its immediate
+combat question quickly, establishes the safety net the rewrite needs, and prevents a month of
+structural work from turning the next survey into an uninterpretable before/after comparison.

@@ -14,9 +14,9 @@ func _initialize() -> void:
 	scene.state._apply_shortcut_world_state()
 	scene.state._update_exploration(true)
 	var samples := [
-		{"name": "ice-hex", "hazard": {"kind": "ice_hex", "pos": center, "radius": 112.0, "elapsed": 0.55, "trigger_at": 0.88, "duration": 1.22, "damage": 3, "source_id": 1, "triggered": false, "layer": scene.state.current_layer}},
-		{"name": "ice-cone", "hazard": {"kind": "ice_cone", "pos": center + Vector2(0, 170), "direction": Vector2.UP, "radius": 285.0, "half_angle": 0.62, "elapsed": 0.55, "trigger_at": 0.86, "duration": 1.02, "damage": 3, "source_id": 2, "triggered": false, "layer": scene.state.current_layer}},
-		{"name": "fire-circle", "hazard": {"kind": "fire_circle", "pos": center, "radius": 152.0, "elapsed": 0.40, "trigger_at": 0.64, "duration": 0.98, "damage": 3, "source_id": 3, "triggered": false, "layer": scene.state.current_layer}},
+		{"name": "cold-front", "hazard": {"kind": "cold_front", "pos": center, "radius": 268.0, "elapsed": 0.55, "trigger_at": 0.70, "duration": 2.30, "damage": 3, "source_id": 1, "triggered": false, "layer": scene.state.current_layer}},
+		{"name": "fire-breath", "hazard": {"kind": "fire_breath", "pos": center + Vector2(0, 170), "direction": Vector2.UP, "radius": 232.0, "half_angle": 0.52, "elapsed": 0.55, "trigger_at": 0.72, "duration": 1.06, "damage": 3, "source_id": 2, "triggered": false, "layer": scene.state.current_layer}},
+		{"name": "sundered-ground", "hazard": {"kind": "sundered_ground", "pos": center, "radius": 156.0, "elapsed": 0.40, "trigger_at": 0.28, "duration": 4.0, "damage": 0, "source_id": 3, "triggered": true, "layer": scene.state.current_layer}},
 	]
 	for sample_value in samples:
 		var sample: Dictionary = sample_value

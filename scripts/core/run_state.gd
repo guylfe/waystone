@@ -445,9 +445,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.78"
+const GAME_VERSION := "0.2.79"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 7
+const PRESENTATION_VERSION := 8
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -628,7 +628,7 @@ var spell_cooldown_max: float:
 	get: return cooldown_maximum(COOLDOWN_SPELL)
 	set(value): _set_cooldown_maximum(COOLDOWN_SPELL, value)
 var survey_circle_casts := 0
-var survey_spell_casts := 0
+var survey_spell_counts: Dictionary = {}
 var player_condition_buildup: Dictionary = {}
 # How much of the frost still stands, 0..1. Read by tempo, by the damage amplifier and by
 # the meter, so all three agree by construction.
@@ -772,6 +772,7 @@ var discovered_cells_by_layer: Dictionary = {}
 var _visibility_anchor := Vector2.INF
 var _visibility_anchor_cell := Vector2i(-999999, -999999)
 var _visibility_opaque_cells: Dictionary = {}
+var visibility_revision := 0
 var discovery_revision := 0
 var discovery_epoch := 0
 var discovery_log: Array[Vector2i] = []
@@ -885,6 +886,12 @@ var survey_engagement_alerted_sum := 0
 var survey_engagement_multi_samples := 0
 var survey_isolated_kills := 0
 var survey_engaged_kills := 0
+const CROWDING_COMFORT_DISTANCE := 118.0
+var survey_crowding_samples := 0
+var survey_crowding_nearest_sum := 0.0
+var survey_crowding_close_samples := 0
+var survey_misdirected_ally_hits := 0
+var survey_interruption_events: Array[Dictionary] = []
 var survey_strike_diagnostics: Array[Dictionary] = []
 
 func _init(auto_start: bool = true) -> void:
@@ -1081,6 +1088,12 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_empty_melee_contacts = 0
 	survey_engagement_samples = 0
 	survey_engagement_alerted_sum = 0
+	survey_spell_counts.clear()
+	survey_crowding_samples = 0
+	survey_crowding_nearest_sum = 0.0
+	survey_crowding_close_samples = 0
+	survey_misdirected_ally_hits = 0
+	survey_interruption_events.clear()
 	survey_engagement_multi_samples = 0
 	survey_isolated_kills = 0
 	survey_engaged_kills = 0
@@ -1293,6 +1306,22 @@ func _sample_engagement() -> void:
 	survey_engagement_samples += 1
 	survey_engagement_alerted_sum += engaged
 	if engaged >= 2: survey_engagement_multi_samples += 1
+	var active: Array[Dictionary] = []
+	for enemy in enemies:
+		if int(enemy.get("hp", 0)) > 0 and _enemy_on_current_layer(enemy) and String(enemy.get("awareness", "idle")) == "alerted": active.append(enemy)
+	if active.size() < 2: return
+	var nearest_sum := 0.0
+	var close_pair := false
+	for enemy in active:
+		var nearest := INF
+		for other in active:
+			if int(other.get("id", -1)) == int(enemy.get("id", -1)): continue
+			nearest = minf(nearest, Vector2(enemy["pos"]).distance_to(Vector2(other["pos"])))
+		nearest_sum += nearest
+		if nearest < CROWDING_COMFORT_DISTANCE: close_pair = true
+	survey_crowding_samples += 1
+	survey_crowding_nearest_sum += nearest_sum / float(active.size())
+	if close_pair: survey_crowding_close_samples += 1
 
 func _survey_seed_for_room(room_number: int) -> int:
 	return absi(hash("waystone-survey:%d:%d:%d" % [SURVEY_GENERATOR_VERSION, run_seed, room_number]))
@@ -3754,7 +3783,8 @@ func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool
 	if not _spend_energy(spell_energy_cost(spell_id), false): return false
 	selected_spell = spell_id
 	player_facing = direction
-	survey_spell_casts += 1
+	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		survey_spell_counts[spell_id] = int(survey_spell_counts.get(spell_id, 0)) + 1
 	var spell_definition := AbilityCatalogScript.spell(spell_id)
 	player_action = _spell_action(spell_id, direction, float(spell_definition["player_startup"]), float(spell_definition["player_duration"]))
 	player_action["target"] = target
@@ -6809,9 +6839,6 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "chant" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_resolve_chant(enemy, String(action.get("label", "ward")))
-		elif kind in ["hex", "ice_hex"] and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
-			action["effect_done"] = true
-			_spawn_hex(enemy, Vector2(action["target"]), "ice_hex" if kind == "ice_hex" else "hex")
 		elif kind == "earth_wall" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_raise_earth_wall(Vector2(enemy["pos"]), int(enemy["id"]))
@@ -6831,9 +6858,6 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		elif kind == "frost_lance" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_frost_lance(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
-		elif kind == "ice_cone" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
-			action["effect_done"] = true
-			_spawn_ice_cone(enemy, Vector2(action["direction"]))
 		elif kind == "fire_breath" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_spawn_fire_breath(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
@@ -7385,8 +7409,20 @@ func _attach_charge_capture(action: Dictionary, authored_f: float, technique: St
 		"resolution": "",
 	}
 
-func _interrupt_enemy_action(enemy: Dictionary) -> void:
+func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "player", tool: String = "") -> void:
 	var action: Dictionary = enemy.get("action", {})
+	var interrupted_kind := String(action.get("kind", "idle"))
+	if mode_id == ModeRulesScript.COMBAT_SURVEY and interrupted_kind in ENEMY_ATTACK_ACTION_KINDS:
+		var tool_id := tool
+		if tool_id.is_empty(): tool_id = String(player_action.get("ability_id", player_action.get("kind", "unknown")))
+		survey_interruption_events.append({
+			"enemy_id": int(enemy.get("id", -1)),
+			"enemy_kind": String(enemy.get("kind", "unknown")),
+			"interrupted_action": interrupted_kind,
+			"interrupter": interrupter,
+			"tool": tool_id,
+			"at": simulation_time,
+		})
 	if String(action.get("kind", "")) in ["melee", "charge"]:
 		_finalise_capture_record(enemy, action, true)
 
@@ -8336,15 +8372,6 @@ func _spawn_cold_front(enemy: Dictionary, target: Vector2) -> void:
 	})
 	_set_message("The air goes bitter and still.")
 
-func _spawn_hex(enemy: Dictionary, target: Vector2, hazard_kind: String = "hex") -> void:
-	var ice := hazard_kind == "ice_hex"
-	_add_hazard({"kind": hazard_kind, "pos": target, "radius": 112.0 if ice else 100.0, "elapsed": 0.0, "trigger_at": 0.88 if ice else 0.82, "duration": 1.22 if ice else 1.12, "damage": 16 if ice else 14, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
-	_set_message("Ice gathers beneath you." if ice else "A hex gathers beneath you.")
-
-func _spawn_ice_cone(enemy: Dictionary, direction: Vector2) -> void:
-	_add_hazard({"kind": "ice_cone", "pos": Vector2(enemy["pos"]), "direction": direction.normalized(), "radius": 285.0, "half_angle": 0.62, "elapsed": 0.0, "trigger_at": 0.86, "duration": 1.02, "damage": 16, "source_id": int(enemy["id"]), "triggered": false, "layer": String(enemy.get("layer", current_layer))})
-	_set_message("A fan of ice surges forward.")
-
 # A cone, not a ring. A ring centred on the caster asks "are you close?", which the
 # player answers by backing off -- the same answer every close threat already has. A cone
 # asks "are you in front of it?", so the answer is to leave the arc, which is a different
@@ -8360,7 +8387,7 @@ func _update_hazards(dt: float) -> void:
 			survivors.append(hazard)
 			continue
 		hazard["elapsed"] = float(hazard["elapsed"]) + dt
-		var kind := String(hazard.get("kind", "hex"))
+		var kind := String(hazard.get("kind", ""))
 		if bool(hazard.get("friendly", false)):
 			if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
 				hazard["triggered"] = true
@@ -8396,9 +8423,7 @@ func _update_hazards(dt: float) -> void:
 					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos, Vector2.INF, -1.0, "cold_front:%d" % int(hazard.get("hazard_id", hazard.get("source_id", 0))))
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
-		# One cone, two elements. The shape is the same question -- are you in front of it
-		# -- and only the meter it loads differs.
-		if kind == "ice_cone" or kind == "fire_breath":
+		if kind == "fire_breath":
 			var progress := clampf(float(hazard["elapsed"]) / float(hazard["trigger_at"]), 0.0, 1.0)
 			var origin := Vector2(hazard["pos"])
 			var offset := player_pos - origin
@@ -8407,7 +8432,7 @@ func _update_hazards(dt: float) -> void:
 				var cone_facing := Vector2(hazard["direction"])
 				var cone_half := float(hazard["half_angle"])
 				var cone_reach := float(hazard["radius"]) * progress
-				_resolve_player_hazard_hit(hazard, "fire breath" if kind == "fire_breath" else "ice cone", func(enemy: Dictionary) -> bool:
+				_resolve_player_hazard_hit(hazard, "fire breath", func(enemy: Dictionary) -> bool:
 					var to_enemy := Vector2(enemy["pos"]) - cone_origin
 					return to_enemy.length() <= cone_reach + float(enemy.get("radius", ENEMY_RADIUS)) and _within_arc(cone_facing, to_enemy, cone_half) and _has_line_of_sight(cone_origin, Vector2(enemy["pos"])))
 				if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
@@ -8415,8 +8440,8 @@ func _update_hazards(dt: float) -> void:
 			var inside_cone := offset.length() <= float(hazard["radius"]) * progress + PLAYER_RADIUS and _within_arc(Vector2(hazard["direction"]), offset, float(hazard["half_angle"]))
 			if not bool(hazard["triggered"]) and inside_cone and _has_line_of_sight(origin, player_pos):
 				hazard["triggered"] = true
-				_add_effect("fire" if kind == "fire_breath" else "ice", player_pos)
-				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "fire breath" if kind == "fire_breath" else "ice cone", origin - player_pos)
+				_add_effect("fire", player_pos)
+				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "fire breath", origin - player_pos)
 		elif kind == "sundered_ground":
 			# It never resolves a hit. The cost of this ground is the time it takes to
 			# cross, which _terrain_speed_scale collects, and in frozen time that is the
@@ -8424,12 +8449,6 @@ func _update_hazards(dt: float) -> void:
 			if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
 				hazard["triggered"] = true
 				_add_effect("strain", Vector2(hazard["pos"]))
-		elif not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
-			hazard["triggered"] = true
-			_add_effect("fire" if kind == "fire_circle" else "ice" if kind == "ice_hex" else "hex", Vector2(hazard["pos"]))
-			if player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]):
-				var source_label := "fire circle" if kind == "fire_circle" else "ice hex" if kind == "ice_hex" else "hex"
-				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), source_label, Vector2(hazard["pos"]) - player_pos)
 		if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 	hazards = survivors
 
@@ -9278,6 +9297,7 @@ func _update_exploration(force: bool = false) -> void:
 					discovered_cells[cell] = true
 					discovery_log.append(cell)
 					added_discovery = true
+	visibility_revision += 1
 	if added_discovery: discovery_revision += 1
 	var previous_area_id := current_area_id
 	current_area_id = _area_id_at_position(player_pos, current_layer)
@@ -9616,7 +9636,10 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"performance_metrics": performance_metrics.duplicate(),
 	}
 	result.merge(StateFieldSchemaScript.capture(self, StateFieldSchemaScript.SNAPSHOT), true)
-	if lightweight: result["enemies"] = _timeline_enemies()
+	if lightweight:
+		result["enemies"] = _timeline_enemies()
+		result["visible_cells"] = {}
+		result["discovered_cells"] = {}
 	return result
 
 func _sensed_enemy_presentations() -> Array[Dictionary]:
@@ -9643,25 +9666,9 @@ func _timeline_enemies() -> Array[Dictionary]:
 	return nearby
 
 func _enemy_presentation(enemy: Dictionary) -> Dictionary:
-	return {
-		"id": int(enemy["id"]),
-		"kind": String(enemy["kind"]),
-		"pos": Vector2(enemy["pos"]),
-		"facing": Vector2(enemy["facing"]),
-		"hp": int(enemy["hp"]),
-		"max_hp": int(enemy["max_hp"]),
-		"radius": float(enemy["radius"]),
-		"posture": float(enemy.get("posture", 0.0)),
-		"posture_max": float(enemy.get("posture_max", 1.0)),
-		"action": Dictionary(enemy["action"]).duplicate(true),
-		"awareness": String(enemy.get("awareness", "idle")),
-		"revealed_to_player": bool(enemy.get("revealed_to_player", true)),
-		"revealed_elapsed": float(enemy.get("revealed_elapsed", 0.0)),
-		"attributes": Dictionary(enemy.get("attributes", {})).duplicate(true),
-		"weapon_frame": String(enemy.get("weapon_frame", "unarmed")),
-		"equipped_weapon_art": String(enemy.get("equipped_weapon_art", "")),
-		"layer": String(enemy.get("layer", current_layer)),
-	}
+	var result := StateFieldSchemaScript.project_entity(enemy, "enemy", StateFieldSchemaScript.PRESENTATION)
+	if not result.has("layer"): result["layer"] = current_layer
+	return result
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
 	var profile_start := Time.get_ticks_usec()

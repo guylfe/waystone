@@ -38,7 +38,7 @@ func test_enemy_catalog_is_complete() -> void:
 	for error in StateFieldSchemaScript.validate(): failures.append(String(error))
 	for error in RuntimeSchemaScript.validate_registry(): failures.append(String(error))
 	var state: RunState = RunStateScript.new(false)
-	for audience in [StateFieldSchemaScript.SNAPSHOT, StateFieldSchemaScript.PRESENTATION, StateFieldSchemaScript.SAVE]:
+	for audience in [StateFieldSchemaScript.SNAPSHOT, StateFieldSchemaScript.PRESENTATION, StateFieldSchemaScript.SAVE, StateFieldSchemaScript.DETERMINISM]:
 		var captured := StateFieldSchemaScript.capture(state, audience)
 		for descriptor in StateFieldSchemaScript.descriptors_for(audience):
 			check(captured.has(String(descriptor["key"])), "%s field %s was not captured" % [audience, descriptor["key"]])
@@ -50,6 +50,10 @@ func test_enemy_catalog_is_complete() -> void:
 	var migrated := SaveMigrationsScript.normalize(legacy_payload, state.SAVE_VERSION)
 	check(int(migrated.get("save_version", -1)) == state.SAVE_VERSION, "v33 save did not migrate sequentially to current")
 	check(migrated.has("cooldowns"), "v33 save migration did not construct cooldown slots")
+	for hostile_kind in ["hurl", "sunder", "slam"]:
+		check(hostile_kind in AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS, "%s is missing from hostile-action telemetry" % hostile_kind)
+	for retired_kind in ["hex", "ice_hex", "ice_cone", "fire_circle"]:
+		check(not AbilityCatalogScript.ACTION_EXECUTORS.has(retired_kind) and not AbilityCatalogScript.HAZARD_EXECUTORS.has(retired_kind), "retired ability %s is still registered" % retired_kind)
 
 func test_every_survey_recipe_kind_is_registered() -> void:
 	var state: RunState = RunStateScript.new(false)
@@ -74,11 +78,40 @@ func test_actor_boundary_owns_identity_and_factions() -> void:
 
 func test_dynamic_presentation_uses_stable_ids() -> void:
 	var state: RunState = RunStateScript.new(false)
+	state.enemies.clear()
+	var enemy := state._make_enemy("chanter", state.player_pos + Vector2.UP * 100.0, 30)
+	enemy["conditions"] = {"burning": 2.0, "frost": 1.0}
+	enemy["condition_buildup"] = {"frost": 3.0}
+	enemy["chants"] = {"haste": 2.5}
+	enemy["chant_source_id"] = int(enemy["id"])
+	enemy["action"] = state._action("hit_reaction", 0.5, Vector2.ZERO)
+	enemy["action"]["interrupted_action"] = {"kind":"chant", "label":"haste"}
+	state.enemies = [enemy]
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	state.player_conditions = {"burning": 1.0}
+	state.player_condition_buildup = {"frost": 2.0}
+	state.player_exhaustion_remaining = 0.5
+	state.aimed_enemy_id = int(enemy["id"])
+	state.visible_cells = {Vector2i(1, 1):true}
+	state.discovered_cells = {Vector2i(1, 1):true}
+	state.visibility_revision += 1
+	state.discovery_revision += 1
 	state._add_barrier({"pos":Vector2.ZERO, "axis":Vector2.RIGHT, "half_length":10.0, "thickness":2.0, "hp":1.0, "source_id":0, "layer":state.current_layer})
+	state._add_projectile({"kind":"arrow", "pos":state.player_pos, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":int(enemy["id"]), "friendly":false, "layer":state.current_layer, "elevation":12.0, "elevation_profile":"arc", "misdirected":true})
 	var current = PresentationFrameScript.new()
 	var following = PresentationFrameScript.new()
 	current.capture(state)
 	following.capture(state)
+	var captured_enemy := Dictionary(Array(current.data["enemies"])[0])
+	check(Dictionary(captured_enemy.get("conditions", {})).has("burning"), "streamed enemy lost conditions")
+	check(Dictionary(captured_enemy.get("chants", {})).has("haste"), "streamed enemy lost chant identity")
+	check(String(Dictionary(Dictionary(captured_enemy["action"]).get("interrupted_action", {})).get("kind", "")) == "chant", "streamed enemy lost nested interrupted action")
+	check(Dictionary(current.data.get("player_conditions", {})).has("burning") and is_equal_approx(float(current.data.get("player_exhaustion_remaining", 0.0)), 0.5), "streamed top-level combat state is incomplete")
+	var carried_projectile := Dictionary(Array(current.data["projectiles"])[0])
+	check(bool(carried_projectile.get("misdirected", false)) and is_equal_approx(float(carried_projectile.get("elevation", 0.0)), 12.0), "world schema did not carry misdirection and elevation")
+	state.visible_cells.clear()
+	check(not Dictionary(current.data["visible_cells"]).is_empty(), "presentation frame aliases the live visibility dictionary")
 	current.data["projectiles"] = [
 		{"presentation_id":1, "pos":Vector2.ZERO},
 		{"presentation_id":2, "pos":Vector2(100.0, 0.0)},

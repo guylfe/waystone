@@ -234,7 +234,7 @@ func test_a_cone_hazard_tells_the_renderer_it_is_a_cone() -> void:
 	# The renderer decides how to draw a hazard by whether it carries a half_angle. It used
 	# to test the hazard's NAME, so when 0.2.56 replaced the Fire Caster's ring with a cone
 	# the simulation resolved a cone while the renderer drew a 232-unit expanding disc --
-	# and the only cone it could draw belonged to `ice_cone`, which 0.2.57 stopped spawning.
+	# and the prior cone branch no longer had a live producer.
 	# Both halves were invisible to this suite, because a headless test cannot see a shape.
 	# What it CAN pin is the contract the renderer keys on.
 	var state := fresh()

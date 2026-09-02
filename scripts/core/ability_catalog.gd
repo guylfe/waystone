@@ -9,7 +9,7 @@ extends RefCounted
 const PLACE_RANGE := 420.0
 
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "ice_cone", "fire_breath", "hex", "ice_hex", "earth_wall", "cold_front", "frost_lance", "gale"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "hurl", "slam", "sunder", "fire_breath", "earth_wall", "cold_front", "frost_lance", "gale"]
 const ENERGY_REGEN_ACTION_KINDS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 
 const ELEMENT_STAGE_SPELLS := {
@@ -49,9 +49,9 @@ const ACTION_EXECUTORS := {
 	"idle": "none", "move": "locomotion", "evade": "locomotion", "dodge_strike": "melee",
 	"claw_combo": "melee", "pounce_combo": "melee", "melee": "melee", "charge": "melee",
 	"slam": "area", "shoot": "projectile", "hurl": "projectile", "sunder": "hazard",
-	"chant": "support", "hex": "hazard", "ice_hex": "hazard", "earth_wall": "barrier",
+	"chant": "support", "earth_wall": "barrier",
 	"gale": "hazard", "windstep": "movement", "cold_front": "hazard",
-	"frost_lance": "projectile", "ice_cone": "hazard", "fire_breath": "hazard",
+	"frost_lance": "projectile", "fire_breath": "hazard",
 	"stagger": "reaction", "hit_reaction": "reaction", "parry_stance": "defense",
 	"attack": "player", "sweep": "player", "combo": "player", "art_combo": "player",
 	"twin_fang": "player", "cast": "player", "wait": "player", "circle": "player",
@@ -62,8 +62,18 @@ const ACTION_EXECUTORS := {
 
 const HAZARD_EXECUTORS := {
 	"player_fire": "friendly_burst", "gale": "impulse", "cold_front": "repeating_zone",
-	"ice_cone": "cone", "fire_breath": "cone", "sundered_ground": "slow_zone",
-	"hex": "delayed_zone", "ice_hex": "delayed_zone", "fire_circle": "delayed_zone",
+	"fire_breath": "cone", "sundered_ground": "slow_zone",
+}
+
+# Lifecycle metadata makes both halves of an ability contract explicit. Active
+# definitions need a producer and a consumer; future reserved/legacy entries must
+# carry their reason or migration rather than masquerading as live content.
+const HAZARD_LIFECYCLE := {
+	"player_fire": {"status":"active", "producer":"consumable", "consumer":"friendly_burst"},
+	"gale": {"status":"active", "producer":"spellbook_and_air_caster", "consumer":"impulse"},
+	"cold_front": {"status":"active", "producer":"spellbook_and_ice_caster", "consumer":"repeating_zone"},
+	"fire_breath": {"status":"active", "producer":"spellbook_and_fire_caster", "consumer":"cone"},
+	"sundered_ground": {"status":"active", "producer":"spellbook_and_earth_caster", "consumer":"slow_zone"},
 }
 
 static func has_spell(id: String) -> bool:
@@ -115,6 +125,18 @@ static func validate_catalog() -> Array[String]:
 		if not ACTION_EXECUTORS.has(String(definition.get("action_kind", ""))): errors.append("enemy ability %s names an unhandled action" % id)
 	for kind in HAZARD_EXECUTORS:
 		if String(HAZARD_EXECUTORS[kind]) == "": errors.append("hazard %s has no executor" % kind)
+		if not HAZARD_LIFECYCLE.has(kind): errors.append("hazard %s has no lifecycle definition" % kind)
+	for kind in HAZARD_LIFECYCLE:
+		var lifecycle := Dictionary(HAZARD_LIFECYCLE[kind])
+		var status := String(lifecycle.get("status", ""))
+		if status == "active":
+			if not HAZARD_EXECUTORS.has(kind): errors.append("active hazard %s has no consumer" % kind)
+			if String(lifecycle.get("producer", "")).is_empty(): errors.append("active hazard %s has no producer" % kind)
+		elif status == "reserved":
+			if String(lifecycle.get("reason", "")).is_empty(): errors.append("reserved hazard %s has no reason" % kind)
+		elif status == "legacy":
+			if String(lifecycle.get("migration", "")).is_empty(): errors.append("legacy hazard %s has no migration" % kind)
+		else: errors.append("hazard %s has unknown lifecycle %s" % [kind, status])
 	for kind in PLAYER_ATTACK_ACTION_KINDS + ENEMY_ATTACK_ACTION_KINDS + ENERGY_REGEN_ACTION_KINDS:
 		if not ACTION_EXECUTORS.has(kind): errors.append("classified action %s has no executor" % kind)
 	return errors

@@ -3258,7 +3258,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("frost_lance")["color"])))
 	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fire_breath")["color"])))
 	elif String(action["kind"]) == "chant": _draw_spell_cast(pos, facing, radius, action, Color("e0c46a"))
-	elif String(action["kind"]) in ["hex", "ice_hex", "cold_front"]: draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0 if String(action["kind"]) == "cold_front" else 12.0, Color("b57bea") if String(action["kind"]) == "hex" else Color("8edcff"))
+	elif String(action["kind"]) == "cold_front": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0, Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
 	if awareness in ["suspicious", "alerted"]:
 		var marker := "?" if awareness == "suspicious" else "!"
@@ -3566,7 +3566,7 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif kind == "endure": color = Color("ee6645")
 	elif kind == "ice": color = Color("9be7ff")
 	elif kind == "fire": color = Color("ff7b35")
-	elif kind in ["hex", "slam"]: color = Color("b57bea") if kind == "hex" else Color("e15c54")
+	elif kind == "slam": color = Color("e15c54")
 	elif kind in ["miss", "glance"]: color = Color("a9b1b2")
 	elif kind == "recover": color = Color("d8ed78")
 	elif kind == "anchor": color = Color("f0b45a")
@@ -3753,15 +3753,8 @@ func _draw_hazard(hazard: Dictionary) -> void:
 	var elapsed := float(hazard["elapsed"])
 	var trigger_at := float(hazard["trigger_at"])
 	var progress := clampf(elapsed / trigger_at, 0.0, 1.0)
-	var kind := String(hazard.get("kind", "hex"))
-	# Keyed on the hazard carrying a half_angle rather than on its name. This used to test
-	# `kind == "ice_cone"`, so when 0.2.56 replaced the Fire Caster's ring with a cone the
-	# simulation started resolving a 0.52-radian cone while the renderer kept drawing a
-	# 232-unit expanding disc -- a "large fire circle" that was neither of the caster's
-	# abilities, and the reason the cones had never once been seen. Meanwhile the only
-	# cone the renderer could draw belonged to `ice_cone`, which 0.2.57 stopped spawning.
-	# Both halves of that were invisible to the headless suite, which is exactly what the
-	# renderer-validation rule exists for.
+	var kind := String(hazard.get("kind", ""))
+	# Cone rendering is geometry-driven so every active cone shares one projection path.
 	if hazard.has("half_angle"):
 		var direction := Vector2(hazard.get("direction", Vector2.UP)).normalized()
 		var half_angle := float(hazard["half_angle"])
@@ -3795,7 +3788,7 @@ func _draw_hazard(hazard: Dictionary) -> void:
 		return
 	var fill_color := Color(0.55, 0.25, 0.70, 0.08 + progress * 0.12)
 	var edge_color := Color("b57bea")
-	if kind == "ice_hex" or kind == "cold_front":
+	if kind == "cold_front":
 		fill_color = Color(0.28, 0.70, 0.92, 0.10 + progress * 0.18)
 		edge_color = Color("9be7ff")
 	elif kind in ["fire_breath", "player_fire"]:
@@ -4051,7 +4044,6 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["active_end"]): return "STRIKING"
 		return "RECOVERING"
 	if kind == "shoot": return "DRAWING" if elapsed < float(action.get("startup", 0.72)) else "RECOVERING"
-	if kind == "ice_hex": return "FORMING ICE" if elapsed < float(action.get("startup", 0.66)) else "RECOVERING"
 	# Frost Lance and Fire Breath already had readouts further down this chain -- "CONDENSING"
 	# / "LOOSED" and "DRAWING BREATH" / "BREATHING FIRE", which are better lines than the ones
 	# 0.2.66 added. That version claimed all four of these abilities had no phase text; it was
@@ -4059,7 +4051,6 @@ func _phase(action: Dictionary) -> String:
 	# branches came first they shadowed the originals into unreachable code. Two authored
 	# descriptions each, one of them dead.
 	if kind == "chant": return "CHANTING" if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
-	if kind == "ice_cone": return "GATHERING FROST" if elapsed < float(action.get("startup", 0.58)) else "CASTING"
 	if kind == "charge":
 		if elapsed < float(action.get("startup", 0.4)): return "CROUCHING"
 		if elapsed < float(action.get("active_end", 0.8)): return "POUNCING" if String(action.get("label", "")) == "pounce" else "CHARGING"
@@ -4082,7 +4073,6 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action.get("second_start", 1.13)): return "TURNING"
 		if elapsed < float(action.get("second_end", 1.34)): return "RIGHT CLAW"
 		return "RECOVERING"
-	if kind == "hex": return "CHANNELING" if elapsed < float(action.get("startup", 0.68)) else "RECOVERING"
 	if kind == "slam": return "RAISING" if elapsed < float(action.get("startup", 1.0)) else "RECOVERING"
 	if kind == "hit_reaction": return "REELING"
 	if kind == "stagger": return "STAGGERED"

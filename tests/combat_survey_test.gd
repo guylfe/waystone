@@ -3,6 +3,30 @@ extends SceneTree
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 
 func _init() -> void:
+	var spell_meter = RunStateScript.new(false)
+	spell_meter.start_run("mage_elementalist", "combat_survey", 99117, "encounter", "energy")
+	spell_meter.enemies.clear()
+	spell_meter.walls.clear()
+	spell_meter._build_wall_spatial_index()
+	spell_meter.player_spells.assign(["lightning_bolt", "fireball", "cold_front", "earth_wall", "gale"])
+	spell_meter.player_max_energy = 1000.0
+	spell_meter.player_energy = 1000.0
+	for spell_id in spell_meter.player_spells:
+		assert(spell_meter.request_spell(spell_id, spell_meter.player_pos + Vector2.RIGHT * 160.0))
+		spell_meter.player_energy = 1000.0
+	assert(spell_meter.survey_spell_counts.size() == 5)
+	var spell_total := 0
+	for count in spell_meter.survey_spell_counts.values(): spell_total += int(count)
+	assert(spell_total == 5 and int(spell_meter.survey_action_counts.get("spell", 0)) == 5)
+	var crowd_a := spell_meter._make_enemy("blade", spell_meter.player_pos + Vector2.RIGHT * 100.0, 10)
+	var crowd_b := spell_meter._make_enemy("knife", spell_meter.player_pos + Vector2.RIGHT * 200.0, 10)
+	for enemy in [crowd_a, crowd_b]: enemy["awareness"] = "alerted"
+	spell_meter.enemies.assign([crowd_a, crowd_b])
+	spell_meter._sample_engagement()
+	assert(spell_meter.survey_crowding_samples == 1 and is_equal_approx(spell_meter.survey_crowding_nearest_sum, 100.0) and spell_meter.survey_crowding_close_samples == 1)
+	crowd_a["action"] = spell_meter._action("hurl", 1.0, Vector2.LEFT)
+	spell_meter._interrupt_enemy_action(crowd_a, "player", "lightning_bolt")
+	assert(String(spell_meter.survey_interruption_events[0]["interrupted_action"]) == "hurl" and String(spell_meter.survey_interruption_events[0]["tool"]) == "lightning_bolt")
 	var first = RunStateScript.new(false)
 	first.start_run("warrior", "combat_survey", 424242, "encounter", "recovery")
 	first.record_survey_view_mode("isometric", false)
@@ -56,7 +80,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Energy:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Energy depleted:" in report and "Energy overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 27" in report and "Presentation version: 7" in report and "Combat rules: Recovery" in report)
+	assert("Report format: 28" in report and "Presentation version: 8" in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Energy regeneration delay:" in report)

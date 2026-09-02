@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 27
+const FORMAT_VERSION := 28
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -173,6 +173,20 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Blocks: %d" % int(room.get("successful_blocks", 0)))
 		lines.append("Endures: %d" % int(room.get("successful_endures", 0)))
 		lines.append("Action usage: %s" % _action_usage_text(Dictionary(room.get("action_usage", {}))))
+		lines.append("Spell usage: %s" % _action_usage_text(Dictionary(room.get("spell_usage", {}))))
+		var crowding_samples := int(room.get("crowding_samples", 0))
+		if crowding_samples > 0:
+			lines.append("Enemy spacing: mean nearest ally %.1f; %.0f%% of combat inside comfort distance" % [
+				float(room.get("crowding_nearest_sum", 0.0)) / float(crowding_samples),
+				100.0 * float(room.get("crowding_close_samples", 0)) / float(crowding_samples),
+			])
+		lines.append("Misdirected same-side hits: %d" % int(room.get("misdirected_ally_hits", 0)))
+		var interruption_events: Array = room.get("interruption_events", [])
+		if not interruption_events.is_empty():
+			lines.append("Hostile commitments interrupted: %d" % interruption_events.size())
+			for event_value in interruption_events:
+				var event := Dictionary(event_value)
+				lines.append("  %s %s by %s using %s" % [String(event.get("enemy_kind", "enemy")), String(event.get("interrupted_action", "action")), String(event.get("interrupter", "unknown")), String(event.get("tool", "unknown"))])
 		var view_modes := PackedStringArray(room.get("view_modes", []))
 		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
 		lines.append("View switches: %d" % int(room.get("view_switches", 0)))

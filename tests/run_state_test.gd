@@ -99,7 +99,6 @@ func _init() -> void:
 	test_floor_cache_appends_discovery_incrementally()
 	test_autosave_waits_for_quiet_input()
 	test_xp_death_recovery()
-	test_hex_hazard()
 	test_save_round_trip()
 	test_save_payload_omits_regenerated_world_geometry()
 	test_version_one_save_migration()
@@ -1729,12 +1728,6 @@ func test_back_half_expedition_roles() -> void:
 	assert(String(Dictionary(wolf["action"])["kind"]) == "claw_combo")
 	var leap_chain: Dictionary = state._werewolf_pounce_combo(Vector2.DOWN)
 	assert(String(leap_chain["kind"]) == "pounce_combo" and int(leap_chain["pounce_damage"]) > 0)
-	state.hazards.clear()
-	state._spawn_hex(ice, state.player_pos, "ice_hex")
-	assert(String(state.hazards[0]["kind"]) == "ice_hex" and float(state.hazards[0]["trigger_at"]) >= 0.8)
-	state.hazards.clear()
-	state._spawn_ice_cone(ice, Vector2.DOWN)
-	assert(String(state.hazards[0]["kind"]) == "ice_cone" and float(state.hazards[0]["radius"]) >= 280.0)
 
 func test_progressive_expedition_rooms() -> void:
 	for seed in [11, 22, 33, 44, 55, 739391]:
@@ -2121,16 +2114,6 @@ func test_xp_death_recovery() -> void:
 	state.player_pos += Vector2.RIGHT * 90.0
 	state._begin_death()
 	assert(int(state.lost_xp["amount"]) == 3)
-
-func test_hex_hazard() -> void:
-	var state: RunState = RunStateScript.new()
-	state.enemies.clear()
-	state.hazards = [{"kind": "hex", "pos": state.player_pos, "radius": 100.0, "elapsed": 0.0, "trigger_at": 0.10, "duration": 0.30, "damage": 2, "source_id": 99, "triggered": false}]
-	assert(state.request_wait(0.20))
-	var saw_hex := false
-	for effect in state.effects:
-		if String(effect["kind"]) == "hex": saw_hex = true
-	assert(saw_hex)
 
 func test_save_round_trip() -> void:
 	var state: RunState = RunStateScript.new(false)

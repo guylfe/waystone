@@ -1,6 +1,8 @@
 class_name DeterminismSnapshot
 extends RefCounted
 
+const StateFieldSchemaScript = preload("res://scripts/core/state_field_schema.gd")
+
 # A semantic projection for structural-refactor tests. It deliberately ignores
 # caches, presentation pools, profiler values and storage layout. If two runs play
 # identically, these component hashes remain identical even when their internal
@@ -12,43 +14,21 @@ const ACTION_FIELDS := [
 	"advance_distance", "advance_end", "speed", "phase",
 ]
 
-const ACTOR_FIELDS := [
-	"id", "kind", "pos", "facing", "hp", "max_hp", "radius", "posture",
-	"posture_max", "awareness", "layer", "pounce_cooldown", "parry_cooldown",
-	"dodge_cooldown", "neutral_cooldown", "shot_cooldown", "conditions",
-]
-
-const WORLD_FIELDS := [
-	"id", "kind", "pos", "vel", "direction", "radius", "half_angle",
-	"elapsed", "duration", "trigger_at", "triggered", "damage", "posture",
-	"source_id", "friendly", "remaining", "hp", "axis", "half_length",
-	"thickness", "layer", "travelled", "max_range",
-]
-
 static func checkpoint(state: RunState) -> Dictionary:
-	var player := {
-		"pos": state.player_pos,
-		"facing": state.player_facing,
-		"hp": state.player_hp,
-		"max_hp": state.player_max_hp,
-		"energy": state.player_energy,
-		"max_energy": state.player_max_energy,
-		"posture": state.player_posture,
-		"posture_max": state.player_posture_max,
-		"action": _selected(Dictionary(state.player_action), ACTION_FIELDS),
-	}
+	var player := StateFieldSchemaScript.capture(state, StateFieldSchemaScript.DETERMINISM)
+	player["player_action"] = _selected(Dictionary(state.player_action), ACTION_FIELDS)
 	var enemies: Array = []
 	for value in state.enemies:
 		var enemy := Dictionary(value)
-		var projected := _selected(enemy, ACTOR_FIELDS)
+		var projected := StateFieldSchemaScript.project_entity(enemy, "enemy", StateFieldSchemaScript.DETERMINISM)
 		projected["action"] = _selected(Dictionary(enemy.get("action", {})), ACTION_FIELDS)
 		enemies.append(projected)
 	enemies.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", -1)) < int(b.get("id", -1)))
 	var world := {
-		"projectiles": _project_collection(state.projectiles),
-		"hazards": _project_collection(state.hazards),
-		"barriers": _project_collection(state.barriers),
-		"effects": _project_collection(state.effects),
+		"projectiles": _project_collection(state.projectiles, "projectile"),
+		"hazards": _project_collection(state.hazards, "hazard"),
+		"barriers": _project_collection(state.barriers, "barrier"),
+		"effects": _project_collection(state.effects, "effect"),
 	}
 	var run := {
 		"time": state.simulation_time,
@@ -70,10 +50,10 @@ static func checkpoint(state: RunState) -> Dictionary:
 static func hash_value(value: Variant) -> String:
 	return _canonical(value).sha256_text()
 
-static func _project_collection(source: Array) -> Array:
+static func _project_collection(source: Array, entity: String) -> Array:
 	var result: Array = []
 	for value in source:
-		result.append(_selected(Dictionary(value), WORLD_FIELDS))
+		result.append(StateFieldSchemaScript.project_entity(Dictionary(value), entity, StateFieldSchemaScript.DETERMINISM))
 	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var a_id := int(a.get("id", -1))
 		var b_id := int(b.get("id", -1))
