@@ -62,6 +62,20 @@ func test_every_survey_recipe_kind_is_registered() -> void:
 			var kind := String(Dictionary(entry_value).get("kind", ""))
 			check(CombatCatalogScript.has_archetype(kind), "survey recipe names unknown enemy %s" % kind)
 
+func test_catalog_vision_is_the_perception_authority() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.walls.clear()
+	state._build_wall_spatial_index()
+	state.player_attributes["stealth"] = 0
+	var chanter := state._make_enemy("chanter", state.player_pos + Vector2.UP * 570.0, 30)
+	chanter["facing"] = Vector2.DOWN
+	check(is_equal_approx(state._enemy_vision_range(chanter), 620.0), "Chanter did not receive its authored 620 vision")
+	check(state._enemy_has_eyes_on_player(chanter), "Chanter still behaves as if its vision were the 520 fallback")
+	for kind in CombatCatalogScript.enemy_kinds():
+		var enemy := state._make_enemy(kind, state.player_pos + Vector2.UP * 200.0, 30)
+		var authored := float(Dictionary(CombatCatalogScript.archetype(kind)["properties"]).get("vision_range", state.SIGHT_RANGE))
+		check(is_equal_approx(state._enemy_vision_range(enemy), authored), "%s perception drifted from the catalog" % kind)
+
 func test_actor_boundary_owns_identity_and_factions() -> void:
 	var state: RunState = RunStateScript.new(false)
 	var enemy := state._make_enemy("blade", Vector2(100.0, 100.0), 30)
@@ -131,6 +145,7 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 func _init() -> void:
 	test_enemy_catalog_is_complete()
 	test_every_survey_recipe_kind_is_registered()
+	test_catalog_vision_is_the_perception_authority()
 	test_actor_boundary_owns_identity_and_factions()
 	test_dynamic_presentation_uses_stable_ids()
 	if failures.is_empty():

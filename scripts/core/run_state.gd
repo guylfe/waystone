@@ -445,9 +445,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.79"
+const GAME_VERSION := "0.2.80"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 8
+const PRESENTATION_VERSION := 9
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -3391,8 +3391,9 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 # How far a kind can see, shared so the gate below and the awareness update cannot
 # drift apart -- the mistake the Shield's guard list already made once.
 func _enemy_vision_range(enemy: Dictionary) -> float:
-	var far := String(enemy.get("kind", "")) in ["archer", "ice_caster", "fire_caster", "air_caster", "warden", "werewolf"]
-	return (620.0 if far else SIGHT_RANGE) - 14.0 * float(player_attributes.get("stealth", 0))
+	var profile := CombatCatalogScript.archetype(String(enemy.get("kind", "")))
+	var authored := float(Dictionary(profile.get("properties", {})).get("vision_range", SIGHT_RANGE))
+	return authored - 14.0 * float(player_attributes.get("stealth", 0))
 
 # Eyes on the player right now: inside the cone (or close enough that facing stops
 # mattering) with a clear line.
@@ -6118,7 +6119,7 @@ func _enemy_death_has_witness(victim: Dictionary) -> bool:
 		var enemy_pos := Vector2(enemy["pos"])
 		var offset := player_pos - enemy_pos
 		var distance := offset.length()
-		var vision_range := float(Dictionary(enemy.get("properties", {})).get("vision_range", SIGHT_RANGE))
+		var vision_range := _enemy_vision_range(enemy)
 		var facing := Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 		var within_perception := distance <= 105.0 or (distance <= vision_range and offset.length_squared() > 0.001 and absf(facing.angle_to(offset.normalized())) <= deg_to_rad(65.0))
 		if within_perception and _has_line_of_sight(enemy_pos, player_pos): return true

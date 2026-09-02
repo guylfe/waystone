@@ -2563,6 +2563,13 @@ func _draw_projectile(projectile: Dictionary) -> void:
 		var tip := center + direction * 10.0
 		var side := direction.rotated(PI * 0.5)
 		draw_colored_polygon(PackedVector2Array([tip, center + direction * 4.0 + side * 3.5, center + direction * 4.0 - side * 3.5]), Color("fff1b8"))
+	if bool(projectile["misdirected"]):
+		# A turned shot can cross its original allegiance. The double broken ring is
+		# intentionally unlike any element or faction colour: it means trajectory
+		# ownership changed, regardless of who fired it.
+		var cue_radius := maxf(8.0, radius * 1.75)
+		draw_arc(center, cue_radius, -0.25 * PI, 0.65 * PI, 12, Color("f3ecff"), maxf(2.0, world_scale * 2.8))
+		draw_arc(center, cue_radius, 0.75 * PI, 1.65 * PI, 12, Color("b57bea"), maxf(2.0, world_scale * 2.8))
 
 # A chant is drawn on the enemy CARRYING it, not on the caster, because what the
 # player needs to read is which bodies in front of them have changed.
@@ -2576,7 +2583,8 @@ func _draw_chant_marks(pos: Vector2, radius: float, enemy: Dictionary) -> void:
 	if chants.is_empty(): return
 	var slot := 0
 	for chant in ["haste", "bulwark", "ward"]:
-		if float(chants.get(chant, 0.0)) <= 0.0: continue
+		var remaining := float(chants.get(chant, 0.0))
+		if remaining <= 0.0: continue
 		var mark := pos + Vector2(0.0, -radius * 1.62) + Vector2(float(slot) * radius * 0.52 - radius * 0.26, 0.0)
 		var size := maxf(3.0, radius * 0.22)
 		if chant == "haste":
@@ -2585,6 +2593,8 @@ func _draw_chant_marks(pos: Vector2, radius: float, enemy: Dictionary) -> void:
 			draw_polyline(PackedVector2Array([mark + Vector2(-size, size * 0.7), mark + Vector2(0.0, -size * 0.8), mark + Vector2(size, size * 0.7)]), Color("f2cf4a"), maxf(2.0, size * 0.42))
 		else:
 			draw_polyline(_closed_points(PackedVector2Array([mark + Vector2(0.0, -size), mark + Vector2(size, 0.0), mark + Vector2(0.0, size), mark + Vector2(-size, 0.0)])), Color("e06868"), maxf(2.0, size * 0.42))
+		var duration_fraction := clampf(remaining / maxf(0.01, state.CHANT_DURATION), 0.0, 1.0)
+		draw_arc(mark, size * 1.55, -PI * 0.5, -PI * 0.5 + TAU * duration_fraction, 14, Color(0.95, 0.95, 0.88, 0.82), maxf(1.0, size * 0.20))
 		slot += 1
 
 func _draw_isometric_focus_overlay(visible: Dictionary) -> void:
@@ -3217,6 +3227,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		for offset in [-0.62, 0.62]:
 			draw_arc(pos, radius * 1.34, ready_angle + offset - 0.16, ready_angle + offset + 0.16, 6, Color("e8e0a8"), maxf(2.0, radius * 0.10))
 	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling, Vector2(pose["body_scale"]), float(pose["stride"]))
+	_draw_enemy_conditions(pos, radius, enemy)
 	_draw_enemy_identity(kind, pos, facing, radius, color)
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
 		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
@@ -3271,6 +3282,25 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	# Width was radius x 4.4, which clipped "DRAWING BREATH" to "DRAWING BREAT". A telegraph
 	# that cannot finish its own word is not a telegraph.
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
+
+func _draw_enemy_conditions(pos: Vector2, radius: float, enemy: Dictionary) -> void:
+	var conditions := Dictionary(enemy.get("conditions", {}))
+	if float(conditions.get("burning", 0.0)) > 0.0:
+		# Fire licks upward in three uneven arcs: active harm and a hot silhouette.
+		for offset in [-0.55, 0.0, 0.55]:
+			var flame_center := pos + Vector2(float(offset) * radius, -radius * (0.72 + 0.14 * absf(float(offset))))
+			draw_arc(flame_center, radius * 0.38, PI * 1.05, PI * 1.95, 7, Color("ff7b35"), maxf(2.0, radius * 0.11))
+	if float(conditions.get("frost", 0.0)) > 0.0:
+		# Frost is a rigid crystalline cage around the lower body, visually opposite
+		# to the rising, irregular burn marks.
+		var frost_color := Color("9be7ff")
+		for angle in [0.0, PI * 0.5, PI, PI * 1.5]:
+			var direction := Vector2.RIGHT.rotated(float(angle))
+			var start := pos + direction * radius * 0.90
+			var finish := pos + direction * radius * 1.34
+			draw_line(start, finish, frost_color, maxf(2.0, radius * 0.10))
+			draw_line(finish, finish + direction.rotated(0.62) * radius * 0.22, frost_color, maxf(1.0, radius * 0.07))
+			draw_line(finish, finish + direction.rotated(-0.62) * radius * 0.22, frost_color, maxf(1.0, radius * 0.07))
 
 func _draw_actor(pos: Vector2, foot: Vector2, facing: Vector2, radius: float, color: Color, marker_color: Color, reeling: bool = false, body_scale: Vector2 = Vector2.ONE, stride: float = 0.0) -> void:
 	if view_mode == "isometric":

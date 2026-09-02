@@ -138,7 +138,15 @@ static func capture(state: Object, audience: String) -> Dictionary:
 		var policy := String(descriptor.get("copy", "scalar"))
 		var value: Variant = state.call(source) if policy in ["method", "method_array"] else state.get(source)
 		if policy == "dictionary": value = Dictionary(value).duplicate(true)
-		elif policy in ["array", "method_array"]: value = Array(value).duplicate(true)
+		elif policy == "array":
+			var entity_by_key := {"projectiles":"projectile", "hazards":"hazard", "effects":"effect", "world_pickups":"pickup", "barriers":"barrier"}
+			if audience != SAVE and entity_by_key.has(key):
+				var projected: Array = []
+				var projection_audience := PRESENTATION if audience == SNAPSHOT else audience
+				for item_value in Array(value): projected.append(project_entity(Dictionary(item_value), String(entity_by_key[key]), projection_audience))
+				value = projected
+			else: value = Array(value).duplicate(true)
+		elif policy == "method_array": value = Array(value).duplicate(true)
 		elif policy == "revision_dictionary": value = Dictionary(value).duplicate(true)
 		result[key] = value
 	return result
