@@ -2074,3 +2074,115 @@ The practical recommendation is simpler than the arrows: **finish the measuremen
 the baseline before opening the actor rewrite.** That gets the project an answer to its immediate
 combat question quickly, establishes the safety net the rewrite needs, and prevents a month of
 structural work from turning the next survey into an uninterpretable before/after comparison.
+
+---
+
+# Implementation closeout — `0.2.79` to `0.2.81`
+
+**Recorded:** 2026-09-02 after the three approved consecutive releases; release-verification
+addendum recorded 2026-09-03. This section is an implementation record, not a new proposal. It
+supersedes the “proposed, not approved” status only for the items explicitly named as shipped below.
+The deeper architecture programme remains pending.
+
+## What shipped
+
+### `0.2.79` — measurement and state contracts (`2b17766`)
+
+- M1–M5: the expanded determinism projection, Elementalist golden run, hostile-action
+  classification, stable per-spell telemetry, crowding/misdirection/interruption measurements;
+- C1: retirement of the unreachable spell family and lifecycle-aware validation;
+- C3 and C5: descriptor-driven top-level, enemy and world-object projection, including immutable
+  revisioned visibility/discovery snapshots, nested interrupted actions, stable presentation IDs,
+  and authored `misdirected`, elevation and elevation-profile fields.
+
+### `0.2.80` — perception and combat cues (`4f266ed`)
+
+- C2: catalogued `vision_range` is the sole perception authority; the Chanter's authored value is
+  620 and a fixture distinguishes it from the old 520 fallback;
+- C4: burn/frost body cues, chant identity/duration and the misdirected-projectile cue render from
+  projected state rather than live fallbacks.
+
+### `0.2.81` — systemic projectile allegiance (`5d5f56b`)
+
+- C6: ordinary projectiles pass their original source faction; Gale explicitly sets
+  `misdirected=true` for enemy and player projectiles; only flagged shots may collide with that
+  original side, including their source;
+- the Archer's bespoke allied-lane refusal is gone; barriers remain physical projectile blockers;
+- save schema 35 authors `misdirected=false` for migrated live projectiles;
+- deterministic fixtures cover ordinary and redirected shots from both sides, the player self-hit
+  case, enemy ally hits, grounded Gale-javelin composition and survey event counting.
+
+## Verification actually completed
+
+- Focused capture, run-state, structure, migration and golden tests passed.
+- The full default suite passed all 19 test files with exactly one documented expected failure:
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- Both golden runs repeated stably after the intentional world-state fingerprint change.
+- `git diff --check` passed and each release was committed separately; the source worktree was clean
+  at the `0.2.81` release boundary.
+- The full 19-file suite was repeated after extending `tests/caster_visual_audit.gd`; it again passed
+  with exactly the same one documented expected failure.
+- The real-renderer caster and milestone audits generated 19 current frames. Every frame was
+  inspected. Burn flames, frost crystals, chant identity/duration, projectile misdirection, attack
+  poses, combo phases, hit reactions, protected recovery, charge wind-up, Wait, both weapon arts
+  and the Ox states were visible. The frozen and streamed state-cue frames were byte-identical.
+- Both release packages were built successfully:
+  - Windows `Waystone.exe`: file/product version `0.2.81`, SHA-256
+    `A9017190C7574ACD09127D92CC3D02959FD680574AA8B6D52852AA88E4F2F293`;
+  - Android `waystone-debug.apk`: package `com.waystone.prototype`, version name `0.2.81`, version
+    code `281`, min SDK 24, target SDK 36, SHA-256
+    `C07DDEAE85B7C2E79B3920769586AD351C1215408331B7BBE11CF318C921434B`; APK signature v2/v3
+    verification passed.
+- Wireless ADB identified serial `37031FDHS000C6` as a Pixel Fold (`felix`). Replacement install
+  succeeded, package metadata was read back as `0.2.81` / `281`, and the Godot activity remained
+  running and focusable.
+- The active 1080×2092 outer display was inspected with Waystone in portrait and temporarily forced
+  landscape. Auto-rotation and portrait orientation were restored afterwards.
+
+Release packaging and Fold installation are therefore verified, but the visual audit was not a
+clean acceptance pass. It found two pre-existing responsive-layout defects rather than a regression
+in the new combat cues:
+
+- in portrait, the wide combat HUD is compressed, the status text overlaps the navigation row and
+  the Combat Survey modal consumes nearly the full screen;
+- in outer-display landscape, the game runs and the modal is usable, but fixed-width background and
+  header regions do not fill the complete 2092-pixel display and the status/navigation row remains
+  crowded.
+
+The inner/unfolded display was not exercised because the device remained physically folded. Export
+also emitted non-fatal warnings for Windows root certificates, the missing project icon/themed-icon
+reference, and Android build-tools fallback from target 36 to installed build tools 35.0.1.
+
+Therefore Gate B is not fully closed. Automated behavioral gates, packaging and installed-version
+verification are green; the responsive-layout findings need an explicit disposition, and the Gate B
+standard-profile Elementalist survey has not yet been run.
+
+## Durable rules for every later implementation
+
+1. A registry is canonical only when every producer enters it, every consumer reads it, and tests
+   check both declared-without-use and produced-without-declaration.
+2. A field crossing a boundary is authored once with its audiences, default, copy and interpolation
+   policy. Frozen presentation, streamed presentation, save and determinism may select different
+   audiences, but may not maintain independent hand lists.
+3. Runtime-authored invalid state fails loudly. Disk state migrates and validates as a whole or is
+   refused as a whole; permissive `.get()` defaults do not substitute for migrations.
+4. Side/ownership rules go through actor/faction boundaries. ID zero and `friendly` branches are
+   migration targets, not patterns to copy into new systems.
+5. A lasting gameplay permission lives on the committed entity. AI commitment logic cannot promise
+   what release-time or flight-time geometry will later be.
+6. Structural, presentation and gameplay work state their category and remain separately
+   attributable. Golden hashes move only for an explained gameplay/perception reason.
+7. Focused tests own one behavior; golden tests own whole-state preservation; renderer audits own
+   visual truth; surveys own feel and balance. Passing one layer does not imply the others passed.
+8. Do not split `run_state.gd` or optimize a suspected hot path merely to make the source look tidy.
+   Establish ownership first and profile performance on the target device.
+
+## What remains from Programme A
+
+Do not infer that the three releases completed the deeper architecture programme. A0–A7 remain
+pending except where the measurement/presentation work established prerequisites or one current
+path now uses the intended boundary. In particular, production validation is not yet exhaustive
+for every entity class, prose-derived condition effects remain, hazards and conditions do not all
+route through faction, the player still lacks the same stored actor representation as enemies,
+name-gated capabilities remain, registry ownership is not universally bidirectional, older save
+migrations remain partly inline, and presentation-ID scan optimization still waits for a profile.

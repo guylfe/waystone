@@ -30,7 +30,7 @@ The combat loop, and nothing else. More enemies, classes, biomes, campaign conte
 
 The milestone letters **A** (combo continuation follows live input) through **E** (melee enemy differentiation) shipped by `0.2.33`, and **G1** — encounter grammar, guaranteeing non-melee presence and composing deliberate pure-melee experiment rooms — shipped in `0.2.35`. The Hexer was retired in the same pass. Surveys through `0.2.44` were G1's follow-through.
 
-The **elemental caster programme** then ran to completion: friendly fire and projectile elevation (`0.2.47`), the burn and frost meters (`0.2.54`), barriers and Earth's wall (`0.2.55`), Fire (`0.2.56`), Ice (`0.2.57`), Air (`0.2.58`), staves for every caster (`0.2.59`), and the **Mage · Elementalist** with the Stamina → Energy rename (`0.2.61`–`0.2.62`). `0.2.75` restructured the source so that authored facts live in one place each — see `docs/code-structure-audit.md`.
+The **elemental caster programme** then ran to completion: friendly fire and projectile elevation (`0.2.47`), the burn and frost meters (`0.2.54`), barriers and Earth's wall (`0.2.55`), Fire (`0.2.56`), Ice (`0.2.57`), Air (`0.2.58`), staves for every caster (`0.2.59`), and the **Mage · Elementalist** with the Stamina → Energy rename (`0.2.61`–`0.2.62`). `0.2.75` began the source-ownership restructure; `0.2.79`–`0.2.81` completed the measurement/presentation spine, made catalogued vision authoritative, and replaced bespoke projectile lane logic with the symmetric authored `misdirected` rule. See `docs/code-structure-audit.md`.
 
 Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0.2.44`), and the Chanter and the Ox have both now been seen in play — the Ox in the `0.2.77` renderer pass, which was itself the first look at milestones A through D outside a headless test.
 
@@ -40,7 +40,7 @@ Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0
 
    The question it exists to falsify: **does casting compete with dodging?** That is the entire argument against giving casters a mana bar, and the evidence for it is currently zero. Three figures answer it — exhaustion lockouts, dodge forms used, and whether Energy is ever the binding constraint. If they come back as they have so far, the no-mana premise is in trouble, and that is a design conversation rather than a tuning one.
 2. **Tune on what that survey says.** Deliberately unspecified.
-3. **Werewolf and Warden as real bosses.** Both already exist as kinds carrying a `boss` role with no behaviour behind it, which is the same defect E2 was about. **This step must specify its own evaluation before any of it is built.** The Combat Survey is a room-coverage instrument and a boss is not a room; deciding how a boss gets judged is part of the work, not a follow-up.
+3. **Werewolf and Warden as real bosses.** Both are generated and have live but provisional, unsurveyed AI; neither appears in a Combat Survey recipe. The work is to evaluate and replace provisional behavior, not to invent behavior for empty kinds. **This step must specify its own evaluation before any replacement is built.** The Combat Survey is a room-coverage instrument and a boss is not a room; deciding how a boss gets judged is part of the work, not a follow-up.
 4. **Survey the boss instrument.** Its first run is a falsification test of the instrument as much as of the bosses.
 5. **The Recovery-versus-Stamina comparison.** The last open question about the kernel, and a matched-seed *pair* of surveys rather than one. It sits last deliberately: a boss is the situation that separates the two resource models most sharply — sustained single-target pressure rather than triage across several enemies.
 
@@ -61,12 +61,12 @@ The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md`; the caster design lives in
 
 ## Finishing a code change
 
-Building, committing and installing are part of finishing a change, not separate steps to be requested afterwards:
+Unless the approved task explicitly narrows the release boundary, finishing a release includes:
 
 1. run the relevant tests in `tests/` covering the changed system;
 2. keep version metadata in sync across `README.md` and `export_presets.cfg`, including Android `versionCode`;
 3. build **both** platforms — `build-all.ps1`, not a single target, so Windows and Android never drift;
-4. commit to GitHub;
+4. create the requested local release commit; push to GitHub only when the task authorizes a push;
 5. install to the Pixel Fold if it is connected, and verify the installed package version on-device rather than trusting a successful export.
 
 If the Fold is not connected, still build and commit, and say the install was skipped for that reason.
@@ -91,6 +91,27 @@ That structure only holds if new code uses it. The default instinct — add a sm
 | A question about whether something may stand somewhere | `_can_occupy()` / `_teleport_allowed()` | `_inside_world` and `_point_in_wall` combined by hand |
 | A rule about who an effect may touch | `_faction_of()` / `_opposes()` / `actor_view()` | `if actor_id == 0` |
 | A save field that older saves lack | a step in `save_migrations.gd` | a `.get()` default that quietly hides both an old field and a forgotten new one |
+| A projectile, hazard, barrier or effect field | the world-object descriptors in `state_field_schema.gd`, with authored defaults and audiences | a presentation-only fallback or a second per-kind field list |
+| A collision exception after launch | an explicit world-state property such as `misdirected`, resolved through faction | a shooter-specific pre-check pretending to guarantee all future geometry |
+
+### The optimized ownership contract
+
+The audit's later passes sharpened “author once” into a stronger rule. Use all of it:
+
+1. **A boundary is canonical only when every producer enters through it and every consumer reads through it.** A helper with a universal name is not proof of universal ownership. Search both sides before calling a refactor complete.
+2. **Validation is bidirectional.** Every declared active kind needs a producer and consumer in the correct namespace, and every produced semantic kind must be registered. A validator that checks only declarations can preserve dead content; one that checks only producers can preserve undocumented behavior.
+3. **Describe fields before copying them.** If state crosses save, determinism, frozen presentation or streamed presentation, add one descriptor with its audiences, authored default, copy policy and interpolation policy. Do not patch two projections and rely on convention to keep them synchronized.
+4. **Runtime-authored data and disk saves have different failure contracts.** Invalid authored-now data fails loudly in tests/build validation. Old saves migrate completely and validate atomically, or are refused whole with a useful message; never silently salvage individual records into a deceptively valid run.
+5. **Rules about sides are symmetric unless the design explicitly says otherwise.** Player ID zero is an identity, not a faction policy. Projectiles demonstrate the intended shape: ordinary shots ignore their source side; an authored `misdirected` state makes that side eligible, including the source itself.
+6. **Do not encode a future guarantee in an earlier AI decision.** Commitment checks cannot guarantee release-time or flight-time geometry. Put lasting permissions on the committed object and let the authoritative resolver evaluate actual contact.
+7. **One behavior has one contract owner.** Focused tests own the mechanic; integration and golden tests own boundaries and whole-state preservation. Avoid duplicating the same internal timing assertion in several files.
+8. **Separate structural, presentation and gameplay changes.** A refactor should preserve golden hashes. A perception or presentation correction may change player decisions even if simulation hashes stay fixed. A gameplay experiment gets its own version and evaluation so its result remains attributable.
+9. **Profile before optimizing a merely suspected cost.** Correctness work may proceed from demonstrated ownership drift; performance work such as presentation-ID scan removal waits for measurements on the target device.
+
+When auditing new code, ask two questions explicitly:
+
+- For each fact this feature carries, how many places must agree, and what mechanism makes them agree?
+- What shapes can the audit method not see — inline duplication, cross-named twins, live-state fallbacks, or producers outside the registry?
 
 **The four mistakes that cost the most, so they are recognisable when they recur.**
 
@@ -145,6 +166,16 @@ One behaviour, one contract test. Two files asserting the same mechanic is how a
 
 ## Verification
 
-Headless tests establish simulation behaviour, not visual truth. Validate contact, recovery animation, safe areas and readability in a real Windows renderer and on the Pixel Fold, which needs both orientations and its reported safe display area.
+Use the narrowest test that can fail for the changed contract, then widen verification in proportion to what changed:
+
+1. focused behavioral, schema, migration and determinism tests;
+2. the full default `run-tests.ps1` suite, accepting only the exact documented expected failures;
+3. repeated golden runs when projection, timing, RNG, save or world-object state changes;
+4. renderer-dependent visual audits, with the generated frames actually inspected, for presentation work;
+5. Windows and Android builds for a release package;
+6. Pixel Fold checks in both orientations when controls, safe areas, rendering or Android behavior changes;
+7. a real Combat Survey or playthrough when the claim is about feel, readability, tactics or balance.
+
+Headless tests establish simulation behaviour, not visual truth. A green 19-file suite does **not** justify saying “nothing broke”; state exactly which layers were verified and which were not. Validate contact, recovery animation, safe areas and readability in a real Windows renderer and on the Pixel Fold, which needs both orientations and its reported safe display area.
 
 Use the next survey as a falsification test for a change, not as a demonstration that it must have worked.

@@ -28,6 +28,7 @@ func _initialize() -> void:
 	await _caster_poses()
 	await _player_staff()
 	await _player_spells()
+	await _state_cues()
 	quit(0)
 
 func _reset(loadout: String):
@@ -53,6 +54,14 @@ func _put(s, kind: String, offset: Vector2, hp: int = 40):
 
 func _shoot(path: String):
 	board.visual = board.state.snapshot(true)
+	board._layout()
+	board.queue_redraw()
+	await process_frame
+	await process_frame
+	root.get_texture().get_image().save_png("res://builds/%s.png" % path)
+
+func _shoot_streamed(path: String):
+	board.visual = board._presentation_snapshot()
 	board._layout()
 	board.queue_redraw()
 	await process_frame
@@ -119,3 +128,23 @@ func _player_spells() -> void:
 	if not s.projectiles.is_empty(): s.projectiles[0]["pos"] = s.player_pos + Vector2(-150, 40)
 	for h in s.hazards: h["elapsed"] = float(h["trigger_at"]) * 0.8
 	await _shoot("audit-d-earth-ice")
+
+func _state_cues() -> void:
+	# The 0.2.80 acceptance frame: three state cues that headless tests can prove are
+	# carried but cannot prove are readable. Capture the same authored state through
+	# both the frozen snapshot and the streamed presentation path.
+	var s = _reset("mage_elementalist")
+	var burning = _put(s, "hound", Vector2(-190, -80), 35)
+	burning["conditions"] = {"burning": 3.5}
+	var frosted = _put(s, "blade", Vector2(190, -80), 35)
+	frosted["conditions"] = {"frost": 3.5}
+	var chanted = _put(s, "boar", Vector2(0, -240), 35)
+	chanted["chants"] = {"haste": 2.8}
+	chanted["chant_source_id"] = int(chanted["id"])
+	s._add_projectile({
+		"kind":"arrow", "pos":s.player_pos + Vector2(-80, 130), "vel":Vector2.RIGHT * 520.0,
+		"radius":8.0, "damage":3, "source_id":int(chanted["id"]), "layer":s.current_layer,
+		"misdirected":true,
+	})
+	await _shoot("audit-e-state-cues-frozen")
+	await _shoot_streamed("audit-e-state-cues-streamed")

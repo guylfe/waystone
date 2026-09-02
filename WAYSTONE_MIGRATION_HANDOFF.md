@@ -1,11 +1,23 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-08-14  
-**Current source baseline:** `0.2.10` (`versionCode 210`, Combat Survey format `10`)  
+**Updated:** 2026-09-03
+**Current source baseline:** `0.2.81` (`versionCode 281`, save schema `35`, presentation version `9`, Combat Survey format `28`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
 This is an operational handoff, not a replacement for the detailed design documents. It records the current priorities and the latest decisions that supersede older prototype behavior. When this file, an older changelog entry, and the current code disagree, treat the disagreement as something to investigate rather than silently choosing whichever is easiest to implement.
+
+> **Current-state addendum:** Much of the implementation narrative below deliberately preserves the
+> `0.2.10` combat-loop diagnosis that motivated later work; it is historical evidence, not a current
+> code inventory. For current implementation ownership read `CLAUDE.md`, then the implementation
+> closeout at the end of `docs/code-structure-audit.md`, and finally `README.md` for release history.
+> Releases `0.2.79`–`0.2.81` completed the approved measurement/presentation spine, catalogued
+> perception correction and symmetric projectile-misdirection rule. Their full 19-file headless
+> suite passed with one documented expected failure. The 2026-09-03 follow-up repeated that suite,
+> inspected 19 real-renderer audit frames, built and verified both packages, and installed/read back
+> `0.2.81` (`versionCode 281`) on the Pixel Fold over wireless ADB. The Fold check found existing
+> portrait and full-width landscape layout defects; its inner/unfolded display was not exercised.
+> The standard Elementalist baseline survey remains outstanding.
 
 ## Executive migration brief
 
@@ -100,9 +112,9 @@ The opening Campaign region is a friendly forest with several Waystones, natural
 
 An endless, deterministic room laboratory rather than a shipping mode. It isolates encounter composition, geometry, character build, combat rules, and player feedback so changes can be compared before being propagated to Expedition or Campaign.
 
-## 4. Current implementation baseline
+## 4. Historical implementation baseline at the original handoff
 
-The current source identifies itself as `0.2.10` with Android `versionCode 210`, survey generator version `3`, presentation version `7`, and report format `10`.
+When this handoff was first written, the source identified itself as `0.2.10` with Android `versionCode 210`, survey generator version `3`, presentation version `7`, and report format `10`. The current baseline is recorded at the top of this file; the details in this section describe the earlier state that motivated the combat work.
 
 Implemented foundations include:
 
@@ -494,6 +506,24 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
+### Latest verified package boundary (`0.2.81`, 2026-09-03)
+
+- All 19 default test files passed, with the single documented expected failure in
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The caster and milestone renderer audits produced and received visual inspection of 19 frames;
+  the new burn, frost, chant and misdirection cues were present in frozen and streamed state.
+- Windows SHA-256:
+  `A9017190C7574ACD09127D92CC3D02959FD680574AA8B6D52852AA88E4F2F293`.
+- Android SHA-256:
+  `C07DDEAE85B7C2E79B3920769586AD351C1215408331B7BBE11CF318C921434B`.
+- Wireless install and package read-back succeeded on Pixel Fold serial `37031FDHS000C6`:
+  `com.waystone.prototype`, version name `0.2.81`, version code `281`.
+- Outer-display portrait and landscape were inspected and auto-rotation was restored. Portrait
+  compresses the wide combat UI severely; landscape retains fixed-width background/header regions
+  that do not fill the display. The inner/unfolded display remains unverified.
+- This closes package and installed-version verification, not Gate B: the layout findings need a
+  decision and the standard-profile Elementalist survey still needs to be played.
+
 ## 11. Source-of-truth map
 
 - `WAYSTONE_MIGRATION_HANDOFF.md` — current operational priorities, latest decisions, roadmap, survey interpretation, and handoff procedure.
@@ -552,6 +582,5 @@ Resolve these through focused prototypes and surveys. Do not fill them in from g
 5. Keep the immediate task within the combat-loop milestones unless the user explicitly reprioritizes.
 6. For implementation, update code, focused regressions, survey telemetry, README/version metadata, and exports together when applicable.
 7. Validate simulation headlessly and presentation on a real renderer.
-8. Build both platforms and commit to GitHub as part of every code change; install to the Fold when it is connected, then verify the installed package/version on the actual device.
+8. Unless an approved task explicitly narrows the release boundary, build both platforms and make a local release commit; push only when authorized. Install to the Fold when it is connected, then verify the installed package/version on the actual device.
 9. Use the next survey as a falsification test for the change, not a demonstration that it must have worked.
-
