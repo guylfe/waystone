@@ -50,6 +50,12 @@ func test_enemy_catalog_is_complete() -> void:
 	var migrated := SaveMigrationsScript.normalize(legacy_payload, state.SAVE_VERSION)
 	check(int(migrated.get("save_version", -1)) == state.SAVE_VERSION, "v33 save did not migrate sequentially to current")
 	check(migrated.has("cooldowns"), "v33 save migration did not construct cooldown slots")
+	var v34_payload := current_payload.duplicate(true)
+	v34_payload["save_version"] = 34
+	v34_payload["projectiles"] = [{"kind":"arrow", "pos":Vector2.ZERO, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":1, "layer":"surface"}]
+	var v35_payload := SaveMigrationsScript.normalize(v34_payload, state.SAVE_VERSION)
+	check(not Array(v35_payload.get("projectiles", [])).is_empty() and Dictionary(Array(v35_payload["projectiles"])[0]).has("misdirected"), "v34 save migration did not author projectile allegiance")
+	check(not bool(Dictionary(Array(v35_payload["projectiles"])[0]).get("misdirected", true)), "ordinary migrated projectiles must remain loyal to their source side")
 	for hostile_kind in ["hurl", "sunder", "slam"]:
 		check(hostile_kind in AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS, "%s is missing from hostile-action telemetry" % hostile_kind)
 	for retired_kind in ["hex", "ice_hex", "ice_cone", "fire_circle"]:

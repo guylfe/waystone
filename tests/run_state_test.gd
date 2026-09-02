@@ -343,7 +343,7 @@ func test_polearm_reach_and_timing() -> void:
 func test_projectile_motion() -> void:
 	var state: RunState = RunStateScript.new()
 	state.enemies.clear()
-	state.projectiles = [{"pos": Vector2(150.0, 150.0), "vel": Vector2(300.0, 0.0), "radius": 9.0, "damage": 2, "source_id": 99}]
+	state.projectiles = [{"kind":"arrow", "pos":Vector2(150.0, 150.0), "vel":Vector2(300.0, 0.0), "radius":9.0, "damage":2, "source_id":99, "layer":state.current_layer, "misdirected":false}]
 	assert(state.request_wait(0.20))
 	assert(state.projectiles.size() == 1)
 	var x := Vector2(state.projectiles[0]["pos"]).x
@@ -352,7 +352,7 @@ func test_projectile_motion() -> void:
 func test_firebolt_tracking_is_limited() -> void:
 	var state: RunState = RunStateScript.new()
 	state.player_pos = Vector2(420.0, 300.0)
-	state.projectiles = [{"pos": Vector2(100.0, 100.0), "vel": Vector2.RIGHT * 465.0, "launch_direction": Vector2.RIGHT, "turn_rate": 0.0, "max_track_angle": 0.0, "radius": 13.0, "damage": 3, "kind": "firebolt", "source_id": 99, "layer": state.current_layer}]
+	state.projectiles = [{"pos": Vector2(100.0, 100.0), "vel": Vector2.RIGHT * 465.0, "launch_direction": Vector2.RIGHT, "turn_rate": 0.0, "max_track_angle": 0.0, "radius": 13.0, "damage": 3, "kind": "firebolt", "source_id": 99, "layer": state.current_layer, "misdirected": false}]
 	for index in range(20): state._update_projectiles(0.05)
 	assert(state.projectiles.size() == 1)
 	var steering: float = absf(Vector2.RIGHT.angle_to(Vector2(state.projectiles[0]["vel"]).normalized()))
@@ -1713,9 +1713,10 @@ func test_back_half_expedition_roles() -> void:
 	var screening_blade := state._make_enemy("blade", archer["pos"] + Vector2.DOWN * 120.0, 7)
 	state.enemies = [archer, screening_blade]
 	state._invalidate_active_enemy_cache()
-	assert(not state._archer_has_clear_lane(archer))
+	archer["shot_cooldown"] = 0.0
+	archer["action"] = state._idle_action()
 	state._choose_enemy_action(archer)
-	assert(String(Dictionary(archer["action"])["kind"]) == "move")
+	assert(String(Dictionary(archer["action"])["kind"]) == "shoot")
 	var knight := state._make_enemy("knight", state.player_pos + Vector2.UP * 220.0, 28)
 	state._choose_enemy_action(knight)
 	assert(String(Dictionary(knight["action"])["technique_id"]) == "thrust")

@@ -444,8 +444,8 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
-const SAVE_VERSION := 34
-const GAME_VERSION := "0.2.80"
+const SAVE_VERSION := 35
+const GAME_VERSION := "0.2.81"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 9
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -4621,6 +4621,10 @@ func _append_presented(collection: Array, value: Dictionary) -> Dictionary:
 	return value
 
 func _add_projectile(value: Dictionary) -> Dictionary:
+	# Faction collision is an authored projectile property, not an inferred renderer
+	# fallback. Ordinary shots begin loyal to their source side; Gale is what changes
+	# that contract after launch.
+	if not value.has("misdirected"): value["misdirected"] = false
 	return _append_presented(projectiles, RuntimeSchemaScript.construct("projectile", value))
 
 func _add_hazard(value: Dictionary) -> Dictionary:
@@ -7237,7 +7241,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			var fire_target := Vector2(enemy["pos"]) + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 210.0 if distance < 480.0 else player_pos
 			enemy["action"] = _enemy_move_action(enemy, fire_target, 0.48)
 	elif enemy_kind == "archer":
-		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos) and _archer_has_clear_lane(enemy):
+		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 690.0 and distance >= 235.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
 			# ~2.7s between shots was not pressure, it was weather. The 0.2.30 survey
 			# scored every room carrying ranged pressure at 3.33/5 against 1.71 for
 			# melee-only rooms, and the Archer was the only ranged enemy in all of them.
@@ -7578,17 +7582,6 @@ func _charge_can_contact(enemy: Dictionary, distance: float, speed: float, start
 	if not _has_line_of_sight(Vector2(enemy["pos"]), player_pos): return false
 	var contact_allowance := float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + 18.0
 	return distance <= speed * maxf(0.0, active_end - startup) + contact_allowance
-
-func _archer_has_clear_lane(archer: Dictionary) -> bool:
-	var origin := Vector2(archer["pos"])
-	for ally in _nearby_enemies(origin, origin.distance_to(player_pos)):
-		if int(ally.get("id", -1)) == int(archer.get("id", -1)) or int(ally.get("hp", 0)) <= 0 or not _enemy_on_current_layer(ally): continue
-		var closest := Geometry2D.get_closest_point_to_segment(Vector2(ally["pos"]), origin, player_pos)
-		if closest.distance_to(Vector2(ally["pos"])) <= float(ally.get("radius", ENEMY_RADIUS)) + 12.0:
-			return false
-	# A wall in the lane turns "your arrows are wasted" into "you made the archer spend
-	# time walking", which is the point of a barrier that stops shots but not bodies.
-	return not _segment_crosses_barrier(origin, player_pos)
 
 func _heavy_intercept_target(_enemy: Dictionary) -> Vector2:
 	# Slow heavies aim for the player's lane instead of following the exact current
@@ -8345,6 +8338,10 @@ func _resolve_gale(centre: Vector2) -> void:
 		if velocity.length_squared() < 0.001: continue
 		var away := to_shot.normalized() if to_shot.length_squared() > 0.001 else velocity.normalized()
 		projectile["vel"] = (velocity.normalized() + away * GALE_PROJECTILE_TURN).normalized() * velocity.length()
+		# Once Gale changes a committed trajectory, the shot is no longer protected by
+		# its source faction. This applies equally to enemy and player projectiles: a
+		# bent player shot can come back through the player who loosed it.
+		projectile["misdirected"] = true
 		# A gale spoils flight. An arrow's flight is direction; a javelin's is direction
 		# AND loft, so the same wind takes more from it -- one object with more to lose,
 		# not a special case. Grounded, it comes down short and off-line into the melee it
@@ -8464,12 +8461,12 @@ func _update_projectiles(dt: float) -> void:
 		var finish := start + Vector2(projectile["vel"]) * dt
 		projectile["pos"] = finish
 		projectile["travelled"] = float(projectile.get("travelled", 0.0)) + start.distance_to(finish)
-		# One rule for every shot in the game rather than two branches split by whose it
-		# is. This is safe because `_archer_has_clear_lane()` already refuses a shot with an
-		# ally on the firing line -- archers aim around their own people -- so friendly fire
-		# happens only when something changes AFTER commitment: a shot is bent, or a body
-		# walks into the line.
+		# One faction rule for every shot in the game. An ordinary projectile passes
+		# through actors allied with its original source. Only a projectile explicitly
+		# marked misdirected -- currently by Gale -- may collide with that original side,
+		# including the source actor itself.
 		var source_id := int(projectile.get("source_id", -1))
+		var misdirected := bool(projectile["misdirected"])
 		var spent := not _inside_world(finish, float(projectile["radius"])) or _point_in_wall(finish) or float(projectile["travelled"]) >= float(projectile.get("max_range", INF))
 		var hit_ids: Array = projectile.get("hit_ids", [])
 		# Above the ground band it passes over everyone, which is the whole point of the
@@ -8483,19 +8480,22 @@ func _update_projectiles(dt: float) -> void:
 			for enemy in _nearby_enemies(start, start.distance_to(finish) + 100.0):
 				if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
 				var enemy_id := int(enemy.get("id", -1))
-				if enemy_id == source_id or hit_ids.has(enemy_id): continue
+				if hit_ids.has(enemy_id): continue
+				var same_side := not _opposes(source_id, enemy)
+				if same_side and not misdirected: continue
 				if _segment_distance_to_point(start, finish, Vector2(enemy["pos"])) > float(enemy["radius"]) + float(projectile["radius"]): continue
 				var order := start.distance_to(Vector2(enemy["pos"]))
 				if order < nearest_order:
 					nearest_order = order
 					nearest_enemy = enemy
 			var player_order := INF
-			if source_id != 0 and _segment_distance_to_point(start, finish, player_pos) <= PLAYER_RADIUS + float(projectile["radius"]):
+			var player_same_side := not _opposes(source_id, 0)
+			if (not player_same_side or misdirected) and _segment_distance_to_point(start, finish, player_pos) <= PLAYER_RADIUS + float(projectile["radius"]):
 				player_order = start.distance_to(player_pos)
-			# Whatever it reaches first along this step, so a body that steps into the lane
-			# in front of its own side takes the shot meant for someone behind it.
+			# Whatever eligible body it reaches first along this step resolves the hit.
 			if player_order < nearest_order:
 				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "arrow"
+				if player_same_side: survey_misdirected_ally_hits += 1
 				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized())
 				continue
 			if not nearest_enemy.is_empty():
@@ -8503,8 +8503,8 @@ func _update_projectiles(dt: float) -> void:
 					spent = true
 				else:
 					hit_ids.append(int(nearest_enemy["id"]))
-					if source_id == 0: _damage_enemy_from_player_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
-					else: _damage_enemy_from_stray_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
+					if not _opposes(source_id, nearest_enemy): _damage_enemy_from_stray_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
+					else: _damage_enemy_from_player_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
 					if not bool(projectile.get("piercing", false)): spent = true
 		projectile["hit_ids"] = hit_ids
 		if projectile_kind == "firebomb" and spent: _spawn_player_fire(finish if _inside_world(finish, 1.0) and not _point_in_wall(finish) else start)
@@ -8512,12 +8512,14 @@ func _update_projectiles(dt: float) -> void:
 		survivors.append(projectile)
 	projectiles = survivors
 
-# An enemy's shot that reached another enemy: bent by something, or walked into. The
-# player takes the credit, because they did the geometry -- but not the damage bonus.
+# A misdirected shot that reached its original side. The player takes the credit when
+# an enemy projectile does the damage, because they did the geometry -- but not the bonus.
 # This is the projectile's own authored number, so a strong player does not make a
 # Javelineer's throw hit its own side harder than it hits them.
 func _damage_enemy_from_stray_projectile(enemy: Dictionary, projectile: Dictionary, contact: Vector2) -> void:
+	if not bool(projectile["misdirected"]): return
 	if int(enemy.get("hp", 0)) <= 0: return
+	survey_misdirected_ally_hits += 1
 	var flight := Vector2(projectile.get("vel", Vector2.ZERO))
 	if flight.length_squared() > 0.001 and _enemy_blocks_incoming(enemy, -flight.normalized()):
 		_add_effect("block", contact)

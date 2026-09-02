@@ -1,7 +1,7 @@
 class_name SaveMigrations
 extends RefCounted
 
-const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34]
+const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35]
 
 static func normalize(source: Dictionary, current_version: int) -> Dictionary:
 	var payload := source.duplicate(true)
@@ -29,6 +29,7 @@ static func _migrate_one(payload: Dictionary, from_version: int) -> Dictionary:
 		31: return _v31_to_v32(payload)
 		32: return _v32_to_v33(payload)
 		33: return _v33_to_v34(payload)
+		34: return _v34_to_v35(payload)
 		_: return {}
 
 # Historical semantic migrations still run during hydration because they need the
@@ -62,6 +63,16 @@ static func _v33_to_v34(payload: Dictionary) -> Dictionary:
 			"weapon_sequence":{"remaining":float(result.get("weapon_sequence_cooldown", 0.0)), "maximum":0.0001},
 			"spell":{"remaining":float(result.get("spell_cooldown", 0.0)), "maximum":float(result.get("spell_cooldown_max", 8.0))},
 		}
+	return result
+
+static func _v34_to_v35(payload: Dictionary) -> Dictionary:
+	var result := _copy(payload)
+	var migrated_projectiles: Array = []
+	for value in Array(result.get("projectiles", [])):
+		var projectile := Dictionary(value).duplicate(true)
+		if not projectile.has("misdirected"): projectile["misdirected"] = false
+		migrated_projectiles.append(projectile)
+	result["projectiles"] = migrated_projectiles
 	return result
 
 static func validate_current(payload: Dictionary, current_version: int) -> PackedStringArray:

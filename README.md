@@ -1,6 +1,22 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.78` (Android version code `278`).
+Current prototype version: `0.2.81` (Android version code `281`).
+
+## v0.2.81 — Gale breaks a projectile's allegiance
+
+Ordinary projectiles now pass through actors allied with their original source. Gale marks every projectile it turns as **misdirected**, and only that explicit state allows a shot to hit its original side — including its source. The rule is symmetric: a bent enemy arrow can strike enemies, and a bent player projectile can strike the player.
+
+This replaces the Archer's bespoke clear-allied-lane refusal. Archers may commit through their own formation because ordinary arrows cannot hurt it; a raised barrier still stops the shot physically. Grounded javelins compose with the same rule rather than owning a separate collision policy.
+
+Projectile allegiance is required runtime state and save schema `35` migrates older live projectiles to `misdirected=false`. The survey counts same-side impacts, and deterministic tests cover ordinary and Gale-redirected fire from both factions.
+
+## v0.2.80 — perception and combat cues share their owners
+
+Enemy sight range now comes only from the enemy catalog, including the Chanter's authored 620-unit vision. Presentation exposes burning, frost, chant duration, and misdirected-projectile cues from the same projected state the simulation owns, rather than rebuilding those facts independently.
+
+## v0.2.79 — measurement and state contracts
+
+Runtime, presentation, save, and determinism state now use declared field contracts; dynamic presentation entities carry stable IDs; visibility snapshots are immutable and revisioned; retired spell branches are gone; and hostile-action and survey telemetry cover the current ability set. The Elementalist spellbook has a deterministic golden-run checkpoint.
 
 ## v0.2.78 — a late read is punished
 
@@ -549,7 +565,7 @@ The third shared system, shipping with the first thing that makes one — a barr
 
 **The wall blocks the player and projectiles, never bodies.** Six segments, 340 units, raised perpendicular across the player's escape heading at ~170 units — their movement direction if moving, otherwise straight away from the caster. Straight rather than curved, so the ends stay a real option. Measured: 172 units out, on the escape side, blocking the player and an arrow lane while enemies walk through.
 
-**It feeds `_archer_has_clear_lane()`**, so a ranged enemy repositions rather than firing into it — turning *"your arrows are wasted"* into *"you made the archer spend time walking"*.
+At launch it also fed a bespoke Archer lane check, making ranged enemies reposition. `0.2.81` supersedes that policy: ordinary arrows pass allies, Archers may commit the shot, and the raised barrier itself is the one physical authority that stops it.
 
 **Segments lower near a living body and rise again when clear**, and never rise underneath the player. Ratcheting permanently open would put the gap wherever an enemy passed *earlier* rather than where the danger *is*, and the wall would decay fastest under exactly the pressure it exists to create. Because it sits in the escape direction, pursuers reach it from the player's side: **the gap opens where the threat is, and the way out runs through it.**
 
@@ -664,9 +680,9 @@ Dev's stack carries two more rows than the other modes, so it starts higher on t
 
 The first of the caster programme's shared systems. Everything downstream reads from these, and they are cheap to get wrong.
 
-**One rule, not two branches.** Projectile resolution was split by allegiance: a friendly shot tested against enemies only, a hostile shot against the player only. Neither could ever reach the other side. It is now a single path that finds whatever the shot reaches **first along its step**, so a body that walks into the lane in front of its own side takes the arrow meant for someone behind it.
+**One rule, not two branches.** Projectile resolution was split by allegiance: a friendly shot tested against enemies only, a hostile shot against the player only. Neither could ever reach the other side. This release first unified the paths around the body reached first along a step.
 
-This is safe rather than chaotic because `_archer_has_clear_lane()` already refuses a shot with an ally on the firing line — archers aim around their own people. **Friendly fire therefore only happens when something changes *after* commitment**: a shot gets bent, or a body walks into it.
+That original friendly-fire policy was superseded in `0.2.81`. The unified path now finds the first **eligible** body: ordinary shots pass their source faction, while Gale explicitly marks a turned shot `misdirected` and makes its original side eligible. The Archer no longer needs a separate allied-lane oracle.
 
 **Elevation is a gameplay property.** It existed only in the renderer — 10 for arrows, 18 for firebolts — and meant nothing to the simulation. A projectile above the ground band now passes over everything standing on the ground, and that check is **friend-blind**: taken literally, an airborne javelin cannot hit the player either, because the player is grounded too. That is what makes airborne enemies work later rather than merely permitting them — the high phase has to genuinely exist for anything to be in it.
 

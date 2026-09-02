@@ -1461,6 +1461,78 @@ func test_the_screen_screens_arrows_too() -> void:
 		if from_front: check(took == 0, "a raised shield took %d from an arrow to the face" % took)
 		else: check(took > 0, "an arrow from behind the shield was blocked anyway")
 
+func projectile_actor_state() -> RunState:
+	var state := survey_state()
+	state.player_action = state._idle_action()
+	state.player_hit_protection_remaining = 0.0
+	return state
+
+func add_test_projectile(state: RunState, source_id: int, start: Vector2, velocity: Vector2, misdirected: bool = false, kind: String = "arrow") -> Dictionary:
+	return state._add_projectile({
+		"kind":kind, "pos":start, "vel":velocity, "radius":6.0, "damage":12,
+		"source_id":source_id, "layer":state.current_layer, "misdirected":misdirected,
+	})
+
+func test_ordinary_enemy_shots_pass_allies_and_reach_the_player() -> void:
+	var state := projectile_actor_state()
+	var shooter := state._make_enemy("archer", state.player_pos + Vector2.UP * 260.0, 30)
+	var ally := state._make_enemy("hound", state.player_pos + Vector2.UP * 120.0, 30)
+	state.enemies.assign([shooter, ally])
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var ally_hp := int(ally["hp"])
+	var player_hp := state.player_hp
+	add_test_projectile(state, int(shooter["id"]), state.player_pos + Vector2.UP * 210.0, Vector2.DOWN * 600.0)
+	state._update_projectiles(0.40)
+	check(int(ally["hp"]) == ally_hp, "an ordinary enemy shot struck an allied body in its lane")
+	check(state.player_hp < player_hp, "an ordinary enemy shot did not pass its ally to reach the player")
+
+func test_ordinary_player_shots_pass_the_player_and_reach_enemies() -> void:
+	var state := projectile_actor_state()
+	var target := state._make_enemy("hound", state.player_pos + Vector2.RIGHT * 120.0, 30)
+	state.enemies.assign([target])
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var player_hp := state.player_hp
+	var target_hp := int(target["hp"])
+	add_test_projectile(state, 0, state.player_pos, Vector2.RIGHT * 600.0)
+	state._update_projectiles(0.30)
+	check(state.player_hp == player_hp, "an ordinary player projectile collided with its own source")
+	check(int(target["hp"]) < target_hp, "an ordinary player projectile did not reach an opposing enemy")
+
+func test_misdirected_enemy_shots_can_hit_their_original_side() -> void:
+	var state := projectile_actor_state()
+	var shooter := state._make_enemy("archer", state.player_pos + Vector2.UP * 280.0, 30)
+	var ally := state._make_enemy("hound", state.player_pos + Vector2.UP * 120.0, 30)
+	state.enemies.assign([shooter, ally])
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var ally_hp := int(ally["hp"])
+	add_test_projectile(state, int(shooter["id"]), state.player_pos + Vector2.UP * 210.0, Vector2.DOWN * 600.0, true)
+	state._update_projectiles(0.25)
+	check(int(ally["hp"]) < ally_hp, "a misdirected enemy shot still passed through its original ally")
+	check(state.survey_misdirected_ally_hits == 1, "the misdirected ally-hit counter did not record the impact")
+
+func test_misdirected_player_shots_can_hit_the_player() -> void:
+	var state := projectile_actor_state()
+	var player_hp := state.player_hp
+	add_test_projectile(state, 0, state.player_pos + Vector2.LEFT * 100.0, Vector2.RIGHT * 500.0, true)
+	state._update_projectiles(0.25)
+	check(state.player_hp < player_hp, "a misdirected player shot could not hit its original player side")
+	check(state.survey_misdirected_ally_hits == 1, "the player-side misdirected hit was not counted")
+
+func test_gale_misdirects_both_sides_and_grounds_javelins() -> void:
+	var state := projectile_actor_state()
+	var centre := state.player_pos + Vector2.RIGHT * 200.0
+	add_test_projectile(state, 0, centre + Vector2.UP * 40.0, Vector2.RIGHT * 500.0)
+	var enemy_shot := add_test_projectile(state, 99, centre + Vector2.DOWN * 40.0, Vector2.LEFT * 500.0, false, "javelin")
+	enemy_shot["elevation_profile"] = "arc"
+	enemy_shot["elevation"] = 70.0
+	state._resolve_gale(centre)
+	check(bool(state.projectiles[0]["misdirected"]), "Gale did not make a player projectile dangerous to the player side")
+	check(bool(state.projectiles[1]["misdirected"]), "Gale did not make an enemy projectile dangerous to the enemy side")
+	check(String(state.projectiles[1]["elevation_profile"]) == "flat" and float(state.projectiles[1]["elevation"]) < state.PROJECTILE_GROUND_ELEVATION, "Gale misdirection did not compose with grounded javelin flight")
+
 func test_only_eyes_on_you_refuse_the_hide() -> void:
 	# "If they are looking for me but can't see me, I can stealth. It's only when they
 	# are looking and I'm in their line of sight that I can't." This returned true for
@@ -1551,6 +1623,11 @@ func _init() -> void:
 	test_an_enemy_that_can_see_you_refuses_the_hide()
 	test_only_eyes_on_you_refuse_the_hide()
 	test_the_screen_screens_arrows_too()
+	test_ordinary_enemy_shots_pass_allies_and_reach_the_player()
+	test_ordinary_player_shots_pass_the_player_and_reach_enemies()
+	test_misdirected_enemy_shots_can_hit_their_original_side()
+	test_misdirected_player_shots_can_hit_the_player()
+	test_gale_misdirects_both_sides_and_grounds_javelins()
 	test_a_reeling_screen_cannot_hold_its_guard()
 	test_the_archer_leaves_room_to_answer_it()
 	test_rooms_are_populated_enough_for_the_pressure_to_matter()

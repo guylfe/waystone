@@ -4,7 +4,7 @@ extends RefCounted
 const REQUIRED := {
 	"actor": ["id", "kind", "faction", "pos", "radius", "hp", "max_hp", "action"],
 	"action": ["kind", "elapsed", "duration"],
-	"projectile": ["kind", "pos", "vel", "radius", "damage", "source_id", "layer"],
+	"projectile": ["kind", "pos", "vel", "radius", "damage", "source_id", "layer", "misdirected"],
 	"hazard": ["kind", "pos", "radius", "elapsed", "duration", "source_id", "layer"],
 	"barrier": ["pos", "axis", "half_length", "thickness", "hp", "source_id", "layer"],
 	"effect": ["kind", "pos", "elapsed", "duration", "layer"],
