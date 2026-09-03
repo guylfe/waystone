@@ -88,6 +88,7 @@ That structure only holds if new code uses it. The default instinct — add a sm
 | A field the renderer, a save or a snapshot needs | `state_field_schema.gd`, with its audiences | one writer at a time |
 | A survey measurement | `survey_counter_catalog.gd` — one descriptor carries scope, differencing and format | a variable plus four plumbing sites |
 | A cooldown | a slot through `begin_cooldown()` | a new scalar and a parallel `_max` |
+| An ability that costs while it is held | **the Stealth model** — a per-second Energy drain plus a cancel control on the skills row | a fixed duration with a cooldown, which makes "use it on cooldown" the only policy |
 | A question about whether something may stand somewhere | `_can_occupy()` / `_teleport_allowed()` | `_inside_world` and `_point_in_wall` combined by hand |
 | A rule about who an effect may touch | `_faction_of()` / `_opposes()` / `actor_view()` | `if actor_id == 0` |
 | A save field that older saves lack | a step in `save_migrations.gd` | a `.get()` default that quietly hides both an old field and a forgotten new one |
@@ -122,6 +123,8 @@ When auditing new code, ask two questions explicitly:
 *A rule written for the only case that existed.* Barriers blocked "the player" because only enemies could raise one. When the Elementalist learned to, the player's own wall blocked the player and let enemies through. If a rule is about a side, say side; if it is about ownership, say ownership.
 
 *Permissive defaults hiding authoring errors.* An unregistered enemy kind used to ship as a working Blade. Authored IDs now fail loudly, and they should stay that way. Reserve `.get()` defaults for genuinely optional runtime values and old saves.
+
+**The Stealth model, named once so it can be referenced.** An ability described as using it pays Energy *per second while active* and is *cancellable from the skills row*. Both halves are the point: the drain makes duration a live decision rather than a timer, and the cancel is what lets the player make it. A fixed duration on a cooldown has exactly one optimal policy — press it whenever it is up — which is not a decision. Stealth is the reference implementation (`STEALTH_DRAIN_PER_SECOND`, spent unscaled through `_spend_energy(charge, false)`).
 
 **Two habits worth keeping.**
 
