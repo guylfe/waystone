@@ -1,6 +1,38 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.82` (Android version code `282`).
+Current prototype version: `0.2.83` (Android version code `283`).
+
+## v0.2.83 — two defects, and one that turned out not to exist
+
+A design discussion about why the Vanguard track feels inert turned up several suspected bugs. Two were real. The third was a review error, and the note below records it because the arithmetic that produced it is the kind that will look convincing again.
+
+### Advance's upgrade understated its own damage fivefold
+
+The Vanguard level-3 node read *"Advance rises from 2 to 3 damage"*. The simulation does `10 -> 15`. Posture and push were described correctly; only the damage clause was wrong, and it was wrong by a factor of five -- so the level-up screen offered a +1 bump on a 2-damage ability when it was really +5 on a 10-damage one. A player deciding whether to invest in the track was reading a number that made it look worthless.
+
+That string was written when a sword hit dealt 2 damage. Combat damage was re-authored to 10/13/17 and the description was not, which is the same fossil that leaves Building Force's `+2` worth a fraction of what it was designed to be. Building Force is a balance question and waits for the Vanguard work; this was just a lie in the text.
+
+### An authored default that nothing produced
+
+The projectile schema declared `elevation_profile` defaulting to `"ground"`. Every producer writes `"flat"` or `"arc"`, and every consumer branches on `"arc"`, so the two behaved identically and nothing broke -- but it left a third name for a two-state field and a default no code path could create. The day someone compares against `"flat"`, schema-defaulted projectiles take the wrong branch in silence. It now says what the game writes.
+
+### The one that was not a bug
+
+A review of `0.2.82` reported that three standalone `_spend_energy` call sites -- Advance, Twin Fang and Drawing Cut -- had been missed by that release's re-pricing and had silently become 54% more expensive. They had not. `0.2.82` rebased them correctly:
+
+| | `0.2.81` raw x 0.65 | `0.2.82` literal |
+|---|---|---|
+| Advance | 28 -> 18.2 | 18 |
+| Twin Fang | 32 -> 20.8 | 21 |
+| Drawing Cut | 32 -> 20.8 | 21 |
+
+The error was reading the new raw values as though they were unchanged pre-scale numbers. They were not: every one had been reduced to preserve its effective cost, exactly as intended. The proposed "fix" would have cut three abilities by a third for no reason, and it was written and applied before the suite caught it -- `rogue_characters_test` failed on a Twin Fang cooldown floor, because that cooldown derives from the spend and the spend had just been wrongly lowered.
+
+`energy_test` now pins all three costs as literals. The point is not only to catch a future global re-pricing that forgets them, but to give the next review an assertion to consult instead of doing the arithmetic again in either direction.
+
+### Not fixed, and why
+
+Both `0.2.81` Elementalist surveys showed `enemy_action=` blank in all ninety strike diagnostics. The field is intact in source: `0.2.81` carries the same `enemy_action=%s@%.2f` format string and the same record key as today, and a missing value would print `none@0.00` rather than nothing at all. The `@` is absent from the raw text entirely, and the same field rendered correctly in a survey pasted directly rather than exported -- so the export is the likely culprit, not the game. Worth confirming against a raw report file before anyone changes code for it.
 
 ## v0.2.82 — power first, efficiency earned
 

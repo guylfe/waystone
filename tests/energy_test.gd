@@ -5,6 +5,7 @@ const RunStateScript = preload("res://scripts/core/run_state.gd")
 func _init() -> void:
 	test_parallel_rule_sets()
 	test_new_combo_costs()
+	test_standalone_abilities_were_rebased_too()
 	test_overdraw_starts_exhaustion_after_recovery()
 	test_exhaustion_uses_fixed_world_time()
 	test_dodge_cost_and_utility_regeneration()
@@ -63,6 +64,28 @@ func test_new_combo_costs() -> void:
 	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
 	assert(is_equal_approx(twin.player_energy, 100.0 - twin.energy_cost(8.0 + 6.0 + 6.0 + 6.0 + 6.0 + 8.0)))
+
+# The standalone _spend_energy call sites, which live outside the combo phase arrays and
+# so are the easy ones to forget in a global re-pricing. 0.2.82 rebased them correctly
+# (Advance 28 x 0.65 = 18.2 -> 18; the two arts 32 x 0.65 = 20.8 -> 21), and a review of
+# that release wrongly read the new raw values as un-rebased and proposed cutting them by
+# a third. Pinned here as literals so the next such review has an assertion to consult
+# instead of arithmetic, in either direction.
+func test_standalone_abilities_were_rebased_too() -> void:
+	var advance := fresh_state("warrior")
+	assert(advance.request_advance(Vector2.RIGHT))
+	assert(is_equal_approx(advance.player_energy, 100.0 - advance.energy_cost(18.0)))
+
+	var drawing := fresh_state("warrior")
+	drawing.player_equipped_weapon_art = "prototype_drawing_cut"
+	assert(drawing.request_skill(Vector2.RIGHT))
+	assert(is_equal_approx(drawing.player_energy, 100.0 - drawing.energy_cost(21.0)))
+
+	var twin := fresh_state("rogue_acrobat")
+	twin.player_weapon_frame = "twin_knives"
+	twin.player_equipped_weapon_art = "knife_twin_fang"
+	assert(twin.request_skill(Vector2.RIGHT))
+	assert(is_equal_approx(twin.player_energy, 100.0 - twin.energy_cost(21.0)))
 
 func test_overdraw_starts_exhaustion_after_recovery() -> void:
 	var state := fresh_state()
