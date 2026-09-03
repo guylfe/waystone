@@ -124,6 +124,8 @@ When auditing new code, ask two questions explicitly:
 
 *Permissive defaults hiding authoring errors.* An unregistered enemy kind used to ship as a working Blade. Authored IDs now fail loudly, and they should stay that way. Reserve `.get()` defaults for genuinely optional runtime values and old saves.
 
+**A passive is introduced by a node, never granted silently.** A passive that is simply on from level 1 is a rule the player has to be told about out of band, and if nothing tells them it is invisible combat math with extra steps. Make it the first node of the track that owns it, so the player meets it on a screen that explains it, at a moment when they are paying attention. Building Force is the case that proved it: authored, working, and forgotten by its own designer because nothing ever announced it. The corollary is that an introduced passive still has to be *observable* while it runs — introduction and visibility are two requirements, not one.
+
 **The Stealth model, named once so it can be referenced.** An ability described as using it pays Energy *per second while active* and is *cancellable from the skills row*. Both halves are the point: the drain makes duration a live decision rather than a timer, and the cancel is what lets the player make it. A fixed duration on a cooldown has exactly one optimal policy — press it whenever it is up — which is not a decision. Stealth is the reference implementation (`STEALTH_DRAIN_PER_SECOND`, spent unscaled through `_spend_energy(charge, false)`).
 
 **Two habits worth keeping.**
