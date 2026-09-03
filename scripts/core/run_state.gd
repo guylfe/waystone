@@ -59,18 +59,11 @@ const STRIKE_INTENT_ABANDON_MARGIN := 60.0
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
-# Energy is the burst budget, not the fight gate -- recovery is the primary
-# limiter. Costs are authored at their original relative shape and scaled here,
-# so the relationships stay legible and the global price level is one number.
-#
-# 0.5 was too generous: the 0.2.17 survey emptied the bar 4 times in 205 seconds
-# of combat (1.2 lockouts per minute against 4.1 in 0.2.15) and the tester could
-# not exhaust himself deliberately. The error was sizing costs against a static
-# bar rather than against a fight -- Room 11 spent 202 Energy without a single
-# lockout because 4.1 seconds of regeneration returned 115 of it. 0.65 was chosen
-# by replaying every room of that survey: easy rooms still finish with breath to
-# spare, and the pressure rooms exhaust once or twice as they should.
-const ENERGY_COST_SCALE := 0.65
+# Physical Energy prices are now the numbers the player actually pays. The scale
+# remains as an explicit future global tuning lever, but 1.0 keeps catalog values,
+# UI, tests and survey reasoning honest. The former 0.65 effective prices were
+# re-authored directly, with the staff combo intentionally made more expensive.
+const ENERGY_COST_SCALE := 1.0
 # Slower than the old 60/s, but continuous: spending no longer arms a delay, so
 # the bar refills while you reposition rather than pausing then snapping back.
 const ENERGY_REGEN_PER_SECOND := 28.0
@@ -319,8 +312,8 @@ const POSTURE_PER_DAMAGE := 0.22
 # same proportion. One stat, one effect, and it means the same thing under both rule
 # profiles without a second rule.
 const INTELLIGENCE_BASELINE := 5
-const SPELL_COST_PER_INTELLIGENCE := 0.055
-const SPELL_COST_FLOOR := 0.40
+const SPELL_COST_PER_INTELLIGENCE := 0.06
+const SPELL_COST_FLOOR := 0.35
 # The Circle. A place where your casting is cheaper, and nothing else -- not faster, since
 # a speed bonus would reduce the time you stand exposed and so cancel its own price, and
 # not stronger, since magnitude belongs to the spell.
@@ -333,14 +326,15 @@ const CIRCLE_RADIUS := 168.0
 const CIRCLE_WIDE_RADIUS := 248.0
 const CIRCLE_DURATION := 16.0
 const CIRCLE_WIND_UP := 1.5
-const CIRCLE_ENERGY := 8.0
+const CIRCLE_ENERGY := 5.0
 const CIRCLE_INTELLIGENCE := 3
 # Every spell the Elementalist can learn, and which stage teaches it. Each is an enemy
 # ability first; the spellbook is the bestiary.
 const ELEMENT_STAGE_SPELLS := AbilityCatalogScript.ELEMENT_STAGE_SPELLS
-# Raw cost before Intelligence and before ENERGY_COST_SCALE. The bolt is deliberately the
-# cheapest thing a caster can do and the weakest: it is what raw force does before it has
-# been shaped into an element, which is why it has no condition, no fork and no terrain.
+# Authored spell cost before Intelligence. Spells deliberately bypass the physical-action
+# scale: their high opening prices and long-term Intelligence discounts are their own
+# progression economy. Lightning is the quickest modest-damage spell and carries no
+# condition, fork or terrain effect.
 # Placed spells land where the player tapped; aimed spells only need a heading. The tap
 # already carries a world point, and until 0.2.68 that point was reduced to a direction and
 # re-projected to a fixed 340 units -- so an Earth Wall could not be put anywhere in
@@ -369,7 +363,7 @@ func spell_target_for(spell_id: String, world_point: Vector2) -> Vector2:
 # rather than a formality, and the range is drawn when the spell is armed so the limit is
 # something the player can see rather than discover.
 const LIGHTNING_RANGE := 340.0
-const LIGHTNING_DAMAGE := 11
+const LIGHTNING_DAMAGE := 13
 # A parry costs the player their turn rather than their health. Long enough that the
 # rest of the room gets to act inside it, short enough that it is a mistake and not a
 # death sentence.
@@ -421,7 +415,7 @@ const SHIELD_PATIENCE_MAX := 4.4
 # the 0.2.38 survey reported. One list, one source.
 const SHIELD_OPEN_ACTION_KINDS := ["melee", "dodge_strike", "charge", "slam", "hit_reaction", "stagger"]
 const EXHAUSTED_MOVE_SCALE := 0.45
-const DODGE_ENERGY_COST := 18.0
+const DODGE_ENERGY_COST := 12.0
 # The desperate Dodge: reachable while exhausted, because a hit must always leave
 # one executable response. 90 units of travel clears a Blade's envelope (68) and
 # little else, the i-frame window is two thirds of a real Dodge's, and the tail is
@@ -445,9 +439,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 35
-const GAME_VERSION := "0.2.81"
+const GAME_VERSION := "0.2.82"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 9
+const PRESENTATION_VERSION := 10
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -2732,8 +2726,11 @@ func player_is_inside_circle() -> bool:
 
 func spell_energy_cost(spell_id: String) -> float:
 	var raw := float(AbilityCatalogScript.spell(spell_id).get("energy", 24.0))
-	var discount := 1.0 - float(player_intelligence() - INTELLIGENCE_BASELINE) * SPELL_COST_PER_INTELLIGENCE
-	return energy_cost(raw * maxf(SPELL_COST_FLOOR, discount))
+	# Baseline Intelligence pays the authored price. Each point above it compounds
+	# the same percentage reduction; points below it never become a surcharge.
+	var points_above_baseline := maxi(0, player_intelligence() - INTELLIGENCE_BASELINE)
+	var multiplier := pow(1.0 - SPELL_COST_PER_INTELLIGENCE, float(points_above_baseline))
+	return raw * maxf(SPELL_COST_FLOOR, multiplier)
 
 # A cooldown is the ability's price expressed as a share of the pool, times the one
 # global rate. See COOLDOWN_SECONDS_PER_FULL_POOL for why the pool is the denominator.
@@ -2787,17 +2784,24 @@ func _begin_main_ability_cooldown(seconds: float) -> void:
 func _begin_subclass_cooldown(seconds: float) -> void:
 	begin_cooldown(COOLDOWN_SUBCLASS, seconds)
 
-# `scaled = false` charges the authored number directly. Sweeping Cut uses it:
-# see the note on SWEEPING_CUT_ENERGY for why price parity with the combo could
-# not hold it in check.
+# `scaled = false` charges an authored number directly. Spells use it because
+# Intelligence, not the physical-action multiplier, owns their price; drains use
+# it because they are already expressed in Energy per second.
 func _basic_attack_energy_cost() -> float:
-	return 12.0 if player_weapon_frame == "twin_knives" else 14.0 if player_weapon_frame == "knife" else 18.0
+	if player_weapon_frame == "twin_knives": return 8.0
+	if player_weapon_frame == "knife": return 9.0
+	if player_weapon_frame == "staff": return 16.0
+	if player_weapon_frame == "bow": return 7.0
+	return 12.0
 
 # Whole-sequence price. Sitting between this and the basic cost is the interesting
 # band: you can open, but you cannot commit to finishing. Kept in sync by hand with
-# the phase arrays in _begin_sword_combo and _begin_knife_combo.
+# the phase arrays in the weapon combo builders.
 func _combo_energy_cost() -> float:
-	return 60.0 if player_weapon_frame == "twin_knives" else 54.0 if player_weapon_frame == "knife" else 56.0
+	if player_weapon_frame == "twin_knives": return 40.0
+	if player_weapon_frame == "knife": return 35.0
+	if player_weapon_frame == "staff": return 56.0
+	return 36.0
 
 func _spend_energy(raw_amount: float, scaled: bool = true) -> bool:
 	# Priced in both profiles even though Recovery deducts nothing, because Recovery
@@ -3211,7 +3215,7 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	if direction.length_squared() > 0.01: set_bow_aim(direction)
 	var draw_time := float(player_action.get("elapsed", 0.0))
 	var ratio := clampf(draw_time / 0.90, 0.0, 1.0)
-	if not _spend_energy(lerpf(10.0, 28.0, ratio)):
+	if not _spend_energy(lerpf(7.0, 18.0, ratio)):
 		player_action = _idle_action()
 		return false
 	var strength_adjustment := int(player_attributes.get("strength", 4)) - 4
@@ -3247,9 +3251,9 @@ func _begin_staff_combo(direction: Vector2, held: bool) -> void:
 	var reach_bonus := 18.0 if has_track_rank("staff", 2) else 0.0
 	var wide_middle := has_track_rank("staff", 3)
 	var phases: Array[Dictionary] = [
-		{"startup": 0.30, "active_end": 0.44, "end": 0.92, "reach": 150.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 1.8, "technique": "staff_thrust", "energy_cost": 14.0},
-		{"startup": 1.06, "active_end": 1.26, "end": 1.78, "reach": 138.0 + reach_bonus, "damage_min": _player_physical_damage(4), "damage_max": _player_physical_damage(4), "posture": 2.4, "technique": "staff_spin" if wide_middle else "staff_sweep", "energy_cost": 14.0},
-		{"startup": 1.94, "active_end": 2.22, "end": 2.86, "reach": 146.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 3.6, "technique": "staff_spin", "energy_cost": 18.0},
+		{"startup": 0.30, "active_end": 0.44, "end": 0.92, "reach": 150.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 1.8, "technique": "staff_thrust", "energy_cost": 16.0},
+		{"startup": 1.06, "active_end": 1.26, "end": 1.78, "reach": 138.0 + reach_bonus, "damage_min": _player_physical_damage(4), "damage_max": _player_physical_damage(4), "posture": 2.4, "technique": "staff_spin" if wide_middle else "staff_sweep", "energy_cost": 18.0},
+		{"startup": 1.94, "active_end": 2.22, "end": 2.86, "reach": 146.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 3.6, "technique": "staff_spin", "energy_cost": 22.0},
 	]
 	phases = _linked_combo_phases(phases, 0.25)
 	if not _spend_energy(float(phases[0]["energy_cost"])): return
@@ -3277,7 +3281,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	var total := 2.65 * speed_scale
 	var interval := total / float(count)
 	var techniques := ["knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"]
-	var energy_costs := [12.0, 9.0, 9.0, 9.0, 9.0, 12.0] if twin else [14.0, 12.0, 12.0, 16.0]
+	var energy_costs := [8.0, 6.0, 6.0, 6.0, 6.0, 8.0] if twin else [9.0, 8.0, 8.0, 10.0]
 	var phases: Array[Dictionary] = []
 	for index in range(count):
 		var phase_start := interval * float(index)
@@ -3360,7 +3364,7 @@ func _execution_target_id(direction: Vector2) -> int:
 	return best_id
 
 func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(32.0): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(21.0): return false
 	player_facing = direction.normalized()
 	player_action = _action("twin_fang", _shorten_recovery(0.68, 0.29), player_facing)
 	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
@@ -3374,7 +3378,7 @@ func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) ->
 	return true
 
 func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(38.0 if piercing else 32.0): return false
+	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(25.0 if piercing else 21.0): return false
 	player_facing = direction.normalized()
 	var art_startup := 0.54 if piercing else 0.28
 	var art_duration := _shorten_recovery(1.50 if piercing else 0.90, art_startup, 0.68)
@@ -3460,8 +3464,8 @@ func request_stealth(simulate_immediately: bool = true) -> bool:
 # 51 raw spends 33.2 and derives the 8.0s cooldown that was previously hand-authored;
 # the Acrobat's rank-4 discount moves the cost rather than the cooldown, so one number
 # still drives both profiles and the 4.8s falls out unchanged.
-const VAULT_ENERGY := 51.0
-const TAKE_AIM_ENERGY := 51.0
+const VAULT_ENERGY := 33.0
+const TAKE_AIM_ENERGY := 33.0
 
 func request_vault(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	var vault_energy := VAULT_ENERGY * (0.6 if has_track_rank("acrobat", 4) else 1.0)
@@ -3538,12 +3542,12 @@ func _change_actor_hp(actor: Variant, delta: int) -> int:
 func _apply_actor_condition_buildup(actor: Variant, condition_id: String, amount: float) -> bool:
 	return apply_player_condition_buildup(condition_id, amount) if _actor_id(actor) == 0 else apply_enemy_condition_buildup(_actor_storage(actor), condition_id, amount)
 
-func _apply_actor_posture_damage(actor: Variant, amount: float, contact: Vector2 = Vector2.INF) -> bool:
+func _apply_actor_posture_damage(actor: Variant, amount: float, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown") -> bool:
 	if _actor_id(actor) == 0:
 		player_posture = maxf(0.0, player_posture - amount)
 		player_posture_recovery_delay = 1.15
 		return player_posture <= 0.0001
-	return _apply_posture_damage(_actor_storage(actor), amount, contact)
+	return _apply_posture_damage(_actor_storage(actor), amount, contact, interrupter, tool)
 
 func _set_actor_impulse(actor: Variant, velocity: Vector2) -> void:
 	if _actor_id(actor) == 0: player_gale_velocity = velocity
@@ -3552,7 +3556,7 @@ func _set_actor_impulse(actor: Variant, velocity: Vector2) -> void:
 		if not storage.is_empty(): storage["gale_velocity"] = velocity
 
 func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> void:
-	if not _spend_energy(18.0): return
+	if not _spend_energy(12.0): return
 	player_facing = direction.normalized()
 	var edge_damage := 1 if has_track_rank("swordsmanship", 3) else 0
 	var edge_posture := 0.5 if has_track_rank("swordsmanship", 3) else 0.0
@@ -3565,9 +3569,9 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	var second_posture := 2.8 if uses_energy_rules() else 2.2
 	var finisher_posture := 4.5 if uses_energy_rules() else 3.8
 	var phases: Array[Dictionary] = [
-		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "energy_cost": 18.0},
-		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": second_damage + edge_damage, "damage_max": second_damage + edge_damage, "posture": second_posture + edge_posture, "technique": "reverse_cut", "energy_cost": 16.0},
-		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "energy_cost": 22.0},
+		{"startup": opener_startup, "active_end": 0.52, "end": 0.92 if flowing else 0.98, "reach": 104.0, "damage_min": 10 + edge_damage, "damage_max": 10 + edge_damage, "posture": opener_posture + edge_posture, "technique": "opening_cut", "energy_cost": 12.0},
+		{"startup": 0.99 if flowing else 1.08, "active_end": 1.25 if flowing else 1.34, "end": 1.88 if flowing else 2.04, "reach": 116.0, "damage_min": second_damage + edge_damage, "damage_max": second_damage + edge_damage, "posture": second_posture + edge_posture, "technique": "reverse_cut", "energy_cost": 10.0},
+		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "energy_cost": 14.0},
 	]
 	phases = _linked_combo_phases(phases, 0.25)
 	duration = float(phases[-1]["end"])
@@ -3612,34 +3616,30 @@ func resume_combo_hold() -> bool:
 	_set_message("Your grip returns. The sequence continues.")
 	return true
 
-# Sweeping Cut is the Sword combo's third strike, available immediately, at the
-# combo's full price. It is not a wider, cheaper, faster version of that finisher,
+# Sweeping Cut is the Sword combo's third strike, available immediately, at a
+# premium over the combo's full price. It is not a wider, cheaper, faster version of that finisher,
 # which is what it had become: a 160-degree arc for 34 Energy in 23% of the
 # combo's time, so building the sequence for its own finisher was never correct.
 #
-# Now it shares the finisher's geometry, damage and posture, costs exactly what
-# the whole combo costs, and serves its complete terminal recovery in both rule
+# Now it shares the finisher's geometry, damage and posture, costs 56 against the
+# combo's literal 36, and serves its complete terminal recovery in both rule
 # profiles. What you buy is the *time* you skip, and you pay the full price for it.
-# It is no longer exempt from ENERGY_COST_SCALE. The exemption held the price at 56
-# while everything around it scaled, which meant a global re-tune of the price level
-# would move every ability EXCEPT this one -- the real defect, and not one the number
-# itself caused. The authored cost is raised to 86 instead, so it still spends ~56 by
-# default and now travels with the scale like anything else. Its cooldown falls out of
-# that spend at 13.4s, up from a hand-authored 4.2: the finisher without the combo's
-# time is a special attack, not a cheaper way to reach the same place.
+# Its authored price is its actual price. The retained scale is 1.0 and can still be
+# used for a future global physical-cost experiment without lying about today's values.
+# Its Recovery cooldown falls out of the same 56 spend at 13.4s.
 #
 # The original reasoning -- charge the sword combo's full price for skipping the
 # combo's time -- assumed 1.9 saved seconds were worth about a combo's Energy.
 # They are not, once Energy regenerates at 28/s: 0.2.17 halved the sweep to 28
 # and the 0.2.18 survey came back "sweeping is still too easy", with the death
 # room played as five sweeps and one combo. Price parity cannot restrain an
-# action that refills faster than its advantage decays, so the sweep keeps the
-# full 56 while everything around it scales -- roughly one and a half combos.
-const SWEEPING_CUT_ENERGY := 86.0
+# action that refills faster than its advantage decays, so the sweep remains
+# roughly one and a half combos.
+const SWEEPING_CUT_ENERGY := 56.0
 # Doubled from 30. A silent, cheap, high-damage opener with no wind-up was worth
 # spamming; noise alone might have restrained it, but the price is the part that makes
 # choosing it a decision rather than a default.
-const EXECUTION_ENERGY := 60.0
+const EXECUTION_ENERGY := 39.0
 
 func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(SWEEPING_CUT_ENERGY):
@@ -3685,8 +3685,8 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 # Whirlwind buys SPACE and Sweep the Legs buys TIME. They are priced apart to match: the
 # circle costs about half again what the sweep does, because shoving a crowd off you is
 # worth more than taking one body off its feet.
-const WHIRLWIND_ENERGY := 62.0
-const LEG_SWEEP_ENERGY := 40.0
+const WHIRLWIND_ENERGY := 40.0
+const LEG_SWEEP_ENERGY := 26.0
 const WHIRLWIND_PUSH := 104.0
 
 func request_staff_art(direction: Vector2, simulate_immediately: bool = true) -> bool:
@@ -3730,7 +3730,7 @@ func request_staff_art(direction: Vector2, simulate_immediately: bool = true) ->
 	return true
 
 func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(32.0):
+	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(21.0):
 		return false
 	_break_player_combo()
 	_reset_building_force()
@@ -3842,13 +3842,14 @@ func _resolve_lightning_bolt(direction: Vector2) -> void:
 	var contact := Vector2(best["pos"])
 	var awareness_before := String(best.get("awareness", "idle"))
 	var action_before: Dictionary = Dictionary(best.get("action", {})).duplicate(true)
-	var source_action := {"kind": "cast", "ability_id": "lightning_bolt", "duration": 0.35, "elapsed": 0.0, "allow_hit_reaction": true}
+	var source_action := player_action.duplicate(true)
+	source_action["allow_hit_reaction"] = true
 	var resolved := _resolve_player_physical_values(best, LIGHTNING_DAMAGE, 1.2, source_action)
 	var damage := int(resolved["damage"])
 	best["hp"] = int(best["hp"]) - damage
 	damage_dealt += damage
 	_on_player_hit_landed(best)
-	var posture_broken := _apply_actor_posture_damage(best, float(resolved["posture"]), contact)
+	var posture_broken := _apply_actor_posture_damage(best, float(resolved["posture"]), contact, "player", "lightning_bolt")
 	if not posture_broken:
 		_apply_enemy_hit_reaction(best, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
 	_register_enemy_hit_awareness(best, resolved, source_action)
@@ -4021,7 +4022,7 @@ func rally_is_available() -> bool:
 	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and rally_remaining <= 0.0001
 
 func request_advance(direction: Vector2, continue_held: bool = false, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(28.0): return false
+	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(18.0): return false
 	_break_player_combo()
 	_reset_building_force()
 	player_facing = direction.normalized()
@@ -5510,7 +5511,7 @@ func _resolve_advance_impact() -> void:
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
-		var posture_broken := _apply_actor_posture_damage(enemy, float(resolved["posture"]), impact)
+		var posture_broken := _apply_actor_posture_damage(enemy, float(resolved["posture"]), impact, "player", String(player_action.get("ability_id", "advance")))
 		_set_enemy_position(enemy, _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"])))
 		_register_enemy_hit_awareness(enemy, resolved, player_action)
 		_add_effect("hit", impact, damage, {"direction": direction})
@@ -5712,7 +5713,7 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
-		var posture_broken := _apply_actor_posture_damage(enemy, posture, hit_point)
+		var posture_broken := _apply_actor_posture_damage(enemy, posture, hit_point, "player", String(player_action.get("ability_id", "twin_fang")))
 		var reaction_applied := false
 		if not posture_broken and _player_hit_can_interrupt(): reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, hit_point, player_action)
 		pending_awareness.append({"enemy": enemy, "result": resolved})
@@ -5895,7 +5896,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			_set_message("The bandit slips through the attack.")
 		elif _enemy_blocks_attack(enemy):
 			_survey_mark_strike_resolution(enemy, "blocked")
-			_apply_actor_posture_damage(enemy, 2.0 if is_sweep else 0.5)
+			_apply_actor_posture_damage(enemy, 2.0 if is_sweep else 0.5, hit_point, "player", String(player_action.get("ability_id", player_action.get("technique_id", "melee"))))
 			_add_effect("block", hit_point)
 			_set_message("The shield catches your weapon.")
 		else:
@@ -5920,7 +5921,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			_change_actor_hp(enemy, -dealt)
 			damage_dealt += dealt
 			_on_player_hit_landed(enemy)
-			var posture_broken := _apply_actor_posture_damage(enemy, posture_damage, hit_point)
+			var posture_broken := _apply_actor_posture_damage(enemy, posture_damage, hit_point, "player", String(player_action.get("ability_id", player_action.get("technique_id", "melee"))))
 			var reaction_applied := false
 			if not posture_broken and _player_hit_can_interrupt():
 				reaction_applied = _apply_enemy_hit_reaction(enemy, posture_damage, awareness_before, action_before, hit_point, player_action)
@@ -5989,14 +5990,17 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	return {"damage": final_damage, "posture": posture_damage, "unaware": unaware, "aimed": aimed_contact}
 
 func _register_enemy_hit_awareness(enemy: Dictionary, contact_result: Dictionary, source_action: Dictionary = {}) -> void:
+	var clean_work := bool(contact_result.get("unaware", false)) and has_track_rank("rogue", 3)
 	if int(enemy.get("hp", 0)) <= 0:
 		enemy.erase("alarm_remaining")
 		enemy.erase("alarm_position")
+		# Death does not make an ordinary attack silent. A loud lethal hit alarms
+		# witnesses immediately; Clean Work remains the explicit silent exception.
+		if not clean_work: _broadcast_enemy_alarm(enemy, player_pos)
 		return
 	enemy["awareness"] = "alerted"
 	enemy["alert_remaining"] = 3.0
 	enemy["last_known_player"] = player_pos
-	var clean_work := bool(contact_result.get("unaware", false)) and has_track_rank("rogue", 3)
 	if clean_work:
 		var resolution_time := float(source_action.get("duration", 0.0))
 		if String(source_action.get("kind", "")) in ["combo", "art_combo"]:
@@ -6182,7 +6186,7 @@ func _try_duellist_parry(enemy: Dictionary) -> void:
 	var to_enemy := Vector2(enemy["pos"]) - player_pos
 	if to_enemy.length() > float(player_action.get("reach", player_attack_reach)) + float(enemy["radius"]) + 24.0: return
 	if not _within_arc(player_facing, to_enemy, deg_to_rad(85.0)): return
-	_interrupt_enemy_action(enemy)
+	_interrupt_enemy_action(enemy, "enemy", "parry_stance")
 	# Face the threat: the parry only catches what comes at its front.
 	enemy["facing"] = (player_pos - Vector2(enemy["pos"])).normalized()
 	enemy["action"] = _action("parry_stance", 0.72, (player_pos - Vector2(enemy["pos"])).normalized())
@@ -6204,7 +6208,7 @@ func _enemy_evades_attack(enemy: Dictionary) -> bool:
 	var elapsed := float(action.get("elapsed", 0.0))
 	return (action_kind == "evade" and elapsed >= 0.04 and elapsed <= 0.30) or (action_kind == "dodge_strike" and elapsed <= float(action.get("dodge_end", 0.30)))
 
-func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = Vector2.INF) -> bool:
+func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown") -> bool:
 	if amount <= 0.0 or int(enemy["hp"]) <= 0: return false
 	# Stagger is one authored opening, not a state that quick follow-up attacks
 	# may perpetually refresh. Health damage has already resolved at each caller;
@@ -6216,10 +6220,10 @@ func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = 
 	enemy["posture"] = maxf(0.0, float(enemy.get("posture", 1.0)) - amount)
 	enemy["posture_recovery_delay"] = 1.15
 	if float(enemy["posture"]) <= 0.0001:
-		return _break_posture(enemy, contact)
+		return _break_posture(enemy, contact, interrupter, tool)
 	return false
 
-func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
+func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown") -> bool:
 	var action: Dictionary = enemy["action"]
 	var kind := String(enemy["kind"])
 	var action_kind := String(action.get("kind", "idle"))
@@ -6254,7 +6258,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF) -> bool:
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
-	_interrupt_enemy_action(enemy)
+	_interrupt_enemy_action(enemy, interrupter, tool)
 	enemy["action"] = _action("stagger", stagger_duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
 	enemy["action"].merge({
@@ -6345,7 +6349,8 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	var reaction_strength := 1.18 if high_impact else 1.0
 	if action_kind == "charge": reaction_strength += 0.16
-	_interrupt_enemy_action(enemy)
+	var source_tool := String(source_action.get("ability_id", source_action.get("technique_id", source_action.get("kind", "melee"))))
+	_interrupt_enemy_action(enemy, "player", source_tool)
 	enemy["action"] = _action("hit_reaction", duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
 	enemy["action"].merge({
@@ -6528,7 +6533,7 @@ func _resolve_player_hazard_hit(hazard: Dictionary, source_label: String, hit_te
 		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
-		if not _apply_actor_posture_damage(enemy, float(resolved["posture"]), contact):
+		if not _apply_actor_posture_damage(enemy, float(resolved["posture"]), contact, "player", source_label):
 			_apply_enemy_hit_reaction(enemy, float(resolved["posture"]), awareness_before, action_before, contact, source_action)
 		_register_enemy_hit_awareness(enemy, resolved, source_action)
 		_add_effect("hit", contact, damage, {"direction": (contact - Vector2(hazard["pos"])).normalized()})
@@ -6803,7 +6808,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if Vector2(enemy["pos"]).is_equal_approx(charge_origin):
 				# Released before the action is replaced -- afterwards the charge
 				# dictionary and its record are already gone.
-				_interrupt_enemy_action(enemy)
+				_interrupt_enemy_action(enemy, "environment", "obstacle")
 				enemy["action"] = _action("stagger", 0.62, Vector2.ZERO)
 				enemy["posture"] = maxf(0.0, float(enemy["posture"]) - 1.0)
 				_add_effect("posture_break", charge_origin)
@@ -7363,13 +7368,17 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
+	var player_kind := String(player_action.get("kind", "idle"))
+	# "Walk only" is a whole-attack property, not the first response label. Once
+	# the player attacks, casts, dodges, blocks, endures, or is forced into a
+	# reaction, this attack can no longer support a claim about walking alone.
+	if player_kind not in ["idle", "move"]: record["walk_only"] = false
 	if float(record["gap"]) < 0.0:
 		record["gap"] = Vector2(enemy["pos"]).distance_to(player_pos)
 	# The response is the player's first commitment after this attack became
 	# readable. Bucketing it as a fraction of startup is the only measurement that
 	# separates "walking is overpowered" from "the player read the attack well".
 	if float(record["response_at"]) < 0.0:
-		var player_kind := String(player_action.get("kind", "idle"))
 		var started := float(player_action.get("started_at", -1.0))
 		# A flinch is not a decision. Counting hit_reaction or stagger as the response
 		# would score a player who never chose anything as reacting instantly.
@@ -7403,6 +7412,7 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 # telegraph during which walking still saves you -- but is authored rather than
 # derived from forward travel, which the charge already owns.
 func _attach_charge_capture(action: Dictionary, authored_f: float, technique: String) -> void:
+	var player_kind := String(player_action.get("kind", "idle"))
 	action["capture_record"] = {
 		"technique": technique,
 		"authored_f": authored_f,
@@ -7410,22 +7420,21 @@ func _attach_charge_capture(action: Dictionary, authored_f: float, technique: St
 		"gap": -1.0,
 		"response_at": -1.0,
 		"response": "",
+		"walk_only": player_kind in ["idle", "move"],
 		"closest": INF,
 		"resolution": "",
 	}
 
-func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "player", tool: String = "") -> void:
+func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "system", tool: String = "unknown") -> void:
 	var action: Dictionary = enemy.get("action", {})
 	var interrupted_kind := String(action.get("kind", "idle"))
 	if mode_id == ModeRulesScript.COMBAT_SURVEY and interrupted_kind in ENEMY_ATTACK_ACTION_KINDS:
-		var tool_id := tool
-		if tool_id.is_empty(): tool_id = String(player_action.get("ability_id", player_action.get("kind", "unknown")))
 		survey_interruption_events.append({
 			"enemy_id": int(enemy.get("id", -1)),
 			"enemy_kind": String(enemy.get("kind", "unknown")),
 			"interrupted_action": interrupted_kind,
 			"interrupter": interrupter,
-			"tool": tool_id,
+			"tool": tool,
 			"at": simulation_time,
 		})
 	if String(action.get("kind", "")) in ["melee", "charge"]:
@@ -7491,7 +7500,7 @@ func _survey_capture_summary() -> Dictionary:
 			bucket["f_sum"] = float(bucket["f_sum"]) + observed
 			bucket["f_n"] = int(bucket["f_n"]) + 1
 		# Walking alone means the only response committed was ordinary movement.
-		if String(record.get("response", "")) == "move":
+		if String(record.get("response", "")) == "move" and bool(record.get("walk_only", false)):
 			walk_attempts += 1
 			if resolution == "miss": walk_escapes += 1
 	var rows := []
@@ -7533,6 +7542,7 @@ func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
 	# built outside a plan keeps its current standing-still behaviour.
 	action["advance_distance"] = float(option.get("advance_distance", 0.0))
 	action["advance_end"] = float(option.get("advance_end", 0.0))
+	var player_kind := String(player_action.get("kind", "idle"))
 	action["capture_record"] = {
 		"technique": String(option["technique"]),
 		"authored_f": float(option.get("f_rad", 0.0)),
@@ -7540,6 +7550,7 @@ func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
 		"gap": -1.0,
 		"response_at": -1.0,
 		"response": "",
+		"walk_only": player_kind in ["idle", "move"],
 		"closest": INF,
 		"resolution": "",
 	}
@@ -7756,7 +7767,7 @@ func _try_bandit_counter(enemy: Dictionary) -> void:
 	# distance its counter needs while still leaving the arc.
 	var lateral := to_enemy.normalized().rotated(PI * 0.5 * (1.0 if int(enemy["id"]) % 2 == 0 else -1.0))
 	var side := (lateral - to_enemy.normalized() * 0.5).normalized()
-	_interrupt_enemy_action(enemy)
+	_interrupt_enemy_action(enemy, "enemy", "dodge_strike")
 	enemy["action"] = _melee_action(1.24, 0.46, 0.58, 96.0, 3, -to_enemy.normalized(), "quick_cut", "dodge_strike")
 	enemy["action"]["dodge_end"] = 0.26
 	enemy["action"]["speed"] = 330.0
@@ -8208,7 +8219,7 @@ func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
 		if mass > 1.35 or String(existing_action.get("kind", "idle")) in ["stagger", "hit_reaction"]: continue
 		var reaction_direction := (Vector2(enemy["pos"]) - origin).normalized()
 		if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(player_action.get("direction", player_facing)).normalized()
-		_interrupt_enemy_action(enemy)
+		_interrupt_enemy_action(enemy, "player", "vault")
 		enemy["action"] = _action("hit_reaction", 0.28, Vector2.ZERO)
 		_clear_melee_intent(enemy)
 		enemy["action"].merge({
@@ -8538,7 +8549,7 @@ func _damage_enemy_from_stray_projectile(enemy: Dictionary, projectile: Dictiona
 	survey_stray_projectile_hits += 1
 	_note_player_reached(enemy)
 	_add_effect("hurt", contact, damage)
-	_apply_actor_posture_damage(enemy, float(projectile.get("posture", 0.0)), contact)
+	_apply_actor_posture_damage(enemy, float(projectile.get("posture", 0.0)), contact, "enemy_projectile", String(projectile.get("ability_id", projectile.get("kind", "projectile"))))
 	enemy["awareness"] = "alerted"
 	enemy["alert_remaining"] = 3.0
 	enemy["last_known_player"] = player_pos
@@ -8577,7 +8588,7 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	_change_actor_hp(enemy, -damage)
 	damage_dealt += damage
 	_on_player_hit_landed(enemy)
-	var posture_broken := _apply_actor_posture_damage(enemy, posture, contact)
+	var posture_broken := _apply_actor_posture_damage(enemy, posture, contact, "player", String(source_action.get("ability_id", projectile_kind)))
 	var reaction_applied := false
 	if not posture_broken:
 		reaction_applied = _apply_enemy_hit_reaction(enemy, posture, awareness_before, action_before, contact, source_action)
@@ -9096,7 +9107,12 @@ func _local_avoidance_direction(enemy: Dictionary, desired: Vector2) -> Vector2:
 			# Check both the next physical step and a short look-ahead. This
 			# prevents choosing a direction that is technically free one frame
 			# at a time but immediately feeds the actor back into the blockage.
-			if not _can_occupy_with_context(origin + candidate * 10.0, radius, actor_id, local_walls, local_enemies): continue
+			var next_step := origin + candidate * 10.0
+			if not _can_move_with_overlap_recovery(origin, next_step, radius, actor_id, local_walls, local_enemies): continue
+			# An already-overlapping body must be allowed to take the small step that
+			# separates it. Requiring the 42-unit look-ahead to be fully clear first
+			# made two accidentally intersecting spawns veto every escape direction.
+			if not _can_occupy_with_context(origin, radius, actor_id, local_walls, local_enemies): return candidate
 			if _can_occupy_with_context(origin + candidate * 42.0, radius, actor_id, local_walls, local_enemies): return candidate
 	return Vector2.ZERO
 
@@ -9147,6 +9163,30 @@ func _can_occupy_with_context(position: Vector2, radius: float, actor_id: int, l
 				_set_message("You walk into something you had not seen.")
 			return false
 	return _actor_footprint_on_floor(position, radius)
+
+# Normal collision remains strict. This narrow exception exists only when an actor
+# already intersects another body: it may take a candidate step that reduces every
+# existing penetration and creates none. The rule is deterministic and cannot be
+# used to push through a crowd, because a non-overlapping origin gets no exception.
+func _can_move_with_overlap_recovery(origin: Vector2, position: Vector2, radius: float, actor_id: int, local_walls: Array[Rect2], local_enemies: Array[Dictionary]) -> bool:
+	if _can_occupy_with_context(position, radius, actor_id, local_walls, local_enemies): return true
+	var no_bodies: Array[Dictionary] = []
+	if not _can_occupy_with_context(position, radius, actor_id, local_walls, no_bodies): return false
+	var had_overlap := false
+	var improved := false
+	for enemy in local_enemies:
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("id", -1)) == actor_id or int(enemy.get("hp", 0)) <= 0: continue
+		if actor_id == 0 and _enemy_is_pushable(enemy): continue
+		var required := radius + float(enemy.get("radius", ENEMY_RADIUS))
+		var before := origin.distance_to(Vector2(enemy["pos"]))
+		var after := position.distance_to(Vector2(enemy["pos"]))
+		if before < required:
+			had_overlap = true
+			if after + 0.001 < before: return false
+			if after > before + 0.001: improved = true
+		elif after < required:
+			return false
+	return had_overlap and improved
 
 func _can_occupy(position: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false) -> bool:
 	if not _inside_world(position, radius): return false
@@ -9202,10 +9242,10 @@ func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, 
 	var blocking_bodies := no_bodies if ignore_bodies else local_enemies
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if _can_occupy_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
+	if _can_move_with_overlap_recovery(origin, candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if _can_occupy_with_context(candidate, radius, actor_id, local_walls, blocking_bodies):
+	if _can_move_with_overlap_recovery(result, candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.y = candidate.y
 	if actor_id == 0: _displace_light_bodies(result, radius, local_enemies)
 	return result

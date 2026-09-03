@@ -68,6 +68,20 @@ func test_every_survey_recipe_kind_is_registered() -> void:
 			var kind := String(Dictionary(entry_value).get("kind", ""))
 			check(CombatCatalogScript.has_archetype(kind), "survey recipe names unknown enemy %s" % kind)
 
+func test_every_character_shares_the_revised_opening_gates() -> void:
+	for loadout_id in CombatCatalogScript.loadout_ids():
+		var order := CombatCatalogScript.track_order_for_loadout(loadout_id)
+		check(order.size() >= 5, "%s does not expose the five ordinary track positions" % loadout_id)
+		if order.size() < 5: continue
+		var weapon_stages: Array = Dictionary(CombatCatalogScript.character_track(order[0])).get("stages", [])
+		var temperament_stages: Array = Dictionary(CombatCatalogScript.character_track(order[2])).get("stages", [])
+		var main_stages: Array = Dictionary(CombatCatalogScript.character_track(order[3])).get("stages", [])
+		var subclass_stages: Array = Dictionary(CombatCatalogScript.character_track(order[4])).get("stages", [])
+		check(weapon_stages.size() > 1 and int(Dictionary(weapon_stages[1]).get("gate", -1)) == 4, "%s Weapon II should remain at level 4" % loadout_id)
+		check(temperament_stages.size() > 1 and int(Dictionary(temperament_stages[1]).get("gate", -1)) == 4, "%s Temperament II should move to level 4" % loadout_id)
+		check(not main_stages.is_empty() and int(Dictionary(main_stages[0]).get("gate", -1)) == 3, "%s main class should open at level 3" % loadout_id)
+		check(not subclass_stages.is_empty() and int(Dictionary(subclass_stages[0]).get("gate", -1)) == 3, "%s subclass should open at level 3" % loadout_id)
+
 func test_catalog_vision_is_the_perception_authority() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.walls.clear()
@@ -119,6 +133,7 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 	state.discovery_revision += 1
 	state._add_barrier({"pos":Vector2.ZERO, "axis":Vector2.RIGHT, "half_length":10.0, "thickness":2.0, "hp":1.0, "source_id":0, "layer":state.current_layer})
 	state._add_projectile({"kind":"arrow", "pos":state.player_pos, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":int(enemy["id"]), "friendly":false, "layer":state.current_layer, "elevation":12.0, "elevation_profile":"arc", "misdirected":true})
+	state._add_effect("lightning", state.player_pos + Vector2.RIGHT * 80.0, 13, {"origin":state.player_pos, "strength":1.4})
 	var current = PresentationFrameScript.new()
 	var following = PresentationFrameScript.new()
 	current.capture(state)
@@ -130,6 +145,8 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 	check(Dictionary(current.data.get("player_conditions", {})).has("burning") and is_equal_approx(float(current.data.get("player_exhaustion_remaining", 0.0)), 0.5), "streamed top-level combat state is incomplete")
 	var carried_projectile := Dictionary(Array(current.data["projectiles"])[0])
 	check(bool(carried_projectile.get("misdirected", false)) and is_equal_approx(float(carried_projectile.get("elevation", 0.0)), 12.0), "world schema did not carry misdirection and elevation")
+	var carried_effect := Dictionary(Array(current.data["effects"])[0])
+	check(carried_effect.has("origin") and int(carried_effect.get("amount", 0)) == 13 and is_equal_approx(float(carried_effect.get("strength", 0.0)), 1.4), "effect projection stripped renderer-authored Lightning fields")
 	state.visible_cells.clear()
 	check(not Dictionary(current.data["visible_cells"]).is_empty(), "presentation frame aliases the live visibility dictionary")
 	current.data["projectiles"] = [
@@ -151,6 +168,7 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 func _init() -> void:
 	test_enemy_catalog_is_complete()
 	test_every_survey_recipe_kind_is_registered()
+	test_every_character_shares_the_revised_opening_gates()
 	test_catalog_vision_is_the_perception_authority()
 	test_actor_boundary_owns_identity_and_factions()
 	test_dynamic_presentation_uses_stable_ids()

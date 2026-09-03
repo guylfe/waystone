@@ -119,7 +119,9 @@ const WORLD_FIELDS := [
 	{"key":"elevation_profile", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM], "default":"ground"},
 	{"key":"misdirected", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM], "default":false},
 	{"key":"piercing", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM]},
-	{"key":"amount", "entities":["pickup"], "audiences":[PRESENTATION]},
+	{"key":"amount", "entities":["pickup", "effect"], "audiences":[PRESENTATION, DETERMINISM]},
+	{"key":"strength", "entities":["effect"], "audiences":[PRESENTATION, DETERMINISM]},
+	{"key":"origin", "entities":["effect"], "audiences":[PRESENTATION, DETERMINISM], "interpolate":"vector"},
 	{"key":"label", "entities":["pickup", "effect"], "audiences":[PRESENTATION]},
 	{"key":"color", "entities":["effect"], "audiences":[PRESENTATION]},
 ]

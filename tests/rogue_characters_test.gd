@@ -12,6 +12,7 @@ func _init() -> void:
 	test_combo_scoped_hit_reaction()
 	test_stealth_and_vault()
 	test_stealth_eligibility_breaks_and_alerts()
+	test_lethal_hits_alert_unless_explicitly_silent()
 	test_bow_draw_release_and_arts()
 	test_sharpshooter_preparation_and_range()
 	test_role_integrity_corrections()
@@ -190,6 +191,22 @@ func test_stealth_eligibility_breaks_and_alerts() -> void:
 	assert(victim.has("alarm_remaining"))
 	alarm_state._update_enemy_alarm(victim, 1.0)
 	assert(String(ally["awareness"]) == "alerted")
+
+func test_lethal_hits_alert_unless_explicitly_silent() -> void:
+	var state := fresh("rogue_acrobat")
+	var victim := state._make_enemy("knife", state.player_pos + Vector2.RIGHT * 80.0, 30)
+	var witness := state._make_enemy("knife", state.player_pos + Vector2.RIGHT * 180.0, 30)
+	state.enemies.assign([victim, witness])
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	victim["hp"] = 0
+	state._register_enemy_hit_awareness(victim, {"unaware": false}, {"kind":"cast", "ability_id":"fireball"})
+	assert(String(witness["awareness"]) == "alerted")
+	# Clean Work is the authored silent-kill exception; lethality alone is not.
+	witness["awareness"] = "idle"
+	state.track_ranks["rogue"] = 3
+	state._register_enemy_hit_awareness(victim, {"unaware": true}, {"kind":"execution", "ability_id":"knife_execution"})
+	assert(String(witness["awareness"]) == "idle")
 
 func test_bow_draw_release_and_arts() -> void:
 	var state := fresh("rogue_sharpshooter")

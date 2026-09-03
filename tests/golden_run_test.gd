@@ -32,11 +32,11 @@ const EXPECTED := {
 
 const ELEMENTALIST_EXPECTED := {
 	"elementalist_spellbook": {
-		"all": "8169e40a2fea39b98641372091dfebe53511a46261da78bc5a0eef972562d997",
+		"all": "02e495c76a9a182bfc13f0dfffa0d77a5d00c6d1f48ea7320a69265be81b2d71",
 		"enemies": "8990a1322f78608ec7dc54f667e0e096bb7ca9d3a8e8fa4788ed8abb695f4ac7",
-		"player": "591b6803e879d44689a98255b778626d1bb3081cf9cf9f208f0d835e94de32ef",
+		"player": "7a5eff22dc4b9bf048b116cf8a27fcff9a054d8272600067c472b436360acd3a",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
-		"world": "5dccab8e6de1f2bec89840def9bcf1d511cabd114a9071742b5f206838440074",
+		"world": "84ce6caa5c76031155d68f343c82f05e9019bbb5891a477815d42677f3f99312",
 	},
 }
 

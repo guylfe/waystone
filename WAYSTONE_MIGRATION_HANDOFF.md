@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
 **Updated:** 2026-09-03
-**Current source baseline:** `0.2.81` (`versionCode 281`, save schema `35`, presentation version `9`, Combat Survey format `28`)
+**Current source baseline:** `0.2.82` (`versionCode 282`, save schema `35`, presentation version `10`, Combat Survey format `29`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -17,7 +17,16 @@ This is an operational handoff, not a replacement for the detailed design docume
 > inspected 19 real-renderer audit frames, built and verified both packages, and installed/read back
 > `0.2.81` (`versionCode 281`) on the Pixel Fold over wireless ADB. The Fold check found existing
 > portrait and full-width landscape layout defects; its inner/unfolded display was not exercised.
-> The standard Elementalist baseline survey remains outstanding.
+> Two standard Elementalist runs were completed on `0.2.81`. They showed that the cheap, broad
+> staff was carrying the opening game while Lightning Bolt was too weak and exposed, revealed a
+> missing Lightning presentation contract, lethal spell kills that failed to alert surviving
+> enemies, overlapping melee bodies that could deadlock movement, and interruption/walk-only
+> telemetry that could misattribute causes. `0.2.82` is the focused response: expensive spells with
+> compounding Intelligence discounts above baseline 5, a faster 13-damage Lightning Bolt, a
+> 56-Energy staff sequence, simultaneous level-3 Main Class/Subclass access, strict collision with a
+> narrow deterministic depenetration exception, and corrected presentation/awareness/telemetry
+> ownership. Its next standard survey should test those changes rather than reopen the universal
+> movement, regeneration or attack-capture rules.
 
 ## Executive migration brief
 
@@ -506,10 +515,26 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.81`, 2026-09-03)
+### Latest verified package boundary (`0.2.82`, 2026-09-03)
 
 - All 19 default test files passed, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The deliberate Elementalist golden-state fingerprints repeated stably after the Energy and
+  presentation-contract changes.
+- The real-renderer caster audit was extended with a dedicated Lightning frame and visually
+  confirmed the complete bolt arc, 13-damage contact and opening 60-Energy UI price.
+- Windows SHA-256:
+  `E055842D4E6ECED3394C1B10A98C332EF267BFEC063C048DC6B6951F418E9803`;
+  file and product version both read back as `0.2.82`.
+- Android SHA-256:
+  `B16781A023A8D4A32658C7DD229856DD1DF32C26DA5F8CA2937A6C53152144FD`;
+  package metadata reads `com.waystone.prototype`, version name `0.2.82`, version code `282`,
+  minimum SDK 24, and APK signature v2/v3 verification passes.
+- `0.2.82` has not been installed on the Fold. Build verification and device deployment remain
+  separate claims.
+
+### Latest verified Fold installation (`0.2.81`, 2026-09-03)
+
 - The caster and milestone renderer audits produced and received visual inspection of 19 frames;
   the new burn, frost, chant and misdirection cues were present in frozen and streamed state.
 - Windows SHA-256:
@@ -521,8 +546,9 @@ Installation is a deployment step after implementation and verification, not evi
 - Outer-display portrait and landscape were inspected and auto-rotation was restored. Portrait
   compresses the wide combat UI severely; landscape retains fixed-width background/header regions
   that do not fill the display. The inner/unfolded display remains unverified.
-- This closes package and installed-version verification, not Gate B: the layout findings need a
-  decision and the standard-profile Elementalist survey still needs to be played.
+- This closes the `0.2.81` package and installed-version verification. The standard-profile
+  Elementalist baseline was subsequently played twice and informed `0.2.82`; the layout findings
+  still need a decision, and the revised Elementalist economy needs its own follow-up survey.
 
 ## 11. Source-of-truth map
 
@@ -552,7 +578,14 @@ Installation is a deployment step after implementation and verification, not evi
 - **No invisible combat math:** Do not hide an apparent physical hit behind a random miss chance.
 - **No input dexterity creep:** Generous continuation decisions are compatible with commitment; narrow cancel timing is not the present goal. This forbids *reflex and pinpoint accuracy*, not timing as such. Hold duration is a legitimate input dimension wherever the windows are generous enough that releasing between commitments is comfortable — that is a decision, not a reaction check.
 - **No universal button assumptions:** A character equips one Defense. Generic telemetry fields do not mean every character can Dodge, Block, and Endure simultaneously.
-- **No attack/non-attack cooldown conflation:** Physical attacks use authored commitment/recovery and, in Stamina mode, resource cost. Authored non-attack abilities may still use cooldowns.
+- **No attack/non-attack cooldown conflation:** Physical attacks use authored commitment/recovery and, in Energy mode, resource cost. Authored non-attack abilities may still use cooldowns.
+- **Literal costs with separate owners:** `ENERGY_COST_SCALE` remains `1.0`; physical action prices
+  are authored as what the player pays. Spell prices bypass that lever and are modified only by
+  spell-specific rules such as Intelligence and Circle. Do not use a global physical multiplier to
+  solve a spell-economy problem.
+- **Intelligence buys efficiency, not power:** baseline `5` pays full authored spell cost; each point
+  above it compounds a `6%` discount, values below it receive no surcharge, and damage, magnitude,
+  geometry and cast timing remain properties of the spell.
 - **No mode-topology conflation:** Expedition is a forward run; Campaign is a persistent interconnected graph around Waystones and shortcuts.
 - **No false roadmap certainty:** Milestones above are an order of operations. Assign version numbers and dates only when explicitly decided.
 
@@ -563,9 +596,10 @@ The following remain intentionally unresolved:
 - final player combat movement speeds and out-of-combat travel rule;
 - exact pursuit, attack tracking, and forward-travel values for each melee role;
 - exact post-control duration and feedback for post-hit hyperarmor;
-- exact Sweeping Cut stamina cost, recovery, damage, and posture after adopting finisher geometry;
+- whether the literal physical costs established in `0.2.82`, especially the 56-Energy staff
+  sequence and its arts, create the intended competition with casting;
 - whether an already committed combo continuation may overdraw Stamina under every profile edge case;
-- final Stamina costs, regeneration tuning, exhaustion threshold, and possible future Dodge cost;
+- final Energy costs, regeneration tuning, exhaustion threshold, and possible future Dodge cost;
 - experienced-player difficulty structure and degree of probabilistic enemy action selection;
 - which melee roles need redesign before adding any new enemy;
 - Campaign level cap, extra Temperament purchases, Adopted Track catch-up, and secondary-loadout progression;

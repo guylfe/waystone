@@ -9,8 +9,8 @@ extends SceneTree
 # cooldown never touched that comparison — you swept, walked for four seconds,
 # and swept again.
 #
-# The rebuild charges the whole combo's price for skipping the whole combo's
-# time. What is locked here is that relationship, not any single number.
+# The rebuild charges a premium over the combo for skipping the whole combo's
+# time. What is locked here is that relationship, not geometry drift.
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
@@ -45,10 +45,9 @@ func test_it_is_the_finisher_not_a_wider_one() -> void:
 	var old_width: float = absf(float(old_arc["end_angle"]) - float(old_arc["start_angle"]))
 	check(sweep_width < old_width, "the rebuilt arc must be narrower than the broad sweep it replaces")
 
-func test_it_costs_the_whole_combo() -> void:
-	# 56 is not a round number chosen for feel: it is exactly what the three
-	# combo strikes cost together. Charging the full price for skipping the full
-	# sequence is the entire shape of this change.
+func test_it_costs_more_than_the_whole_combo() -> void:
+	# The finisher without the combo's time is a special attack. Its literal 56
+	# price remains about one and a half times the Sword combo's literal 36.
 	var swept := fresh_state()
 	var before := swept.player_energy
 	swept.request_sweeping_cut(Vector2.RIGHT, false)
@@ -60,13 +59,9 @@ func test_it_costs_the_whole_combo() -> void:
 	while combo.advance_streamed_action_tick(): pass
 	var combo_cost := combo_before - combo.player_energy
 
-	# Sweeping Cut is charged through _spend_energy(SWEEPING_CUT_ENERGY, false) -- the
-	# `false` exempts it from ENERGY_COST_SCALE. So it costs what the combo would cost
-	# UNSCALED, which is the comparison that survived 0.2.18 introducing the scale. The
-	# old assertion compared it against the scaled combo and has been quietly red since.
-	var unscaled_combo := combo_cost / combo.ENERGY_COST_SCALE
-	check(absf(sweep_cost - unscaled_combo) < 1.5,
-		"Sweeping Cut should cost the combo's unscaled total: sweep %.0f versus combo %.0f unscaled %.0f" % [sweep_cost, combo_cost, unscaled_combo])
+	check(absf(sweep_cost - 56.0) < 0.1, "Sweeping Cut should spend its literal 56, spent %.1f" % sweep_cost)
+	check(sweep_cost > combo_cost * 1.5,
+		"Sweeping Cut should cost a premium over the combo: sweep %.0f versus combo %.0f" % [sweep_cost, combo_cost])
 
 func test_damage_and_posture_match_the_finisher() -> void:
 	for rules in ["energy", "recovery"]:
@@ -147,7 +142,7 @@ func test_building_the_combo_is_now_worthwhile() -> void:
 
 func _init() -> void:
 	test_it_is_the_finisher_not_a_wider_one()
-	test_it_costs_the_whole_combo()
+	test_it_costs_more_than_the_whole_combo()
 	test_damage_and_posture_match_the_finisher()
 	test_reach_matches_the_finisher()
 	test_terminal_recovery_is_served_in_full()

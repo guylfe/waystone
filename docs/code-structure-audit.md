@@ -2153,9 +2153,10 @@ The inner/unfolded display was not exercised because the device remained physica
 also emitted non-fatal warnings for Windows root certificates, the missing project icon/themed-icon
 reference, and Android build-tools fallback from target 36 to installed build tools 35.0.1.
 
-Therefore Gate B is not fully closed. Automated behavioral gates, packaging and installed-version
-verification are green; the responsive-layout findings need an explicit disposition, and the Gate B
-standard-profile Elementalist survey has not yet been run.
+At the `0.2.81` release boundary Gate B was not fully closed. Automated behavioral gates, packaging
+and installed-version verification were green; the responsive-layout findings still needed an
+explicit disposition, and the Gate B standard-profile Elementalist survey had not yet been run.
+Two such surveys were subsequently completed and are addressed in the `0.2.82` addendum below.
 
 ## Durable rules for every later implementation
 
@@ -2186,3 +2187,86 @@ for every entity class, prose-derived condition effects remain, hazards and cond
 route through faction, the player still lacks the same stored actor representation as enemies,
 name-gated capabilities remain, registry ownership is not universally bidirectional, older save
 migrations remain partly inline, and presentation-ID scan optimization still waits for a profile.
+
+# Post-Gate-B correction — `0.2.82`
+
+**Recorded:** 2026-09-03 after two standard-profile Mage · Elementalist surveys on `0.2.81`.
+This is an implementation record for the focused correction those surveys justified. It does not
+approve or silently expand the pending A0–A7 architecture programme above.
+
+## What the surveys established
+
+- The opening staff was cheap and broad enough to carry the Mage while Lightning Bolt was too weak
+  and exposed to justify using regularly. The intended progression — powerful expensive spells that
+  become efficient with investment — was therefore inverted.
+- Lightning resolution existed in simulation but its presentation entity lost `origin`, `amount`
+  and `strength` at the projection boundary, so the renderer could not draw the authored effect.
+- Lethal player spell hits could remove an enemy without alerting nearby survivors. The rule belonged
+  to hostile hit awareness, not to Fireball or any other individual delivery mechanism; only the
+  explicitly silent Clean Work path should suppress it.
+- Enemy bodies that began intersecting could reject every candidate movement because the collision
+  test required them to be fully clear before taking the first separating step.
+- Interruption telemetry inferred its cause from the player's current action after the fact, and a
+  capture record could still be counted as walk-only after a non-movement response. Both converted
+  plausible guesses into false evidence.
+
+## Focused implementation and ownership
+
+1. **Spell economy owns spell prices.** Spell costs bypass the physical-action multiplier.
+   Intelligence baseline `5` pays the authored price; each point above it compounds a `6%` discount,
+   values below it receive no surcharge, and the curve bottoms at `35%`. Intelligence changes no
+   damage, magnitude, geometry or timing. Mage starts at Intelligence `7`; the Warrior (`2`) and both
+   Rogue profiles (`4`) remain at or below baseline without penalty.
+2. **Physical prices are literal.** `ENERGY_COST_SCALE` remains as a possible global lever but is
+   `1.0`; former effective prices were re-authored directly. The staff deliberately rises to
+   `16/18/22` (`56` total), Whirlwind to `40`, and Sweep the Legs to `26`, while staff damage, posture
+   and geometry remain untouched.
+3. **Lightning is a valuable expensive opener.** Its authored cost is `68` (about `60.1` at the
+   Mage's starting Intelligence), damage is `13`, startup is `0.27` world seconds and total duration
+   `0.69`. A second immediate cast overdraws the opening 100-Energy pool and causes exhaustion.
+4. **Progression exposes both identities together.** The first Main Class and Subclass purchases now
+   share level `3`. Temperament II moves from level `2` to `4`; Weapon II remains at `4`. Later track
+   gates and sequential requirements remain unchanged.
+5. **Presentation fields stay schema-owned.** Effect `origin`, `amount` and `strength` are declared
+   once in `state_field_schema.gd` for presentation/determinism projection. The fix applies to every
+   effect producer instead of teaching the renderer a Lightning-only fallback.
+6. **Causality is passed, not reconstructed.** Player, projectile, environmental and defensive
+   interruption callers pass their actual actor/tool to the shared interruption boundary. Capture
+   records retain a monotonic `walk_only` fact that any non-idle, non-move player action invalidates.
+7. **Depenetration is an invariant, not softened collision.** Ordinary occupancy remains strict. An
+   actor already overlapping another living body may take only a deterministic step that reduces
+   every existing overlap, creates no new one, and still passes world, floor, wall and barrier checks.
+8. **Awareness belongs to the shared damage outcome.** A lethal ordinary player hit broadcasts the
+   same nearby alarm as a surviving hit. Clean Work remains the explicit silent exception.
+
+## Regression ownership
+
+- `mage_elementalist_test.gd` owns the baseline, no-surcharge and compounding-cost rules and the
+  shared level-3 class/subclass gate.
+- `energy_test.gd` and `sweeping_cut_test.gd` own literal physical prices and the staff premium.
+- `structure_audit_test.gd` owns Lightning's projected presentation fields.
+- `rogue_characters_test.gd` owns lethal ordinary-hit awareness and lethal Clean Work silence.
+- `capture_telemetry_test.gd` owns mixed-response classification and overlap separation without
+  permitting later body penetration.
+- `combat_survey_test.gd` owns explicit interruption attribution; `golden_run_test.gd` records the
+  intentional Elementalist state-fingerprint change.
+
+## Verification actually completed for `0.2.82`
+
+- The complete `run-tests.ps1` harness passed all 19 test files with only the same documented
+  expected failure in `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The deliberate Elementalist golden player/world/combined fingerprints repeated stably.
+- A dedicated real-renderer Lightning audit frame was generated and inspected; the full bolt arc,
+  13-damage contact and opening 60-Energy price were visible.
+- `git diff --check` passed.
+- Windows export succeeded; file and product version read back as `0.2.82`, SHA-256
+  `E055842D4E6ECED3394C1B10A98C332EF267BFEC063C048DC6B6951F418E9803`.
+- Android export succeeded; package metadata reads `com.waystone.prototype`, version name `0.2.82`,
+  version code `282`, minimum SDK 24, SHA-256
+  `B16781A023A8D4A32658C7DD229856DD1DF32C26DA5F8CA2937A6C53152144FD`, and APK signature v2/v3
+  verification passes.
+- No `0.2.82` device installation or hands-on survey is claimed by this source/build verification.
+
+This correction deliberately does **not** change Energy regeneration, Fireball damage, staff
+geometry/posture, movement speed, attack capture or the Recovery rules. Those are separate
+hypotheses and require separate evidence.

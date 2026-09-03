@@ -354,6 +354,42 @@ func test_room_summary_reports_walk_only_escapes() -> void:
 		var row := Dictionary(Array(summary["attacks"])[0])
 		check(float(row.get("authored_f", 0.0)) > 0.0, "each row must carry authored intent for comparison")
 
+func test_walk_only_requires_the_whole_response_to_be_walking() -> void:
+	var state := survey_state()
+	var option := plan_option("blade", "diagonal_cut")
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * float(option["distance"]), 999, 5)
+	var action := state._intent_melee_action(option, Vector2.LEFT)
+	state.simulation_time = 0.10
+	state.player_action = state._action("move", 0.20, Vector2.LEFT)
+	state._observe_capture(enemy, action, 0.10)
+	state.simulation_time = 0.20
+	state.player_action = state._action("cast", 0.50, Vector2.LEFT)
+	state._observe_capture(enemy, action, 0.20)
+	state._finalise_capture_record(enemy, action)
+	var record := Dictionary(state.survey_attack_records[0])
+	check(String(record.get("response", "")) == "move", "the first response should still be reported as movement")
+	check(not bool(record.get("walk_only", true)), "a later cast must disqualify the attack from walk-only telemetry")
+	check(int(state._survey_capture_summary().get("walk_only_attempts", -1)) == 0, "mixed responses must not enter the walk-only denominator")
+
+func test_overlapping_enemies_can_deterministically_separate() -> void:
+	var state := survey_state()
+	var shared := state.player_pos + Vector2.RIGHT * 240.0
+	var boar := state._make_enemy("boar", shared, 35, 1)
+	var knife := state._make_enemy("knife", shared, 24, 2)
+	state.enemies.assign([boar, knife])
+	state._invalidate_active_enemy_cache()
+	state._build_enemy_spatial_index()
+	var direction := state._local_avoidance_direction(boar, Vector2.LEFT)
+	check(direction.length_squared() > 0.001, "an overlapping enemy must find a separation direction")
+	var moved := state._move_actor(shared, direction * 10.0, float(boar["radius"]), int(boar["id"]))
+	check(moved.distance_to(Vector2(knife["pos"])) > 0.001, "the separation step must reduce the overlap")
+	# Once clear, the exception closes and ordinary body collision remains strict.
+	boar["pos"] = shared + Vector2.RIGHT * 80.0
+	knife["pos"] = shared
+	state._build_enemy_spatial_index()
+	var blocked := state._move_actor(Vector2(boar["pos"]), Vector2.LEFT * 30.0, float(boar["radius"]), int(boar["id"]))
+	check(blocked.is_equal_approx(Vector2(boar["pos"])), "depenetration must not permit a separated body to move into another")
+
 func test_clean_evade_sources_are_counted() -> void:
 	# The Acrobat viability check. Ordinary movement no longer earns credit, so if
 	# these stay at zero across real play the capstone has quietly died.
@@ -1187,13 +1223,12 @@ func test_exhaustion_ends_concealment() -> void:
 	check(state.stealth_remaining <= 0.0, "running the pool dry should drop the veil")
 
 func test_sweeping_cut_is_no_longer_a_special_case() -> void:
-	# It was exempt from ENERGY_COST_SCALE, which held its price at 56 while every
-	# other ability scaled -- so a global re-tune would move everything except this.
-	# The authored cost carries the surcharge instead, and the cooldown derives.
+	# Authored physical prices are literal now; the retained scale is exactly 1.
 	var state := survey_state()
+	check(is_equal_approx(state.ENERGY_COST_SCALE, 1.0), "physical cost metadata should be truthful")
 	var spend := state.energy_cost(state.SWEEPING_CUT_ENERGY)
 	check(absf(spend - 56.0) < 1.0,
-		"Sweeping Cut should still spend ~56 after scaling, spends %.1f" % spend)
+		"Sweeping Cut should spend its authored 56, spends %.1f" % spend)
 	check(absf(state._cooldown_for(spend) - 13.4) < 0.3,
 		"Sweeping Cut should derive ~13.4s, got %.2f" % state._cooldown_for(spend))
 
@@ -1645,6 +1680,8 @@ func _init() -> void:
 	test_no_response_is_recorded_as_such()
 	test_closest_approach_is_measured()
 	test_room_summary_reports_walk_only_escapes()
+	test_walk_only_requires_the_whole_response_to_be_walking()
+	test_overlapping_enemies_can_deterministically_separate()
 	test_clean_evade_sources_are_counted()
 	if failures.is_empty():
 		print("Capture telemetry tests passed.")

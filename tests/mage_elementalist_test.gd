@@ -58,9 +58,14 @@ func test_the_sheet_and_its_gates() -> void:
 	var state := fresh()
 	check(String(state.character_sheet_data()["name"]) == "Mage · Elementalist", "the sheet should name the class")
 	check(state.character_track_order() == ["staff", "evasion", "measured", "mage", "elementalist", "adopted"], "five tracks plus the late one")
-	# Weapon, Defense and Temperament at 2; Main Class at 3; Subclass at 4. The cadence is
-	# shared with every other class, and only the content is authored per track.
+	# Weapon, Defense and Temperament at 2; Main Class and Subclass at 3. Temperament II
+	# waits until 4 so the third-level decision does not merely repeat the level-2 one.
 	check(state.available_level_up_options() == ["staff", "evasion", "measured"], "level 2 offers weapon, defense and temperament")
+	state.upgrade_count = 1
+	state.track_ranks["measured"] = 1
+	var level_three := state.available_level_up_options("survey")
+	check(level_three.has("mage") and level_three.has("elementalist"), "level 3 should offer both main class and subclass")
+	check(not level_three.has("measured"), "Temperament II should wait until level 4")
 	# Weapon tracks must contain exactly five ranks or cross-category proficiency transfer,
 	# which grants `highest existing - 1`, has nothing consistent to subtract from.
 	check(Array(CombatCatalogScript.character_track("staff")["stages"]).size() == 5, "every weapon track has exactly five ranks")
@@ -92,7 +97,13 @@ func test_the_bolt_is_what_you_start_with() -> void:
 
 func test_intelligence_prices_spells_and_therefore_cooldowns() -> void:
 	var state := fresh()
+	state.player_attributes["intelligence"] = 5
+	check(is_equal_approx(state.spell_energy_cost("lightning_bolt"), 68.0), "baseline Intelligence should pay the literal spell price")
+	state.player_attributes["intelligence"] = 4
+	check(is_equal_approx(state.spell_energy_cost("lightning_bolt"), 68.0), "Intelligence below baseline should not surcharge a spell")
+	state.player_attributes["intelligence"] = 7
 	var base := state.spell_energy_cost("lightning_bolt")
+	check(base > 60.0 and base < 60.2, "the starting Mage should pay about 60 Energy for Lightning")
 	var base_cooldown := state._cooldown_for(base)
 	state._apply_character_stage("learned", "")
 	var learned := state.spell_energy_cost("lightning_bolt")

@@ -20,15 +20,18 @@ const ELEMENT_STAGE_SPELLS := {
 }
 
 const SPELLS := {
-	"lightning_bolt": {"label": "Lightning Bolt", "energy": 26.0, "target_mode": "direction", "reach": 340.0, "player_startup": 0.34, "player_duration": 0.86, "resolver": "lightning_bolt"},
-	"fireball": {"label": "Fireball", "energy": 40.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.66, "player_duration": 1.44, "resolver": "projectile", "projectile": "fireball"},
-	"fire_breath": {"label": "Fire Breath", "energy": 44.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.74, "player_duration": 1.62, "resolver": "hazard", "hazard": "fire_breath"},
-	"frost_lance": {"label": "Frost Lance", "energy": 40.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.66, "player_duration": 1.44, "resolver": "projectile", "projectile": "frost_lance"},
-	"cold_front": {"label": "Cold Front", "energy": 50.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.96, "player_duration": 1.94, "resolver": "hazard", "hazard": "cold_front"},
-	"earth_wall": {"label": "Earth Wall", "energy": 42.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 1.02, "player_duration": 1.74, "resolver": "barrier"},
-	"sunder": {"label": "Sunder", "energy": 36.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.66, "player_duration": 1.44, "resolver": "hazard", "hazard": "sundered_ground"},
-	"gale": {"label": "Gale", "energy": 38.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.30, "player_duration": 0.82, "resolver": "hazard", "hazard": "gale"},
-	"windstep": {"label": "Windstep", "energy": 32.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.22, "player_duration": 0.78, "resolver": "movement"},
+	# Spell prices are literal and never pass through the physical-action scale. A
+	# starting Mage can afford one major cast safely, not build a whole fight out of
+	# repeated casts. Intelligence turns those expensive tools into a spellbook later.
+	"lightning_bolt": {"label": "Lightning Bolt", "energy": 68.0, "target_mode": "direction", "reach": 340.0, "player_startup": 0.27, "player_duration": 0.69, "resolver": "lightning_bolt"},
+	"fireball": {"label": "Fireball", "energy": 78.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.66, "player_duration": 1.44, "resolver": "projectile", "projectile": "fireball"},
+	"fire_breath": {"label": "Fire Breath", "energy": 82.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.74, "player_duration": 1.62, "resolver": "hazard", "hazard": "fire_breath"},
+	"frost_lance": {"label": "Frost Lance", "energy": 76.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.66, "player_duration": 1.44, "resolver": "projectile", "projectile": "frost_lance"},
+	"cold_front": {"label": "Cold Front", "energy": 90.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.96, "player_duration": 1.94, "resolver": "hazard", "hazard": "cold_front"},
+	"earth_wall": {"label": "Earth Wall", "energy": 82.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 1.02, "player_duration": 1.74, "resolver": "barrier"},
+	"sunder": {"label": "Sunder", "energy": 72.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.66, "player_duration": 1.44, "resolver": "hazard", "hazard": "sundered_ground"},
+	"gale": {"label": "Gale", "energy": 78.0, "target_mode": "placed", "reach": PLACE_RANGE, "player_startup": 0.30, "player_duration": 0.82, "resolver": "hazard", "hazard": "gale"},
+	"windstep": {"label": "Windstep", "energy": 66.0, "target_mode": "direction", "reach": 0.0, "player_startup": 0.22, "player_duration": 0.78, "resolver": "movement"},
 }
 
 # Enemy timing and presentation are keyed by the ability identity rather than by

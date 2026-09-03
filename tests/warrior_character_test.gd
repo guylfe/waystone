@@ -51,7 +51,7 @@ func test_initial_sheet_and_gates() -> void:
 	assert(state.choose_upgrade("steadfast|toughness"))
 	assert(state.character_level() == 2)
 	assert(state.available_level_up_options().has("warrior"))
-	assert(not state.available_level_up_options().has("vanguard"))
+	assert(state.available_level_up_options().has("vanguard"))
 	assert(state.choose_upgrade("evasion"))
 	assert(state.character_level() == 3)
 	assert(state.available_level_up_options().has("vanguard"))

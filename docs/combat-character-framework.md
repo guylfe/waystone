@@ -4,13 +4,13 @@
 
 **Recorded:** 2026-07-31
 
-**Updated:** 2026-08-01 with the first complete Rogue · Acrobat specification
+**Updated:** 2026-09-03 with the implemented Intelligence economy and shared level-3 class/subclass opening
 
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
 This document records the agreed combat and character framework introduced in Waystone `0.1.0`. It remains the authoritative design target where later prototypes are incomplete or deliberately defer a system, and future implementation should migrate toward it with regression coverage.
 
-Exact balance values remain provisional unless this document labels a rule as structural. Intelligence, Faith, elemental spellcasting, Blood drops, and several class-specific details are intentionally deferred until their first concrete users are designed.
+Exact balance values remain provisional unless this document labels a rule as structural. Faith, Blood drops, and several class-specific details remain intentionally deferred until their first concrete users are designed. Intelligence and elemental spellcasting now have concrete consumers; their current shared rules are recorded below and in `docs/elemental-casters.md`.
 
 ## Design principles
 
@@ -169,7 +169,11 @@ Resistance affects buildup threshold only. It does not also reduce a condition's
 
 ### 2.9 Intelligence and Faith
 
-Intelligence and Faith remain universal actor attributes, associated respectively with spellcasting and prayers. Their exact effects are intentionally deferred until Mage, specialist spell tracks, prayer-bearing classes, and corresponding enemy casters are designed.
+Intelligence and Faith remain universal actor attributes, associated respectively with spellcasting and prayers. Faith's exact effect remains deferred until prayer-bearing classes and corresponding enemies are designed.
+
+Intelligence reduces spell Energy cost and does nothing else. At the universal baseline of `5`, a spell costs its full authored price. Each point above the baseline compounds a `6%` reduction (`cost × 0.94^(Intelligence - 5)`), subject to a `35%` floor. Intelligence below `5` never adds a surcharge. Spell prices bypass the physical-action Energy multiplier, so their authored values, UI prices and progression math share one owner.
+
+This is a long-term efficiency curve, not a power curve. Intelligence does not increase spell damage, condition magnitude, range, cast speed or physical-weapon efficiency. Those properties remain authored by the individual spell, condition, technique or track.
 
 Neither attribute modifies ordinary physical weapon damage by default.
 
@@ -689,8 +693,8 @@ A Mage spellbook may exceptionally open a palette from one slot. Palettes should
 Characters begin at level 1.
 
 - First level-up, reaching level 2: Weapon, Defense, and Temperament are introduced.
-- Second level-up, reaching level 3: Main Class becomes available.
-- Third level-up, reaching level 4: Subclass becomes available.
+- Second level-up, reaching level 3: Main Class and Subclass both become available.
+- Third level-up, reaching level 4: Weapon's second opportunity remains available and the second Temperament purchase becomes available.
 
 The player ordinarily sees no more than four available upgrade destinations at once and only rarely five. A normal Expedition should allow at least one chosen track to reach completion by approximately level 9 or 10.
 
@@ -706,13 +710,13 @@ The provisional family schedules are:
 |---|---|
 | Weapon | 2, 4, 6, 8, 10 |
 | Defense | 2, 5, 7, 9, 10 |
-| Temperament | Available repeatedly from 2, subject to its global purchase cap |
+| Temperament | First purchase at 2, second no earlier than 4, then sequentially subject to its global purchase cap |
 | Main Class | 3, 5, 7, 9, 10 |
-| Subclass | 4, 6, 8, 9, 10 |
+| Subclass | 3, 6, 8, 9, 10 |
 
 These schedules are subject to a choice-count audit after concrete tracks exist. They are gating opportunities, not a command that every track contain five nodes.
 
-Temperament is not a conventional node sequence. It remains an available destination from level 2 until its global four-investment cap is reached. Its two or three compound stat packages remain simultaneously visible, along with `X/4`. Temperaments share this four-purchase limit so their opportunity cost remains comparable; their identity comes from package content rather than different track lengths.
+Temperament is not a conventional node sequence. Its first purchase is available at level 2 and its second at level 4; later purchases follow sequentially until the global four-investment cap is reached. Its two or three compound stat packages remain simultaneously visible, along with `X/4`. Temperaments share this four-purchase limit so their opportunity cost remains comparable; their identity comes from package content rather than different track lengths. The level-4 pause prevents Temperament II from competing with the newly shared Main Class/Subclass opening at level 3.
 
 ### 11.7 Permanent choices
 
@@ -749,8 +753,7 @@ The current leaning is forced construction in both Expedition and Campaign, with
 
 The following are not accidental omissions:
 
-- Intelligence and Faith formulas;
-- spellbook structure and spellcaster action economy;
+- Faith's formula and prayer economy;
 - elemental damage and elemental resistance details;
 - exact condition buildup, duration, and damage values;
 - Blood-drop chance, healing, and low-health scaling;
@@ -799,7 +802,7 @@ The provisional base attributes are:
 | Intelligence | 4 |
 | Faith | 2 |
 
-Intelligence and Faith remain especially provisional because their systems are deferred. The intended physical identity is approximately 20% less health than the scaled Warrior, low protection and action stability, and substantially greater Speed and Stealth.
+Faith remains provisional because its system is deferred. Intelligence `4` is intentionally below the spell-cost baseline: non-casters may possess ordinary intelligence without receiving a hidden penalty, while Mage begins above the baseline. The intended physical identity is approximately 20% less health than the scaled Warrior, low protection and action stability, and substantially greater Speed and Stealth.
 
 ### 14.2 Knife attack language
 
@@ -988,7 +991,7 @@ Perfect Form reacts only to clean evasions performed with its equipped Dodge for
 | Dodge | 2, 5, 9 |
 | Finesse | Four investments available from level 2 |
 | Rogue | 3, 5, 7, 9, 10 |
-| Acrobat | 4, 6, 8, 10 |
+| Acrobat | 3, 6, 8, 10 |
 
 The ordinary route presents three or four upgrade destinations. Five may appear after deliberately leaving several earlier tracks untouched, but should not be the normal level-up experience.
 
@@ -1184,7 +1187,7 @@ Dead to Rights applies its multipliers once to the prepared contact. Fan Shot, T
 | Dodge | 2, 5, 9 |
 | Patient | Four investments available from level 2 |
 | Rogue | 3, 5, 7, 9, 10 |
-| Sharpshooter | 4, 6, 8, 10 |
+| Sharpshooter | 3, 6, 8, 10 |
 
 The character's active controls are Defense, Bow Art, Stealth, Take Aim, and the late Adopted ability. Regular shots use the world field and universal gesture classifier rather than an additional ability button.
 

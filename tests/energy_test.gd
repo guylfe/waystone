@@ -42,7 +42,7 @@ func test_parallel_rule_sets() -> void:
 	assert(not recovery.energy_actions_locked())
 	var energy := fresh_state()
 	assert(energy.request_attack(energy.player_pos + Vector2.RIGHT * 100.0, false))
-	assert(is_equal_approx(energy.player_energy, 100.0 - energy.energy_cost(18.0)))
+	assert(is_equal_approx(energy.player_energy, 100.0 - energy.energy_cost(12.0)))
 	assert(float(energy.player_action["duration"]) < recovery_duration)
 
 func test_new_combo_costs() -> void:
@@ -53,16 +53,16 @@ func test_new_combo_costs() -> void:
 	var sword := fresh_state()
 	assert(sword.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(sword)
-	assert(is_equal_approx(sword.player_energy, 100.0 - sword.energy_cost(18.0 + 16.0 + 22.0)))
+	assert(is_equal_approx(sword.player_energy, 100.0 - sword.energy_cost(12.0 + 10.0 + 14.0)))
 	var knife := fresh_state("rogue_acrobat")
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(knife)
-	assert(is_equal_approx(knife.player_energy, 100.0 - knife.energy_cost(14.0 + 12.0 + 12.0 + 16.0)))
+	assert(is_equal_approx(knife.player_energy, 100.0 - knife.energy_cost(9.0 + 8.0 + 8.0 + 10.0)))
 	var twin := fresh_state("rogue_acrobat")
 	twin.player_weapon_frame = "twin_knives"
 	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
-	assert(is_equal_approx(twin.player_energy, 100.0 - twin.energy_cost(12.0 + 9.0 + 9.0 + 9.0 + 9.0 + 12.0)))
+	assert(is_equal_approx(twin.player_energy, 100.0 - twin.energy_cost(8.0 + 6.0 + 6.0 + 6.0 + 6.0 + 8.0)))
 
 func test_overdraw_starts_exhaustion_after_recovery() -> void:
 	var state := fresh_state()
@@ -177,13 +177,9 @@ func test_warrior_speed_and_sweeping_cut_budgeting() -> void:
 	var before := energy.player_energy
 	assert(energy.request_sweeping_cut(Vector2.RIGHT, false))
 	assert(is_equal_approx(energy.skill_cooldown, 0.0))
-	# No longer exempt from ENERGY_COST_SCALE. The surcharge that exemption bought is
-	# now carried by the authored number (86 raw, spending ~56), so a global re-tune of
-	# the price level moves the sweep with everything else instead of stranding it. The
-	# relationship this test actually cares about -- the sweep costs more than a combo
-	# outright -- is unchanged, and is now compared scaled against scaled.
+	# Authored prices are now literal: the sweep costs 56 and the Sword combo 36.
 	assert(is_equal_approx(before - energy.player_energy, energy.energy_cost(energy.SWEEPING_CUT_ENERGY)))
-	assert(energy.energy_cost(energy.SWEEPING_CUT_ENERGY) > energy.energy_cost(18.0 + 16.0 + 22.0) * 1.4)
+	assert(energy.energy_cost(energy.SWEEPING_CUT_ENERGY) > energy.energy_cost(12.0 + 10.0 + 14.0) * 1.4)
 	advance_until_ready(energy)
 	assert(is_equal_approx(energy.skill_cooldown, 0.0))
 	# A second sweep is reachable only by overdrawing, which empties the bar. Price

@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.81` (Android version code `281`).
+Current prototype version: `0.2.82` (Android version code `282`).
+
+## v0.2.82 — power first, efficiency earned
+
+The first standard Elementalist surveys exposed the intended progression in reverse: the staff was cheap enough to carry the early game while Lightning Bolt was too weak and exposed to justify its slot. Spell prices are now literal and separate from the physical-action price scale. A character at the baseline `5` Intelligence pays the authored spell cost; every point above `5` compounds a `6%` discount, with no surcharge below baseline and no spell-damage scaling. Mage begins at `7` Intelligence, so its opening Lightning Bolt costs about `60` Energy from an authored `68`. A second immediate cast therefore overdraws the bar and causes exhaustion.
+
+Lightning Bolt now deals `13` damage and resolves in `0.69` world seconds after a `0.27`-second startup. Its projected effect retains the origin, amount and strength fields its renderer needs, fixing the missing animation. Other elemental spells begin expensive as well, so later Intelligence investment makes the whole early spellbook more usable instead of merely increasing access to newer spells.
+
+Physical costs now say what the player actually pays: the retained global multiplier is `1.0`, and the old effective prices have been re-authored directly. The staff is the deliberate exception to simple preservation: its three contacts cost `16/18/22` Energy (`56` total), while Whirlwind and Sweep the Legs cost `40` and `26`. Its broad geometry, damage and posture remain unchanged, but repeatedly chaining that crowd control now competes directly with casting.
+
+Main-class and subclass first purchases are both available at level `3`; the displaced second Temperament purchase moves to level `4`, while Weapon II remains at `4`. The same release also makes ordinary lethal player attacks alert nearby enemies unless Clean Work explicitly suppresses the alarm, permits deterministic separation from an already-overlapping enemy body without weakening normal collision, and makes attack-response telemetry report the actual interrupter and count a response as walk-only only when walking truly was the sole response.
+
+Combat Survey format is `29`; presentation version is `10`. Save schema remains `35` because no persisted shape changed.
 
 ## v0.2.81 — Gale breaks a projectile's allegiance
 
@@ -267,7 +279,7 @@ Not a bug, and the report says so: **six shots struck their own side.** A Gale b
 
 Four renderer bugs shipped in three versions — a cone drawn as a circle, a caster drawing a bow it does not carry, an invisible Lightning Bolt, an invisible Circle — and every one of them was the same failure: the simulation moved and the drawing stayed where it was. Each was found by being played, one at a time, rather than by being looked at.
 
-So this version looks at all of them at once. `tests/caster_visual_audit.gd` puts every caster ability on screen across seven frames — enemy hazards, caster wind-ups, the staff arts, the player's spells. It is render-dependent and deliberately not a pass/fail instrument, because no assertion can tell you a cone was drawn as a circle. Its value is that a person can check the whole roster in a minute instead of discovering the failures one at a time in play.
+So this version looks at all of them at once. `tests/caster_visual_audit.gd` puts every caster ability on screen across ten frames — enemy hazards, caster wind-ups, the staff arts, the player's spells, Lightning, and projected state cues. It is render-dependent and deliberately not a pass/fail instrument, because no assertion can tell you a cone was drawn as a circle. Its value is that a person can check the whole roster in a minute instead of discovering the failures one at a time in play.
 
 It found five more.
 
@@ -372,7 +384,7 @@ The fourth class, and the one the last seven versions were built for. Everything
 
 ### The sheet
 
-Staff, Evasion, Measured, Mage, Elementalist. The cadence is the one every class shares: weapon, defense and temperament at level 2, main class at 3, subclass at 4.
+Staff, Evasion, Measured, Mage, Elementalist. This release originally used weapon, defense and temperament at level 2, main class at 3, and subclass at 4. `0.2.82` supersedes that cadence: Main Class and Subclass now open together at level 3, while Temperament II moves to level 4.
 
 Defense is the ordinary Evasion track rather than something authored for casters. That is deliberate and load-bearing: the entire argument against a mana bar is that casting has to compete with dodging, which requires the caster to actually be dodging. A bespoke defensive verb would have quietly dissolved the tension four milestones went into building.
 
@@ -409,13 +421,13 @@ This is the caster's version of a Warrior planting his feet, and no other class 
 
 ### The spellbook is the bestiary
 
-The Elementalist starts holding **Lightning Bolt** — cheap, weak, an instant line to the first thing in it. It is the only ability in the game with no enemy behind it, and that is its identity rather than an oversight: raw force before it has been shaped into an element, which is why it carries no condition, no fork and no terrain. It is the one thing you did not have to learn from something that used it on you first.
+The Elementalist starts holding **Lightning Bolt**. In `0.2.62` it shipped cheap and weak; `0.2.82` supersedes that tuning with a fast, 13-damage, expensive opening spell. Its enduring identity is unchanged: it is the only ability in the game with no enemy behind it, raw force before it has been shaped into an element, carrying no condition, fork or terrain. It is the one thing you did not have to learn from something that used it on you first.
 
 Everything else, you did. Each subclass rank teaches one element as a **permanent one-of-two**, and both halves are abilities an enemy caster already uses against you:
 
 | Gate | Element | The choice |
 |---|---|---|
-| 4 | Fire | Fireball or Fire Breath — near or far |
+| 3 | Fire | Fireball or Fire Breath — near or far |
 | 6 | Ice | Frost Lance or Cold Front — a spike they can answer, or a drip they cannot |
 | 8 | Earth | Earth Wall or Sunder — block or slow |
 | 10 | Air | Gale or Windstep — control the fight or survive it |

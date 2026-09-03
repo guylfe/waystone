@@ -147,7 +147,7 @@ const CHARACTER_TRACKS := {
 				{"id": "toughness", "label": "Toughness", "description": "+15 maximum health and +1 Resolve."},
 				{"id": "vigilance", "label": "Vigilance", "description": "+10 maximum Energy and +1 Awareness."},
 			]},
-			{"id": "steadfast_2", "label": "Temperament II", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_2", "label": "Temperament II", "gate": 4, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
 			{"id": "steadfast_3", "label": "Temperament III", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
 			{"id": "steadfast_4", "label": "Temperament IV", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
 		],
@@ -167,7 +167,7 @@ const CHARACTER_TRACKS := {
 		"label": "Vanguard",
 		"description": "Claim space with Advance, then turn posture breaks into renewed pressure.",
 		"stages": [
-			{"id": "driving_impact", "label": "Driving Impact", "gate": 4, "description": "Advance rises from 2 to 3 damage, 4 to 6 posture damage, and 32 to 40 push."},
+			{"id": "driving_impact", "label": "Driving Impact", "gate": 3, "description": "Advance rises from 2 to 3 damage, 4 to 6 posture damage, and 32 to 40 push."},
 			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 5, "description": "Hold the original Advance input through impact to flow directly into your basic weapon sequence."},
 			{"id": "vanguard_bearing", "label": "Vanguard Bearing", "gate": 7, "description": "Gain exactly +2 Resolve; committed melee weapon actions gain light hyperarmor."},
 			{"id": "seize_the_line", "label": "Seize the Line", "gate": 9, "description": "Breaking any enemy's posture immediately refreshes Advance."},
@@ -195,7 +195,7 @@ const CHARACTER_TRACKS := {
 				{"id": "fleetness", "label": "Fleetness", "description": "+10 maximum Energy and +1 Speed."},
 				{"id": "subtlety", "label": "Subtlety", "description": "+5 maximum Health and +1 Stealth."},
 			]},
-			{"id": "finesse_2", "label": "Temperament II", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+			{"id": "finesse_2", "label": "Temperament II", "gate": 4, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
 			{"id": "finesse_3", "label": "Temperament III", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
 			{"id": "finesse_4", "label": "Temperament IV", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
 		],
@@ -218,7 +218,7 @@ const CHARACTER_TRACKS := {
 		"label": "Acrobat",
 		"description": "Refine Vault and turn universal clean evasions into counter-pressure.",
 		"stages": [
-			{"id": "soft_landing", "label": "Soft Landing", "gate": 4, "description": "Vault landing recovery falls from 0.20 to 0.10 authored seconds."},
+			{"id": "soft_landing", "label": "Soft Landing", "gate": 3, "description": "Vault landing recovery falls from 0.20 to 0.10 authored seconds."},
 			{"id": "elastic_moment", "label": "Elastic Moment", "gate": 6, "description": "Every genuine i-frame window you possess gains approximately 0.06 seconds."},
 			{"id": "turnabout", "label": "Turnabout", "gate": 8, "description": "A clean evade empowers the next basic attack within 4 seconds for +8 health and +3 posture damage."},
 			{"id": "encore", "label": "Encore", "gate": 10, "description": "Vault cooldown falls from 8 to 4.8 personal-time seconds."},
@@ -246,7 +246,7 @@ const CHARACTER_TRACKS := {
 				{"id": "observation", "label": "Observation", "description": "+10 maximum Energy and +1 Awareness."},
 				{"id": "composure", "label": "Composure", "description": "+5 maximum Health and +1 Resolve."},
 			]},
-			{"id": "patient_2", "label": "Temperament II", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+			{"id": "patient_2", "label": "Temperament II", "gate": 4, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
 			{"id": "patient_3", "label": "Temperament III", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
 			{"id": "patient_4", "label": "Temperament IV", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
 		],
@@ -255,7 +255,7 @@ const CHARACTER_TRACKS := {
 		"label": "Sharpshooter",
 		"description": "Perception, universal projectile range, and prepared physical attacks.",
 		"stages": [
-			{"id": "keen_eye", "label": "Keen Eye", "gate": 4, "description": "+2 Awareness and sense approximate enemy blobs beyond line of sight."},
+			{"id": "keen_eye", "label": "Keen Eye", "gate": 3, "description": "+2 Awareness and sense approximate enemy blobs beyond line of sight."},
 			{"id": "far_sight", "label": "Far Sight", "gate": 6, "description": "+25% unobstructed sight distance and +15% maximum range for every aimed projectile."},
 			{"id": "expose_weakness", "label": "Expose Weakness", "gate": 8, "description": "Take Aim grants +10 damage, ignores 6 Defense, and adds +3 posture damage."},
 			{"id": "dead_to_rights", "label": "Dead to Rights", "gate": 10, "description": "First Aimed contact deals +50% final physical damage and double posture; a kill refreshes Take Aim."},
@@ -288,7 +288,7 @@ const CHARACTER_TRACKS := {
 				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health. Needs little, lasts long."},
 				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve. Spends big, pushes through the hit."},
 			]},
-			{"id": "measured_2", "label": "Temperament II", "gate": 2, "description": "Choose one permanent package.", "choices": [
+			{"id": "measured_2", "label": "Temperament II", "gate": 4, "description": "Choose one permanent package.", "choices": [
 				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
 				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
 			]},
@@ -325,7 +325,7 @@ const CHARACTER_TRACKS := {
 		"stages": [
 			# Every one of these eight is an enemy ability first. The spellbook is the bestiary,
 			# and each element keeps the decision it poses for the enemy that taught it.
-			{"id": "element_fire", "label": "Fire", "gate": 4, "description": "Near or far.", "choices": [
+			{"id": "element_fire", "label": "Fire", "gate": 3, "description": "Near or far.", "choices": [
 				{"id": "fireball", "label": "Fireball", "description": "A heavy ball at range that barely kindles."},
 				{"id": "fire_breath", "label": "Fire Breath", "description": "A close cone that buries them in burn for moderate damage."},
 			]},

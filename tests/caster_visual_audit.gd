@@ -13,7 +13,7 @@ extends SceneTree
 #
 # Then look at builds/audit-*.png. This is not a pass/fail instrument and cannot be one --
 # no assertion can tell you a cone was drawn as a circle. Its whole value is that it puts
-# every caster ability on screen in seven frames so a person can check them in a minute
+# every caster ability on screen in ten frames so a person can check them in a minute
 # rather than discovering them one at a time in play.
 
 var board
@@ -121,6 +121,10 @@ func _player_spells() -> void:
 	s._resolve_player_spell("fireball", s.player_pos + Vector2(0, -260), Vector2.UP)
 	if not s.projectiles.is_empty(): s.projectiles[0]["pos"] = s.player_pos + Vector2(0, -180)
 	await _shoot("audit-d-player-spells")
+	s = _reset("mage_elementalist")
+	_put(s, "blade", Vector2(230, 0), 50)
+	s._resolve_player_spell("lightning_bolt", s.player_pos + Vector2(340, 0), Vector2.RIGHT)
+	await _shoot("audit-d-lightning")
 	s = _reset("mage_elementalist")
 	s._raise_player_earth_wall(s.player_pos + Vector2(0, -190))
 	s._spawn_sundered_ground(s.player_pos + Vector2(250, 60), 0, s.current_layer)

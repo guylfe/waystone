@@ -1,8 +1,10 @@
 # Elemental casters and the Elementalist
 
 Design record for the four elemental casters and the player subclass that inherits
-their spells. **Nothing here is implemented.** Agreed in conversation on 2026-08-26;
-this file is the spec, and the ordering lives in `CLAUDE.md`.
+their spells. The elemental-caster programme and Mage · Elementalist shipped through
+`0.2.62`; the opening spell economy and progression cadence were revised in `0.2.82`.
+This file records both the underlying design and the current implementation; current
+ordering lives in `CLAUDE.md` and release history in `README.md`.
 
 ---
 
@@ -228,15 +230,13 @@ tables, recipes.
 
 ## 7. Casters, weapons and the Chanter
 
-- **Every caster carries a staff with a weak melee attack**, so none is helpless and the
-  player's caster builds have the same desperation option. It should be clearly the worst
-  melee weapon in the game.
-- The `staff` frame exists and names `staff_strike` as its basic technique, but that
-  technique has **no geometry entry and no attack plan** — real, if small, work.
-- **This revises the Chanter**, which shipped in `0.2.33` with no attack at all on the
-  reasoning that reaching it should end the problem. A feeble poke is better: a wholly
-  inert enemy is strange to fight, and ignoring it entirely should carry a small cost.
-  Reaching it still effectively ends the problem.
+- The elemental casters and player Mage carry a staff. The implemented player sequence is
+  a thrust, broad sweep and overhead spin: above-average crowd control rather than a weak
+  emergency poke, paid for through Energy and modest direct damage rather than reduced
+  geometry or posture.
+- Enemy casters reuse the staff vocabulary where they enter melee. The Chanter remains the
+  deliberate exception: it is a pure support whose problem effectively ends when reached.
+  Do not generalize that exception into a caster rule.
 - **The Hexer is retired.** Under this framework its delayed danger zone is a delivery
   mechanism, not an element, and both Fire and Ice use it. Dark magic may return later as
   its own thing.
@@ -248,29 +248,62 @@ tables, recipes.
 One ability per element, **Fire first**, so the class starts as a damage caster and grows
 into a control caster — a progression of identity rather than a bigger number.
 
+Lightning Bolt is the Elementalist's unique starting spell rather than a generic Mage
+spell. Fire is the first permanent elemental choice, now available at level 3 alongside
+the first Mage-track purchase. Ice, Earth and Air retain their later gates.
+
 Every one of the eight is an enemy ability first, learned by being on the receiving end.
 The spellbook is the bestiary.
 
-### Economy: no mana
+### Economy: one Energy bar, expensive power first
 
-- **Stamina profile** — spells cost stamina, with cooldowns only where cost alone will not
-  prevent spam. Casting then competes with dodging; overcast and you are winded and cannot
-  evade, and exhaustion already exists as exactly that failure state.
+- **Energy profile** — spells spend the same Energy used by physical attacks and defensive
+  techniques. Casting therefore competes with the staff and Dodge. Overcasting causes
+  exhaustion; the deliberately weak desperate Dodge remains as the universal agency floor.
 - **Recovery profile** — spells are cooldown-gated, like everything else in that profile.
-- Casters get a class property — a deeper pool or faster regeneration — so one bar does
-  not starve them.
+- Spell costs are literal authored values and bypass the physical-action cost multiplier.
+  The retained multiplier is `1.0` in `0.2.82`, so physical prices are literal as well,
+  but the two economies cannot accidentally become coupled by a future global physical
+  tuning change.
+
+Intelligence `5` is the universal zero-discount baseline. Every point above it compounds
+a `6%` spell-cost reduction: `authored cost × 0.94^(Intelligence - 5)`, with a `35%` floor.
+Values below `5` receive no surcharge. Intelligence never changes damage, conditions,
+range, geometry or casting time. Mage begins at Intelligence `7`; Warrior begins at `2`
+and both Rogue profiles at `4`, confirming that ordinary non-caster attributes can sit at
+or below the baseline without a hidden penalty.
+
+| Spell | Authored Energy | Mage opening cost at Intelligence 7 |
+|---|---:|---:|
+| Lightning Bolt | 68 | 60.1 |
+| Fireball | 78 | 68.9 |
+| Fire Breath | 82 | 72.5 |
+| Frost Lance | 76 | 67.2 |
+| Cold Front | 90 | 79.5 |
+| Earth Wall | 82 | 72.5 |
+| Sunder | 72 | 63.6 |
+| Gale | 78 | 68.9 |
+| Windstep | 66 | 58.3 |
+
+The starting spell is consequently useful but not routine: Lightning Bolt deals `13`
+damage, has a `0.27`-second startup and `0.69`-second total duration, and a second immediate
+cast overdraws the opening `100`-Energy pool. Later Intelligence makes the entire early
+spellbook more usable rather than making its damage obsolete. The staff remains the Mage's
+above-average crowd-control basic sequence, but its `16/18/22` costs (`56` total) make
+repeated posture pressure compete with spells; its damage, posture and geometry are not
+nerfed. Whirlwind and Sweep the Legs cost `40` and `26` respectively.
 
 A second bar would split the tension four milestones went into building: a caster who
-spends mana for offence and stamina for defence never faces the trade the Warrior faces,
+spends mana for offence and Energy for defence never faces the trade the Warrior faces,
 and casting becomes defensively free. Keeping one bar is also why the
-**Recovery-versus-Stamina comparison runs after this class ships rather than in F**:
+**Recovery-versus-Energy comparison runs after this class ships rather than in F**:
 "casting competes with dodging" is the entire argument against mana, and under Recovery
 there is no bar for it to compete with. Testing Warrior-only would answer half the
 question and let the caster invalidate it.
 
-### The rename
+### Historical rename
 
-**Stamina becomes Energy**, shipped *with* the Elementalist rather than before it. The
+**Stamina became Energy**, shipped *with* the Elementalist rather than before it. The
 rename's real cost is the historical record — every survey report, changelog entry and
 doc says *Stamina* — and that cost is identical whenever it lands. Doing it alongside the
 class that motivates it keeps one break point and puts it where it reads as a reason
