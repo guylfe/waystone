@@ -32,9 +32,11 @@ const EXPECTED := {
 
 const ELEMENTALIST_EXPECTED := {
 	"elementalist_spellbook": {
-		"all": "02e495c76a9a182bfc13f0dfffa0d77a5d00c6d1f48ea7320a69265be81b2d71",
+		# 0.2.84 deliberately changes the player component: the same authored Earth Wall
+		# leaves a different Energy remainder under the new Intelligence soft-cap curve.
+		"all": "a3132c3857bd552fbe69beca7440d76c3a19092d4e0b10a470ccfce0cbe776a1",
 		"enemies": "8990a1322f78608ec7dc54f667e0e096bb7ca9d3a8e8fa4788ed8abb695f4ac7",
-		"player": "7a5eff22dc4b9bf048b116cf8a27fcff9a054d8272600067c472b436360acd3a",
+		"player": "a14768b381e6ef869bb9177ce64205a032e8a5499f68cb46fe0d98dc81723a0c",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
 		"world": "84ce6caa5c76031155d68f343c82f05e9019bbb5891a477815d42677f3f99312",
 	},

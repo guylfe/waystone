@@ -306,12 +306,10 @@ const CHARACTER_TRACKS := {
 		"label": "Mage",
 		"description": "The craft of casting itself, not the spells. Everything here serves any spellbook.",
 		"stages": [
-			# Interruption first: it is the difference between a caster that functions and one
-			# that does not.
-			{"id": "steadier_cast", "label": "Steadier Cast", "gate": 3, "description": "A light hit no longer cancels a spell in progress."},
+			{"id": "studious", "label": "Studious", "gate": 3, "description": "+1 Intelligence. Every spell costs less, and so cools faster."},
 			{"id": "faster_cast", "label": "Faster Cast", "gate": 5, "description": "Spell wind-up and recovery become approximately 12% faster."},
 			{"id": "learned", "label": "Learned", "gate": 7, "description": "+3 Intelligence. Every spell costs less, and so cools faster."},
-			{"id": "walking_cast", "label": "Walking Cast", "gate": 9, "description": "You may move while a spell recovers, at an exhausted pace. The wind-up still roots you."},
+			{"id": "mobile_casting", "label": "Mobile Casting", "gate": 9, "description": "You may walk slowly throughout a spell's full cast, while world time continues.", "cast_move_scale": 0.45},
 			{"id": "circle_mastery", "label": "Deeper Circle", "gate": 10, "description": "Improve the Circle.", "choices": [
 				{"id": "swift_circle", "label": "Swift Circle", "description": "The wind-up halves, so the Circle can be laid down inside a fight rather than before it."},
 				{"id": "wide_circle", "label": "Wide Circle", "description": "The Circle grows past a Long Roll's travel, so any evasion keeps you inside it."},

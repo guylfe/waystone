@@ -2213,15 +2213,16 @@ approve or silently expand the pending A0–A7 architecture programme above.
 ## Focused implementation and ownership
 
 1. **Spell economy owns spell prices.** Spell costs bypass the physical-action multiplier.
-   Intelligence baseline `5` pays the authored price; each point above it compounds a `6%` discount,
-   values below it receive no surcharge, and the curve bottoms at `35%`. Intelligence changes no
-   damage, magnitude, geometry or timing. Mage starts at Intelligence `7`; the Warrior (`2`) and both
-   Rogue profiles (`4`) remain at or below baseline without penalty.
+   Intelligence baseline `5` pays the authored price; points `6`–`10`, `11`–`15`, and `16+`
+   multiply the remaining price by `0.91`, `0.94`, and `0.97` respectively. These are soft caps,
+   not a hard stat maximum or a cost floor. Values below baseline receive no surcharge, and
+   Intelligence changes no damage, magnitude, geometry or timing. Mage starts at Intelligence `7`;
+   the Warrior (`2`) and both Rogue profiles (`4`) remain at or below baseline without penalty.
 2. **Physical prices are literal.** `ENERGY_COST_SCALE` remains as a possible global lever but is
    `1.0`; former effective prices were re-authored directly. The staff deliberately rises to
    `16/18/22` (`56` total), Whirlwind to `40`, and Sweep the Legs to `26`, while staff damage, posture
    and geometry remain untouched.
-3. **Lightning is a valuable expensive opener.** Its authored cost is `68` (about `60.1` at the
+3. **Lightning is a valuable expensive opener.** Its authored cost is `68` (about `56.3` at the
    Mage's starting Intelligence), damage is `13`, startup is `0.27` world seconds and total duration
    `0.69`. A second immediate cast overdraws the opening 100-Energy pool and causes exhaustion.
 4. **Progression exposes both identities together.** The first Main Class and Subclass purchases now

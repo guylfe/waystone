@@ -53,9 +53,18 @@ func test_enemy_catalog_is_complete() -> void:
 	var v34_payload := current_payload.duplicate(true)
 	v34_payload["save_version"] = 34
 	v34_payload["projectiles"] = [{"kind":"arrow", "pos":Vector2.ZERO, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":1, "layer":"surface"}]
-	var v35_payload := SaveMigrationsScript.normalize(v34_payload, state.SAVE_VERSION)
-	check(not Array(v35_payload.get("projectiles", [])).is_empty() and Dictionary(Array(v35_payload["projectiles"])[0]).has("misdirected"), "v34 save migration did not author projectile allegiance")
-	check(not bool(Dictionary(Array(v35_payload["projectiles"])[0]).get("misdirected", true)), "ordinary migrated projectiles must remain loyal to their source side")
+	var v36_payload := SaveMigrationsScript.normalize(v34_payload, state.SAVE_VERSION)
+	check(not Array(v36_payload.get("projectiles", [])).is_empty() and Dictionary(Array(v36_payload["projectiles"])[0]).has("misdirected"), "v34 save migration did not author projectile allegiance")
+	check(not bool(Dictionary(Array(v36_payload["projectiles"])[0]).get("misdirected", true)), "ordinary migrated projectiles must remain loyal to their source side")
+	var mage_v35 := current_payload.duplicate(true)
+	mage_v35["save_version"] = 35
+	mage_v35["loadout_id"] = "mage_elementalist"
+	mage_v35["track_ranks"] = {"mage": 1}
+	mage_v35["player_attributes"] = {"intelligence": 7}
+	var migrated_mage := SaveMigrationsScript.normalize(mage_v35, state.SAVE_VERSION)
+	check(int(Dictionary(migrated_mage.get("player_attributes", {})).get("intelligence", 0)) == 8, "v35 Mage rank I did not migrate from Steadier Cast to Studious")
+	var remigrated_mage := SaveMigrationsScript.normalize(migrated_mage, state.SAVE_VERSION)
+	check(int(Dictionary(remigrated_mage.get("player_attributes", {})).get("intelligence", 0)) == 8, "Studious migration applied more than once")
 	for hostile_kind in ["hurl", "sunder", "slam"]:
 		check(hostile_kind in AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS, "%s is missing from hostile-action telemetry" % hostile_kind)
 	for retired_kind in ["hex", "ice_hex", "ice_cone", "fire_circle"]:
@@ -165,6 +174,21 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 	check(Vector2(Dictionary(projectiles[0])["pos"]).is_equal_approx(Vector2(175.0, 0.0)), "stable projectile did not interpolate with its own ID")
 	check(Array(visual.get("barriers", [])).size() == 1, "barriers are absent from the streamed presentation frame")
 
+func test_release_version_metadata_has_one_value() -> void:
+	var state: RunState = RunStateScript.new(false)
+	var version := state.GAME_VERSION
+	var parts := version.split(".")
+	check(parts.size() == 3, "GAME_VERSION must remain a three-part release number")
+	if parts.size() != 3: return
+	var version_code := int(parts[0]) * 10000 + int(parts[1]) * 100 + int(parts[2])
+	var presets := FileAccess.get_file_as_string("res://export_presets.cfg")
+	var readme := FileAccess.get_file_as_string("res://README.md")
+	check(presets.contains("version/name=\"%s\"" % version), "Android version name drifted from GAME_VERSION")
+	check(presets.contains("version/code=%d" % version_code), "Android version code drifted from GAME_VERSION")
+	check(presets.contains("application/file_version=\"%s\"" % version), "Windows file version drifted from GAME_VERSION")
+	check(presets.contains("application/product_version=\"%s\"" % version), "Windows product version drifted from GAME_VERSION")
+	check(readme.contains("Current prototype version: `%s` (Android version code `%d`)." % [version, version_code]), "README release banner drifted from GAME_VERSION")
+
 func _init() -> void:
 	test_enemy_catalog_is_complete()
 	test_every_survey_recipe_kind_is_registered()
@@ -172,6 +196,7 @@ func _init() -> void:
 	test_catalog_vision_is_the_perception_authority()
 	test_actor_boundary_owns_identity_and_factions()
 	test_dynamic_presentation_uses_stable_ids()
+	test_release_version_metadata_has_one_value()
 	if failures.is_empty():
 		print("Structure audit tests passed.")
 		quit(0)

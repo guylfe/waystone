@@ -312,8 +312,11 @@ const POSTURE_PER_DAMAGE := 0.22
 # same proportion. One stat, one effect, and it means the same thing under both rule
 # profiles without a second rule.
 const INTELLIGENCE_BASELINE := 5
-const SPELL_COST_PER_INTELLIGENCE := 0.06
-const SPELL_COST_FLOOR := 0.35
+const SPELL_COST_EARLY_MULTIPLIER := 0.91
+const SPELL_COST_MID_MULTIPLIER := 0.94
+const SPELL_COST_LATE_MULTIPLIER := 0.97
+const SPELL_COST_EARLY_END := 10
+const SPELL_COST_MID_END := 15
 # The Circle. A place where your casting is cheaper, and nothing else -- not faster, since
 # a speed bonus would reduce the time you stand exposed and so cancel its own price, and
 # not stronger, since magnitude belongs to the spell.
@@ -438,8 +441,8 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
-const SAVE_VERSION := 35
-const GAME_VERSION := "0.2.83"
+const SAVE_VERSION := 36
+const GAME_VERSION := "0.2.84"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 10
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -2726,11 +2729,22 @@ func player_is_inside_circle() -> bool:
 
 func spell_energy_cost(spell_id: String) -> float:
 	var raw := float(AbilityCatalogScript.spell(spell_id).get("energy", 24.0))
-	# Baseline Intelligence pays the authored price. Each point above it compounds
-	# the same percentage reduction; points below it never become a surcharge.
-	var points_above_baseline := maxi(0, player_intelligence() - INTELLIGENCE_BASELINE)
-	var multiplier := pow(1.0 - SPELL_COST_PER_INTELLIGENCE, float(points_above_baseline))
-	return raw * maxf(SPELL_COST_FLOOR, multiplier)
+	return raw * spell_cost_multiplier(player_intelligence())
+
+# Early Intelligence is intentionally potent: the opening Mage pays heavily for a spell
+# that is already worth casting, then makes that same spell a regular tool by learning.
+# The two soft caps keep later permanent, Circle and eventual equipment gains valuable
+# without letting any hard ceiling silently erase them.
+func spell_cost_multiplier(intelligence: int) -> float:
+	var effective := maxi(INTELLIGENCE_BASELINE, intelligence)
+	var early_points := mini(maxi(0, effective - INTELLIGENCE_BASELINE), SPELL_COST_EARLY_END - INTELLIGENCE_BASELINE)
+	var middle_points := mini(maxi(0, effective - SPELL_COST_EARLY_END), SPELL_COST_MID_END - SPELL_COST_EARLY_END)
+	var late_points := maxi(0, effective - SPELL_COST_MID_END)
+	return (
+		pow(SPELL_COST_EARLY_MULTIPLIER, float(early_points))
+		* pow(SPELL_COST_MID_MULTIPLIER, float(middle_points))
+		* pow(SPELL_COST_LATE_MULTIPLIER, float(late_points))
+	)
 
 # A cooldown is the ability's price expressed as a share of the pool, times the one
 # global rate. See COOLDOWN_SECONDS_PER_FULL_POOL for why the pool is the denominator.
@@ -3765,17 +3779,29 @@ func select_spell(spell_id: String) -> bool:
 	selected_spell = spell_id
 	return true
 
-# Casting roots you. That positional cost is what makes "casting competes with dodging"
-# true, so Walking Cast frees the recovery and never the wind-up: you still commit in
-# place, you just do not have to serve the whole bill standing there.
+# A cast remains one continuous commitment. Mobile Casting changes what the player can do
+# inside that commitment; it never returns readiness early or creates a timestop exception.
 func _spell_action(spell_id: String, direction: Vector2, wind_up: float, total: float) -> Dictionary:
 	var pace := 0.88 if has_track_rank("mage", 2) else 1.0
 	var action := _action("cast", total * pace, direction)
 	action["startup"] = wind_up * pace
 	action["spell_id"] = spell_id
 	action["effect_done"] = false
-	action["mobile_recovery"] = has_track_rank("mage", 4)
+	action["movement_direction"] = Vector2.ZERO
+	action["cast_move_scale"] = float(CombatCatalogScript.character_stage_by_id("mobile_casting").get("cast_move_scale", 0.45))
 	return action
+
+func mobile_cast_is_active() -> bool:
+	return (
+		String(player_action.get("kind", "")) == "cast"
+		and has_track_rank("mage", 4)
+		and String(player_action.get("spell_id", "")) != "windstep"
+	)
+
+func set_mobile_cast_direction(direction: Vector2) -> bool:
+	if not mobile_cast_is_active(): return false
+	player_action["movement_direction"] = direction.normalized() if direction.length_squared() > 0.01 else Vector2.ZERO
+	return true
 
 func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool = true) -> bool:
 	if not spell_is_available() or not knows_spell(spell_id): return false
@@ -4931,6 +4957,8 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 				_increase_max_energy(14.0)
 				player_attributes["resolve"] = int(player_attributes.get("resolve", 3)) + 1
 				_refresh_player_posture_capacity(true)
+		"studious":
+			player_attributes["intelligence"] = int(player_attributes.get("intelligence", 5)) + 1
 		"learned":
 			player_attributes["intelligence"] = int(player_attributes.get("intelligence", 5)) + 3
 		"sword_art":
@@ -5343,7 +5371,12 @@ func _update_player(dt: float) -> void:
 	var elapsed := float(player_action["elapsed"])
 	_tick_player_cast(dt)
 	match kind:
-		"cast", "circle":
+		"cast":
+			if mobile_cast_is_active():
+				var cast_direction := Vector2(player_action.get("movement_direction", Vector2.ZERO))
+				if not cast_direction.is_zero_approx():
+					player_pos = _move_actor(player_pos, cast_direction * player_move_speed * float(player_action.get("cast_move_scale", 0.45)) * _terrain_speed_scale(player_pos) * dt, PLAYER_RADIUS, 0)
+		"circle":
 			pass
 		"move":
 			player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
@@ -6284,9 +6317,6 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 # does not. The knife's opening cuts no longer interrupt -- posture still accumulates,
 # so a full sequence still adds up to a break, and the later phases and Execution keep
 # their teeth. This is the one place the Rogue's speed is allowed to cost it something.
-func _cast_survives_light_hit() -> bool:
-	return has_track_rank("mage", 1)
-
 func _player_hit_can_interrupt() -> bool:
 	if player_weapon_frame not in ["knife", "twin_knives"]: return true
 	if String(player_action.get("kind", "idle")) != "combo": return true
@@ -8726,16 +8756,6 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 			_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
 		return
 	var posture_broken := player_posture <= 0.0001
-	# Steadier Cast. A caster's real vulnerability is not that a hit hurts, it is that a hit
-	# ERASES the thing they were doing -- which is why this is the Mage track's first node
-	# and why it is the difference between a caster that functions and one that does not.
-	# It holds against a light blow only; a heavy one, or one that breaks posture, still
-	# takes the spell.
-	if interrupted_kind in ["cast", "circle"] and _cast_survives_light_hit() and not posture_broken and posture_damage < 3.0:
-		interruptions_prevented_total += 1
-		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
-		_set_message("The %s lands, but the working holds." % source_name)
-		return
 	var guard_remaining := float(player_action.get("guard_remaining", 0.0))
 	if guard_remaining > 0.0 and not posture_broken:
 		var received_posture := posture_damage

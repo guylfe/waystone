@@ -4,7 +4,7 @@
 
 **Recorded:** 2026-07-31
 
-**Updated:** 2026-09-03 with the implemented Intelligence economy and shared level-3 class/subclass opening
+**Updated:** 2026-09-05 with the implemented Intelligence soft caps and revised Mage progression
 
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
@@ -171,7 +171,7 @@ Resistance affects buildup threshold only. It does not also reduce a condition's
 
 Intelligence and Faith remain universal actor attributes, associated respectively with spellcasting and prayers. Faith's exact effect remains deferred until prayer-bearing classes and corresponding enemies are designed.
 
-Intelligence reduces spell Energy cost and does nothing else. At the universal baseline of `5`, a spell costs its full authored price. Each point above the baseline compounds a `6%` reduction (`cost × 0.94^(Intelligence - 5)`), subject to a `35%` floor. Intelligence below `5` never adds a surcharge. Spell prices bypass the physical-action Energy multiplier, so their authored values, UI prices and progression math share one owner.
+Intelligence reduces spell Energy cost and does nothing else. At the universal baseline of `5`, a spell costs its full authored price. Points `6`–`10` each multiply the remaining cost by `0.91`, points `11`–`15` by `0.94`, and points above `15` by `0.97`. These are soft caps, not a maximum or a floor: Circle and future equipment gains continue to count. Intelligence below `5` never adds a surcharge. Spell prices bypass the physical-action Energy multiplier, so their authored values, UI prices and progression math share one owner.
 
 This is a long-term efficiency curve, not a power curve. Intelligence does not increase spell damage, condition magnitude, range, cast speed or physical-weapon efficiency. Those properties remain authored by the individual spell, condition, technique or track.
 

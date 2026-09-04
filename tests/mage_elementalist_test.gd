@@ -31,7 +31,9 @@ func _init() -> void:
 	test_the_circle_is_ground_you_have_to_hold()
 	test_every_element_is_a_permanent_fork()
 	test_the_staff_is_reach_and_ground_not_damage()
-	test_steadier_cast_holds_against_a_light_hit()
+	test_mage_progression_builds_intelligence_before_cast_speed()
+	test_mobile_casting_moves_during_one_continuous_commitment()
+	test_a_light_hit_still_interrupts_a_mage()
 	test_the_staff_arts_actually_commit()
 	test_a_cone_hazard_tells_the_renderer_it_is_a_cone()
 	test_a_player_cast_zone_hurts_enemies()
@@ -103,7 +105,10 @@ func test_intelligence_prices_spells_and_therefore_cooldowns() -> void:
 	check(is_equal_approx(state.spell_energy_cost("lightning_bolt"), 68.0), "Intelligence below baseline should not surcharge a spell")
 	state.player_attributes["intelligence"] = 7
 	var base := state.spell_energy_cost("lightning_bolt")
-	check(base > 60.0 and base < 60.2, "the starting Mage should pay about 60 Energy for Lightning")
+	check(base > 56.2 and base < 56.4, "the starting Mage should pay about 56 Energy for Lightning")
+	check(is_equal_approx(state.spell_cost_multiplier(10), pow(0.91, 5.0)), "Intelligence 10 should be the first soft cap")
+	check(is_equal_approx(state.spell_cost_multiplier(15), pow(0.91, 5.0) * pow(0.94, 5.0)), "Intelligence 15 should be the second soft cap")
+	check(is_equal_approx(state.spell_cost_multiplier(18), pow(0.91, 5.0) * pow(0.94, 5.0) * pow(0.97, 3.0)), "Circle Intelligence should continue past the natural 15 without a hard cap")
 	var base_cooldown := state._cooldown_for(base)
 	state._apply_character_stage("learned", "")
 	var learned := state.spell_energy_cost("lightning_bolt")
@@ -186,23 +191,54 @@ func test_the_staff_is_reach_and_ground_not_damage() -> void:
 	# have given a staff-carrying Acrobat two of them.
 	check(not art_ids.has("staff_vault"), "the staff must not carry a second Vault")
 
-func test_steadier_cast_holds_against_a_light_hit() -> void:
+func test_mage_progression_builds_intelligence_before_cast_speed() -> void:
 	var state := fresh()
+	var stages := Array(CombatCatalogScript.character_track("mage")["stages"])
+	var stage_ids: Array[String] = []
+	for value in stages: stage_ids.append(String(Dictionary(value).get("id", "")))
+	check(stage_ids == ["studious", "faster_cast", "learned", "mobile_casting", "circle_mastery"], "Mage stages should put Studious before Faster Cast and contain no retired nodes")
+	check(int(state.player_attributes["intelligence"]) == 7, "Mage should begin at Intelligence 7")
+	state._apply_character_stage("studious", "")
+	state._apply_character_stage("learned", "")
+	for stage_id in ["measured_1", "measured_2", "measured_3", "measured_4"]:
+		state._apply_character_stage(stage_id, "temperance")
+	check(int(state.player_attributes["intelligence"]) == 15, "all permanent current progression should take Mage from 7 to 15")
+	state.circle_pos = state.player_pos
+	state.circle_remaining = 5.0
+	check(state.player_intelligence() == 18, "the ordinary Circle should temporarily raise that natural route to 18")
+	state.track_choices["circle_mastery"] = "deep_circle"
+	check(state.player_intelligence() == 21, "Deep Circle should temporarily raise it to 21")
+
+func test_mobile_casting_moves_during_one_continuous_commitment() -> void:
+	var rooted := fresh()
+	rooted.track_ranks["mage"] = 3
+	rooted.request_spell("lightning_bolt", rooted.player_pos + Vector2.UP * 300.0, false)
+	check(not rooted.set_mobile_cast_direction(Vector2.RIGHT), "a Mage below Mobile Casting should remain rooted")
+
+	var mobile := fresh()
+	mobile.track_ranks["mage"] = 4
+	var target := mobile.player_pos + Vector2.UP * 300.0
+	mobile.request_spell("lightning_bolt", target, false)
+	var cast_direction := Vector2(mobile.player_action["direction"])
+	check(mobile.set_mobile_cast_direction(Vector2.RIGHT), "Mobile Casting should accept movement during a spell")
+	var start := mobile.player_pos
+	for tick in range(20): mobile.advance_streamed_action_tick()
+	var after_startup_walk := mobile.player_pos
+	check(after_startup_walk.x > start.x + 10.0, "Mobile Casting should move during the wind-up")
+	for tick in range(25): mobile.advance_streamed_action_tick()
+	check(String(mobile.player_action.get("kind", "")) == "cast", "movement must not end the cast or return readiness early")
+	check(mobile.player_pos.x > after_startup_walk.x + 10.0, "Mobile Casting should continue during recovery")
+	check(Vector2(mobile.player_action.get("target", Vector2.ZERO)).is_equal_approx(target), "walking must not drag the spell target")
+	check(Vector2(mobile.player_action.get("direction", Vector2.ZERO)).is_equal_approx(cast_direction), "walking must not turn the committed spell")
+	check(mobile.player_exhaustion_remaining <= 0.0001, "Mobile Casting must not fake movement with the Exhausted status")
+	check(mobile.simulation_time > 0.3, "world time should continue while the caster walks")
+
+func test_a_light_hit_still_interrupts_a_mage() -> void:
+	var state := fresh()
+	state.track_ranks["mage"] = 5
 	state.request_spell("lightning_bolt", state.player_pos + Vector2.UP * 300.0, false)
-	check(String(state.player_action["kind"]) == "cast", "the cast should be in progress")
 	state._resolve_incoming_hit(1, 10, "knife", Vector2.LEFT, state.player_pos)
-	check(String(state.player_action["kind"]) != "cast", "without the node, a hit takes the spell")
-	# A caster's real vulnerability is not that a hit hurts, it is that a hit erases what
-	# they were doing. That is why this is the Mage track's first node.
-	var steady := fresh()
-	steady.track_ranks["mage"] = 1
-	steady.request_spell("lightning_bolt", steady.player_pos + Vector2.UP * 300.0, false)
-	steady._resolve_incoming_hit(1, 10, "knife", Vector2.LEFT, steady.player_pos)
-	check(String(steady.player_action["kind"]) == "cast", "Steadier Cast should hold the working through a light hit")
-	# It holds against a light blow only. A cleave still takes it, or the node would make
-	# the frailest class in the game the hardest one to interrupt.
-	steady._resolve_incoming_hit(1, 28, "knight", Vector2.LEFT, steady.player_pos, 6.0)
-	check(String(steady.player_action["kind"]) != "cast", "a heavy blow should still break the working")
+	check(String(state.player_action["kind"]) != "cast", "retiring Steadier Cast should leave ordinary interruption rules intact")
 
 func test_the_staff_arts_actually_commit() -> void:
 	# 0.2.62 authored both arts in the catalog and implemented neither, so choosing one

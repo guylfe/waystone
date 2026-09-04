@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-04
-**Current source baseline:** `0.2.83` (`versionCode 283`, save schema `35`, presentation version `10`, Combat Survey format `29`)
+**Updated:** 2026-09-05
+**Current source baseline:** `0.2.84` (`versionCode 284`, save schema `36`, presentation version `10`, Combat Survey format `29`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -520,7 +520,28 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.83`, 2026-09-04)
+### Latest verified package boundary (`0.2.84`, 2026-09-05)
+
+- All 19 default test files pass, with the single documented expected failure in
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The real-renderer caster audit regenerated ten frames. Lightning is visible, the spellbook
+  reports its new opening cost of `56`, and the streamed/frozen state cues remain intact.
+- `0.2.84` replaces Steadier Cast with Studious, moves the Mage through Studious, Faster Cast,
+  Learned, full-action Mobile Casting and Circle Mastery, and replaces the former flat discount
+  and hard floor with the `9% / 6% / 3%` Intelligence bands. Save schema `36` grants an existing
+  Mage rank I the new `+1` Intelligence exactly once.
+- Windows SHA-256:
+  `FF5798490FFCB051D0A2890D69FC7852A7363D03C310F5F637BC101A881AD5A9`;
+  file and product version both read back as `0.2.84`.
+- Android SHA-256:
+  `AC2AA3C3B18C9413D8291054CCC266A13AA729084FD146F834F917EA19C76F06`;
+  package metadata reads `com.waystone.prototype`, version name `0.2.84`, version code `284`,
+  and APK signature v2/v3 verification passes.
+- Fold installation remains pending. No authorized device was visible, and the previously supplied
+  wireless endpoint `10.0.0.3:36133` rejected the connection. Treat the verified packages and the
+  uncompleted device deployment as separate claims.
+
+### Previous verified package boundary (`0.2.83`, 2026-09-04)
 
 - All 19 default test files passed, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
@@ -589,9 +610,13 @@ Installation is a deployment step after implementation and verification, not evi
   are authored as what the player pays. Spell prices bypass that lever and are modified only by
   spell-specific rules such as Intelligence and Circle. Do not use a global physical multiplier to
   solve a spell-economy problem.
-- **Intelligence buys efficiency, not power:** baseline `5` pays full authored spell cost; each point
-  above it compounds a `6%` discount, values below it receive no surcharge, and damage, magnitude,
-  geometry and cast timing remain properties of the spell.
+- **Intelligence buys efficiency, not power:** baseline `5` pays full authored spell cost; points
+  `6`–`10`, `11`–`15`, and `16+` multiply remaining cost by `0.91`, `0.94`, and `0.97` respectively.
+  The thresholds are soft caps, not a stat ceiling or cost floor. Values below baseline receive no
+  surcharge, and damage, magnitude, geometry and cast timing remain properties of the spell.
+- **Casting movement does not weaken commitment:** Mobile Casting changes locomotion inside the
+  full spell action. It does not return readiness during recovery, pause world time, retarget the
+  committed spell, or express itself by applying the unrelated Exhausted condition.
 - **No mode-topology conflation:** Expedition is a forward run; Campaign is a persistent interconnected graph around Waystones and shortcuts.
 - **No false roadmap certainty:** Milestones above are an order of operations. Assign version numbers and dates only when explicitly decided.
 

@@ -1021,6 +1021,10 @@ func _process(delta: float) -> void:
 			autosave_deferred = true
 			call_deferred("_flush_autosave_if_quiet")
 	if streaming_action:
+		# Mobile Casting is still one committed action: keys only steer movement while
+		# simulation time is already advancing, and releasing them simply stops the walk.
+		if state.mobile_cast_is_active() and desktop_controls:
+			state.set_mobile_cast_direction(_desktop_held_direction())
 		if String(state.player_action.get("kind", "")) == "advance" and desktop_controls and not advance_pointer_held:
 			var held_advance_direction := _desktop_held_direction()
 			var advance_direction := Vector2(state.player_action.get("direction", state.player_facing))
@@ -1388,7 +1392,17 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		_press_direct_attack(position, is_mouse)
 		return
 	if playing:
-		if board_rect.has_point(position) and state.resume_combo_hold():
+		if board_rect.has_point(position) and state.mobile_cast_is_active():
+			pointer_down = true
+			pointer_is_mouse = is_mouse
+			pointer_intent = "cast_move"
+			held_movement = true
+			held_movement_tracks_pointer = true
+			touch_start = position
+			touch_current = position
+			state.set_mobile_cast_direction(_pointer_follow_direction(position))
+			queue_redraw()
+		elif board_rect.has_point(position) and state.resume_combo_hold():
 			pointer_down = true
 			pointer_is_mouse = is_mouse
 			attack_pointer_held = true
@@ -1516,6 +1530,10 @@ func _pointer_dragged(position: Vector2) -> void:
 	if not pointer_down:
 		return
 	touch_current = position
+	if pointer_intent == "cast_move":
+		state.set_mobile_cast_direction(_pointer_follow_direction(position))
+		queue_redraw()
+		return
 	if attack_button_pointer_held:
 		# The dedicated button is a deliberate facing-direction attack. Finger
 		# drift never turns it into world movement or retargets a Bow draw.
@@ -1575,6 +1593,14 @@ func _pointer_released(position: Vector2) -> void:
 		return
 	pointer_down = false
 	pointer_is_mouse = false
+	if pointer_intent == "cast_move":
+		state.set_mobile_cast_direction(Vector2.ZERO)
+		held_movement = false
+		held_movement_tracks_pointer = false
+		held_direction = Vector2.ZERO
+		pointer_intent = ""
+		queue_redraw()
+		return
 	if wait_pointer_held or pointer_intent == "wait":
 		wait_pointer_held = false
 		pointer_intent = ""

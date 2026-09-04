@@ -87,12 +87,40 @@ func test_other_selected_actions_are_unaffected() -> void:
 		"a selected skill must not become an ordinary attack either")
 	board.free()
 
+func test_touch_can_steer_and_release_mobile_casting() -> void:
+	var board = GameBoardScript.new()
+	board.state = RunStateScript.new(false)
+	board.state.start_run("mage_elementalist", "combat_survey", 4242, "encounter", "energy")
+	board.state.enemies.clear()
+	board.state.walls.clear()
+	board.state.track_ranks["mage"] = 4
+	board.size = Vector2(1280, 800)
+	board._create_seed_input()
+	board._layout()
+	var cast_target: Vector2 = Vector2(board.state.player_pos) + Vector2.UP * 300.0
+	check(board.state.request_spell("lightning_bolt", cast_target, false), "the Mobile Casting input fixture should begin a spell")
+	board.playing = true
+	board.streaming_action = true
+	var press: Vector2 = Rect2(board.board_rect).get_center() + Vector2(100.0, 0.0)
+	board._pointer_pressed(press)
+	check(board.pointer_intent == "cast_move", "a board press during Mobile Casting should become cast movement")
+	var first_direction := Vector2(board.state.player_action.get("movement_direction", Vector2.ZERO))
+	check(not first_direction.is_zero_approx(), "the cast should receive the touch direction")
+	board._pointer_dragged(press + Vector2(0.0, 120.0))
+	var dragged_direction := Vector2(board.state.player_action.get("movement_direction", Vector2.ZERO))
+	check(not dragged_direction.is_equal_approx(first_direction), "dragging should steer Mobile Casting")
+	board._pointer_released(press + Vector2(0.0, 120.0))
+	check(Vector2(board.state.player_action.get("movement_direction", Vector2.ONE)).is_zero_approx(), "releasing touch should stop walking without ending the cast")
+	check(String(board.state.player_action.get("kind", "")) == "cast", "releasing movement must leave the spell commitment running")
+	board.free()
+
 func _init() -> void:
 	test_tapping_an_enemy_with_dodge_selected_dodges()
 	test_it_holds_for_a_distant_enemy_too()
 	test_the_dodge_aims_at_the_tapped_enemy()
 	test_an_unselected_tap_still_attacks()
 	test_other_selected_actions_are_unaffected()
+	test_touch_can_steer_and_release_mobile_casting()
 	if failures.is_empty():
 		print("Defense input tests passed.")
 		quit(0)

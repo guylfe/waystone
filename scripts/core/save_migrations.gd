@@ -1,7 +1,7 @@
 class_name SaveMigrations
 extends RefCounted
 
-const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 35]
+const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
 
 static func normalize(source: Dictionary, current_version: int) -> Dictionary:
 	var payload := source.duplicate(true)
@@ -30,6 +30,7 @@ static func _migrate_one(payload: Dictionary, from_version: int) -> Dictionary:
 		32: return _v32_to_v33(payload)
 		33: return _v33_to_v34(payload)
 		34: return _v34_to_v35(payload)
+		35: return _v35_to_v36(payload)
 		_: return {}
 
 # Historical semantic migrations still run during hydration because they need the
@@ -73,6 +74,18 @@ static func _v34_to_v35(payload: Dictionary) -> Dictionary:
 		if not projectile.has("misdirected"): projectile["misdirected"] = false
 		migrated_projectiles.append(projectile)
 	result["projectiles"] = migrated_projectiles
+	return result
+
+static func _v35_to_v36(payload: Dictionary) -> Dictionary:
+	var result := _copy(payload)
+	# Mage rank I used to grant Steadier Cast and therefore left no stored attribute
+	# behind. Its replacement is Studious, so existing Mages at that rank receive the
+	# Intelligence they would have earned under the new progression exactly once here.
+	var ranks := Dictionary(result.get("track_ranks", {}))
+	if String(result.get("loadout_id", "")) == "mage_elementalist" and int(ranks.get("mage", 0)) >= 1:
+		var attributes := Dictionary(result.get("player_attributes", {})).duplicate(true)
+		attributes["intelligence"] = int(attributes.get("intelligence", 7)) + 1
+		result["player_attributes"] = attributes
 	return result
 
 static func validate_current(payload: Dictionary, current_version: int) -> PackedStringArray:

@@ -1,6 +1,16 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.83` (Android version code `283`).
+Current prototype version: `0.2.84` (Android version code `284`).
+
+## v0.2.84 — powerful first, efficient by study
+
+Mage now begins at Intelligence `7` and can reach `15` through the current equipment-free permanent route: **Studious** adds `+1`, **Learned** adds `+3`, and four Temperance choices add another `+4`. That is a consequence of the available progression, not a hard cap. The Circle can temporarily take the same Mage to `18`, or `21` with Deep Circle, and future equipment remains free to go higher.
+
+Spell efficiency now has two soft caps. Baseline Intelligence `5` pays the full authored price. Points `6`–`10` each multiply the remaining cost by `0.91`; points `11`–`15` by `0.94`; points above `15` by `0.97`. Values below `5` still receive no surcharge, and Intelligence still changes neither spell power nor physical-action costs. An opening Lightning Bolt therefore costs about `56.3` Energy from its authored `68`: strong enough to use, expensive enough that a second immediate cast overdraws the opening bar.
+
+The Mage track is now **Studious**, **Faster Cast**, **Learned**, **Mobile Casting**, then **Circle Mastery**. Steadier Cast is retired; even a highly trained Mage remains interruptible under the ordinary hit rules. Mobile Casting is a real full-action mechanic rather than an early return from recovery: while a non-Windstep spell is winding up or recovering, movement input walks at `45%` speed and world time continues. Releasing movement stops the walk but not the spell, the committed aim does not turn with the caster, and readiness returns only when the complete cast ends.
+
+Save schema `36` migrates an existing Mage with rank I or higher from Steadier Cast to Studious by granting its `+1` Intelligence exactly once. Presentation version remains `10`; Combat Survey format remains `29`.
 
 ## v0.2.83 — two defects, and one that turned out not to exist
 
@@ -470,9 +480,9 @@ Earth Wall is the sharpest demonstration of why one rule beats two. A barrier bl
 
 ### The Mage track
 
-Interruption first, because it is the difference between a caster that functions and one that does not. **Steadier Cast** at rank 3 holds a working through a light hit — a caster's real vulnerability is not that a hit hurts, it is that a hit erases what they were doing. A heavy blow still takes it, or the frailest class in the game would become the hardest to interrupt.
+**Studious** comes first with `+1` Intelligence, so the main-class opening immediately advances the Mage's long-term efficiency identity without putting it directly beside Learned. **Faster Cast** follows, then **Learned** adds `+3` Intelligence.
 
-Then **Faster Cast**, **Learned** (+3 Intelligence), and **Walking Cast**, which frees the recovery and never the wind-up. That distinction matters: casting costs you position, and that cost is what makes casting compete with dodging. You still commit in place; you just do not have to serve the whole bill standing there, and you move at an exhausted pace when you do.
+**Mobile Casting** permits slow walking throughout a spell's wind-up and recovery. It does not end recovery early, create a ready-but-moving state or borrow the Exhausted condition: the whole cast remains a single action during which world time advances. Movement changes the caster's position without retargeting the spell. Windstep keeps its own authored movement and therefore does not stack the walking rule.
 
 The rank 10 node improves the Circle three ways — a halved wind-up so it can be laid down inside a fight, the wider radius, or a deeper discount.
 

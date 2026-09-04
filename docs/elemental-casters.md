@@ -266,24 +266,26 @@ The spellbook is the bestiary.
   but the two economies cannot accidentally become coupled by a future global physical
   tuning change.
 
-Intelligence `5` is the universal zero-discount baseline. Every point above it compounds
-a `6%` spell-cost reduction: `authored cost × 0.94^(Intelligence - 5)`, with a `35%` floor.
-Values below `5` receive no surcharge. Intelligence never changes damage, conditions,
-range, geometry or casting time. Mage begins at Intelligence `7`; Warrior begins at `2`
+Intelligence `5` is the universal zero-discount baseline. Points `6`–`10` each multiply
+the remaining spell cost by `0.91`, points `11`–`15` by `0.94`, and later points by `0.97`.
+These are soft caps rather than a hard Intelligence cap or a minimum-cost floor, so Circle
+and future equipment gains continue to matter. Values below `5` receive no surcharge.
+Intelligence never changes damage, conditions, range, geometry or casting time. Mage
+begins at Intelligence `7`; Warrior begins at `2`
 and both Rogue profiles at `4`, confirming that ordinary non-caster attributes can sit at
 or below the baseline without a hidden penalty.
 
 | Spell | Authored Energy | Mage opening cost at Intelligence 7 |
 |---|---:|---:|
-| Lightning Bolt | 68 | 60.1 |
-| Fireball | 78 | 68.9 |
-| Fire Breath | 82 | 72.5 |
-| Frost Lance | 76 | 67.2 |
-| Cold Front | 90 | 79.5 |
-| Earth Wall | 82 | 72.5 |
-| Sunder | 72 | 63.6 |
-| Gale | 78 | 68.9 |
-| Windstep | 66 | 58.3 |
+| Lightning Bolt | 68 | 56.3 |
+| Fireball | 78 | 64.6 |
+| Fire Breath | 82 | 67.9 |
+| Frost Lance | 76 | 62.9 |
+| Cold Front | 90 | 74.5 |
+| Earth Wall | 82 | 67.9 |
+| Sunder | 72 | 59.6 |
+| Gale | 78 | 64.6 |
+| Windstep | 66 | 54.7 |
 
 The starting spell is consequently useful but not routine: Lightning Bolt deals `13`
 damage, has a `0.27`-second startup and `0.69`-second total duration, and a second immediate
