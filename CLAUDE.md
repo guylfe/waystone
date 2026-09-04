@@ -16,6 +16,8 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 8. **`docs/code-structure-audit.md`** — how the source is organised and why. Read before adding a field, a kind, an ability, a counter, or a rule about who may affect whom. The modules it produced are where authored facts live: `combat_catalog.gd` (kinds), `ability_catalog.gd` (spells and enemy abilities), `state_field_schema.gd` (fields and their audiences), `survey_counter_catalog.gd` (measurements), `save_migrations.gd`, `runtime_schema.gd` and `determinism_snapshot.gd`.
 
+9. **`docs/warrior-vanguard-redesign.md`** — the proposed, unimplemented redesign of the Warrior and Vanguard tracks, with the verified diagnosis behind it and a record of the directions that were rejected. Read before touching Rally, Building Force, Advance, poise, or either track.
+
 `README.md` carries implemented-version history and the current version number. It is long; read it last.
 
 **On a first session, or after a long gap, read all of the above before starting work** — and report any contradictions or stale claims you find between them. They were written at different times, by different hands, and some describe superseded behaviour. Surfacing the drift is part of the orientation, not a distraction from it. On a returning session, read what the task actually touches.
