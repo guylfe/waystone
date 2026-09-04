@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-03
-**Current source baseline:** `0.2.82` (`versionCode 282`, save schema `35`, presentation version `10`, Combat Survey format `29`)
+**Updated:** 2026-09-04
+**Current source baseline:** `0.2.83` (`versionCode 283`, save schema `35`, presentation version `10`, Combat Survey format `29`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -492,15 +492,20 @@ The scripts discover ignored local tool directories and an existing local Waysto
 
 ### Completing a code change
 
-Building, committing, and installing are part of finishing a code change, not separate steps to be requested afterwards. For every code change:
+Building, committing, pushing, and installing are part of finishing an approved numbered version,
+not separate steps to be requested afterwards. Approval of the version authorizes its normal GitHub
+release push and Fold deployment. For every approved numbered version:
 
 1. run the relevant tests from `tests/` that cover the changed system;
 2. keep version metadata in sync across `README.md` and `export_presets.cfg`, including the Android `versionCode`;
 3. build both platforms;
-4. commit the change to GitHub;
-5. install to the Pixel Fold if it is connected.
+4. create the release commit and push it to GitHub;
+5. install it to the Pixel Fold and verify the installed package/version by read-back.
 
-If the Fold is not connected, still build both platforms and commit, and say that the install was skipped for that reason. Preserve any pre-existing uncommitted work in the worktree; it belongs to the user.
+If the Fold is unavailable, still build both platforms, commit and push, but report the release as
+awaiting device installation rather than complete. Only an explicitly unnumbered experiment or
+local-only checkpoint may narrow this workflow. Preserve any pre-existing uncommitted work in the
+worktree; it belongs to the user.
 
 ### Pixel Fold installation
 
@@ -515,23 +520,24 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.82`, 2026-09-03)
+### Latest verified package boundary (`0.2.83`, 2026-09-04)
 
 - All 19 default test files passed, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
-- The deliberate Elementalist golden-state fingerprints repeated stably after the Energy and
-  presentation-contract changes.
-- The real-renderer caster audit was extended with a dedicated Lightning frame and visually
-  confirmed the complete bolt arc, 13-damage contact and opening 60-Energy UI price.
+- `0.2.83` corrects the Vanguard Driving Impact description to match the implemented `10 -> 15`
+  Advance damage, normalizes the projectile elevation-profile default to `flat`, and pins the
+  already-correct Advance, Drawing Cut and Twin Fang Energy costs in regression tests.
 - Windows SHA-256:
-  `E055842D4E6ECED3394C1B10A98C332EF267BFEC063C048DC6B6951F418E9803`;
-  file and product version both read back as `0.2.82`.
+  `A0690348F4CC1DAB10BDD80FB00ABED18EF225BA5277AAF3326BBC919147CC1B`;
+  file and product version both read back as `0.2.83`.
 - Android SHA-256:
-  `B16781A023A8D4A32658C7DD229856DD1DF32C26DA5F8CA2937A6C53152144FD`;
-  package metadata reads `com.waystone.prototype`, version name `0.2.82`, version code `282`,
-  minimum SDK 24, and APK signature v2/v3 verification passes.
-- `0.2.82` has not been installed on the Fold. Build verification and device deployment remain
-  separate claims.
+  `21A12D1C874F64CE867B657E53160CBFB114001988284107C8E6F04963C789E1`;
+  package metadata reads `com.waystone.prototype`, version name `0.2.83`, version code `283`,
+  and APK signature v2/v3 verification passes.
+- `0.2.83` installation is pending: the Fold was not discoverable through ADB on 2026-09-04 and
+  its previous wireless-debugging endpoint no longer accepted a connection. Package verification
+  and device deployment remain separate claims; this approved release is not operationally closed
+  until installation and installed-version read-back succeed.
 
 ### Latest verified Fold installation (`0.2.81`, 2026-09-03)
 
@@ -616,5 +622,7 @@ Resolve these through focused prototypes and surveys. Do not fill them in from g
 5. Keep the immediate task within the combat-loop milestones unless the user explicitly reprioritizes.
 6. For implementation, update code, focused regressions, survey telemetry, README/version metadata, and exports together when applicable.
 7. Validate simulation headlessly and presentation on a real renderer.
-8. Unless an approved task explicitly narrows the release boundary, build both platforms and make a local release commit; push only when authorized. Install to the Fold when it is connected, then verify the installed package/version on the actual device.
+8. For every approved numbered version, build both platforms, create and push the release commit,
+   install it to the Fold, and verify the installed package/version on the actual device. Treat
+   approval of the numbered version as authorization for this normal release workflow.
 9. Use the next survey as a falsification test for the change, not a demonstration that it must have worked.

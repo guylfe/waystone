@@ -66,10 +66,14 @@ Unless the approved task explicitly narrows the release boundary, finishing a re
 1. run the relevant tests in `tests/` covering the changed system;
 2. keep version metadata in sync across `README.md` and `export_presets.cfg`, including Android `versionCode`;
 3. build **both** platforms — `build-all.ps1`, not a single target, so Windows and Android never drift;
-4. create the requested local release commit; push to GitHub only when the task authorizes a push;
-5. install to the Pixel Fold if it is connected, and verify the installed package version on-device rather than trusting a successful export.
+4. commit every approved numbered version and push that release commit to GitHub; approval of the
+   numbered version is also authorization for its normal release push;
+5. install every approved numbered version to the Pixel Fold, and verify the installed package
+   version on-device rather than trusting a successful export.
 
-If the Fold is not connected, still build and commit, and say the install was skipped for that reason.
+If the Fold is unavailable, still build, commit and push, but report the release as awaiting device
+installation rather than complete. A task that explicitly requests an unnumbered experiment or
+local-only checkpoint may narrow this rule; an ordinary approved version may not silently omit it.
 
 ---
 
