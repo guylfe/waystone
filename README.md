@@ -1,7 +1,30 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.86` (Android version code `286`).
+Current prototype version: `0.2.87` (Android version code `287`).
 
+## v0.2.87 — a pip is worth a sequence, and the room waits for the last blow
+
+Two findings from the `0.2.85` Warrior survey, both about a beat arriving too early.
+
+### Battle Flow filled itself in one combo
+
+`_stamp_battle_flow()` runs on **every phase transition**, and the pip was awarded on the first connecting strike after each stamp. A three-phase sword combo therefore granted three pips and filled the entire bar by itself, and the cheapest route to full Battle Flow was to land an opening cut and never continue — backwards for a mechanic whose whole subject is not stopping.
+
+A pip is now the reward for **finishing** a sequence. Single-phase actions still pay on contact; a combo pays on its last phase. Advance continues to refresh the timer without adding a pip, which was already the intent.
+
+**Decay rises from `3.5` to `10.0` seconds** to accommodate it. A full sword combo is 3.3 seconds on its own, so at 3.5 the ramp decayed faster than the new rule could build it. Ten seconds covers finishing a combo, crossing to the next body and finishing another, which moves the decay's job from punishing sequence length to punishing disengagement.
+
+### The screen changed before the winning blow landed
+
+Clearing the last enemy called `_complete_survey_room("victory")` in the same tick as the killing hit, so the room handed over while the swing that won it was still in flight.
+
+The handover now waits for the action to finish — and only when there is one, so a caller with nothing in flight completes immediately and headless behaviour is unchanged. A **ROOM CLEAR** banner holds the centre of the screen for two seconds of *real* time, deliberately not world time, since world time is exactly what the killing swing is still spending. The rating overlay waits behind the banner.
+
+An earlier draft of this had the renderer call back into the simulation to complete the room. Three test files caught it immediately: the room lifecycle would have depended on a presentation timer, so a headless run would never have finished a room at all. The simulation owns the lifecycle; the banner is a banner.
+
+### Not in this version
+
+The Javelineer's aim is a real defect and is deliberately held back. Two separate problems were found — a missing `max_range` that leaves every javelin arcing over a fixed 600 units, and a flight-time estimate that ignores radial closing speed, which is the one that misses when the player runs straight toward or away from the thrower. Both are worth fixing, and neither belongs in the same version as `0.2.86`'s eight rescaled attacks: three large threat changes in three consecutive versions would leave the next survey unable to attribute any of them.
 ## v0.2.86 — eight enemy attacks that were never rescaled
 
 The `0.2.85` survey reported that a Boar charge landed 1 damage. It was not a `0.2.85` regression; it had been true for twenty-six versions, and seven other attacks were worse.

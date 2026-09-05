@@ -37,6 +37,7 @@ const FIELDS := [
 	{"key":"battle_flow_pips", "source":"battle_flow_pips", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
 	{"key":"battle_flow_remaining", "source":"battle_flow_remaining", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"float"},
 	{"key":"message", "source":"message", "audiences":[SNAPSHOT, PRESENTATION, SAVE]},
+	{"key":"room_clear_pending", "source":"room_clear_pending", "audiences":[SNAPSHOT, PRESENTATION]},
 	{"key":"player_action", "source":"player_action", "audiences":[SNAPSHOT, PRESENTATION, DETERMINISM], "copy":"dictionary", "interpolate":"action"},
 	{"key":"player_conditions", "source":"player_conditions", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "copy":"dictionary"},
 	{"key":"player_condition_buildup", "source":"player_condition_buildup", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "copy":"dictionary"},

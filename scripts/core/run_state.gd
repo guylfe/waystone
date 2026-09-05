@@ -442,14 +442,19 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.86"
+const GAME_VERSION := "0.2.87"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 10
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
 const RALLY_DRAIN_PER_SECOND := 8.0
-const BATTLE_FLOW_DECAY_SECONDS := 3.5
+# 10.0, up from 3.5. A pip now costs a completed combo rather than a connecting strike,
+# and a full sword sequence is 3.3 seconds on its own -- at 3.5 the ramp decayed faster
+# than it could be built. Ten seconds covers finishing a combo, crossing to the next body
+# and finishing another, so the decay punishes disengaging rather than punishing the
+# sequence length the pip now requires.
+const BATTLE_FLOW_DECAY_SECONDS := 10.0
 const ADVANCE_TARGET_RANGE := 280.0
 const ADVANCE_TARGET_HALF_ANGLE := PI * 0.30
 const COOLDOWN_DODGE := "dodge"
@@ -874,6 +879,12 @@ var custom_room_used_kinds: Dictionary = {}
 var custom_room_last_roster: Array[String] = []
 var survey_room_seed := 0
 var survey_feedback_pending := false
+# The last enemy has fallen but the room has not been handed over yet. The killing blow is
+# almost always mid-action, and completing the room in the same tick swapped the screen
+# before the swing that won it had landed. The simulation keeps running through this --
+# the strike resolves, the recovery plays -- while the renderer holds a short real-time
+# ROOM CLEAR before asking for the handover.
+var room_clear_pending := false
 var survey_run_ending := false
 var survey_end_reason := ""
 var survey_room_definition: Dictionary = {}
@@ -2302,6 +2313,7 @@ func _store_survey_feedback() -> void:
 	rooms.append(survey_pending_record.duplicate(true))
 	survey_session["rooms"] = rooms
 	survey_feedback_pending = false
+	room_clear_pending = false
 	survey_pending_record.clear()
 	SurveyReportScript.save_current(survey_session)
 	if survey_run_ending:
@@ -2309,6 +2321,16 @@ func _store_survey_feedback() -> void:
 	else:
 		rooms_cleared += 1
 		_load_next_survey_room()
+
+# The held handover, completed by the simulation itself once the winning action has
+# finished. The renderer's ROOM CLEAR is a banner over this, not the thing that drives it:
+# a headless run completes rooms with no renderer at all. Death takes precedence, since a
+# player who fell in the same exchange has already finished that room.
+func _resolve_pending_room_clear() -> void:
+	if not room_clear_pending or not is_player_ready(): return
+	room_clear_pending = false
+	if trial_complete or survey_feedback_pending: return
+	_complete_survey_room("victory")
 
 func end_survey_run() -> void:
 	if mode_id != ModeRulesScript.COMBAT_SURVEY or trial_complete or survey_feedback_pending: return
@@ -5171,6 +5193,16 @@ func _battle_flow_damage_per_pip() -> float:
 func _battle_flow_posture_per_pip() -> float:
 	return 0.10 if has_track_rank("vanguard", 4) else 1.0 / 12.0
 
+# A pip is the reward for finishing a sequence, not for starting one. _stamp_battle_flow
+# runs on every phase transition, so until 0.2.87 each connecting strike granted its own
+# pip: one three-phase combo filled the entire bar, and the cheapest way to build momentum
+# was to land an opening cut and never continue -- backwards for a mechanic about not
+# stopping. Single-phase actions still pay on contact; a combo pays on its last phase.
+func _battle_flow_sequence_complete(action: Dictionary) -> bool:
+	var phases: Array = action.get("phases", [])
+	if phases.is_empty(): return true
+	return int(action.get("committed_phase", 0)) >= phases.size() - 1
+
 func _stamp_battle_flow(action: Dictionary) -> void:
 	if not has_track_rank("vanguard", 1) or not _is_committed_physical_action(action): return
 	action["battle_flow_damage"] = float(battle_flow_pips) * _battle_flow_damage_per_pip()
@@ -5253,6 +5285,7 @@ func _simulate_until_ready() -> void:
 	changed.emit()
 
 func _tick(dt: float) -> void:
+	if room_clear_pending: _resolve_pending_room_clear()
 	_simulation_tick_index += 1
 	simulation_time += dt
 	if mode_id == ModeRulesScript.COMBAT_SURVEY: _sample_engagement()
@@ -6027,7 +6060,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 				dodge_cooldown = maxf(0.0, dodge_cooldown - 0.25)
 				skill_cooldown = maxf(0.0, skill_cooldown - 0.25)
 			_add_effect("hit", hit_point, dealt, {"direction": (Vector2(enemy["pos"]) - hit_point).normalized(), "interrupted": reaction_applied})
-			if has_track_rank("vanguard", 1) and not bool(player_action.get("battle_flow_registered", false)):
+			if has_track_rank("vanguard", 1) and not bool(player_action.get("battle_flow_registered", false)) and _battle_flow_sequence_complete(player_action):
 				player_action["battle_flow_registered"] = true
 				_register_battle_flow_contact(false)
 			_set_message("The %s connects." % AttackGeometryScript.label(String(player_action.get("technique_id", "diagonal_cut"))).to_lower())
@@ -8939,6 +8972,7 @@ func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 func _begin_death() -> void:
 	if death_pending: return
 	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+		room_clear_pending = false
 		_complete_survey_room("death")
 		return
 	var previous_shadow_erased := bool(lost_xp.get("active", false))
@@ -9062,7 +9096,11 @@ func _remove_dead_enemies() -> void:
 			else: _set_message("The %s falls. XP gained." % kind)
 	_replace_enemy_actors(living)
 	if mode_id == ModeRulesScript.COMBAT_SURVEY and enemies.is_empty():
-		_complete_survey_room("victory")
+		# Hold the handover only while the blow that won the room is still resolving.
+		# With nothing in flight there is nothing to wait for, so the room completes at
+		# once and a headless caller sees the behaviour it always saw.
+		if is_player_ready(): _complete_survey_room("victory")
+		else: room_clear_pending = true
 		return
 	for area_id in defeated_areas:
 		var still_alive := false

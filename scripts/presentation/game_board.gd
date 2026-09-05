@@ -195,6 +195,12 @@ var map_layer_rects: Dictionary = {}
 var map_layer_previous_rect := Rect2()
 var map_layer_next_rect := Rect2()
 var autosave_pending := false
+# Real seconds, deliberately: this is the pause between the blow that clears a room and the
+# screen that replaces it, and it must not be measured in world time -- world time is what
+# the killing swing is still spending. The simulation runs normally throughout.
+const ROOM_CLEAR_HOLD_SECONDS := 2.0
+var room_clear_remaining := 0.0
+var room_clear_latched := false
 var autosave_elapsed := 0.0
 var autosave_quiet_elapsed := 0.0
 var autosave_deferred := false
@@ -313,6 +319,9 @@ func _create_survey_overlay() -> void:
 func _sync_survey_overlay() -> void:
 	if survey_overlay == null: return
 	if survey_overlay.visible and survey_overlay.get_meta("kind", "") in ["archive", "end_confirm"]: return
+	if room_clear_remaining > 0.0:
+		survey_overlay.visible = false
+		return
 	if state.mode_id == "combat_survey" and state.survey_feedback_pending:
 		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "feedback": _build_survey_feedback_overlay()
 		survey_overlay.visible = true
@@ -1011,6 +1020,19 @@ func _process(delta: float) -> void:
 		frame_metric_elapsed = 0.0
 		frame_metric_worst_ms = 0.0
 	var needs_redraw := false
+	# Latched on the rising edge of either signal, then run down on its own clock. The
+	# simulation may hand the room over in well under two seconds -- the banner is not
+	# allowed to be cut short by that, because the whole point is that the beat is long
+	# enough to see. The rating overlay waits behind it.
+	var clearing := state != null and (state.room_clear_pending or (state.mode_id == "combat_survey" and state.survey_feedback_pending))
+	if clearing and not room_clear_latched:
+		room_clear_latched = true
+		room_clear_remaining = ROOM_CLEAR_HOLD_SECONDS
+	elif not clearing:
+		room_clear_latched = false
+	if room_clear_remaining > 0.0:
+		room_clear_remaining = maxf(0.0, room_clear_remaining - delta)
+		needs_redraw = true
 	_sync_survey_overlay()
 	var finished_streamed_movement := false
 	if _autosave_frame_is_quiet(): autosave_quiet_elapsed += delta
@@ -2518,6 +2540,7 @@ func _draw_world() -> void:
 	_draw_player_damage_overlay()
 	_draw_selected_action_hint()
 	_draw_area_title()
+	_draw_room_clear_banner()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
 	if state.mode_id == "combat_survey": label += "  •  RUN %d" % state.run_seed
 	var color := Color("f0b45a") if playing else DODGE_COLOR
@@ -2625,6 +2648,21 @@ func _draw_chant_marks(pos: Vector2, radius: float, enemy: Dictionary) -> void:
 		var duration_fraction := clampf(remaining / maxf(0.01, state.CHANT_DURATION), 0.0, 1.0)
 		draw_arc(mark, size * 1.55, -PI * 0.5, -PI * 0.5 + TAU * duration_fraction, 14, Color(0.95, 0.95, 0.88, 0.82), maxf(1.0, size * 0.20))
 		slot += 1
+
+# Centred and brief. It reads as a beat in the fight rather than a screen, which is the
+# point: the room is over, the swing that ended it is still landing behind this.
+func _draw_room_clear_banner() -> void:
+	if room_clear_remaining <= 0.0: return
+	var fade := clampf(room_clear_remaining / ROOM_CLEAR_HOLD_SECONDS, 0.0, 1.0)
+	var alpha := clampf(fade * 1.6, 0.0, 1.0)
+	var font := maxi(22, int(minf(size.x, size.y) * 0.062))
+	var centre := board_rect.get_center()
+	var text := "ROOM CLEAR"
+	var measured := ThemeDB.fallback_font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font)
+	var plate := Rect2(centre - Vector2(measured.x * 0.5 + 26.0, float(font) * 0.86), Vector2(measured.x + 52.0, float(font) * 1.5))
+	draw_rect(plate, Color(0.05, 0.09, 0.11, 0.72 * alpha))
+	draw_rect(plate, Color(0.42, 0.89, 0.78, 0.85 * alpha), false, 2.0)
+	draw_string(ThemeDB.fallback_font, centre + Vector2(-measured.x * 0.5, float(font) * 0.34), text, HORIZONTAL_ALIGNMENT_LEFT, measured.x, font, Color(0.85, 0.97, 0.93, alpha))
 
 func _draw_isometric_focus_overlay(visible: Dictionary) -> void:
 	if view_mode != "isometric": return
