@@ -2,7 +2,9 @@
 
 **Status:** Proposed, not approved and not implemented. Every code fact below was verified against source at `0.2.84`.
 
-**Recorded:** 2026-09-05, from a design conversation that began with *"I think Vanguard is boring."*
+**Recorded:** 2026-09-05, from a design conversation that began with *"I think Vanguard is boring."* The Warrior proposal and first-pass values were subsequently revised in conversation on the same date; Vanguard's unresolved values remain proposals.
+
+**Authorship.** §1–§2 and §4–§7 are Claude's, with §3 and the first-pass values revised by Sol 5.6. **§8 is Claude's objections to that revision**, marked as such and unresolved — read it before implementing §3's poise values.
 
 **How to read this.** The diagnosis comes first, because the case for changing anything rests on it and several of the findings are surprising. The two tracks follow. The rejected ideas are kept at the end with the reasons they were rejected — that section exists so the same proposals do not come back around, and several of them are ideas a reasonable person would suggest.
 
@@ -124,7 +126,11 @@ Each wants it for a different reason. None of them is *defined* by it, which is 
 
 ### Rally, reworked
 
-**Stealth model.** Pays Energy per second while held, cancellable from the skills row. While up, your hits deal more damage and more posture damage. No fixed duration, no flat cooldown.
+**Stealth model.** Pays Energy per second while held, prevents Energy regeneration, and is cancellable from the skills row while the player is ready. It has no fixed duration and no flat cooldown. Reaching zero Energy ends Rally and causes ordinary exhaustion. Rally drains only while world time advances.
+
+**Agreed first-pass values:** preserve the existing 0.56-second activation commitment and 0.18-second effect point. Once active, Rally drains **8 Energy per second** and grants committed physical attacks **+15% damage, +20% posture damage, and +2 poise**. Damage and posture bonuses combine additively with other percentage bonuses rather than multiplying them. Rally applies to basic weapon attacks, linked combos, Weapon Arts, and physical subclass attacks such as Advance; it does not improve spells, consumables, movement, or defensive actions. The activation itself remains interruptible.
+
+A full sword combo lasts about 3.3 seconds and costs 36 Energy. Holding baseline Rally through it therefore costs about another 27 Energy, for roughly **63 Energy total**. This is the intended first-pass pressure: the Warrior can still retain a defensive reserve, but cannot casually repeat full Rally sequences.
 
 It **no longer resets Battle Flow.**
 
@@ -134,34 +140,49 @@ Rally is one tool, not the identity. That is the fix for what the conversation c
 
 | Rank | Node | What changes |
 |---|---|---|
-| **L3** | **Footing** | Introduces poise: committed melee actions absorb incoming posture damage without being interrupted. Passive, introduced explicitly, and shown on the action. |
-| **L5** | **Bear Down** / **Brace** | *Bear Down* — your hits deal more posture damage, so you break them faster. *Brace* — your poise capacity rises, so you are harder to break. One or the other. |
-| **L7** | *(name TBD)* | **+4 Resolve and +15 maximum Energy.** |
-| **L9** | **Set Against It** | Incoming damage is reduced while you are committed to an action. |
-| **L10** | **Unbreakable** | While Rally is held, you cannot be posture-broken. |
+| **L3** | **Bear Down** / **Brace** | *Bear Down* — committed physical attacks deal **+30% posture damage**. *Brace* — committed physical attacks gain **+2 poise**. One or the other. |
+| **L5** | **Enduring Rally** | Rally's drain falls by **25%**, from 8 to **6 Energy per second**. |
+| **L7** | **Iron Constitution** / **Deep Reserves** | *Iron Constitution* — gain **+4 Resolve**. *Deep Reserves* — gain **+20 maximum Energy**. One or the other. |
+| **L9** | **Power Through** | While performing a committed physical attack, take **25% less final health damage** from direct attacks that do not interrupt that attack. |
+| **L10** | **Unbreakable** | While Rally is active, you cannot be staggered and your committed attacks cannot be interrupted. |
 
-**The arc:** gain poise → choose how to spend it → become substantially more of a fighter → committing protects you → at mastery, nothing interrupts you at all.
+**The arc:** choose whether to break their posture or protect your own attacks → sustain Rally more efficiently → choose permanent stability or a larger active budget → successful poise also mitigates damage → at mastery, active Rally makes commitment completely uninterruptible.
 
-### Why L7 is a stat node, and why that is not the relic
+### Poise breakpoints and the L3 choice
 
-A generic stat node sits beside a track. **Resolve does not** — it is the currency every other node here spends:
+Poise is derived universally from **Resolve**, not unlocked by Warrior and not authored independently by characters, weapons, or actions. A committed attack uses the character's current Resolve-derived poise; individual abilities or upgrades may then apply explicit modifiers such as Rally's +2 or Brace's +2. Higher poise deterministically increases the range of attacks a commitment can withstand—it does not create a random chance, and changing weapons does not replace the character's value. If a character should have more natural poise, that character should begin with more Resolve rather than introducing a second base-poise variable.
 
-```gdscript
-capacity += floorf(float(player_attributes.get("resolve", 7)) / 4.0)
-```
+The remaining universal question is only the conversion from Resolve to poise. The current `floor(resolve / 4)` contribution is conditional on some other feature first granting capacity, so it is not yet the universal rule described here. A first-pass proposal is **`floor(resolve / 2)`**: the starting Warrior's 7 Resolve produces 3 poise, while a 3-Resolve Mage or Rogue produces 1 and a 4-Resolve Sharpshooter produces 2. This preserves meaningful class differences using Resolve alone. It remains a proposal to approve before implementation. Current authored enemy posture damage provides useful thresholds:
 
-Resolve is both the posture pool (`posture_max = posture_base + resolve`) *and* poise capacity on every committed action. So Footing, Brace, Set Against It and Unbreakable all improve from it. It multiplies the track rather than decorating it.
+| Enemy attack class | Authored posture damage |
+|---|---:|
+| Knife / Bandit | 1.5 |
+| Blade / Shield | 3.0 |
+| Polearm thrust | 4.5 |
+| Brute / Knight heavy attack | 6.0 |
 
-**Sizing.** The largest single Temperament is Toughness at +15 health and +1 Resolve; Conviction is +14 Energy and +1 Resolve. So `+4 Resolve, +15 Energy` is Conviction plus three more Resolve — unambiguously a bigger step than any Temperament pick, in the two currencies this track uses.
+Under that proposal, an ordinary Warrior at 3 withstands Knife- and Blade-class individual attacks; either Rally or Brace adds 2 and reaches 5, enough for a Polearm thrust; Rally plus Brace reaches 7, enough for a heavy attack. Iron Constitution raises Resolve from 7 to 11 and therefore raises natural poise from 3 to 5, producing 7 with either Rally or Brace and 9 with both. Hits still consume the current commitment's available poise normally, and all hits continue to damage the global posture pool.
 
-`floorf(resolve/4)` means four points buys **exactly one more poise step**, which makes the node statable as an outcome rather than a number: *one more hit you can absorb mid-swing.*
+The choice is deliberately mirrored and simple. **Bear Down** attacks the enemy's posture; **Brace** protects the Warrior's commitment. Bear Down is percentage-authored so it cannot fossilise as weapon damage changes. A baseline sword combo deals about 9.1 posture; Bear Down raises that to about 11.8. Bear Down and Rally together supply +50% additive posture damage, enough for a developed Warrior to threaten high-stability enemies without making Bear Down alone erase every heavy enemy.
 
-The +15 Energy exists because Rally now drains per second, and the Warrior's binding constraint becomes how long they can afford to hold the state that defines them.
+### Why L7 is a choice
+
+Both stats are central, but granting both in one automatic node would be excessive and would conceal which resource actually made the class stronger. **Iron Constitution** enlarges the global posture pool and, under the proposed conversion, adds 2 poise whenever Rally is absent or active. **Deep Reserves** supports Rally, attacks, Advance, and defensive techniques. At the improved 6-per-second drain, Deep Reserves' extra 20 Energy represents about 3.3 seconds of additional Rally before accounting for other action costs.
+
+### Power Through
+
+The exact player-facing rule is: **"While performing a committed attack, you take less damage from hits that do not interrupt that attack."** Resolve interruption first. If the attack holds, reduce that hit's final health damage by 25%; the hit still deals full posture damage and consumes full action poise. An interrupting or posture-breaking hit receives no reduction. Direct melee, projectile, and spell attacks qualify; ongoing hazards and damage-over-time effects do not. It applies only during committed physical attacks, not movement, Rally activation, potions, or defensive actions.
+
+At the Warrior's current 4 physical defence, a 14-damage Blade cut ordinarily deals 10 and falls to about 8 under Power Through; a 24-damage Brute hit ordinarily deals 20 and falls to 15. The reduction is consequently visible against both common and heavy attacks without making the Warrior safe merely for having pressed Attack.
+
+### Unbreakable
+
+At mastery, active Rally suppresses both posture stagger and ordinary hit interruption. Health damage, posture damage, conditions, action costs, and Rally drain still resolve normally, and the Warrior can still die or exhaust Rally. Posture may reach zero while Rally is active, but no delayed automatic stagger occurs when Rally ends; posture simply begins recovering from zero, leaving the Warrior exposed to the next hit. Rally's activation commitment remains interruptible before the active state begins.
 
 ### What is cut
 
-- **Warrior's Physique** (+20 health, +1 Speed). A pure stat node with no relationship to anything. **Fold the health into the class's base attributes** — a Warrior should simply *be* tougher, not spend a level becoming it.
-- **Building Force** leaves for Vanguard as Battle Flow, freeing L5 for the choice.
+- **Warrior's Physique** (+20 health, +1 Speed). A pure stat node with no relationship to anything. Do **not** silently fold its full reward into the base class: the Warrior already starts at 100 health, and granting the old reward at level 1 while also replacing its node would be an unmeasured double buff. Keep 100 starting health for the first experiment.
+- **Building Force** leaves for Vanguard as Battle Flow.
 - **Battle Rhythm** (a posture break extends Rally by 1s) — bookkeeping.
 - **Warpath** (Building Force holds during Rally) — it existed only to paper over Rally and Building Force fighting each other, which no longer happens.
 
@@ -180,7 +201,7 @@ Its damage is incidental. **Its job is that it is the only action that crosses d
 | Rank | Node | What changes |
 |---|---|---|
 | **L3** | **Battle Flow** | Introduces the chain: consecutive contact ramps your damage. Advance maintains it and refreshes its timer. |
-| **L5** | **Power Through** / **Sword Dance** | *Power Through* — taking a hit no longer breaks your chain. *Sword Dance* — evasive actions no longer break it. One or the other. |
+| **L5** | **Unshaken** / **Sword Dance** | *Unshaken* — taking a hit no longer breaks your chain. *Sword Dance* — evasive actions no longer break it. One or the other. **Unshaken** is a provisional rename because the revised Warrior now owns **Power Through**. |
 | **L7** | *(name TBD)* | A break costs **one pip** instead of the whole chain. |
 | **L9** | *(name TBD)* | A **fourth pip**, and a larger bonus per pip. |
 
@@ -203,7 +224,7 @@ Its damage is incidental. **Its job is that it is the only action that crosses d
 
 ### Why the L5 choice is self-limiting
 
-Each branch closes the loophole the other opens. **Power Through** still loses the chain to a dodge, so you have to genuinely stand there. **Sword Dance** still loses it to a hit, so you have to genuinely not get hit. No external limiter is needed, and two different Vanguards fall out of one node — the immovable one and the mobile one.
+Each branch closes the loophole the other opens. **Unshaken** still loses the chain to a dodge, so you have to genuinely stand there. **Sword Dance** still loses it to a hit, so you have to genuinely not get hit. No external limiter is needed, and two different Vanguards fall out of one node — the immovable one and the mobile one.
 
 Exhaustion breaks it either way, which ties the two resources together: Rally drains Energy, running dry breaks your momentum, so holding Rally too long costs you the ramp as well as the pool.
 
@@ -216,12 +237,12 @@ Degradation is also self-scaling — the more momentum you have built, the more 
 ### What is cut
 
 - **Driving Impact** — a pure-number node whose description was a fivefold fossil.
-- **Vanguard Bearing** — half-dead and half-redundant. Its +2 Resolve improves a rare event (see §1.8); its poise capacity of 3 overlaps universal post-hit protection, and if Power Through is taken then being hit does not cost the chain anyway.
+- **Vanguard Bearing** — half-dead and half-redundant. Its +2 Resolve improves a rare event (see §1.8); its poise capacity of 3 overlaps universal post-hit protection, and if Unshaken is taken then being hit does not cost the chain anyway.
 - **Seize the Line** — a no-op under Energy rules (§1.7).
 
 ### How the tracks complement without referencing each other
 
-A Vanguard wants **Brace**, because Power Through and an uninterrupted chain are the same wish. A Berserk wants **Bear Down**, because trading rewards breaking them before they break you. A Guardian wants **Brace** for a different reason — a long swing that survives contact.
+A Vanguard may want **Brace**, because preserving a commitment helps preserve its chain, or Bear Down to turn sustained contact into faster breaks. A Berserk may prefer **Bear Down**, because trading rewards breaking them before they break you. A Guardian may want **Brace** for a different reason — a long swing that survives contact. Deep Reserves and Iron Constitution create a second independent choice between active Rally capacity and permanent stability.
 
 None of that is written anywhere in either track. It falls out of the mechanics, which is rule 2 from §2.
 
@@ -252,11 +273,10 @@ Kept because several are reasonable ideas that will otherwise be re-proposed.
 ## 6. Open items
 
 1. **Battle Flow's decay window.** Everything rests on this number. Suggested first pass: **3–4 seconds** — long enough that ordinary combat sustains it, short enough that being forced away costs you. A survey question, not an argument.
-2. **Poise values.** Base capacity at Footing, and what Bear Down / Brace are worth. Derive from the existing `_apply_action_poise` capacity of `3.0` rather than inventing figures.
-3. **Poise visibility.** An absorbed interruption currently produces nothing the player can see; `interruptions_prevented` is counted in telemetry and never shown in play. Introducing poise at L3 without showing it repeats the Building Force mistake.
-4. **Rally's economy.** Rally drains per second, and *Unbreakable* is only worth taking if you can afford to hold Rally long enough to use it. The L7 stat node's +15 Energy helps but does not change the shape. Either fold regeneration into a Rally node, or set the drain low enough that a 115 pool sustains it comfortably.
-5. **Rally's baseline.** Does the damage bonus stay at level 1, or does Rally start as pure poise with damage arriving later? The second is tidier, but makes the level-1 Warrior's only active purely defensive — and the Elementalist surveys showed the opening rooms already bite hardest.
-6. **Names** for Warrior L7 and Vanguard L7/L9.
+2. **Resolve-to-poise conversion.** Resolve is the sole universal source of natural poise; there is no separate character, weapon, or action base-poise value. The first-pass proposal is `floor(resolve / 2)`, which preserves the intended Warrior threshold without changing starting Resolve, but this conversion still requires approval before implementation.
+3. **Poise visibility.** An absorbed interruption currently produces only a brief strain effect and message; `interruptions_prevented` is counted in telemetry but action-poise capacity and remaining poise are not legible during play. Brace, Rally, and Power Through all require one clear display.
+4. **Vanguard names** for L7 and L9.
+5. **Survey attribution.** Record Rally activations, voluntary cancellations, uptime, Energy drained, Energy saved by Enduring Rally, bonus damage/posture contributed, hits held through by poise, Power Through triggers and damage prevented, and interruptions/staggers suppressed by Unbreakable.
 
 ---
 
@@ -267,3 +287,82 @@ This touches Battle Flow (new, Vanguard), Rally (Warrior), Advance (baseline), n
 **It is its own version, and it must not ship with unrelated gameplay changes**, so the survey that follows can attribute what it finds. That is rule 8 of the ownership contract and the lesson of `0.2.82`, which bundled seven gameplay changes and left the next survey unable to say which one moved the numbers.
 
 The current priority in `CLAUDE.md` is the `0.2.84` Elementalist survey. The stated plan is that the Vanguard work follows, and that **both** the Elementalist and the Vanguard are surveyed before moving on to bosses.
+
+---
+
+## 8. Claude's objections to the revised proposal
+
+> **Authorship and status:** This section is Claude's, written after reading Sol 5.6's revision of §3 and its first-pass values. Every claim was checked against source at `0.2.84`. Nothing here is an approved decision. One earlier objection of mine is retracted below rather than deleted, because the reasoning that produced it is the kind that will look convincing again.
+>
+> The revision is a clear improvement on what it replaced — the Rally drain, Power Through's resolution order and Unbreakable's edge cases are specified far more tightly than my draft, and it caught a real error in mine (folding Warrior's Physique health into the base class would have been an unmeasured buff, since the Warrior already starts at 100). These are objections to specific values, not to the direction.
+
+### O1. The poise breakpoints do not survive the comparison the code actually makes
+
+**This is the objection that matters, and it changes what the L3 choice is worth.**
+
+Poise is consumed all-or-nothing per hit. There is no partial absorption (`run_state.gd`, incoming-hit resolution):
+
+```gdscript
+if received_posture <= guard_remaining:
+    player_action["guard_remaining"] = maxf(0.0, guard_remaining - received_posture)
+    # the action holds
+    return
+# otherwise: interrupted
+```
+
+And incoming posture is derived, not authored:
+
+```gdscript
+var posture_damage := authored_posture if authored_posture >= 0.0 else float(damage) * POSTURE_PER_DAMAGE
+```
+
+`POSTURE_PER_DAMAGE` is `0.22`, and **no call site in the codebase passes an authored incoming posture**, so in practice every incoming hit produces exactly `damage × 0.22`.
+
+The proposal's breakpoint table lists posture values rounded to one decimal — 1.5 / 3.0 / 4.5 / 6.0 — and then reads them against poise as though equality passes. It does not, because the real numbers are rarely round. A Blade-class cut listed at `3.0` is `14 × 0.22 = 3.08`, and `3.08 <= 3` is **false**. An ordinary Warrior at 3 poise is stated to withstand Blade-class attacks; under the code's own rule, it does not.
+
+Every tier in the ladder is exposed to the same off-by-a-hair problem, and the direction of the error is always the same: a rounded-down table promises a tier the comparison then denies.
+
+**This is the Sweeping Cut problem again** — a rule that held by two points out of fifty-six, in a test that would have failed on any small retune. A breakpoint that sits exactly on a boundary is not a breakpoint.
+
+**Two fixes, either acceptable:**
+
+- **Derive the table** from the real damage values rather than authoring rounded posture figures beside them. This is the *prefer deriving a number over authoring it twice* habit, applied to the exact numbers that motivated the redesign.
+- **Or give poise a margin** — clear the tier it claims by a stated amount rather than by equality, so a later damage retune does not silently move a class across a threshold.
+
+Whichever is chosen, the level-up text must describe what the comparison actually does. The redesign exists partly because Advance's node described a fivefold-wrong number; shipping a breakpoint table that is wrong by one hundredth would be the same failure in a smaller coat.
+
+### O2. One poise is very nearly inert, which undercuts the stated reason for `floor(resolve / 2)`
+
+Because absorption is all-or-nothing, **N poise absorbs a hit only if that hit deals `N / 0.22` damage or less.** At 1 poise that is **4 damage or less**:
+
+| incoming damage | posture produced | held by 1 poise? |
+|---:|---:|:--|
+| 3 | 0.66 | yes |
+| 4 | 0.88 | yes |
+| **5** | **1.10** | **no** |
+| 6 | 1.32 | no |
+| 14 | 3.08 | no |
+
+The only attacks that weak are chip hits — the Bandit's `dodge_strike` at 3 damage and one 4-damage melee. Everything else in the roster breaks straight through.
+
+`floor(resolve / 2)` is justified as preserving "meaningful class differences using Resolve alone", giving Mage 1, Acrobat 1, Sharpshooter 2, Warrior 3. But **1 poise is not meaningfully different from 0 poise** — it changes the outcome of two of the weakest attacks in the game and nothing else. The real spread the conversion produces is closer to *Warrior 3, Sharpshooter 2, everyone else effectively nothing*, which may be the intended shape but is not what the text claims.
+
+Worth deciding deliberately: if low-Resolve classes are meant to have *no* poise, say so and let the conversion floor at zero for them. If they are meant to have a little, the conversion needs to clear at least the 5-damage tier (`1.10`), which means 2 poise minimum — and `floor(resolve / 2)` does not give a 3-Resolve class 2.
+
+### O3. Retracted — the Elementalist collision I raised does not hold
+
+**I previously objected** that making poise universal would hand the Mage free protection against spell cancellation — the vulnerability its design deliberately leaves open — and that this would contaminate the queued Elementalist survey.
+
+**That objection is withdrawn**, for two independent reasons. The survey has since been run. And per O2, the Mage's 1 poise would have held against 3- and 4-damage hits only, which is not a meaningful repair of anything.
+
+The reasoning error is worth recording: I reasoned from *"the Mage gains poise where it had none"* to *"the Mage's vulnerability is partially repaired"* without checking what one point of poise can actually absorb. The step I skipped was dividing by `POSTURE_PER_DAMAGE`.
+
+### O4. A stale comment the redesign should not inherit
+
+`combat_catalog.gd` (Mage archetype) still reads:
+
+> *"Resolve is deliberately low: a caster's vulnerability is that a hit cancels the spell, which is what the Mage track's first node exists to repair."*
+
+At `0.2.84` the Mage track's first node is **Studious** (+1 Intelligence). Steadier Cast is gone, and **nothing in the track repairs spell cancellation any more.** The comment describes a node that no longer exists.
+
+This matters here because it is the only written statement of *why* the Mage's Resolve is 3, and a universal Resolve-to-poise conversion makes that number load-bearing in a second system. Whoever implements the conversion should correct or replace the comment rather than deriving from it.
