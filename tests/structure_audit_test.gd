@@ -21,6 +21,46 @@ var failures: Array[String] = []
 func check(condition: bool, message: String) -> void:
 	if not condition: failures.append(message)
 
+# 0.2.60 made an enemy's authored damage literal and re-authored the melee plans in
+# combat_catalog.gd to the new scale. It missed the actions built by hand in run_state.gd,
+# which kept pre-conversion numbers for twenty-six versions: a Boar charge authored 5 landed
+# 1 on a defence-4 Warrior, and the Hound pounce, both Warden attacks, the Werewolf charge
+# and the Bandit riposte all landed zero. Nothing in the suite noticed, because nothing
+# compared the two authoring sites.
+#
+# The invariant is scale agreement, not a table of blessed constants: every hostile attack
+# that deals damage at all must sit in the same band as the catalog's authored plans, so a
+# future global rescale cannot leave one authoring site behind.
+func test_hostile_attack_damage_shares_one_scale() -> void:
+	var plan_damages: Array[int] = []
+	for kind in CombatCatalogScript.ARCHETYPES:
+		for option in CombatCatalogScript.melee_attack_plan(String(kind)):
+			var authored := int(Dictionary(option).get("damage", 0))
+			if authored > 0: plan_damages.append(authored)
+	if plan_damages.is_empty():
+		failures.append("no authored melee plan damage found to calibrate the scale against")
+		return
+	plan_damages.sort()
+	var floor_damage := plan_damages[0]
+
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "combat_survey", 991155, "encounter", "energy")
+	for kind in CombatCatalogScript.ARCHETYPES:
+		var enemy: Dictionary = state._make_enemy(String(kind), state.player_pos + Vector2.RIGHT * 150.0, 999, 5)
+		enemy["awareness"] = "alerted"
+		enemy["revealed_to_player"] = true
+		state.enemies.assign([enemy])
+		state._invalidate_active_enemy_cache()
+		state._build_enemy_spatial_index()
+		for _attempt in range(40):
+			state._choose_enemy_action(enemy)
+			var action: Dictionary = enemy.get("action", {})
+			var authored := int(action.get("damage", 0))
+			if authored <= 0: continue
+			check(authored >= floor_damage,
+				"%s %s is authored at %d, below the catalog's weakest plan (%d) -- a missed rescale" % [
+					kind, String(action.get("kind", "?")), authored, floor_damage])
+
 func test_enemy_catalog_is_complete() -> void:
 	for error in CombatCatalogScript.validate_catalog(): failures.append(String(error))
 	var registered_ai: Array[String] = []
@@ -191,6 +231,7 @@ func test_release_version_metadata_has_one_value() -> void:
 
 func _init() -> void:
 	test_enemy_catalog_is_complete()
+	test_hostile_attack_damage_shares_one_scale()
 	test_every_survey_recipe_kind_is_registered()
 	test_every_character_shares_the_revised_opening_gates()
 	test_catalog_vision_is_the_perception_authority()

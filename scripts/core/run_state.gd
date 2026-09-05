@@ -442,7 +442,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.85"
+const GAME_VERSION := "0.2.86"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 10
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -7051,7 +7051,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# single strike everywhere except point-blank, where standing inside a Boar's
 		# reach and committing anyway is a risk rather than an injustice.
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.70, 1.50):
-			enemy["action"] = _charge_action(1.95, 0.70, 1.50, 360.0, 5, direction)
+			enemy["action"] = _charge_action(1.95, 0.70, 1.50, 360.0, 25, direction)
 			enemy["action"]["label"] = "pounce"
 			# A charging body is wider than the circle it collides on: the shoulders carry
 			# past the centre line. Without this the Boar missed a sidestep begun at the
@@ -7177,7 +7177,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# floor meant it walked up and never charged again -- two gores in 36 seconds
 		# in the 0.2.28 survey. Changing the silhouette must not disarm the attack.
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= float(enemy["radius"]) + PLAYER_RADIUS + OX_CHARGE_MIN_GAP and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 7, direction)
+			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 35, direction)
 			enemy["action"]["label"] = "gore"
 			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90
 			enemy["action"]["charge_cap"] = OX_CHARGE_CAP
@@ -7216,7 +7216,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# cadence instead, all of which are visible before you commit. Commit
 			# the Dodge on first sight or wear it -- but it costs 2 rather than 5, and
 			# the narrow body leaves a sidestep genuinely available at range.
-			enemy["action"] = _charge_action(1.58, 0.70, 1.08, 500.0, 2, direction)
+			enemy["action"] = _charge_action(1.58, 0.70, 1.08, 500.0, 14, direction)
 			enemy["action"]["label"] = "pounce"
 			enemy["action"]["tracking_end"] = 0.70 * 0.85
 			# A charge's effective walk-safe fraction is dominated by launch distance
@@ -7374,7 +7374,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and _charge_can_contact(enemy, distance, 420.0, 0.34, 0.76):
 			if rng.randf() < 0.55: enemy["action"] = _werewolf_pounce_combo(direction)
 			else:
-				enemy["action"] = _charge_action(1.42, 0.34, 0.78, 430.0, 4, direction)
+				enemy["action"] = _charge_action(1.42, 0.34, 0.78, 430.0, 20, direction)
 				enemy["action"]["label"] = "pounce"
 			enemy["pounce_cooldown"] = 1.72
 		elif distance <= 148.0:
@@ -7391,10 +7391,10 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 				enemy["action"]["startup"] = 1.02
 				enemy["action"]["active_end"] = 1.22
 				enemy["action"]["reach"] = 215.0
-				enemy["action"]["damage"] = 4
-			else: enemy["action"] = _melee_action(2.15, 0.76, 1.30, 205.0, 4, direction, "heavy_cleave")
+				enemy["action"]["damage"] = 20
+			else: enemy["action"] = _melee_action(2.15, 0.76, 1.30, 205.0, 20, direction, "heavy_cleave")
 		elif distance <= 520.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _charge_action(1.80, 0.62, 1.05, 300.0, 4, direction)
+			enemy["action"] = _charge_action(1.80, 0.62, 1.05, 300.0, 20, direction)
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.72)
 	else:
 		if distance <= 690.0 and distance >= 230.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
@@ -7873,7 +7873,7 @@ func _try_bandit_counter(enemy: Dictionary) -> void:
 	var lateral := to_enemy.normalized().rotated(PI * 0.5 * (1.0 if int(enemy["id"]) % 2 == 0 else -1.0))
 	var side := (lateral - to_enemy.normalized() * 0.5).normalized()
 	_interrupt_enemy_action(enemy, "enemy", "dodge_strike")
-	enemy["action"] = _melee_action(1.24, 0.46, 0.58, 96.0, 3, -to_enemy.normalized(), "quick_cut", "dodge_strike")
+	enemy["action"] = _melee_action(1.24, 0.46, 0.58, 96.0, 17, -to_enemy.normalized(), "quick_cut", "dodge_strike")
 	enemy["action"]["dodge_end"] = 0.26
 	enemy["action"]["speed"] = 330.0
 	enemy["action"]["dodge_direction"] = side
@@ -8027,6 +8027,15 @@ func _chanter_is_screened(caster: Dictionary, allies: Array[Dictionary]) -> bool
 		if _segment_distance_to_point(player_pos, Vector2(caster["pos"]), Vector2(ally["pos"])) <= float(ally.get("radius", ENEMY_RADIUS)) + 34.0: return true
 	return false
 
+# Damage here is on the same literal scale as the melee plans in combat_catalog.gd, and
+# it has not always been. Until 0.2.59 an enemy's authored damage was converted to health
+# through DAMAGE_HEALTH_COST ({1:9, 2:14, 3:17, 4:20, 5:25, 6:30, 7:35, 8:40}); 0.2.60 made
+# the authored number literal and re-authored the catalog plans, but not the call sites in
+# this file. The charges and the two hand-built melee actions kept their pre-conversion
+# numbers, so a Boar charge read 5 and landed 1 on a defence-4 Warrior, while a Hound
+# pounce, both Warden attacks, the Werewolf charge and the Bandit riposte all landed zero.
+# Converted through that table in 0.2.86. If a global damage rescale ever happens again,
+# these are the values that will be missed -- they are not in the catalog.
 func _charge_action(duration: float, startup: float, active_end: float, speed: float, damage: int, direction: Vector2) -> Dictionary:
 	var result := _action("charge", duration, direction)
 	result["startup"] = startup

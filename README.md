@@ -1,7 +1,47 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.85` (Android version code `285`).
+Current prototype version: `0.2.86` (Android version code `286`).
 
+## v0.2.86 — eight enemy attacks that were never rescaled
+
+The `0.2.85` survey reported that a Boar charge landed 1 damage. It was not a `0.2.85` regression; it had been true for twenty-six versions, and seven other attacks were worse.
+
+### What happened
+
+Until `0.2.59` an enemy's authored damage was converted to health through a table introduced in `0.2.32`:
+
+`DAMAGE_HEALTH_COST := {1: 9, 2: 14, 3: 17, 4: 20, 5: 25, 6: 30, 7: 35, 8: 40}`
+
+`0.2.60` — *"what an attack does is the number on the attack"* — deleted the table so that an authored number is simply the damage dealt, and re-authored the melee plans in `combat_catalog.gd` accordingly. Those plans read 6, 10, 12, 14, 18 and 24 today, which is the new scale.
+
+**The actions built by hand in `run_state.gd` were not converted.** Every charge, the Warden's two attacks and the Bandit's riposte kept their pre-conversion numbers. Against the survey's defence-4 Warrior, flat subtraction then did the rest:
+
+| enemy | attack | was | now | landed on a Warrior |
+|---|---|---|---|---|
+| Boar | charge | 5 | **25** | 1 → 21 |
+| Ox | gore | 7 | **35** | 3 → 31 |
+| Hound | pounce | 2 | **14** | **0** → 10 |
+| Werewolf | charge | 4 | **20** | **0** → 16 |
+| Warden | charge | 4 | **20** | **0** → 16 |
+| Warden | heavy cleave | 4 | **20** | **0** → 16 |
+| Warden | slam | 4 | **20** | **0** → 16 |
+| Bandit | riposte | 3 | **17** | **0** → 13 |
+
+Five of the eight dealt **literally nothing** to an armoured character. The `0.2.85` survey's Room 4 recorded eight Hound pounces with three contacts and almost no damage to show for them; that is the reason.
+
+There is an irony worth recording. `0.2.32` introduced that table to fix exactly this symptom, and its release note names the cases: *"knife quick_cut, bandit quick_cut and bandit dodge_strike landed for 1 health while everything else landed for 6+."* The bandit's riposte has now spent two separate eras landing for nothing.
+
+### The guard
+
+The conversion is the small part. Nothing in nineteen test files noticed that two authoring sites for the same quantity had drifted apart by a factor of five, because nothing compared them.
+
+`structure_audit_test` now asserts **scale agreement** rather than a table of blessed constants: every hostile attack that deals damage at all must sit at or above the weakest authored melee plan. It is deliberately not a list of expected numbers — the failure mode is a global rescale leaving one authoring site behind, and a test that pins constants would have to be updated by the same rescale that breaks the invariant.
+
+It earned itself immediately: it found the Warden's `slam`, an eighth case missed by the hand pass that preceded it.
+
+### What this changes
+
+This is a large difficulty increase and it is not tuning — it is eight attacks finally doing what they were authored to do. Charging enemies were the ones affected, so frontline pressure and the two unsurveyed bosses change most. The next survey should judge whether the authored values are now *right*, which is a separate question from whether they are now *applied*.
 ## v0.2.85 — Rally and Battle Flow
 
 Warrior and Vanguard have been rebuilt around one shared idea: finishing a physical commitment under pressure. Every committed physical attack now derives its natural poise solely from `floor(Resolve / 2)`; weapons and characters no longer carry separate hidden base-poise values. **Bear Down** or **Brace** determines whether Warrior rank I pushes enemy posture or protects the current commitment, **Iron Constitution** or **Deep Reserves** chooses permanent stability or a larger Energy budget, **Power Through** reduces direct-hit health damage by 25% only when the attack actually holds, and **Unbreakable** makes a Rally-backed physical commitment immune to interruption without preventing health, posture, condition, or Energy costs.
