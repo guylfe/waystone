@@ -2,18 +2,23 @@ extends SceneTree
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const GameBoardScript = preload("res://scripts/presentation/game_board.gd")
+const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 
 func _init() -> void:
 	test_initial_sheet_and_gates()
 	test_permanent_track_choices()
 	test_rally_lifecycle_and_poise()
-	test_advance_momentum_chain()
+	test_resolve_is_the_natural_poise_authority()
+	test_battle_flow_rules()
+	test_advance_requires_and_staggers_a_target()
+	test_power_through_and_unbreakable()
+	test_authored_enemy_posture_reaches_hits()
 	test_evasion_mastery_reward()
 	test_fixed_damage_speed_and_resolve()
 	test_bandit_awareness_and_secret_passage()
 	test_character_sheet_copy_fits_compact_boxes()
 	test_current_save_boundary()
-	test_v25_temperament_migration()
+	test_old_warrior_run_is_retired_by_overhaul()
 	test_v21_major_framework_boundary()
 	test_action_layout_separates_context()
 	print("Warrior character, progression, action, save, and sheet tests passed.")
@@ -22,6 +27,14 @@ func _init() -> void:
 func fresh_state() -> RunState:
 	var state: RunState = RunStateScript.new()
 	state.start_run("warrior", "expedition", 630063, "encounter", "recovery")
+	state.enemies.clear()
+	state.walls.clear()
+	state.carried_xp = 999
+	return state
+
+func fresh_energy_state() -> RunState:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 630063, "encounter", "energy")
 	state.enemies.clear()
 	state.walls.clear()
 	state.carried_xp = 999
@@ -70,30 +83,158 @@ func test_permanent_track_choices() -> void:
 	assert(not state.can_swap_weapon_art())
 
 func test_rally_lifecycle_and_poise() -> void:
-	var state := fresh_state()
+	var state := fresh_energy_state()
+	state.player_energy = 80.0
 	assert(state.request_rally(false))
-	advance_until(state, func() -> bool: return state.rally_remaining > 0.0)
+	advance_until(state, func() -> bool: return state.rally_active)
 	assert(state.rally_cooldown == 0.0)
 	advance_until(state, func() -> bool: return state.is_player_ready())
-	assert(state.rally_remaining > 0.0)
+	assert(state.rally_active)
 	assert(not state.rally_is_available())
 	assert(not state.request_rally(false))
-	assert(state.rally_cooldown == 0.0)
+	var before_wait := state.player_energy
+	assert(state.request_wait(0.50, false))
+	advance_until(state, func() -> bool: return state.is_player_ready())
+	assert(absf((before_wait - state.player_energy) - 4.0) < 0.15)
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
 	assert(float(state.player_action.get("guard_capacity", 0.0)) == 5.0)
+	var target := state._make_enemy("knife", state.player_pos + Vector2.RIGHT * 80.0, 30)
+	target["awareness"] = "alerted"
+	var resolved := state._resolve_player_physical_values(target, 10, 2.0, state.player_action)
+	assert(int(resolved["damage"]) == 12)
+	assert(is_equal_approx(float(resolved["posture"]), 2.4))
 	advance_until(state, func() -> bool: return state.is_player_ready())
-	while state.rally_remaining > 0.0:
-		assert(state.request_wait(0.50, false))
-		advance_until(state, func() -> bool: return state.is_player_ready())
-	assert(state.rally_cooldown > 0.0)
+	assert(state.request_end_rally())
+	assert(not state.rally_active)
+	assert(state.survey_rally_cancels_total == 1)
+	var enduring := fresh_energy_state()
+	enduring.track_ranks["warrior"] = 2
+	assert(is_equal_approx(enduring._rally_drain_rate(), 6.0))
 
-func test_advance_momentum_chain() -> void:
+func test_resolve_is_the_natural_poise_authority() -> void:
 	var state := fresh_state()
-	state.track_ranks["vanguard"] = 2
-	assert(state.request_advance(Vector2.RIGHT, true, false))
-	advance_until(state, func() -> bool: return String(state.player_action["kind"]) == "combo")
-	assert(bool(state.player_action.get("continue_held", false)))
-	assert(String(state.player_action.get("ability_id", "")) == "sword_combo")
+	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	assert(is_equal_approx(float(state.player_action["guard_capacity"]), 3.0))
+	state.player_action = state._idle_action()
+	state.player_attributes["resolve"] = 5
+	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	assert(is_equal_approx(float(state.player_action["guard_capacity"]), 2.0))
+	state.player_action = state._idle_action()
+	state.track_choices["warrior_method"] = "brace"
+	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0, false))
+	assert(is_equal_approx(float(state.player_action["guard_capacity"]), 4.0))
+	var hp := state.player_hp
+	state._resolve_incoming_hit(90, 10, "authored cut", Vector2.ZERO, Vector2.INF, 3.0)
+	assert(String(state.player_action["kind"]) == "attack")
+	assert(state.player_hp == hp - 6)
+	assert(is_equal_approx(float(state.player_action["guard_remaining"]), 1.0))
+	state._resolve_incoming_hit(90, 10, "authored cut", Vector2.ZERO, Vector2.INF, 2.0)
+	assert(String(state.player_action["kind"]) == "hit_reaction")
+
+func test_battle_flow_rules() -> void:
+	var state := fresh_state()
+	state.track_ranks["vanguard"] = 1
+	state._register_battle_flow_contact()
+	assert(state.battle_flow_pips == 1)
+	var action := {"kind":"attack"}
+	state._stamp_battle_flow(action)
+	assert(is_equal_approx(float(action["battle_flow_damage"]), 1.0 / 6.0))
+	assert(is_equal_approx(float(action["battle_flow_posture"]), 1.0 / 12.0))
+	state._register_battle_flow_contact()
+	state._register_battle_flow_contact()
+	state._register_battle_flow_contact()
+	assert(state.battle_flow_pips == 3)
+	state._break_battle_flow()
+	assert(state.battle_flow_pips == 0)
+	state.track_ranks["vanguard"] = 3
+	state.battle_flow_pips = 3
+	state._break_battle_flow()
+	assert(state.battle_flow_pips == 2)
+	var unshaken := fresh_state()
+	unshaken.track_ranks["vanguard"] = 2
+	unshaken.track_choices["flow_discipline"] = "unshaken"
+	unshaken.battle_flow_pips = 2
+	unshaken.battle_flow_remaining = unshaken.BATTLE_FLOW_DECAY_SECONDS
+	unshaken._resolve_incoming_hit(89, 10, "ordinary hit", Vector2.ZERO, Vector2.INF, 1.0)
+	assert(String(unshaken.player_action["kind"]) == "hit_reaction")
+	assert(unshaken.battle_flow_pips == 2)
+	state.track_ranks["vanguard"] = 4
+	state.battle_flow_pips = 4
+	action = {"kind":"combo"}
+	state._stamp_battle_flow(action)
+	assert(is_equal_approx(float(action["battle_flow_damage"]), 0.8))
+	assert(is_equal_approx(float(action["battle_flow_posture"]), 0.4))
+	state.track_choices["flow_discipline"] = "sword_dance"
+	state.player_action = state._idle_action()
+	assert(state.request_dodge(Vector2.RIGHT, false))
+	assert(state.battle_flow_pips == 4)
+	state.battle_flow_remaining = state.SIM_DT * 0.5
+	state.advance_streamed_action_tick()
+	assert(state.battle_flow_pips == 3)
+
+func test_advance_requires_and_staggers_a_target() -> void:
+	var state := fresh_state()
+	assert(not state.request_advance(Vector2.RIGHT, false, false))
+	state.track_ranks["vanguard"] = 1
+	var enemy := state._make_enemy("blade", state.player_pos + Vector2.RIGHT * 105.0, 80)
+	enemy["awareness"] = "alerted"
+	enemy["posture"] = 99.0
+	enemy["posture_max"] = 99.0
+	state.enemies.append(enemy)
+	state._invalidate_active_enemy_cache()
+	assert(state.request_advance(Vector2.RIGHT.rotated(0.12), false, false))
+	assert(int(state.player_action["damage_min"]) == 15)
+	assert(is_equal_approx(float(state.player_action["posture_damage"]), 6.0))
+	assert(is_equal_approx(float(state.player_action["push"]), 40.0))
+	assert(Vector2(state.player_action["direction"]).dot(Vector2.RIGHT) > 0.999)
+	state._resolve_advance_impact()
+	assert(String(state.enemies[0]["action"]["kind"]) == "hit_reaction")
+	assert(state.battle_flow_pips == 0)
+	state.battle_flow_pips = 2
+	state.battle_flow_remaining = 0.5
+	state._register_battle_flow_contact(true)
+	assert(state.battle_flow_pips == 2)
+	assert(is_equal_approx(state.battle_flow_remaining, state.BATTLE_FLOW_DECAY_SECONDS))
+
+func test_power_through_and_unbreakable() -> void:
+	var state := fresh_state()
+	state.track_ranks["warrior"] = 4
+	state.player_action = state._action("attack", 1.0, Vector2.RIGHT)
+	state._apply_action_poise(state.player_action)
+	var hp := state.player_hp
+	state._resolve_incoming_hit(91, 14, "direct cut", Vector2.ZERO, Vector2.INF, 1.0)
+	assert(state.player_hp == hp - 8)
+	assert(String(state.player_action["kind"]) == "attack")
+	assert(state.survey_power_through_triggers_total == 1)
+	var hazard := fresh_state()
+	hazard.track_ranks["warrior"] = 4
+	hazard.player_action = hazard._action("attack", 1.0, Vector2.RIGHT)
+	hazard._apply_action_poise(hazard.player_action)
+	hp = hazard.player_hp
+	hazard._resolve_incoming_hit(92, 14, "burning ground", Vector2.ZERO, Vector2.INF, 1.0, "", false)
+	assert(hazard.player_hp == hp - 10)
+	var master := fresh_state()
+	master.track_ranks["warrior"] = 5
+	master.rally_active = true
+	master.player_action = master._action("attack", 1.0, Vector2.RIGHT)
+	master._apply_action_poise(master.player_action)
+	master._resolve_incoming_hit(93, 14, "crushing blow", Vector2.ZERO, Vector2.INF, 100.0)
+	assert(String(master.player_action["kind"]) == "attack")
+	assert(is_equal_approx(master.player_posture, 0.0))
+	assert(master.survey_unbreakable_suppressions_total == 1)
+
+func test_authored_enemy_posture_reaches_hits() -> void:
+	var state := fresh_state()
+	var option := Dictionary(CombatCatalogScript.melee_attack_plan("blade")[0])
+	var action := state._intent_melee_action(option, Vector2.LEFT)
+	assert(is_equal_approx(float(action["posture"]), 3.0))
+	var before := state.player_posture
+	state._resolve_incoming_hit(94, int(action["damage"]), "blade", Vector2.ZERO, Vector2.INF, float(action["posture"]))
+	assert(is_equal_approx(state.player_posture, before - 3.0))
+	var archer := state._make_enemy("archer", state.player_pos + Vector2.UP * 200.0, 25)
+	archer["facing"] = Vector2.DOWN
+	state._spawn_projectile(archer)
+	assert(is_equal_approx(float(state.projectiles[-1]["posture"]), 2.0))
 
 func test_evasion_mastery_reward() -> void:
 	var state := fresh_state()
@@ -197,7 +338,7 @@ func test_current_save_boundary() -> void:
 	assert(is_equal_approx(loaded.player_max_energy, state.player_max_energy))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
-func test_v25_temperament_migration() -> void:
+func test_old_warrior_run_is_retired_by_overhaul() -> void:
 	var path := "user://warrior-v25-energy-migration.save"
 	var state := fresh_state()
 	state.track_choices["steadfast_1"] = "vigilance"
@@ -217,10 +358,8 @@ func test_v25_temperament_migration() -> void:
 	writer.close()
 	var loaded: RunState = RunStateScript.new(false)
 	assert(loaded.load_run(path))
-	assert(int(loaded.player_attributes["speed"]) == 5)
-	assert(int(loaded.player_attributes["awareness"]) == 6)
-	assert(is_equal_approx(loaded.player_max_energy, 110.0))
-	assert(is_equal_approx(loaded.player_energy, 110.0))
+	assert(not loaded.run_active)
+	assert(loaded.message.contains("Warrior and Vanguard overhaul requires a new run"))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func test_v21_major_framework_boundary() -> void:

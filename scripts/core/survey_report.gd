@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 29
+const FORMAT_VERSION := 30
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -140,6 +140,16 @@ static func build_text(session: Dictionary) -> String:
 				int(room.get("stealth_entries", 0)), int(room.get("stealth_cancels", 0)),
 				int(room.get("stealth_quick_reentries", 0)), float(room.get("stealth_hidden_time", 0.0)),
 				float(room.get("stealth_energy_paid", 0.0))])
+		if int(room.get("rally_activations", 0)) > 0:
+			lines.append("Rally: %d activations (%d cancelled); %.2fs active; %.1f energy paid (%.1f saved); +%d damage and +%.1f posture dealt" % [
+				int(room.get("rally_activations", 0)), int(room.get("rally_cancels", 0)),
+				float(room.get("rally_uptime", 0.0)), float(room.get("rally_energy_paid", 0.0)),
+				float(room.get("rally_energy_saved", 0.0)), int(room.get("rally_bonus_damage", 0)),
+				float(room.get("rally_bonus_posture", 0.0))])
+		if int(room.get("poise_holds", 0)) > 0 or int(room.get("power_through_triggers", 0)) > 0 or int(room.get("unbreakable_suppressions", 0)) > 0:
+			lines.append("Warrior holds: poise %d; Power Through %d (%d damage prevented); Unbreakable %d" % [
+				int(room.get("poise_holds", 0)), int(room.get("power_through_triggers", 0)),
+				int(room.get("power_through_damage_prevented", 0)), int(room.get("unbreakable_suppressions", 0))])
 		lines.append("Vulnerable Dodge recovery: %.2fs; damage received: %d" % [float(room.get("dodge_vulnerable_time", 0.0)), int(room.get("dodge_recovery_damage", 0))])
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))

@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
 **Updated:** 2026-09-05
-**Current source baseline:** `0.2.84` (`versionCode 284`, save schema `36`, presentation version `10`, Combat Survey format `29`)
+**Current source baseline:** `0.2.85` (`versionCode 285`, save schema `37`, presentation version `10`, Combat Survey format `30`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -520,7 +520,33 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.84`, 2026-09-05)
+### Latest verified package boundary (`0.2.85`, 2026-09-05)
+
+- All 19 default test files pass, with the single documented expected failure in
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The real-renderer milestone audit now includes an eleventh frame for Warrior/Vanguard. Rally's
+  active aura and cancel control, four Battle Flow pips and their decay bar, and remaining action
+  poise were visually inspected together at the Fold's portrait aspect ratio.
+- `0.2.85` replaces the old Warrior/Vanguard tracks with sustained Rally, Resolve-derived action
+  poise, Battle Flow, target-bound Advance, Method of Force and Constitution choices, Power
+  Through, and Unbreakable. It also fixes authored enemy melee posture being dropped during action
+  construction and carries authored posture through hostile projectile and hazard impacts.
+- Save schema `37` retires active pre-overhaul Warrior runs with an explicit new-run notice because
+  their ranks and permanent grants have no faithful mapping; other classes migrate normally.
+  Combat Survey format `30` adds Rally, poise, Power Through, and Unbreakable measurements.
+- Windows SHA-256:
+  `7C297FA5DBF081541B5D1866A32B3C4E6A717477B12239C4D44124669BA8DF8C`;
+  file and product version both read back as `0.2.85`.
+- Android SHA-256:
+  `C86CA6CEA759BEB96DA8C9D26AB4826011BCE931FBE61C7DB45472FB3B458283`;
+  package metadata reads `com.waystone.prototype`, version name `0.2.85`, version code `285`,
+  and APK signature v2/v3 verification passes.
+- Fold installation remains pending. No authorized device was visible, mDNS discovered no wireless
+  service, and the previously paired endpoint `10.0.0.3:36133` rejected the connection. The APK is
+  verified independently of deployment and needs a fresh wireless-debugging endpoint if the Fold's
+  port has changed.
+
+### Previous verified package boundary (`0.2.84`, 2026-09-05)
 
 - All 19 default test files pass, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.

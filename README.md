@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.84` (Android version code `284`).
+Current prototype version: `0.2.85` (Android version code `285`).
+
+## v0.2.85 — Rally and Battle Flow
+
+Warrior and Vanguard have been rebuilt around one shared idea: finishing a physical commitment under pressure. Every committed physical attack now derives its natural poise solely from `floor(Resolve / 2)`; weapons and characters no longer carry separate hidden base-poise values. **Bear Down** or **Brace** determines whether Warrior rank I pushes enemy posture or protects the current commitment, **Iron Constitution** or **Deep Reserves** chooses permanent stability or a larger Energy budget, **Power Through** reduces direct-hit health damage by 25% only when the attack actually holds, and **Unbreakable** makes a Rally-backed physical commitment immune to interruption without preventing health, posture, condition, or Energy costs.
+
+Rally now follows the sustained-toggle model: its original activation remains interruptible, then it drains `8` Energy per world-second, stops Energy regeneration, and can be ended while ready. It gives committed physical attacks `+15%` damage, `+20%` posture damage, and `+2` poise. **Enduring Rally** reduces the drain to `6` per second. Recovery rules derive Rally's cooldown from the amount sustained instead of using a flat timer.
+
+Vanguard's baseline **Advance** now requires an enemy in its authored arc and range, snaps to that target, always lands for `15` damage, `6` posture, and `40` push, and guarantees a hit reaction or posture stagger. It no longer auto-starts a sword combo. Rank I introduces visible **Battle Flow**: weapon contacts build three pips, each worth one-sixth damage and one-twelfth posture, with a `3.5s` decay; Advance preserves the current pips and refreshes their timer. **Unshaken** or **Sword Dance** protects the chain from ordinary hits or evasions, **Steady Momentum** turns a break into one lost pip, and **Full Momentum** adds a fourth pip while raising each pip to `+20%` damage and `+10%` posture.
+
+The board now shows Battle Flow pips, their decay, remaining action poise, Rally's active cancel state, and a cooldown based on actual Rally spend. Combat Survey format `30` measures Rally use, its Energy and output contribution, poise holds, Power Through, and Unbreakable. Enemy melee actions now retain their catalogued posture values through construction, and hostile projectiles and damaging hazards carry authored posture into the shared hit resolver.
+
+Save schema `37` migrates the new Rally and Battle Flow fields. Because the former Warrior/Vanguard ranks and permanent stat grants have no faithful one-to-one mapping, an active pre-`0.2.85` Warrior save returns to character selection with an explicit notice; other classes migrate normally. Presentation version remains `10`.
 
 ## v0.2.84 — powerful first, efficient by study
 
@@ -95,7 +107,7 @@ The rule is quiescence rather than first-failure, deliberately. Killing on the f
 
 Milestones A through D — combo continuation, post-hit hyperarmor, attack capture and the Wait rework, Sweeping Cut — have been in the game since `0.2.33` and had only ever been verified headless. The caster equivalent of this pass found five defects in one sitting, so the odds that four milestones of player-facing mechanics were clean without anyone ever looking were never good.
 
-`tests/milestone_visual_audit.gd` joins the caster audit as a standing instrument: ten frames covering a combo mid-swing and at its link point, a hit landing under post-hit protection, a Boar's charge wind-up, Wait, both Sword Arts, and — for the first time in the project — **the Ox**, the last roster kind that had never been seen in play.
+`tests/milestone_visual_audit.gd` joins the caster audit as a standing instrument: eleven frames covering a combo mid-swing and at its link point, a hit landing under post-hit protection, a Boar's charge wind-up, Wait, both Sword Arts, the Ox, and the 0.2.85 Warrior/Vanguard Rally, Battle Flow, and action-poise presentation.
 
 It is render-dependent and not in the headless list, and like the caster audit it is deliberately not pass/fail. No assertion can tell you a telegraph is unreadable.
 

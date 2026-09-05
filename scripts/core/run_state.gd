@@ -441,13 +441,17 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
-const SAVE_VERSION := 36
-const GAME_VERSION := "0.2.84"
+const SAVE_VERSION := 37
+const GAME_VERSION := "0.2.85"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 10
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
+const RALLY_DRAIN_PER_SECOND := 8.0
+const BATTLE_FLOW_DECAY_SECONDS := 3.5
+const ADVANCE_TARGET_RANGE := 280.0
+const ADVANCE_TARGET_HALF_ANGLE := PI * 0.30
 const COOLDOWN_DODGE := "dodge"
 const COOLDOWN_BLOCK := "block"
 const COOLDOWN_ENDURE := "endure"
@@ -645,10 +649,21 @@ var _condition_tick_accumulator := 0.0
 var _player_burn_debt := 0.0
 var survey_burn_damage_total := 0
 var survey_frost_amplified_hits := 0
-var rally_remaining := 0.0
-var rally_end_after_action := false
-var rally_break_extension_used := false
-var building_force_chain := 0
+var rally_active := false
+var rally_energy_paid := 0.0
+var battle_flow_pips := 0
+var battle_flow_remaining := 0.0
+var survey_rally_activations_total := 0
+var survey_rally_cancels_total := 0
+var survey_rally_uptime_total := 0.0
+var survey_rally_energy_paid_total := 0.0
+var survey_rally_energy_saved_total := 0.0
+var survey_rally_bonus_damage_total := 0
+var survey_rally_bonus_posture_total := 0.0
+var survey_poise_holds_total := 0
+var survey_power_through_triggers_total := 0
+var survey_power_through_damage_prevented_total := 0
+var survey_unbreakable_suppressions_total := 0
 var counterstep_remaining := 0.0
 var strength_remaining := 0.0
 var potions := HEALING_CAPACITY
@@ -961,10 +976,10 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	_condition_tick_accumulator = 0.0
 	_next_combo_instance_id = 1
 	_next_presentation_id = 1
-	rally_remaining = 0.0
-	rally_end_after_action = false
-	rally_break_extension_used = false
-	building_force_chain = 0
+	rally_active = false
+	rally_energy_paid = 0.0
+	battle_flow_pips = 0
+	battle_flow_remaining = 0.0
 	counterstep_remaining = 0.0
 	strength_remaining = 0.0
 	potions = healing_capacity()
@@ -1058,6 +1073,17 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_stealth_quick_reentries_total = 0
 	survey_stealth_hidden_time_total = 0.0
 	survey_stealth_energy_paid_total = 0.0
+	survey_rally_activations_total = 0
+	survey_rally_cancels_total = 0
+	survey_rally_uptime_total = 0.0
+	survey_rally_energy_paid_total = 0.0
+	survey_rally_energy_saved_total = 0.0
+	survey_rally_bonus_damage_total = 0
+	survey_rally_bonus_posture_total = 0.0
+	survey_poise_holds_total = 0
+	survey_power_through_triggers_total = 0
+	survey_power_through_damage_prevented_total = 0
+	survey_unbreakable_suppressions_total = 0
 	terminal_combo_recovery_time_total = 0.0
 	direct_attack_uses_total = 0
 	dodge_style_uses_total.clear()
@@ -2842,7 +2868,7 @@ func _regenerate_energy(dt: float) -> void:
 	# Suspended while hidden. A 10/s drain against 28/s of regeneration is not a price,
 	# it is a slower profit -- hiding would still refill you. Concealment has to compete
 	# with dodging for the same pool or the drain means nothing.
-	if stealth_remaining > 0.0: return
+	if stealth_remaining > 0.0 or rally_active: return
 	var active_dt := dt
 	if player_energy_regen_delay > 0.0:
 		var delayed := minf(player_energy_regen_delay, active_dt)
@@ -2905,6 +2931,8 @@ func _record_exhaustion_threat(start: bool) -> void:
 
 func _begin_exhaustion() -> void:
 	if not uses_energy_rules(): return
+	_break_battle_flow()
+	if rally_active: _end_rally("exhausted")
 	player_overexertion_pending = false
 	player_exhaustion_remaining = EXHAUSTION_DURATION
 	overexertion_count += 1
@@ -3113,9 +3141,8 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 	player_action["damage_max"] = int(definition["damage_max"])
 	player_action["posture_damage"] = float(definition["posture"])
 	player_action["combo_step"] = int(definition["step"])
-	player_action["building_force_registered"] = false
-	player_action["building_force_bonus"] = _building_force_bonus()
 	_apply_counterstep_to_action(player_action)
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("basic_attack_%d" % (int(definition["step"]) + 1))
 	_emit_sound(player_pos, 350.0)
@@ -3149,8 +3176,6 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 func request_combo(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
 	if direction.length_squared() < 0.01 or not _can_start_basic_attack(): return false
 	_break_player_combo()
-	_reset_building_force()
-	_reset_building_force_if_unavailable()
 	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held)
 	elif player_weapon_frame == "staff": _begin_staff_combo(direction, held)
 	elif player_weapon_frame == "bow": return false
@@ -3179,6 +3204,7 @@ func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
 		bow_followup_consumed = true
 	else:
 		bow_followup_consumed = false
+	_apply_action_poise(player_action)
 	_annotate_player_action("bow_draw")
 	_emit_sound(player_pos, 80.0)
 	_set_message("You begin drawing the Bow. Release to fire.")
@@ -3249,6 +3275,7 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	var aim := Vector2(player_action.get("aim_direction", player_facing)).normalized()
 	player_action = _action("bow_release", recovery, aim)
 	player_action.merge({"startup": 0.06, "shot_spawned": false, "projectile_damage": damage, "projectile_posture": posture, "projectile_speed": velocity, "projectile_range": maximum_range, "draw_ratio": ratio, "full_draw": ratio >= 0.995}, true)
+	_apply_action_poise(player_action)
 	_annotate_player_action("bow_shot")
 	_set_message("You release a %s shot." % ("Full" if ratio >= 0.995 else "Drawn" if ratio >= 0.42 else "Loose"))
 	return true
@@ -3281,7 +3308,7 @@ func _begin_staff_combo(direction: Vector2, held: bool) -> void:
 	player_action["committed_phase"] = 0
 	player_action["terminal_recovery_locked"] = false
 	player_action["terminal_recovery_recorded"] = false
-	player_action["building_force_registered"] = false
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("staff_combo")
 	_emit_sound(player_pos, 300.0)
@@ -3325,7 +3352,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	player_action["terminal_recovery_recorded"] = false
 	player_action["knife_sequence"] = true
 	player_action["knife_contact_chain"] = 0
-	player_action["building_force_registered"] = false
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_sequence")
 	_emit_sound(player_pos, 260.0)
@@ -3346,6 +3373,7 @@ func request_execution(direction: Vector2, simulate_immediately: bool = true) ->
 	player_action["execution_target_id"] = _execution_target_id(player_facing)
 	var execution_target := _enemy_by_id(int(player_action["execution_target_id"]))
 	player_action["execution_target_was_unaware"] = not execution_target.is_empty() and String(execution_target.get("awareness", "idle")) != "alerted"
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_execution")
 	# It was the only player attack in the file that made no sound at all -- every other
@@ -3382,6 +3410,7 @@ func request_twin_fang(direction: Vector2, simulate_immediately: bool = true) ->
 	player_facing = direction.normalized()
 	player_action = _action("twin_fang", _shorten_recovery(0.68, 0.29), player_facing)
 	player_action.merge({"startup": 0.20, "active_end": 0.29, "move_start": 0.05, "move_end": 0.24, "speed": 320.0, "reach": 104.0, "damage_per_blade": 8, "posture_per_blade": 2.0, "contact_done": false}, true)
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_twin_fang")
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
@@ -3398,6 +3427,7 @@ func request_bow_art(direction: Vector2, piercing: bool, simulate_immediately: b
 	var art_duration := _shorten_recovery(1.50 if piercing else 0.90, art_startup, 0.68)
 	player_action = _action("bow_art", art_duration, player_facing)
 	player_action.merge({"startup": 0.54 if piercing else 0.28, "shot_spawned": false, "piercing": piercing}, true)
+	_apply_action_poise(player_action)
 	_annotate_player_action("bow_piercing_shot" if piercing else "bow_fan_shot")
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
 	_emit_sound(player_pos, 260.0)
@@ -3484,6 +3514,7 @@ const TAKE_AIM_ENERGY := 33.0
 func request_vault(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	var vault_energy := VAULT_ENERGY * (0.6 if has_track_rank("acrobat", 4) else 1.0)
 	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(vault_energy): return false
+	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow()
 	player_facing = direction.normalized()
 	var recovery := 0.10 if has_track_rank("acrobat", 1) else 0.20
 	player_action = _action("vault", 0.34 + recovery, player_facing)
@@ -3601,9 +3632,8 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	player_action["committed_phase"] = 0
 	player_action["terminal_recovery_locked"] = false
 	player_action["terminal_recovery_recorded"] = false
-	player_action["building_force_registered"] = false
-	player_action["building_force_bonus"] = _building_force_bonus()
 	_apply_counterstep_to_combo(player_action)
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("sword_combo")
 	_emit_sound(player_pos, 470.0)
@@ -3659,7 +3689,6 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(SWEEPING_CUT_ENERGY):
 		return false
 	_break_player_combo()
-	_reset_building_force()
 	player_facing = direction.normalized()
 	var extended := has_track_rank("swordsmanship", 4)
 	var flowing := has_track_rank("swordsmanship", 5)
@@ -3679,6 +3708,7 @@ func request_sweeping_cut(direction: Vector2, simulate_immediately: bool = true)
 	player_action["posture_damage"] = finisher_posture + (0.5 if edge else 0.0)
 	player_action["damage_min"] = finisher_damage + (1 if edge else 0)
 	player_action["damage_max"] = int(player_action["damage_min"])
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action(player_equipped_weapon_art if player_equipped_weapon_art != "" else "prototype_sweeping_cut")
 	# No attack cooldown under Energy: commitment, recovery and cost govern it, as
@@ -3710,7 +3740,6 @@ func request_staff_art(direction: Vector2, simulate_immediately: bool = true) ->
 	if skill_cooldown > 0.0001 and not uses_energy_rules(): return false
 	if not _spend_energy(cost): return false
 	_break_player_combo()
-	_reset_building_force()
 	player_facing = direction.normalized()
 	var mastered := has_track_rank("staff", 4)
 	var reach_bonus := 18.0 if has_track_rank("staff", 2) else 0.0
@@ -3735,6 +3764,7 @@ func request_staff_art(direction: Vector2, simulate_immediately: bool = true) ->
 		_set_message("You take their legs out from under them.")
 	player_action["damage_min"] = int(player_action["damage"])
 	player_action["damage_max"] = int(player_action["damage"])
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action(player_equipped_weapon_art)
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
@@ -3747,7 +3777,6 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	if not is_player_ready() or trial_complete or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(21.0):
 		return false
 	_break_player_combo()
-	_reset_building_force()
 	player_facing = direction.normalized()
 	var extended := has_track_rank("swordsmanship", 4)
 	var flowing := has_track_rank("swordsmanship", 5)
@@ -3756,6 +3785,7 @@ func request_drawing_cut(direction: Vector2, simulate_immediately: bool = true) 
 	player_action["posture_damage"] = 3.0 + (0.5 if edge else 0.0)
 	player_action["damage_min"] = 20 + (1 if edge else 0)
 	player_action["damage_max"] = int(player_action["damage_min"])
+	_stamp_battle_flow(player_action)
 	_apply_action_poise(player_action)
 	_annotate_player_action("prototype_drawing_cut")
 	_begin_skill_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend() * _skill_cooldown_multiplier)
@@ -3936,7 +3966,7 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	if not desperate and not _spend_energy(DODGE_ENERGY_COST):
 		return false
 	_break_player_combo()
-	_reset_building_force()
+	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow()
 	player_facing = direction.normalized()
 	var style := track_choice("evasion_style")
 	var duration := 0.60 if has_track_rank("evasion", 1) else 0.66
@@ -4034,7 +4064,6 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 func request_rally(simulate_immediately: bool = true) -> bool:
 	if not rally_is_available(): return false
 	_break_player_combo()
-	_reset_building_force()
 	player_action = _action("rally", 0.56, player_facing)
 	player_action["effect_start"] = 0.18
 	player_action["rally_started"] = false
@@ -4045,23 +4074,47 @@ func request_rally(simulate_immediately: bool = true) -> bool:
 	return true
 
 func rally_is_available() -> bool:
-	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and rally_remaining <= 0.0001
+	return is_player_ready() and not trial_complete and rally_cooldown <= 0.0001 and not rally_active and not energy_actions_locked()
+
+func request_end_rally() -> bool:
+	if not rally_active or not is_player_ready(): return false
+	_end_rally("cancelled")
+	_set_message("You let Rally fall.")
+	changed.emit()
+	return true
+
+func _advance_target(direction: Vector2) -> Dictionary:
+	if direction.length_squared() < 0.01: return {}
+	var facing := direction.normalized()
+	var result: Dictionary = {}
+	var nearest := INF
+	for enemy in _nearby_enemies(player_pos, ADVANCE_TARGET_RANGE + 80.0):
+		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0 or not enemy_visible_to_player(enemy): continue
+		var offset := Vector2(enemy["pos"]) - player_pos
+		if offset.length() > ADVANCE_TARGET_RANGE + float(enemy.get("radius", ENEMY_RADIUS)): continue
+		if absf(facing.angle_to(offset.normalized())) > ADVANCE_TARGET_HALF_ANGLE: continue
+		if offset.length() < nearest:
+			nearest = offset.length()
+			result = enemy
+	return result
 
 func request_advance(direction: Vector2, continue_held: bool = false, simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(18.0): return false
+	if not is_player_ready() or trial_complete or (advance_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01: return false
+	var target := _advance_target(direction)
+	if target.is_empty():
+		_set_message("Advance needs an enemy in its path.")
+		return false
+	if not _spend_energy(18.0): return false
 	_break_player_combo()
-	_reset_building_force()
-	player_facing = direction.normalized()
-	var posture := 6.0 if has_track_rank("vanguard", 1) else 4.0
-	var push := 40.0 if has_track_rank("vanguard", 1) else 32.0
-	var damage := 15 if has_track_rank("vanguard", 1) else 10
+	player_facing = player_pos.direction_to(Vector2(target["pos"]))
 	player_action = _action("advance", _shorten_recovery(0.92, 0.52), player_facing)
 	player_action.merge({
 		"move_start": 0.08, "move_end": 0.42, "impact_start": 0.36, "impact_end": 0.52,
-		"speed": 424.0, "damage_min": damage, "damage_max": damage, "posture_damage": posture, "push": push,
-		"continue_held": continue_held, "impact_ids": [], "pass_mass": -1.0, "max_targets": 1,
+		"speed": 424.0, "damage_min": 15, "damage_max": 15, "posture_damage": 6.0, "push": 40.0,
+		"target_id": int(target["id"]), "impact_ids": [], "pass_mass": -1.0, "max_targets": 1,
 	}, true)
-	_apply_action_poise(player_action, 4.0)
+	_stamp_battle_flow(player_action)
+	_apply_action_poise(player_action)
 	_begin_advance_cooldown(0.0 if uses_energy_rules() else _cooldown_for_last_spend())
 	_annotate_player_action("vanguard_advance")
 	_emit_sound(player_pos, 420.0)
@@ -4078,7 +4131,6 @@ func request_block(direction: Vector2, simulate_immediately: bool = false) -> bo
 	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01:
 		return false
 	_break_player_combo()
-	_reset_building_force()
 	player_facing = direction.normalized()
 	player_action = _action("block", 999.0, player_facing)
 	player_action["startup"] = 0.16
@@ -4094,7 +4146,6 @@ func request_endure(direction: Vector2, simulate_immediately: bool = true) -> bo
 	if not is_player_ready() or trial_complete or endure_cooldown > 0.0001:
 		return false
 	_break_player_combo()
-	_reset_building_force()
 	if direction.length_squared() > 0.01:
 		player_facing = direction.normalized()
 	player_action = _action("endure", 1.05, player_facing)
@@ -4117,7 +4168,6 @@ func request_potion(simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or (potions <= 0 and not has_infinite_potions()) or player_hp >= player_max_hp:
 		return false
 	_break_player_combo()
-	_reset_building_force()
 	if not has_infinite_potions(): potions -= 1
 	potions_used_total += 1
 	player_action = _action("potion", maxf(0.48, 0.72 - 0.06 * float(track_property_ranks.get("fieldcraft_recovery", 0))), Vector2.ZERO)
@@ -4157,7 +4207,6 @@ func request_consumable(slot: int, direction: Vector2 = Vector2.ZERO, simulate_i
 	var definition := consumable_definition(item_id)
 	if bool(definition.get("targeted", false)) and direction.length_squared() < 0.01: return false
 	_break_player_combo()
-	_reset_building_force()
 	stored["count"] = int(stored["count"]) - 1
 	if int(stored["count"]) <= 0:
 		stored["id"] = ""
@@ -4179,7 +4228,6 @@ func request_consumable(slot: int, direction: Vector2 = Vector2.ZERO, simulate_i
 func request_repack(first_slot: int, second_slot: int, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or first_slot < 0 or second_slot < 0 or first_slot >= consumable_slots.size() or second_slot >= consumable_slots.size() or first_slot == second_slot: return false
 	var first := consumable_slot(first_slot)
-	_reset_building_force()
 	consumable_slots[first_slot] = consumable_slot(second_slot)
 	consumable_slots[second_slot] = first
 	player_action = _action("repack", 0.32, Vector2.ZERO)
@@ -4272,7 +4320,6 @@ func _drop_belt_item(stored: Dictionary) -> void:
 	})
 
 func _begin_repack_action(text: String, simulate_immediately: bool) -> bool:
-	_reset_building_force()
 	player_action = _action("repack", 0.32, Vector2.ZERO)
 	_set_message(text)
 	if simulate_immediately: _simulate_until_ready()
@@ -4296,7 +4343,6 @@ func request_wait(duration: float = -1.0, simulate_immediately: bool = true) -> 
 		return false
 	if interaction_label() != "WAIT": return request_context_action()
 	_break_player_combo()
-	_reset_building_force()
 	if duration < 0.0: duration = wait_unit_duration()
 	# The clamp floor sits below any real loadout's step so the derivation, not the
 	# clamp, decides the value.
@@ -4816,10 +4862,10 @@ func _restore_at_waystone() -> void:
 	player_gale_velocity = Vector2.ZERO
 	spell_cooldown = 0.0
 	_player_burn_debt = 0.0
-	rally_remaining = 0.0
-	rally_end_after_action = false
-	rally_break_extension_used = false
-	building_force_chain = 0
+	rally_active = false
+	rally_energy_paid = 0.0
+	battle_flow_pips = 0
+	battle_flow_remaining = 0.0
 	player_posture = player_posture_max
 	player_posture_recovery_delay = 0.0
 	counterstep_remaining = 0.0
@@ -4972,12 +5018,12 @@ func _apply_character_stage(stage_id: String, choice_id: String) -> void:
 			elif choice_id == "vigilance":
 				_increase_max_energy(10.0)
 				player_attributes["awareness"] = int(player_attributes.get("awareness", 5)) + 1
-		"warriors_physique":
-			_increase_max_health(20)
-			player_attributes["speed"] = int(player_attributes.get("speed", 5)) + 1
-		"vanguard_bearing":
-			player_attributes["resolve"] = int(player_attributes.get("resolve", 7)) + 2
-			_refresh_player_posture_capacity(false)
+		"warrior_reserve":
+			if choice_id == "iron_constitution":
+				player_attributes["resolve"] = int(player_attributes.get("resolve", 7)) + 4
+				_refresh_player_posture_capacity(false)
+			elif choice_id == "deep_reserves":
+				_increase_max_energy(20.0)
 		"knife_art":
 			player_weapon_art_library = [choice_id]
 			player_equipped_weapon_art = choice_id
@@ -5084,17 +5130,15 @@ func _annotate_player_action(ability_id: String) -> void:
 	if mode_id == ModeRulesScript.COMBAT_SURVEY and ability_id != "bow_draw":
 		survey_action_counts[ability_id] = int(survey_action_counts.get(ability_id, 0)) + 1
 
-func _rally_action_capacity() -> float:
-	if rally_remaining <= 0.0: return 0.0
-	if has_track_rank("warrior", 5): return 7.0
-	return 5.0 if has_track_rank("warrior", 3) else 4.0
+func _is_committed_physical_action(action: Dictionary) -> bool:
+	return String(action.get("kind", "idle")) in ["attack", "combo", "sweep", "art_combo", "twin_fang", "advance", "bow_draw", "bow_release", "bow_art"]
 
-func _apply_action_poise(action: Dictionary, native_capacity: float = 0.0) -> void:
-	var capacity := maxf(native_capacity, _rally_action_capacity())
-	if has_track_rank("vanguard", 3) and String(action.get("kind", "")) in ["attack", "combo", "sweep", "advance"]:
-		capacity = maxf(capacity, 3.0)
-	if capacity > 0.0:
-		capacity += floorf(float(player_attributes.get("resolve", 7)) / 4.0)
+func _apply_action_poise(action: Dictionary, _retired_native_capacity: float = 0.0) -> void:
+	var capacity := 0.0
+	if _is_committed_physical_action(action):
+		capacity = floorf(float(player_attributes.get("resolve", 0)) / 2.0)
+		if track_choice("warrior_method") == "brace": capacity += 2.0
+		if rally_active: capacity += 2.0
 	action["guard_capacity"] = capacity
 	action["guard_remaining"] = capacity
 
@@ -5115,40 +5159,66 @@ func _apply_counterstep_to_combo(action: Dictionary) -> void:
 		action["phases"] = phases
 	counterstep_remaining = 0.0
 
-func _rally_damage_bonus() -> int:
-	return 1 if rally_remaining > 0.0 and has_track_rank("warrior", 3) else 0
+func _rally_drain_rate() -> float:
+	return 6.0 if has_track_rank("warrior", 2) else RALLY_DRAIN_PER_SECOND
 
-func _rally_posture_bonus() -> float:
-	if rally_remaining <= 0.0: return 0.0
-	return 2.0 if has_track_rank("warrior", 3) else 1.0
+func _battle_flow_max_pips() -> int:
+	return 4 if has_track_rank("vanguard", 4) else 3
 
-func _building_force_bonus() -> int:
-	if not has_track_rank("warrior", 2): return 0
-	if rally_remaining > 0.0 and has_track_rank("warrior", 5): return 2
-	return clampi(building_force_chain, 0, 2)
+func _battle_flow_damage_per_pip() -> float:
+	return 0.20 if has_track_rank("vanguard", 4) else 1.0 / 6.0
 
-func _reset_building_force() -> void:
-	building_force_chain = 0
+func _battle_flow_posture_per_pip() -> float:
+	return 0.10 if has_track_rank("vanguard", 4) else 1.0 / 12.0
 
-func _reset_building_force_if_unavailable() -> void:
-	if not has_track_rank("warrior", 2): building_force_chain = 0
+func _stamp_battle_flow(action: Dictionary) -> void:
+	if not has_track_rank("vanguard", 1) or not _is_committed_physical_action(action): return
+	action["battle_flow_damage"] = float(battle_flow_pips) * _battle_flow_damage_per_pip()
+	action["battle_flow_posture"] = float(battle_flow_pips) * _battle_flow_posture_per_pip()
+	action["battle_flow_registered"] = false
 
-func _register_building_force_hit() -> void:
-	if not has_track_rank("warrior", 2): return
-	if rally_remaining > 0.0 and has_track_rank("warrior", 5):
-		building_force_chain = 2
-	elif building_force_chain >= 2:
-		building_force_chain = 0
+func _register_battle_flow_contact(from_advance: bool = false) -> void:
+	if not has_track_rank("vanguard", 1): return
+	if not from_advance: battle_flow_pips = mini(_battle_flow_max_pips(), battle_flow_pips + 1)
+	battle_flow_remaining = BATTLE_FLOW_DECAY_SECONDS
+
+func _break_battle_flow(force_all: bool = false) -> void:
+	if battle_flow_pips <= 0:
+		battle_flow_remaining = 0.0
+		return
+	if not force_all and has_track_rank("vanguard", 3):
+		battle_flow_pips -= 1
+		battle_flow_remaining = BATTLE_FLOW_DECAY_SECONDS if battle_flow_pips > 0 else 0.0
 	else:
-		building_force_chain += 1
+		battle_flow_pips = 0
+		battle_flow_remaining = 0.0
 
-func _finish_rally(begin_cooldown: bool = true) -> void:
-	rally_remaining = 0.0
-	rally_end_after_action = false
-	rally_break_extension_used = false
-	building_force_chain = 0
-	if begin_cooldown:
-		rally_cooldown = 12.0
+func _begin_rally() -> void:
+	if rally_active: return
+	rally_active = true
+	rally_energy_paid = 0.0
+	survey_rally_activations_total += 1
+	_add_effect("rally", player_pos)
+
+func _drain_rally(dt: float) -> void:
+	if not rally_active: return
+	var rate := _rally_drain_rate()
+	var charge := rate * dt
+	rally_energy_paid += charge
+	survey_rally_uptime_total += dt
+	survey_rally_energy_paid_total += charge
+	if rate < RALLY_DRAIN_PER_SECOND: survey_rally_energy_saved_total += (RALLY_DRAIN_PER_SECOND - rate) * dt
+	if not uses_energy_rules(): return
+	_spend_energy(charge, false)
+	if player_energy <= 0.0001 or player_overexertion_pending or player_exhaustion_remaining > 0.0:
+		_end_rally("exhausted")
+
+func _end_rally(reason: String) -> void:
+	if not rally_active: return
+	rally_active = false
+	if reason == "cancelled": survey_rally_cancels_total += 1
+	begin_cooldown(COOLDOWN_RALLY, 0.0 if uses_energy_rules() else _cooldown_for(rally_energy_paid))
+	rally_energy_paid = 0.0
 
 func _simulate_until_ready() -> void:
 	var profile_start := Time.get_ticks_usec()
@@ -5206,15 +5276,14 @@ func _tick(dt: float) -> void:
 		if stealth_remaining > 0.0:
 			stealth_remaining = maxf(0.0, stealth_remaining - dt)
 			if stealth_remaining <= 0.0: _end_stealth("expired")
+	if rally_active: _drain_rally(dt)
+	if battle_flow_remaining > 0.0:
+		battle_flow_remaining = maxf(0.0, battle_flow_remaining - dt)
+		if battle_flow_remaining <= 0.0: _break_battle_flow()
 	if player_posture_recovery_delay > 0.0:
 		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
 	if player_posture < player_posture_max and player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
 		player_posture = minf(player_posture_max, player_posture + player_dt * float(player_properties.get("posture_recovery", 1.8)))
-	if rally_remaining > 0.0:
-		rally_remaining = maxf(0.0, rally_remaining - dt)
-		if rally_remaining <= 0.0:
-			_finish_rally(true)
-			_set_message("Rally fades. Its recovery begins.")
 	strength_remaining = maxf(0.0, strength_remaining - dt)
 	var player_action_kind := String(player_action.get("kind", "idle"))
 	if uses_energy_rules() and player_action_kind in ENERGY_REGEN_ACTIONS:
@@ -5413,11 +5482,7 @@ func _update_player(dt: float) -> void:
 		"rally":
 			if elapsed >= float(player_action.get("effect_start", 0.18)) and not bool(player_action.get("rally_started", false)):
 				player_action["rally_started"] = true
-				rally_remaining = 5.5 if has_track_rank("warrior", 3) else 4.5
-				rally_end_after_action = false
-				rally_break_extension_used = false
-				_apply_action_poise(player_action)
-				_add_effect("rally", player_pos)
+				_begin_rally()
 				_set_message("Rally takes hold.")
 		"advance":
 			if elapsed >= float(player_action["move_start"]) and elapsed <= float(player_action["move_end"]):
@@ -5475,14 +5540,12 @@ func _update_player(dt: float) -> void:
 		if kind in ["attack", "sweep", "combo", "art_combo"] and Array(player_action["hit_ids"]).is_empty():
 			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
 			_set_message("Your cut finds only air.")
-			if kind in ["attack", "combo"]: _reset_building_force()
 		elif kind == "block" and not bool(player_action["effect_done"]):
 			_set_message("You lower the guard without contact.")
 		elif kind == "endure" and not bool(player_action["effect_done"]):
 			_set_message("The Endure window passes without a hit.")
 		var completed_kind := kind
 		var completed_direction := Vector2(player_action.get("direction", player_facing))
-		var continue_advance := completed_kind == "advance" and has_track_rank("vanguard", 2) and bool(player_action.get("continue_held", false))
 		var completed_twin_sequence := completed_kind == "combo" and bool(player_action.get("knife_sequence", false)) and player_weapon_frame == "twin_knives" and int(player_action.get("committed_phase", 0)) >= int(player_action.get("combo_length", 6)) - 1
 		if completed_twin_sequence:
 			weapon_sequence_cooldown = 0.0 if uses_energy_rules() else (0.55 if has_track_rank("knife", 5) else TWIN_KNIFE_SEQUENCE_RECOVERY)
@@ -5493,12 +5556,8 @@ func _update_player(dt: float) -> void:
 			_player_reaction_completed_this_tick = true
 			if player_posture <= 0.0001:
 				player_posture = player_posture_max
-		if rally_end_after_action: _finish_rally(true)
 		if player_overexertion_pending:
-			if continue_advance: energy_blocked_continuations += 1
 			_begin_exhaustion()
-		elif continue_advance:
-			_begin_sword_combo(completed_direction, true, true)
 
 func _move_player_advance(origin: Vector2, delta: Vector2, pass_mass: float) -> Vector2:
 	if pass_mass < 0.0: return _move_actor(origin, delta, PLAYER_RADIUS, 0)
@@ -5537,18 +5596,27 @@ func _resolve_advance_impact() -> void:
 		if hit_ids.size() >= max_targets: break
 		var enemy: Dictionary = contact["enemy"]
 		hit_ids.append(int(enemy["id"]))
-		var raw_damage := int(player_action.get("damage_min", 10)) + _rally_damage_bonus()
-		var resolved := _resolve_player_physical_values(enemy, raw_damage, float(player_action["posture_damage"]) + _rally_posture_bonus(), player_action)
+		var raw_damage := int(player_action.get("damage_min", 15))
+		var action_before := Dictionary(enemy.get("action", _idle_action())).duplicate(true)
+		var awareness_before := String(enemy.get("awareness", "idle"))
+		var resolved := _resolve_player_physical_values(enemy, raw_damage, float(player_action["posture_damage"]), player_action)
 		var damage := int(resolved["damage"])
 		_change_actor_hp(enemy, -damage)
 		damage_dealt += damage
 		_on_player_hit_landed(enemy)
 		var impact := Vector2(enemy["pos"]) - direction * float(enemy["radius"]) * 0.4
 		var posture_broken := _apply_actor_posture_damage(enemy, float(resolved["posture"]), impact, "player", String(player_action.get("ability_id", "advance")))
+		if not posture_broken:
+			var forced_source := player_action.duplicate(true)
+			forced_source["force_hit_reaction"] = true
+			_apply_enemy_hit_reaction(enemy, float(resolved["posture"]), awareness_before, action_before, impact, forced_source)
 		_set_enemy_position(enemy, _push_enemy(enemy, direction, 64.0 if posture_broken else float(player_action["push"])))
 		_register_enemy_hit_awareness(enemy, resolved, player_action)
 		_add_effect("hit", impact, damage, {"direction": direction})
 		_handle_player_contact_aftermath(enemy, resolved)
+		if not bool(player_action.get("battle_flow_registered", false)):
+			player_action["battle_flow_registered"] = true
+			_register_battle_flow_contact(true)
 	_set_message("Advance lands with a driving impact.")
 	player_action["impact_ids"] = hit_ids
 
@@ -5625,13 +5693,11 @@ func _update_player_combo(elapsed: float) -> void:
 		if int(player_action.get("phase_index", -1)) >= 0: _survey_finalize_strike_probe("phase_complete")
 		if int(player_action.get("phase_index", -1)) >= 0 and Array(player_action.get("hit_ids", [])).is_empty():
 			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
-			_reset_building_force()
 			if bool(player_action.get("knife_sequence", false)): player_action["knife_contact_chain"] = 0
 		player_action["phase_index"] = committed_phase
 		player_action["hit_done"] = false
 		player_action["hit_ids"] = []
-		player_action["building_force_registered"] = false
-		player_action["building_force_bonus"] = _building_force_bonus()
+		_stamp_battle_flow(player_action)
 	if elapsed >= float(phase["startup"]) and elapsed <= float(phase["active_end"]):
 		if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
 		_resolve_player_attack_tick(elapsed)
@@ -5939,14 +6005,13 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			var enemy_recovering := enemy_committed and float(enemy_action.get("elapsed", 0.0)) > float(enemy_action.get("active_end", INF))
 			var base_damage := int(player_action.get("damage_min", player_damage_min))
 			var opening_damage := int(track_property_ranks.get("openings_recovery", 0)) if enemy_recovering else 0
-			var force_bonus := int(player_action.get("building_force_bonus", 0)) if String(player_action.get("kind", "")) in ["attack", "combo"] else 0
 			if bool(player_action.get("knife_sequence", false)) and has_track_rank("knife", 4):
 				var knife_chain := int(player_action.get("knife_contact_chain", 0))
-				force_bonus += mini(3, knife_chain + 1)
+				bonus += mini(3, knife_chain + 1)
 				player_action["knife_contact_chain"] = knife_chain + 1
-			var raw_damage := base_damage + bonus + opening_damage + _rally_damage_bonus() + force_bonus
+			var raw_damage := base_damage + bonus + opening_damage
 			var opening_posture := float(track_property_ranks.get("openings_posture", 0)) * 0.4 if enemy_committed else 0.0
-			var posture_damage := float(player_action.get("posture_damage", 2.0)) + opening_posture + _rally_posture_bonus()
+			var posture_damage := float(player_action.get("posture_damage", 2.0)) + opening_posture
 			var resolved := _resolve_player_physical_values(enemy, raw_damage, posture_damage, player_action)
 			contact_result = resolved
 			var dealt := int(resolved["damage"])
@@ -5962,9 +6027,9 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 				dodge_cooldown = maxf(0.0, dodge_cooldown - 0.25)
 				skill_cooldown = maxf(0.0, skill_cooldown - 0.25)
 			_add_effect("hit", hit_point, dealt, {"direction": (Vector2(enemy["pos"]) - hit_point).normalized(), "interrupted": reaction_applied})
-			if String(player_action.get("kind", "")) in ["attack", "combo"] and not bool(player_action.get("building_force_registered", false)):
-				player_action["building_force_registered"] = true
-				_register_building_force_hit()
+			if has_track_rank("vanguard", 1) and not bool(player_action.get("battle_flow_registered", false)):
+				player_action["battle_flow_registered"] = true
+				_register_battle_flow_contact(false)
 			_set_message("The %s connects." % AttackGeometryScript.label(String(player_action.get("technique_id", "diagonal_cut"))).to_lower())
 			_survey_mark_strike_resolution(enemy, "interrupted" if reaction_applied else "hit")
 		if not contact_result.is_empty():
@@ -6004,6 +6069,14 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 		aimed_enemy_id = -1
 		aimed_remaining = 0.0
 		_begin_subclass_cooldown(0.0 if uses_energy_rules() else _cooldown_for(energy_cost(TAKE_AIM_ENERGY)))
+	var rally_bonus := 0.15 if rally_active and _is_committed_physical_action(source_action) else 0.0
+	var flow_damage_bonus := float(source_action.get("battle_flow_damage", 0.0))
+	var posture_multiplier := 1.0
+	if track_choice("warrior_method") == "bear_down" and _is_committed_physical_action(source_action): posture_multiplier += 0.30
+	if rally_active and _is_committed_physical_action(source_action): posture_multiplier += 0.20
+	posture_multiplier += float(source_action.get("battle_flow_posture", 0.0))
+	var unmodified_posture := posture_damage
+	posture_damage *= posture_multiplier
 	var source_ability := String(source_action.get("ability_id", ""))
 	if turnabout_remaining > 0.0 and source_ability in ["basic_attack", "sword_combo", "knife_sequence"]:
 		explicit_bonus += 8
@@ -6019,7 +6092,12 @@ func _resolve_player_physical_values(enemy: Dictionary, base_damage: int, postur
 	# "-1" over an enemy the player cleanly hit. Nothing in the current roster reaches
 	# that floor -- player damage lands at 8-10 against everything measured -- but the
 	# guard costs nothing and closes the case rather than leaving it open.
-	var final_damage := maxi(0, roundi((float(base_damage) + float(explicit_bonus)) * multiplier) - effective_defense)
+	var damage_input := float(base_damage) + float(explicit_bonus)
+	var final_damage := maxi(0, roundi(damage_input * (multiplier + rally_bonus + flow_damage_bonus)) - effective_defense)
+	if rally_bonus > 0.0:
+		var without_rally := maxi(0, roundi(damage_input * (multiplier + flow_damage_bonus)) - effective_defense)
+		survey_rally_bonus_damage_total += maxi(0, final_damage - without_rally)
+		survey_rally_bonus_posture_total += unmodified_posture * 0.20
 	return {"damage": final_damage, "posture": posture_damage, "unaware": unaware, "aimed": aimed_contact}
 
 func _register_enemy_hit_awareness(enemy: Dictionary, contact_result: Dictionary, source_action: Dictionary = {}) -> void:
@@ -6303,11 +6381,6 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 	}, true)
 	enemy["posture"] = 0.0
 	enemy["posture_recovery_delay"] = stagger_duration
-	if has_track_rank("vanguard", 4):
-		advance_cooldown = 0.0
-	if rally_remaining > 0.0 and has_track_rank("warrior", 4) and not rally_break_extension_used:
-		rally_break_extension_used = true
-		rally_remaining += 1.0
 	_add_effect("posture_break", contact_point, 0, {"direction": reaction_direction, "strength": 1.65})
 	_set_message("The %s loses its footing." % kind)
 	return true
@@ -6328,10 +6401,11 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	if String(Dictionary(enemy.get("action", {})).get("kind", "idle")) == "stagger": return false
 	var enemy_kind := String(enemy.get("kind", "blade"))
 	var action_kind := String(action_before.get("kind", "idle"))
+	var forced := bool(source_action.get("force_hit_reaction", false))
 	# Damage and posture still resolve during a chain, but a hit reaction is one
 	# authored opening. Later contacts cannot restart its timer and pin an enemy
 	# indefinitely; a posture break may still replace it with a distinct stagger.
-	if action_kind == "hit_reaction": return false
+	if action_kind == "hit_reaction" and not forced: return false
 	var elapsed := float(action_before.get("elapsed", 0.0))
 	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
 	var high_impact := impact >= 3.5
@@ -6339,17 +6413,17 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# impacts may still interrupt startup, and accumulated posture damage remains
 	# the universal route to a full break. Once the weapon moves, even a strong
 	# ordinary hit must trade with or evade the grounded commitment.
-	if (_enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
+	if not forced and (_enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
 		if active_started or not high_impact: return false
 	# A boar earns armour only after its pounce has accelerated. The crouch and
 	# early travel remain interruptible, and a posture-heavy technique can still
 	# arrest a full-speed charge.
 	# Nothing short of lethal stops a running Ox. The damage has already been applied
 	# by the caller, so reaching here means the blow did not kill it.
-	if action_kind == "charge" and bool(action_before.get("unstoppable", false)) and elapsed >= float(action_before.get("startup", 0.0)):
+	if not forced and action_kind == "charge" and bool(action_before.get("unstoppable", false)) and elapsed >= float(action_before.get("startup", 0.0)):
 		_add_effect("strain", Vector2(enemy["pos"]))
 		return false
-	if enemy_kind == "boar" and action_kind == "charge" and String(action_before.get("label", "")) == "pounce":
+	if not forced and enemy_kind == "boar" and action_kind == "charge" and String(action_before.get("label", "")) == "pounce":
 		var armour_start := float(action_before.get("momentum_armour_start", INF))
 		if elapsed >= armour_start and not high_impact:
 			_add_effect("strain", Vector2(enemy["pos"]))
@@ -6358,7 +6432,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# produce a trade. Startup and recovery are interruptible; the hound's pounce
 	# is the deliberate exception and can be knocked out of any phase.
 	var in_active_contact := action_before.has("startup") and action_before.has("active_end") and elapsed >= float(action_before["startup"]) and elapsed <= float(action_before["active_end"])
-	if in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind not in ["hound", "bandit"]:
+	if not forced and in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind not in ["hound", "bandit"]:
 		return false
 	var duration := float(CombatCatalogScript.enemy_fact(enemy_kind, "hit_reaction"))
 	if awareness_before != "alerted": duration += 0.16
@@ -7572,6 +7646,7 @@ func _intent_melee_action(option: Dictionary, direction: Vector2) -> Dictionary:
 	# built outside a plan keeps its current standing-still behaviour.
 	action["advance_distance"] = float(option.get("advance_distance", 0.0))
 	action["advance_end"] = float(option.get("advance_end", 0.0))
+	action["posture"] = float(option.get("posture", -1.0))
 	var player_kind := String(player_action.get("kind", "idle"))
 	action["capture_record"] = {
 		"technique": String(option["technique"]),
@@ -8055,7 +8130,7 @@ func _spawn_spell_projectile(caster: Dictionary, spell_id: String, direction: Ve
 		if player_cast:
 			fireball.merge({"posture": 1.6, "friendly": true, "travelled": 0.0, "max_range": 700.0, "hit_ids": [], "elevation_profile": "flat", "elevation": PROJECTILE_GROUND_ELEVATION})
 		else:
-			fireball.merge({"launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
+			fireball.merge({"posture": 2.0, "launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
 		_add_projectile(fireball)
 		return
 	if spell_id == "frost_lance":
@@ -8071,7 +8146,7 @@ func _spawn_spell_projectile(caster: Dictionary, spell_id: String, direction: Ve
 		if player_cast:
 			lance.merge({"posture": 1.4, "friendly": true, "travelled": 0.0, "max_range": 660.0, "hit_ids": [], "elevation_profile": "flat", "elevation": PROJECTILE_GROUND_ELEVATION})
 		else:
-			lance.merge({"launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
+			lance.merge({"posture": 1.6, "launch_direction": facing, "turn_rate": 0.0, "max_track_angle": 0.0})
 		_add_projectile(lance)
 		return
 	push_error("Spell '%s' does not define a projectile spawner." % spell_id)
@@ -8096,6 +8171,7 @@ func _spawn_javelin(enemy: Dictionary) -> void:
 		"vel": direction * JAVELIN_SPEED,
 		"radius": JAVELIN_RADIUS,
 		"damage": 16,
+		"posture": 4.0,
 		"kind": "javelin",
 		"launch_direction": direction,
 		"turn_rate": 0.0,
@@ -8163,6 +8239,7 @@ func _spawn_projectile(enemy: Dictionary) -> void:
 		# burn for moderate damage. Near or far is a real choice only if the two differ in
 		# what they cost you, not just in reach.
 		"damage": 14,
+		"posture": 2.0,
 		"kind": "arrow",
 		# Fireballs retain their launch vector for their entire flight. The fields
 		# remain on the projectile for older-save compatibility and future variants.
@@ -8459,7 +8536,7 @@ func _update_hazards(dt: float) -> void:
 					_resolve_player_hazard_hit(hazard, "cold front", func(enemy: Dictionary) -> bool:
 						return Vector2(enemy["pos"]).distance_to(front_centre) <= front_reach + float(enemy.get("radius", ENEMY_RADIUS)))
 				elif player_pos.distance_to(Vector2(hazard["pos"])) <= float(hazard["radius"]) + PLAYER_RADIUS:
-					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos, Vector2.INF, -1.0, "cold_front:%d" % int(hazard.get("hazard_id", hazard.get("source_id", 0))))
+					_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "cold front", Vector2(hazard["pos"]) - player_pos, Vector2.INF, float(hazard.get("posture", -1.0)), "cold_front:%d" % int(hazard.get("hazard_id", hazard.get("source_id", 0))), false)
 			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 			continue
 		if kind == "fire_breath":
@@ -8480,7 +8557,7 @@ func _update_hazards(dt: float) -> void:
 			if not bool(hazard["triggered"]) and inside_cone and _has_line_of_sight(origin, player_pos):
 				hazard["triggered"] = true
 				_add_effect("fire", player_pos)
-				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "fire breath", origin - player_pos)
+				_resolve_incoming_hit(int(hazard["source_id"]), int(hazard["damage"]), "fire breath", origin - player_pos, Vector2.INF, float(hazard.get("posture", -1.0)), "", false)
 		elif kind == "sundered_ground":
 			# It never resolves a hit. The cost of this ground is the time it takes to
 			# cross, which _terrain_speed_scale collects, and in frozen time that is the
@@ -8537,7 +8614,7 @@ func _update_projectiles(dt: float) -> void:
 			if player_order < nearest_order:
 				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "arrow"
 				if player_same_side: survey_misdirected_ally_hits += 1
-				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized())
+				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized(), Vector2.INF, float(projectile.get("posture", -1.0)))
 				continue
 			if not nearest_enemy.is_empty():
 				if projectile_kind == "firebomb":
@@ -8646,7 +8723,7 @@ func _aggregate_damage_effect(key: String, impact: Vector2, amount: int) -> bool
 		return true
 	return false
 
-func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0, aggregate_key: String = "") -> void:
+func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0, aggregate_key: String = "", direct_hit: bool = true) -> void:
 	# Zero authored damage is not an attack -- sundered ground and the disengage shove both
 	# arrive here with nothing to deal.
 	if damage <= 0: return
@@ -8718,6 +8795,17 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		survey_frost_amplified_hits += 1
 		_add_effect("condition", impact, 0, {"condition": "frost_shatter"})
 	var was_protected := player_hit_protection_remaining > 0.0
+	var posture_will_break := player_posture - posture_damage <= 0.0001
+	var guard_before := float(player_action.get("guard_remaining", 0.0))
+	var poise_holds := guard_before > 0.0 and posture_damage <= guard_before and not posture_will_break
+	var unbreakable_holds := rally_active and has_track_rank("warrior", 5) and _is_committed_physical_action(player_action)
+	var reaction_protected := interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick or was_protected
+	var action_holds := reaction_protected or poise_holds or unbreakable_holds
+	if direct_hit and has_track_rank("warrior", 4) and _is_committed_physical_action(player_action) and action_holds:
+		var unreduced := damage_received
+		damage_received = roundi(float(damage_received) * 0.75)
+		survey_power_through_triggers_total += 1
+		survey_power_through_damage_prevented_total += maxi(0, unreduced - damage_received)
 	survey_last_damage_source = source_name
 	_change_actor_hp(0, -damage_received)
 	damage_received_total += damage_received
@@ -8749,6 +8837,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	# not safety, and a lethal hit still kills through it.
 	if interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick or was_protected:
 		interruptions_prevented_total += 1
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
 		if was_protected and interrupted_kind not in ["hit_reaction", "stagger"]:
 			_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
 			_set_message("The %s lands, but cannot take your answer away." % source_name)
@@ -8756,19 +8845,26 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 			_set_message("The %s strikes while you reel, but cannot prolong the stagger." % source_name)
 		return
 	var posture_broken := player_posture <= 0.0001
-	var guard_remaining := float(player_action.get("guard_remaining", 0.0))
-	if guard_remaining > 0.0 and not posture_broken:
-		var received_posture := posture_damage
-		if received_posture <= guard_remaining:
-			player_action["guard_remaining"] = maxf(0.0, guard_remaining - received_posture)
-			_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
-			_set_message("The %s hurts you, but your committed action holds." % source_name)
-			return
+	if unbreakable_holds:
+		player_action["guard_remaining"] = maxf(0.0, guard_before - posture_damage)
+		survey_unbreakable_suppressions_total += 1
+		interruptions_prevented_total += 1
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
+		_set_message("The %s lands, but Rally makes your attack unbreakable." % source_name)
+		return
+	if poise_holds:
+		player_action["guard_remaining"] = maxf(0.0, guard_before - posture_damage)
+		survey_poise_holds_total += 1
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
+		_set_message("The %s hurts you, but your committed action holds." % source_name)
+		return
 	if interrupted_kind == "rally" and not bool(interrupted_action.get("rally_started", false)):
 		rally_cooldown = 3.0
 	if interrupted_kind == "combo": set_attack_hold(false)
 	if interrupted_kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("interrupted")
-	_reset_building_force()
+	if posture_broken or track_choice("flow_discipline") != "unshaken": _break_battle_flow()
 	_break_player_combo()
 	var reaction_duration := 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage))
 	# Reaching this line means no protection was active -- the guard above returns
@@ -9576,6 +9672,17 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
 		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
 		"survey_stealth_energy_paid_total": survey_stealth_energy_paid_total,
+		"survey_rally_activations_total": survey_rally_activations_total,
+		"survey_rally_cancels_total": survey_rally_cancels_total,
+		"survey_rally_uptime_total": survey_rally_uptime_total,
+		"survey_rally_energy_paid_total": survey_rally_energy_paid_total,
+		"survey_rally_energy_saved_total": survey_rally_energy_saved_total,
+		"survey_rally_bonus_damage_total": survey_rally_bonus_damage_total,
+		"survey_rally_bonus_posture_total": survey_rally_bonus_posture_total,
+		"survey_poise_holds_total": survey_poise_holds_total,
+		"survey_power_through_triggers_total": survey_power_through_triggers_total,
+		"survey_power_through_damage_prevented_total": survey_power_through_damage_prevented_total,
+		"survey_unbreakable_suppressions_total": survey_unbreakable_suppressions_total,
 		"stealth_energy_paid": stealth_energy_paid,
 		"skill_cooldown_max": skill_cooldown_max,
 		"advance_cooldown_max": advance_cooldown_max,
@@ -9593,10 +9700,10 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"aimed_remaining": aimed_remaining,
 		"player_condition_buildup": player_condition_buildup.duplicate(true),
 		"player_conditions": player_conditions.duplicate(true),
-		"rally_remaining": rally_remaining,
-		"rally_end_after_action": rally_end_after_action,
-		"rally_break_extension_used": rally_break_extension_used,
-		"building_force_chain": building_force_chain,
+		"rally_active": rally_active,
+		"rally_energy_paid": rally_energy_paid,
+		"battle_flow_pips": battle_flow_pips,
+		"battle_flow_remaining": battle_flow_remaining,
 		"counterstep_remaining": counterstep_remaining,
 		"strength_remaining": strength_remaining,
 		"potions": potions,
@@ -9812,6 +9919,17 @@ func _build_save_payload() -> Dictionary:
 		"survey_stealth_quick_reentries_total": survey_stealth_quick_reentries_total,
 		"survey_stealth_hidden_time_total": survey_stealth_hidden_time_total,
 		"survey_stealth_energy_paid_total": survey_stealth_energy_paid_total,
+		"survey_rally_activations_total": survey_rally_activations_total,
+		"survey_rally_cancels_total": survey_rally_cancels_total,
+		"survey_rally_uptime_total": survey_rally_uptime_total,
+		"survey_rally_energy_paid_total": survey_rally_energy_paid_total,
+		"survey_rally_energy_saved_total": survey_rally_energy_saved_total,
+		"survey_rally_bonus_damage_total": survey_rally_bonus_damage_total,
+		"survey_rally_bonus_posture_total": survey_rally_bonus_posture_total,
+		"survey_poise_holds_total": survey_poise_holds_total,
+		"survey_power_through_triggers_total": survey_power_through_triggers_total,
+		"survey_power_through_damage_prevented_total": survey_power_through_damage_prevented_total,
+		"survey_unbreakable_suppressions_total": survey_unbreakable_suppressions_total,
 		"stealth_energy_paid": stealth_energy_paid,
 		"skill_cooldown_max": skill_cooldown_max,
 		"advance_cooldown_max": advance_cooldown_max,
@@ -9831,10 +9949,10 @@ func _build_save_payload() -> Dictionary:
 		"aimed_remaining": aimed_remaining,
 		"player_condition_buildup": player_condition_buildup.duplicate(true),
 		"player_conditions": player_conditions.duplicate(true),
-		"rally_remaining": rally_remaining,
-		"rally_end_after_action": rally_end_after_action,
-		"rally_break_extension_used": rally_break_extension_used,
-		"building_force_chain": building_force_chain,
+		"rally_active": rally_active,
+		"rally_energy_paid": rally_energy_paid,
+		"battle_flow_pips": battle_flow_pips,
+		"battle_flow_remaining": battle_flow_remaining,
 		"counterstep_remaining": counterstep_remaining,
 		"strength_remaining": strength_remaining,
 		"potions": potions,
@@ -9962,6 +10080,14 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	var saved_loadout := String(payload.get("loadout_id", "warrior"))
 	loadout_id = saved_loadout if CombatCatalogScript.loadout_ids().has(saved_loadout) else "warrior"
 	map_presentation = String(payload.get("map_presentation", "full"))
+	if bool(payload.get("warrior_vanguard_overhaul_requires_new_run", false)):
+		_apply_loadout()
+		run_active = false
+		mode_id = ModeRulesScript.EXPEDITION
+		mode_config = ModeRulesScript.definition(mode_id)
+		progression_mode = String(mode_config["upgrade_policy"])
+		message = "The 0.2.85 Warrior and Vanguard overhaul requires a new run. Choose a character."
+		return true
 	if save_version == 21:
 		_apply_loadout()
 		run_active = false
@@ -10084,10 +10210,10 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	aimed_remaining = float(payload.get("aimed_remaining", 0.0))
 	player_condition_buildup = Dictionary(payload.get("player_condition_buildup", {})).duplicate(true)
 	player_conditions = Dictionary(payload.get("player_conditions", {})).duplicate(true)
-	rally_remaining = float(payload.get("rally_remaining", 0.0))
-	rally_end_after_action = bool(payload.get("rally_end_after_action", false))
-	rally_break_extension_used = bool(payload.get("rally_break_extension_used", false))
-	building_force_chain = int(payload.get("building_force_chain", 0))
+	rally_active = bool(payload.get("rally_active", false))
+	rally_energy_paid = float(payload.get("rally_energy_paid", 0.0))
+	battle_flow_pips = int(payload.get("battle_flow_pips", 0))
+	battle_flow_remaining = float(payload.get("battle_flow_remaining", 0.0))
 	counterstep_remaining = float(payload.get("counterstep_remaining", 0.0))
 	strength_remaining = float(payload.get("strength_remaining", 0.0))
 	var saved_potions := int(payload.get("potions", HEALING_CAPACITY))
@@ -10217,6 +10343,17 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	survey_stealth_quick_reentries_total = int(payload.get("survey_stealth_quick_reentries_total", 0))
 	survey_stealth_hidden_time_total = float(payload.get("survey_stealth_hidden_time_total", 0.0))
 	survey_stealth_energy_paid_total = float(payload.get("survey_stealth_energy_paid_total", 0.0))
+	survey_rally_activations_total = int(payload.get("survey_rally_activations_total", 0))
+	survey_rally_cancels_total = int(payload.get("survey_rally_cancels_total", 0))
+	survey_rally_uptime_total = float(payload.get("survey_rally_uptime_total", 0.0))
+	survey_rally_energy_paid_total = float(payload.get("survey_rally_energy_paid_total", 0.0))
+	survey_rally_energy_saved_total = float(payload.get("survey_rally_energy_saved_total", 0.0))
+	survey_rally_bonus_damage_total = int(payload.get("survey_rally_bonus_damage_total", 0))
+	survey_rally_bonus_posture_total = float(payload.get("survey_rally_bonus_posture_total", 0.0))
+	survey_poise_holds_total = int(payload.get("survey_poise_holds_total", 0))
+	survey_power_through_triggers_total = int(payload.get("survey_power_through_triggers_total", 0))
+	survey_power_through_damage_prevented_total = int(payload.get("survey_power_through_damage_prevented_total", 0))
+	survey_unbreakable_suppressions_total = int(payload.get("survey_unbreakable_suppressions_total", 0))
 	stealth_energy_paid = float(payload.get("stealth_energy_paid", 0.0))
 	skill_cooldown_max = float(payload.get("skill_cooldown_max", 6.5))
 	advance_cooldown_max = float(payload.get("advance_cooldown_max", 6.0))

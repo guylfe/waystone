@@ -73,6 +73,9 @@ func test_new_combo_costs() -> void:
 # instead of arithmetic, in either direction.
 func test_standalone_abilities_were_rebased_too() -> void:
 	var advance := fresh_state("warrior")
+	var advance_target := advance._make_enemy("blade", advance.player_pos + Vector2.RIGHT * 140.0, 35)
+	advance.enemies.append(advance_target)
+	advance._invalidate_active_enemy_cache()
 	assert(advance.request_advance(Vector2.RIGHT))
 	assert(is_equal_approx(advance.player_energy, 100.0 - advance.energy_cost(18.0)))
 
@@ -134,14 +137,16 @@ func test_dodge_cost_and_utility_regeneration() -> void:
 	advance_until_ready(energy)
 	assert(is_equal_approx(energy.player_energy, 100.0 - energy.energy_cost(energy.DODGE_ENERGY_COST)))
 	assert(is_equal_approx(energy.dodge_cooldown, 0.0))
-	energy.player_energy = 50.0
+	energy.player_energy = 100.0
 	assert(energy.request_rally(false))
 	advance_until_ready(energy)
-	# Rally spends nothing, and now regenerates while it runs.
-	assert(energy.player_energy >= 50.0)
+	# Rally is a sustained drain and suspends regeneration while it runs.
+	assert(energy.player_energy < 100.0)
+	var after_start := energy.player_energy
 	assert(energy.request_wait(1.1, false))
 	advance_until_ready(energy)
-	assert(energy.player_energy > 50.0)
+	assert(energy.player_energy < after_start - 3.9)
+	assert(energy.request_end_rally())
 	var recovery := fresh_state("warrior", "recovery")
 	assert(recovery.request_dodge(Vector2.RIGHT, false))
 	advance_until_ready(recovery)

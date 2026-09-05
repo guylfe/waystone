@@ -30,6 +30,7 @@ func _initialize() -> void:
 	await _c_capture_and_wait()
 	await _d_sweeping_cut()
 	await _the_unplayed_ox()
+	await _f_warrior_vanguard_status()
 	quit(0)
 
 func _fresh(loadout: String, rules: String = "energy"):
@@ -128,3 +129,16 @@ func _the_unplayed_ox() -> void:
 		if String(Dictionary(ox.get("action", {})).get("kind", "")) != "charge": continue
 		if float(Dictionary(ox["action"]).get("elapsed", 0.0)) > float(Dictionary(ox["action"]).get("startup", 0.5)) + 0.10: break
 	await _shoot("milestone-e-ox-charge")
+
+# --- F: 0.2.85 Warrior/Vanguard combat state ---------------------------------------------
+func _f_warrior_vanguard_status() -> void:
+	var s = _fresh("warrior")
+	s.track_ranks["warrior"] = 5
+	s.track_ranks["vanguard"] = 4
+	s.rally_active = true
+	s.battle_flow_pips = 4
+	s.battle_flow_remaining = s.BATTLE_FLOW_DECAY_SECONDS * 0.72
+	_put(s, "blade", Vector2(125, 0), 40)
+	s.request_attack(s.player_pos + Vector2.RIGHT * 100.0, false)
+	s.player_action["elapsed"] = float(s.player_action.get("startup", 0.0)) + 0.04
+	await _shoot("milestone-f-warrior-vanguard-status")

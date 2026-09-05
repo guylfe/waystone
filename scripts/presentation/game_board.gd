@@ -1992,6 +1992,9 @@ func _handle_button(name: String) -> void:
 				queue_redraw()
 			elif state.loadout_id == "mage_elementalist":
 				_begin_streamed_action(state.request_circle(false))
+			elif state.rally_active:
+				state.request_end_rally()
+				queue_redraw()
 			else:
 				_begin_streamed_action(state.request_stealth(false) if state.loadout_id.begins_with("rogue_") else state.request_rally(false))
 		"advance" when state.loadout_id == "mage_elementalist":
@@ -3129,7 +3132,7 @@ func _draw_player() -> void:
 		else:
 			draw_circle(pos, collision_radius * 1.65, Color(0.91, 0.32, 0.20, 0.16))
 			draw_arc(pos, collision_radius * 1.65, 0.0, TAU, 24, Color("e85c3f"), maxf(2.0, collision_radius * 0.12))
-	if float(visual.get("rally_remaining", state.rally_remaining)) > 0.0:
+	if bool(visual.get("rally_active", state.rally_active)):
 		if view_mode == "isometric": _draw_projected_world_circle(world_pos, state.PLAYER_RADIUS * 1.48, Color(0.92, 0.38, 0.20, 0.12), Color("e47754"), maxf(1.5, collision_radius * 0.08))
 		else:
 			draw_circle(pos, collision_radius * 1.48, Color(0.92, 0.38, 0.20, 0.12))
@@ -3165,11 +3168,36 @@ func _draw_player() -> void:
 	# readout for exactly this and never checked the player's, which is its own draw site --
 	# the same defect surviving on the side the player looks at most.
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
+	_draw_warrior_status(pos, radius, action)
 	var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
 	if exhaustion > 0.0001:
 		var lock_ratio := clampf(exhaustion / state.EXHAUSTION_DURATION, 0.0, 1.0)
 		draw_arc(pos, radius * 1.65, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - lock_ratio), 28, Color("83d89a"), maxf(3.0, radius * 0.13))
 		draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 2.5, -radius * 2.75), "EXHAUSTED", HORIZONTAL_ALIGNMENT_CENTER, radius * 5.0, maxi(10, int(radius * 0.62)), Color("a7ebb6"))
+
+func _draw_warrior_status(pos: Vector2, radius: float, action: Dictionary) -> void:
+	if state.has_track_rank("vanguard", 1):
+		var pip_count := 4 if state.has_track_rank("vanguard", 4) else 3
+		var active_pips := int(visual.get("battle_flow_pips", state.battle_flow_pips))
+		var spacing := maxf(8.0, radius * 0.48)
+		var origin := pos + Vector2(-spacing * float(pip_count - 1) * 0.5, radius * 1.82)
+		for index in range(pip_count):
+			draw_circle(origin + Vector2(spacing * index, 0.0), maxf(2.8, radius * 0.12), Color("e8c35d") if index < active_pips else Color("465359"))
+		if active_pips > 0:
+			var remaining := float(visual.get("battle_flow_remaining", state.battle_flow_remaining))
+			var timer_width := spacing * float(pip_count - 1) + maxf(5.6, radius * 0.24)
+			var timer := Rect2(Vector2(pos.x - timer_width * 0.5, origin.y + maxf(5.0, radius * 0.23)), Vector2(timer_width, maxf(2.0, radius * 0.08)))
+			draw_rect(timer, Color("27343a"))
+			draw_rect(Rect2(timer.position, Vector2(timer.size.x * clampf(remaining / state.BATTLE_FLOW_DECAY_SECONDS, 0.0, 1.0), timer.size.y)), Color("d7aa58"))
+	var guard_capacity := float(action.get("guard_capacity", 0.0))
+	if guard_capacity <= 0.0: return
+	var guard_remaining := clampf(float(action.get("guard_remaining", guard_capacity)), 0.0, guard_capacity)
+	var width := maxf(48.0, radius * 2.8)
+	var bar := Rect2(Vector2(pos.x - width * 0.5, pos.y + radius * 2.34), Vector2(width, maxf(4.0, radius * 0.16)))
+	draw_rect(bar, Color("202b31"))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * guard_remaining / guard_capacity, bar.size.y)), Color("8eb4c5"))
+	draw_rect(bar, Color("d4e3e8"), false, 1.0)
+	draw_string(ThemeDB.fallback_font, bar.position + Vector2(-width * 0.25, bar.size.y + maxi(8, int(radius * 0.43))), "POISE %.0f / %.0f" % [guard_remaining, guard_capacity], HORIZONTAL_ALIGNMENT_CENTER, width * 1.5, maxi(8, int(radius * 0.43)), Color("cfe0e7"))
 
 func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> void:
 	var active_index := int(action.get("phase_index", 0))
@@ -5107,9 +5135,10 @@ func _draw_button(name: String, rect: Rect2) -> void:
 			available = state.main_ability_cooldown <= 0.0001 and state.is_player_ready() and not state.energy_actions_locked()
 			subtitle = "INSIDE" if state.player_is_inside_circle() else "GOOD GROUND" if available else "COOLING"
 		else:
-			title = "RALLY"
-			available = state.rally_is_available()
-			subtitle = "BOLSTER" if available else "ACTIVE" if state.rally_remaining > 0.0001 else "COOLING"
+			var active := state.rally_active
+			title = "END RALLY" if active else "RALLY"
+			available = active or state.rally_is_available()
+			subtitle = "STAND DOWN" if active else "BOLSTER" if available else "COOLING"
 	elif name == "advance" and state.loadout_id == "mage_elementalist":
 		title = "SPELLBOOK %s" % ("\u25be" if spellbook_open else "\u25b4")
 		available = state.spell_is_available()
@@ -5130,7 +5159,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 	draw_rect(rect, Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, color if available else Color("465359"), false, 4.0 if selected_action == name else 2.0)
 	var stealth_without_cooldown := name == "rally" and state.loadout_id.begins_with("rogue_") and state.stealth_status() != "cooldown"
-	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_remaining > 0.0001 or state.stealth_remaining > 0.0001)) and not stealth_without_cooldown:
+	if not available and name in ["defense", "skill", "rally", "advance"] and not (name == "rally" and (state.rally_active or state.stealth_remaining > 0.0001)) and not stealth_without_cooldown:
 		var energy_locked := state.energy_actions_locked() and (name == "skill" or (name == "advance" and state.loadout_id == "warrior"))
 		var remaining := state.player_exhaustion_remaining if energy_locked else _defense_cooldown() if name == "defense" else state.skill_cooldown if name == "skill" else (state.main_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.rally_cooldown) if name == "rally" else (state.subclass_ability_cooldown if state.loadout_id.begins_with("rogue_") else state.advance_cooldown)
 		var defense_maximum := state.BLOCK_COOLDOWN if state.defense_id == "block" else state.ENDURE_COOLDOWN if state.defense_id == "endure" else state.DODGE_COOLDOWN
@@ -5138,7 +5167,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		# wrong the moment an ability is repriced -- Sweeping Cut alone runs to 13.4s
 		# against the 6.5 this used to assume, which would draw the bar full from the
 		# first frame. Each cooldown records what it started at instead.
-		var maximum := state.EXHAUSTION_DURATION if energy_locked else defense_maximum if name == "defense" else state.skill_cooldown_max if name == "skill" else (state.main_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else 12.0) if name == "rally" else (state.subclass_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.advance_cooldown_max)
+		var maximum: float = float(state.EXHAUSTION_DURATION if energy_locked else defense_maximum if name == "defense" else state.skill_cooldown_max if name == "skill" else (state.main_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.rally_cooldown_max) if name == "rally" else (state.subclass_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.advance_cooldown_max))
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))

@@ -1,7 +1,7 @@
 class_name SaveMigrations
 extends RefCounted
 
-const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
 
 static func normalize(source: Dictionary, current_version: int) -> Dictionary:
 	var payload := source.duplicate(true)
@@ -31,6 +31,7 @@ static func _migrate_one(payload: Dictionary, from_version: int) -> Dictionary:
 		33: return _v33_to_v34(payload)
 		34: return _v34_to_v35(payload)
 		35: return _v35_to_v36(payload)
+		36: return _v36_to_v37(payload)
 		_: return {}
 
 # Historical semantic migrations still run during hydration because they need the
@@ -88,10 +89,24 @@ static func _v35_to_v36(payload: Dictionary) -> Dictionary:
 		result["player_attributes"] = attributes
 	return result
 
+static func _v36_to_v37(payload: Dictionary) -> Dictionary:
+	var result := _copy(payload)
+	# The Warrior and Vanguard tracks were replaced rather than numerically tuned.
+	# Their old ranks, choices and baked-in attribute bonuses have no honest one-to-one
+	# migration, so the loader uses this marker to retire an active Warrior run cleanly.
+	result["warrior_vanguard_overhaul_requires_new_run"] = String(result.get("loadout_id", "")) == "warrior"
+	for retired_key in ["rally_remaining", "rally_end_after_action", "rally_break_extension_used", "building_force_chain"]:
+		result.erase(retired_key)
+	result["rally_active"] = false
+	result["rally_energy_paid"] = 0.0
+	result["battle_flow_pips"] = 0
+	result["battle_flow_remaining"] = 0.0
+	return result
+
 static func validate_current(payload: Dictionary, current_version: int) -> PackedStringArray:
 	var errors := PackedStringArray()
 	if int(payload.get("save_version", -1)) != current_version: errors.append("Save version is not current")
-	for key in ["run_seed", "mode_id", "player_pos", "enemies", "projectiles", "hazards", "barriers", "effects", "cooldowns", "rng_state"]:
+	for key in ["run_seed", "mode_id", "player_pos", "enemies", "projectiles", "hazards", "barriers", "effects", "cooldowns", "rng_state", "rally_active", "rally_energy_paid", "battle_flow_pips", "battle_flow_remaining"]:
 		if not payload.has(key): errors.append("Current save is missing %s" % key)
 	for key in ["enemies", "projectiles", "hazards", "barriers", "effects"]:
 		if payload.has(key) and not payload[key] is Array: errors.append("Save field %s must be an Array" % key)

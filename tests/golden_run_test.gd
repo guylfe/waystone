@@ -3,28 +3,28 @@ extends SceneTree
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const DeterminismSnapshotScript = preload("res://scripts/core/determinism_snapshot.gd")
 
-# Filled from the 0.2.74 semantic baseline. These hashes describe gameplay
+# Filled from the 0.2.85 semantic baseline. These hashes describe gameplay
 # state, not RunState's storage layout, so structural refactors should preserve
 # them. A deliberate rules change must explain and update the affected component.
 const EXPECTED := {
 	"started": {
-		"all": "05fe7a86ff19d31a886e8a6c3d91e9aee358498d5f255bd7e500539adce068e2",
+		"all": "053526150bffcaa5a0e6039cfc5a446661fb481f01005bafe6eda7b89cb72ad3",
 		"enemies": "06fed0c7f2d8ff64358aa2aec4a4675b07981b2c247baf509862f4ecd9b4cdfc",
-		"player": "2571802cd4ea5e337bc742b1110038d769be27f120156676e5901a5bc7e0b4ff",
+		"player": "9d12c4220ec5ba713708f7f838d96b59c6580f46863f1d491debc8eea7d0eaf4",
 		"run": "7cb9b3f199278f0d02f6962cb25c8215362aac218e75f143480243279589aa35",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_move": {
-		"all": "1dfb1d6a94fca69576c5dd26ef692dfb1c6a48d42ff513e2345fb6cc486d726b",
+		"all": "319ed90056936d71f6d9c6c079f17608801e3cfad7e57df468ff4e0d5750e591",
 		"enemies": "c7d3d03680378fbdd07da96b7b4e9b6c1753925a075911cd893144d85a5811f8",
-		"player": "797dfcca98ab89d75741e3e433736d88c2eb8f69a43fbf956734e07c82b844b4",
+		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "2e15565515cf5e79d8df23f40e6fc8578aaf6c218c2f4ba42f48aaf862a339b5",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_wait": {
-		"all": "cad378bc526942b05b4a50d53738f40eb5ebb30667cfb6763fcee29f402c914d",
+		"all": "612fa99e8052f1fdff20ff882ce34bce1fbc1905543778eee4430983b1587b16",
 		"enemies": "f2f205aaf66562e89a0c68ca5eed1e9e8af4353761f5c04baa1df22a070c1b90",
-		"player": "797dfcca98ab89d75741e3e433736d88c2eb8f69a43fbf956734e07c82b844b4",
+		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "4898a4f3bd11370193d827a941662c68deeb03eaa254b042e447cbb56f25ff04",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
@@ -34,11 +34,11 @@ const ELEMENTALIST_EXPECTED := {
 	"elementalist_spellbook": {
 		# 0.2.84 deliberately changes the player component: the same authored Earth Wall
 		# leaves a different Energy remainder under the new Intelligence soft-cap curve.
-		"all": "a3132c3857bd552fbe69beca7440d76c3a19092d4e0b10a470ccfce0cbe776a1",
+		"all": "f2578df6417debd8df53e624f4201556f6498e47e3cc92bd866df550db7744b9",
 		"enemies": "8990a1322f78608ec7dc54f667e0e096bb7ca9d3a8e8fa4788ed8abb695f4ac7",
-		"player": "a14768b381e6ef869bb9177ce64205a032e8a5499f68cb46fe0d98dc81723a0c",
+		"player": "c486c4ec20c8d39e6049393c39bf889c607cdd9e35f15d346918663c08bbdbc0",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
-		"world": "84ce6caa5c76031155d68f343c82f05e9019bbb5891a477815d42677f3f99312",
+		"world": "640b447166bd8d4214378aab55d6c1aab09a1e3695689d8e21966b54f25dc5e1",
 	},
 }
 

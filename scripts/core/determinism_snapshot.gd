@@ -11,7 +11,8 @@ const StateFieldSchemaScript = preload("res://scripts/core/state_field_schema.gd
 const ACTION_FIELDS := [
 	"kind", "technique_id", "label", "elapsed", "duration", "startup",
 	"active_end", "direction", "movement_direction", "cast_move_scale", "target", "reach", "damage", "posture",
-	"advance_distance", "advance_end", "speed", "phase",
+	"advance_distance", "advance_end", "speed", "phase", "guard_capacity", "guard_remaining",
+	"battle_flow_damage", "battle_flow_posture", "battle_flow_registered", "force_hit_reaction",
 ]
 
 static func checkpoint(state: RunState) -> Dictionary:

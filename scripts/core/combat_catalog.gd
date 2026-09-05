@@ -100,8 +100,7 @@ const LOADOUT_PROFILES := {
 	"warrior": {"name": "Warrior · Vanguard", "weapon_frame": "sword", "track_order": ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 100, "strength": 5, "defense": 4, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "resistance": 6, "intelligence": 2, "faith": 2}, "properties": {"mass": 1.05}},
 	"rogue_acrobat": {"name": "Rogue · Acrobat", "weapon_frame": "knife", "track_order": ["knife", "evasion", "finesse", "rogue", "acrobat", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 80, "strength": 4, "defense": 2, "speed": 7, "stealth": 7, "awareness": 6, "resolve": 3, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.82}},
 	# Frailer than a Rogue and far frailer than a Warrior, with the game's only meaningful
-	# Intelligence. Resolve is deliberately low: a caster's vulnerability is that a hit
-	# cancels the spell, which is what the Mage track's first node exists to repair.
+	# Intelligence. Resolve is deliberately low, so committed casts are easy to interrupt.
 	"mage_elementalist": {"name": "Mage · Elementalist", "weapon_frame": "staff", "track_order": ["staff", "evasion", "measured", "mage", "elementalist", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 75, "strength": 3, "defense": 2, "speed": 5, "stealth": 3, "awareness": 6, "resolve": 3, "resistance": 6, "intelligence": 7, "faith": 2}, "properties": {"mass": 0.85}},
 	"rogue_sharpshooter": {"name": "Rogue · Sharpshooter", "weapon_frame": "bow", "track_order": ["bow", "evasion", "patient", "rogue", "sharpshooter", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 85, "strength": 4, "defense": 2, "speed": 6, "stealth": 7, "awareness": 8, "resolve": 4, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.88}},
 }
@@ -154,23 +153,32 @@ const CHARACTER_TRACKS := {
 	},
 	"warrior": {
 		"label": "Warrior",
-		"description": "Physical conditioning, sustained weapon pressure, and Rally.",
+		"description": "Hold committed attacks through pressure and decide how long Rally is worth its Energy drain.",
 		"stages": [
-			{"id": "warriors_physique", "label": "Warrior's Physique", "gate": 3, "description": "Gain exactly +20 maximum health and +1 Speed."},
-			{"id": "building_force", "label": "Building Force", "gate": 5, "description": "Consecutive basic weapon hits gain +0, +1, then +2 damage before the sequence resets."},
-			{"id": "rallying_cry", "label": "Rallying Cry", "gate": 7, "description": "Rally lasts 5.5 seconds, grants +1 damage, +2 posture damage, and stronger action poise."},
-			{"id": "battle_rhythm", "label": "Battle Rhythm", "gate": 9, "description": "The first posture break during each Rally extends it by exactly 1 second."},
-			{"id": "warpath", "label": "Warpath", "gate": 10, "description": "During Rally, Building Force holds at +2 and committed weapon attacks gain strong hyperarmor."},
+			{"id": "warrior_method", "label": "Method of Force", "gate": 3, "description": "Permanently choose how your committed physical attacks use force.", "choices": [
+				{"id": "bear_down", "label": "Bear Down", "description": "Committed physical attacks deal 30% more posture damage."},
+				{"id": "brace", "label": "Brace", "description": "Committed physical attacks gain +2 poise."},
+			]},
+			{"id": "enduring_rally", "label": "Enduring Rally", "gate": 5, "description": "Rally's Energy drain falls from 8 to 6 per second."},
+			{"id": "warrior_reserve", "label": "Constitution", "gate": 7, "description": "Permanently choose greater Resolve or a larger Energy reserve.", "choices": [
+				{"id": "iron_constitution", "label": "Iron Constitution", "description": "+4 Resolve."},
+				{"id": "deep_reserves", "label": "Deep Reserves", "description": "+20 maximum Energy."},
+			]},
+			{"id": "power_through", "label": "Power Through", "gate": 9, "description": "While a committed physical attack holds through a direct hit, take 25% less final health damage."},
+			{"id": "unbreakable", "label": "Unbreakable", "gate": 10, "description": "While Rally is active, committed physical attacks cannot be interrupted or staggered."},
 		],
 	},
 	"vanguard": {
 		"label": "Vanguard",
-		"description": "Claim space with Advance, then turn posture breaks into renewed pressure.",
+		"description": "Claim space with Advance and sustain visible Battle Flow through contact.",
 		"stages": [
-			{"id": "driving_impact", "label": "Driving Impact", "gate": 3, "description": "Advance rises from 10 to 15 damage, 4 to 6 posture damage, and 32 to 40 push."},
-			{"id": "maintain_momentum", "label": "Maintain Momentum", "gate": 5, "description": "Hold the original Advance input through impact to flow directly into your basic weapon sequence."},
-			{"id": "vanguard_bearing", "label": "Vanguard Bearing", "gate": 7, "description": "Gain exactly +2 Resolve; committed melee weapon actions gain light hyperarmor."},
-			{"id": "seize_the_line", "label": "Seize the Line", "gate": 9, "description": "Breaking any enemy's posture immediately refreshes Advance."},
+			{"id": "battle_flow", "label": "Battle Flow", "gate": 3, "description": "Consecutive weapon contacts build up to three visible pips: +50% damage and +25% posture at full flow. Advance preserves and refreshes it."},
+			{"id": "flow_discipline", "label": "Flow Discipline", "gate": 5, "description": "Permanently choose what no longer breaks Battle Flow.", "choices": [
+				{"id": "unshaken", "label": "Unshaken", "description": "Taking a non-staggering hit no longer breaks Battle Flow."},
+				{"id": "sword_dance", "label": "Sword Dance", "description": "Evasive actions no longer break Battle Flow."},
+			]},
+			{"id": "steady_momentum", "label": "Steady Momentum", "gate": 7, "description": "A Battle Flow break removes one pip instead of the entire chain."},
+			{"id": "full_momentum", "label": "Full Momentum", "gate": 9, "description": "Battle Flow gains a fourth pip; each pip grants +20% damage and +10% posture."},
 		],
 	},
 	"knife": {
