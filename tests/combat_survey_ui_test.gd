@@ -166,9 +166,20 @@ func _initialize() -> void:
 	board._sync_setup_controls()
 	assert(board.state.survey_room_number == 1)
 	assert(not board.survey_overlay.visible)
+	board.state.player_action = board.state._action("wait", board.state.SIM_DT * 2.0, Vector2.ZERO)
 	for enemy in board.state.enemies: enemy["hp"] = 0
 	board.state._remove_dead_enemies()
-	board._sync_survey_overlay()
+	assert(board.state.room_clear_pending)
+	board.state._tick(board.state.SIM_DT)
+	assert(board.state.room_clear_pending)
+	board.state._tick(board.state.SIM_DT)
+	assert(board.state.survey_feedback_pending)
+	# The state hands over immediately when recovery ends, while presentation keeps
+	# the report behind the real-time ROOM CLEAR beat and then reveals it.
+	board._process(0.01)
+	assert(not board.survey_overlay.visible)
+	assert(board.room_clear_remaining > 0.0)
+	board._process(board.ROOM_CLEAR_HOLD_SECONDS)
 	assert(board.survey_overlay.visible)
 	assert(board.survey_overlay.get_meta("kind", "") == "feedback")
 	assert(board.survey_rating_buttons.size() == 4)

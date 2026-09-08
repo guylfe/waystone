@@ -1,6 +1,14 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.88` (Android version code `288`).
+Current prototype version: `0.2.89` (Android version code `289`).
+
+## v0.2.89 — room clear reaches the room report
+
+The delayed room-clear handover introduced in `0.2.87` could become permanently stranded. When the last enemy died during a committed attack, the simulation correctly held the handover until the winning action's recovery finished. It checked that held handover only at the start of each simulation tick, however. On the final recovery tick the player was still busy at the check, became ready later in the tick, and then frozen time prevented the next tick that would have opened the room-rating screen.
+
+The simulation now resolves a pending clear at the end of the authoritative tick, after the player update and enemy removal. The rating record is therefore created on the same tick that the winning recovery becomes idle. The renderer still owns only the two-second real-time **ROOM CLEAR** presentation beat; it does not drive room progression.
+
+A deterministic regression reproduces the exact final-kill-during-recovery sequence and proves that the clear remains pending while recovery is active, then becomes survey feedback as soon as recovery completes. Presentation version remains `11`, Combat Survey format remains `30`, and save schema remains `37`.
 
 ## v0.2.88 — the Javelineer takes your course, not your position
 

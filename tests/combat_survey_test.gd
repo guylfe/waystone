@@ -52,6 +52,21 @@ func _init() -> void:
 		assert(opening_offset.length() >= 359.9)
 		assert(Vector2(enemy["facing"]).dot(opening_offset.normalized()) > 0.99)
 		assert(String(enemy["awareness"]) == "idle")
+	# A killing blow may remove the final enemy while the player's recovery is still
+	# committed. Frozen time must not strand the handover one tick after that recovery:
+	# there will be no next tick once the player becomes ready.
+	var recovery_clear = RunStateScript.new(false)
+	recovery_clear.start_run("warrior", "combat_survey", 424243, "encounter", "recovery")
+	recovery_clear.player_action = recovery_clear._action("wait", recovery_clear.SIM_DT * 2.0, Vector2.ZERO)
+	for enemy in recovery_clear.enemies: enemy["hp"] = 0
+	recovery_clear._remove_dead_enemies()
+	assert(recovery_clear.room_clear_pending)
+	assert(not recovery_clear.survey_feedback_pending)
+	recovery_clear._tick(recovery_clear.SIM_DT)
+	assert(recovery_clear.room_clear_pending)
+	recovery_clear._tick(recovery_clear.SIM_DT)
+	assert(not recovery_clear.room_clear_pending)
+	assert(recovery_clear.survey_feedback_pending)
 	var first_seed: int = first.survey_room_seed
 	first._annotate_player_action("test_ability")
 	for enemy in first.enemies: enemy["hp"] = 0

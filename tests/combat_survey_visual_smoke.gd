@@ -14,10 +14,18 @@ func _initialize() -> void:
 	await process_frame
 	_capture("res://builds/survey-setup.png")
 	board.state.start_run("rogue_acrobat", "combat_survey", 919191, "encounter")
+	board.state.player_action = board.state._action("wait", board.state.SIM_DT * 2.0, Vector2.ZERO)
 	for enemy in board.state.enemies: enemy["hp"] = 0
 	board.state._remove_dead_enemies()
+	board.state._tick(board.state.SIM_DT)
+	board.state._tick(board.state.SIM_DT)
+	assert(board.state.survey_feedback_pending)
 	board.visual = board.state.snapshot(true)
-	board._sync_survey_overlay()
+	board.queue_redraw()
+	await process_frame
+	await process_frame
+	_capture("res://builds/survey-room-clear.png")
+	await create_timer(board.ROOM_CLEAR_HOLD_SECONDS + 0.1).timeout
 	board.queue_redraw()
 	await process_frame
 	await process_frame

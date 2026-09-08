@@ -441,7 +441,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.88"
+const GAME_VERSION := "0.2.89"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 11
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -5284,7 +5284,6 @@ func _simulate_until_ready() -> void:
 	changed.emit()
 
 func _tick(dt: float) -> void:
-	if room_clear_pending: _resolve_pending_room_clear()
 	_simulation_tick_index += 1
 	simulation_time += dt
 	if mode_id == ModeRulesScript.COMBAT_SURVEY: _sample_engagement()
@@ -5353,6 +5352,10 @@ func _tick(dt: float) -> void:
 	_update_projectiles(dt)
 	_update_hazards(dt)
 	_remove_dead_enemies()
+	# A final kill can leave the room waiting through the winning action's recovery.
+	# Resolve after _update_player(), in the same tick that recovery becomes idle:
+	# frozen time means there will not be another simulation tick to do it later.
+	if room_clear_pending: _resolve_pending_room_clear()
 
 func _condition_threshold(condition_id: String, resistance: int, specific_multiplier: float = 1.0) -> float:
 	var base := float({"laceration": 18.0, "poison": 20.0, "sleep": 18.0, "frost": 16.0, "burning": 14.0, "frenzy": 20.0}.get(condition_id, 20.0))
