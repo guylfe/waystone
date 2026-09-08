@@ -693,16 +693,82 @@ func test_ward_reduces_damage_without_granting_immunity() -> void:
 # --- The Javelineer -------------------------------------------------------------
 
 func test_a_javelin_is_thrown_where_you_are_going() -> void:
-	# Running in a straight line is what beats an Archer, so the second ranged enemy
-	# has to punish exactly that, or both of them ask the same question.
+	# Continuing on the course the Javelineer read should carry the player to the exact
+	# point its constant-speed projectile reaches after the announced wind-up.
 	var state := survey_state()
 	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
 	state.player_action = state._action("move", 3.0, Vector2.RIGHT)
+	state._choose_enemy_action(javelineer)
+	var action := Dictionary(javelineer["action"])
+	check(String(action.get("kind", "")) == "hurl", "a feasible lateral intercept should be committed")
+	if String(action.get("kind", "")) != "hurl": return
+	var continued_position := state.player_pos + Vector2.RIGHT * state.current_move_speed() * (float(action["startup"]) + float(action["flight_time"]))
+	check(Vector2(action["target"]).distance_to(continued_position) < 0.05, "the committed target should be where continued movement arrives")
+	check(is_equal_approx(Vector2(action["launch"]).distance_to(Vector2(action["target"])), float(action["projectile_speed"]) * float(action["flight_time"])), "the target must satisfy the projectile's actual flight equation")
 	state._spawn_javelin(javelineer)
 	check(state.projectiles.size() == 1, "the throw should produce a projectile")
 	if state.projectiles.is_empty(): return
 	var javelin := Dictionary(state.projectiles[0])
 	check(Vector2(javelin["vel"]).normalized().x > 0.15, "the javelin should lead a player moving right")
+	check(is_equal_approx(float(javelin["arc_span"]), Vector2(action["launch"]).distance_to(Vector2(action["target"]))), "the arc must end at the committed landing point")
+	# Exercise the real 120 Hz collision path, not only the algebra above.
+	var movement := Vector2.RIGHT * state.current_move_speed()
+	state.player_pos += movement * float(action["startup"])
+	var hp_before := state.player_hp
+	for _step in range(ceili((float(action["flight_time"]) + 0.15) / state.SIM_DT)):
+		state.player_pos += movement * state.SIM_DT
+		state._update_projectiles(state.SIM_DT)
+		if state.player_hp < hp_before: break
+	check(state.player_hp < hp_before, "continuing the read course should meet the javelin in the real collision simulation")
+
+func test_a_javelin_aims_at_a_stationary_player() -> void:
+	var state := survey_state()
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
+	state.player_action = state._idle_action()
+	state._choose_enemy_action(javelineer)
+	var action := Dictionary(javelineer["action"])
+	check(String(action.get("kind", "")) == "hurl", "a stationary player in range should produce a hurl")
+	if String(action.get("kind", "")) != "hurl": return
+	check(Vector2(action["target"]).distance_to(state.player_pos) < 0.05, "a stationary target needs no invented lead")
+
+func test_a_javelin_solves_direct_approach_and_retreat() -> void:
+	for motion in [Vector2.UP, Vector2.DOWN]:
+		var state := survey_state()
+		state.player_pos = state.world_size * 0.5
+		var javelineer := alerted(state, "javelineer", Vector2.UP * 300.0)
+		state.player_action = state._action("move", 3.0, motion)
+		state._choose_enemy_action(javelineer)
+		var action := Dictionary(javelineer["action"])
+		check(String(action.get("kind", "")) == "hurl", "direct %s should have a feasible intercept at this range (got %s)" % ["approach" if motion == Vector2.UP else "retreat", action.get("kind", "missing")])
+		if String(action.get("kind", "")) != "hurl": continue
+		check(absf(Vector2(action["target"]).x - state.player_pos.x) < 0.05, "radial motion must remain collinear rather than receiving lateral fudge")
+		if motion == Vector2.UP:
+			check(Vector2(action["target"]).y < state.player_pos.y, "approach should shorten the intercept")
+		else:
+			check(Vector2(action["target"]).y > state.player_pos.y, "retreat should lengthen the intercept")
+
+func test_a_javelin_withholds_an_impossible_intercept() -> void:
+	var state := survey_state()
+	state.player_pos = state.world_size * 0.5
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 700.0)
+	state.player_action = state._action("move", 3.0, Vector2.DOWN)
+	state._choose_enemy_action(javelineer)
+	check(String(Dictionary(javelineer["action"]).get("kind", "")) != "hurl", "a retreat beyond the authored arc must make the Javelineer reposition, not knowingly miss")
+
+func test_a_javelin_arc_uses_its_real_landing_distance() -> void:
+	var state := survey_state()
+	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
+	state.player_action = state._idle_action()
+	state._choose_enemy_action(javelineer)
+	state._spawn_javelin(javelineer)
+	check(not state.projectiles.is_empty(), "the arc test needs a projectile")
+	if state.projectiles.is_empty(): return
+	var javelin := Dictionary(state.projectiles[0])
+	var span := float(javelin["arc_span"])
+	javelin["travelled"] = span * 0.382
+	check(state._projectile_elevation(javelin) > float(javelin["elevation_peak"]) * 0.98, "the javelin should crest early on its own arc")
+	javelin["travelled"] = span
+	check(absf(state._projectile_elevation(javelin)) < 0.01, "the javelin should reach ground at its committed target, not at a fixed global distance")
 
 func test_a_javelin_trades_speed_for_width() -> void:
 	# Easy to sidestep, and that is the design: while it is in the air one lane is
@@ -714,6 +780,7 @@ func test_a_javelin_trades_speed_for_width() -> void:
 	state.projectiles.clear()
 	var javelineer := alerted(state, "javelineer", Vector2.UP * 420.0)
 	state.player_action = state._idle_action()
+	state._choose_enemy_action(javelineer)
 	state._spawn_javelin(javelineer)
 	var javelin := Dictionary(state.projectiles[0])
 	check(Vector2(javelin["vel"]).length() < Vector2(arrow["vel"]).length(), "a javelin should fly slower than an arrow")
@@ -885,11 +952,14 @@ func test_a_javelineer_faces_where_it_throws() -> void:
 	check(String(Dictionary(javelineer["action"])["kind"]) == "hurl", "it should be winding up a throw")
 	if String(Dictionary(javelineer["action"])["kind"]) != "hurl": return
 	var line := Vector2(Dictionary(javelineer["action"])["direction"])
+	var target := Vector2(Dictionary(javelineer["action"])["target"])
 	check(Vector2(javelineer["facing"]).dot(line) > 0.999, "the thrower must face its own line")
+	state.player_action = state._action("move", 3.0, Vector2.LEFT)
 	state._spawn_javelin(javelineer)
 	check(not state.projectiles.is_empty(), "the throw should produce a javelin")
 	if state.projectiles.is_empty(): return
 	check(Vector2(Dictionary(state.projectiles[0])["vel"]).normalized().dot(line) > 0.999, "and release along it rather than re-aiming")
+	check(Vector2(Dictionary(javelineer["action"])["target"]).distance_to(target) < 0.001, "changing course after commitment must not move the landing point")
 
 func test_the_duellists_poke_is_a_sword_not_a_spear() -> void:
 	var poke := plan_option("duellist", "rapier_thrust")
@@ -1614,6 +1684,10 @@ func _init() -> void:
 	test_bulwark_lends_telegraph_armour_to_a_light_body()
 	test_ward_reduces_damage_without_granting_immunity()
 	test_a_javelin_is_thrown_where_you_are_going()
+	test_a_javelin_aims_at_a_stationary_player()
+	test_a_javelin_solves_direct_approach_and_retreat()
+	test_a_javelin_withholds_an_impossible_intercept()
+	test_a_javelin_arc_uses_its_real_landing_distance()
 	test_a_javelin_trades_speed_for_width()
 	test_sundered_ground_costs_time_and_never_health()
 	test_sundered_ground_slows_enemies_too()

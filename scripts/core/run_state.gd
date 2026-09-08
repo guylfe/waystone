@@ -275,7 +275,10 @@ const EARTH_WALL_RISE_CLEARANCE := 46.0
 func _projectile_elevation(projectile: Dictionary) -> float:
 	if String(projectile.get("elevation_profile", "flat")) != "arc":
 		return float(projectile.get("elevation", 10.0))
-	var span := maxf(1.0, float(projectile.get("max_range", 600.0)))
+	# arc_span is the authored landing distance. max_range includes the small margin
+	# which lets the projectile collide at that landing point before it expires.
+	# The fallback keeps an old in-flight javelin from becoming invalid after loading.
+	var span := maxf(1.0, float(projectile.get("arc_span", 600.0)))
 	var travelled := clampf(float(projectile.get("travelled", 0.0)) / span, 0.0, 1.0)
 	return float(projectile.get("elevation_peak", 78.0)) * sin(PI * pow(travelled, 0.72))
 # Mass at which a body stops losing its own authored attack to chip damage. 1.6
@@ -389,10 +392,6 @@ const CHANT_POISE_BONUS := 2.5
 const SUNDERED_SLOW := 0.5
 const SUNDERED_RADIUS := 168.0
 const SUNDERED_DURATION := 7.5
-# The javelin. Slow and wide rather than fast and precise -- it is a lane being taken
-# away, not a shot to be feared.
-const JAVELIN_SPEED := 360.0
-const JAVELIN_RADIUS := 22.0
 # The Ox reopening its own charge lane. Reversing is itself a charge so the wind-up
 # inherits the same armour a gore has; the cap keeps it a repositioning step rather
 # than a retreat.
@@ -442,9 +441,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.87"
+const GAME_VERSION := "0.2.88"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 10
+const PRESENTATION_VERSION := 11
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -7298,21 +7297,20 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
 	elif enemy_kind == "javelineer":
-		# Slower than an Archer and far easier to sidestep. That is not a weakness to be
-		# corrected: while the javelin is in the air one lane is unavailable, so what it
-		# actually spends is the player's choice of direction. Alone it is nearly
-		# harmless; behind a frontliner who already dictates where you can stand, it
-		# collects.
-		if float(enemy.get("shot_cooldown", 0.0)) <= 0.0 and distance <= 720.0 and distance >= 190.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			# Aimed here, at the announcement, rather than at release. Computing the lead
-			# when the javelin left the hand let the thrower face the player through the
-			# whole wind-up and then throw somewhere else -- no telegraph, and a shot that
-			# could not be read. Committing the line up front makes it the same kind of
-			# promise every other attack in this game makes.
-			enemy["action"] = _action("hurl", 1.46, _javelin_lead(enemy))
-			enemy["action"]["startup"] = 0.86
+		# The current course is sampled once, at the beginning of the tell. The resulting
+		# ballistic intercept is stored on the action and is therefore both deterministic
+		# and readable: changing course after commitment defeats it; continuing does not.
+		var hurl := AbilityCatalogScript.enemy_ability("hurl")
+		var can_hurl := float(enemy.get("shot_cooldown", 0.0)) <= 0.0 \
+			and distance <= float(hurl["max_commit_range"]) \
+			and distance >= float(hurl["min_range"]) \
+			and _has_line_of_sight(Vector2(enemy["pos"]), player_pos)
+		var intercept := _javelin_intercept(enemy) if can_hurl else {}
+		if not intercept.is_empty():
+			enemy["action"] = _enemy_ability_action("hurl", Vector2(intercept["direction"]))
+			enemy["action"].merge(intercept, true)
 			enemy["facing"] = Vector2(enemy["action"]["direction"])
-			enemy["shot_cooldown"] = 2.30 + 0.20 * float(int(enemy["id"]) % 3)
+			enemy["shot_cooldown"] = float(hurl["cooldown"]) + float(hurl["cooldown_step"]) * float(int(enemy["id"]) % 3)
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _archer_support_target(enemy, direction, distance), 0.52)
 	elif enemy_kind == "air_caster":
@@ -8134,22 +8132,61 @@ func _melee_action(duration: float, startup: float, active_end: float, reach: fl
 	result["technique_id"] = technique_id
 	return result
 
-# Thrown where the player is GOING. Running in a straight line is what beats an
-# Archer, so the second ranged enemy has to punish exactly that -- otherwise both of
-# them ask the same question and the room learns nothing new.
-# Where the player will be, not where they are. Running in a straight line is what
-# beats an Archer, so the second ranged enemy has to punish exactly that.
-func _javelin_lead(enemy: Dictionary) -> Vector2:
+# A real constant-speed intercept which includes the authored wind-up. It deliberately
+# predicts only the movement already under way; the target is never revised after this
+# function returns. This makes the hurl punish a continued course without becoming a
+# homing attack. An impossible solution is not replaced with a knowingly bad throw.
+func _javelin_intercept(enemy: Dictionary) -> Dictionary:
+	var definition := AbilityCatalogScript.enemy_ability("hurl")
 	var origin := Vector2(enemy["pos"])
-	var aim := player_pos
+	var velocity := Vector2.ZERO
 	if String(player_action.get("kind", "idle")) == "move":
 		var motion := Vector2(player_action.get("direction", player_facing)).normalized()
-		var flight := origin.distance_to(player_pos) / JAVELIN_SPEED
-		aim += motion * current_move_speed() * flight
-	var lead := (aim - origin).normalized()
-	if lead.length_squared() < 0.001: lead = Vector2(enemy["facing"]).normalized()
-	if lead.length_squared() < 0.001: lead = Vector2.DOWN
-	return lead
+		velocity = motion * float(player_action.get("speed", current_move_speed()))
+	var startup := float(definition["startup"])
+	var projectile_speed := float(definition["projectile_speed"])
+	var launch_offset := float(definition["launch_offset"])
+	var at_release := player_pos + velocity * startup
+	var relative := at_release - origin
+	# |relative + velocity*t| = launch_offset + projectile_speed*t
+	var a := velocity.length_squared() - projectile_speed * projectile_speed
+	var b := 2.0 * (relative.dot(velocity) - projectile_speed * launch_offset)
+	var c := relative.length_squared() - launch_offset * launch_offset
+	var roots: Array[float] = []
+	if absf(a) < 0.0001:
+		if absf(b) >= 0.0001: roots.append(-c / b)
+	else:
+		var discriminant := b * b - 4.0 * a * c
+		if discriminant >= 0.0:
+			var root := sqrt(discriminant)
+			roots.append((-b - root) / (2.0 * a))
+			roots.append((-b + root) / (2.0 * a))
+	var flight_time := INF
+	for candidate in roots:
+		if candidate > 0.001: flight_time = minf(flight_time, candidate)
+	if is_inf(flight_time): return {}
+	var target := player_pos + velocity * (startup + flight_time)
+	var direction := (target - origin).normalized()
+	var present_direction := (player_pos - origin).normalized()
+	# Do not let a target crossing behind the thrower during the tell turn the attack
+	# into an untelegraphed about-face.
+	if direction.length_squared() < 0.001 or direction.dot(present_direction) <= 0.05: return {}
+	var launch := origin + direction * launch_offset
+	var arc_span := launch.distance_to(target)
+	var radius := float(definition["projectile_radius"])
+	if arc_span <= 0.0 or arc_span > float(definition["max_arc_range"]): return {}
+	if not _inside_world(target, radius) or _point_in_wall(target): return {}
+	if not _has_line_of_sight(origin, target): return {}
+	return {
+		"direction": direction,
+		"target": target,
+		"launch": launch,
+		"flight_time": flight_time,
+		"projectile_speed": projectile_speed,
+		"projectile_radius": radius,
+		"arc_span": arc_span,
+		"max_range": arc_span + float(definition["landing_margin"]),
+	}
 
 # The moment, not the condition: fast, aimed, and answerable by moving. It carries most
 # of the element's frost, so evading it is the difference between being slowed and not.
@@ -8199,27 +8236,35 @@ func _spawn_frost_lance(enemy: Dictionary, direction: Vector2) -> void:
 
 func _spawn_javelin(enemy: Dictionary) -> void:
 	var origin := Vector2(enemy["pos"])
+	var action := Dictionary(enemy.get("action", {}))
+	var definition := AbilityCatalogScript.enemy_ability("hurl")
 	# The line committed to at the announcement. It does not re-aim: an early read
 	# escapes it, which is what makes the telegraph worth reading.
-	var direction := Vector2(Dictionary(enemy.get("action", {})).get("direction", Vector2(enemy["facing"]))).normalized()
-	if direction.length_squared() < 0.001: direction = _javelin_lead(enemy)
+	var direction := Vector2(action.get("direction", Vector2(enemy["facing"]))).normalized()
+	if direction.length_squared() < 0.001: return
+	var launch_offset := float(definition["launch_offset"])
+	var arc_span := maxf(1.0, float(action.get("arc_span", 600.0)))
 	_add_projectile({
 		# The one projectile in the game that arcs. High early so it clears whatever is
 		# standing beside the thrower, descending late so it still reaches -- which is the
 		# Javelineer's whole shape as a lane denier rather than a second archer.
 		"elevation_profile": "arc",
-		"elevation_peak": 78.0,
-		"pos": origin + direction * 44.0,
-		"vel": direction * JAVELIN_SPEED,
-		"radius": JAVELIN_RADIUS,
-		"damage": 16,
-		"posture": 4.0,
+		"elevation": 0.0,
+		"elevation_peak": float(definition["elevation_peak"]),
+		"arc_span": arc_span,
+		"pos": Vector2(action.get("launch", origin + direction * launch_offset)),
+		"vel": direction * float(action.get("projectile_speed", definition["projectile_speed"])),
+		"radius": float(action.get("projectile_radius", definition["projectile_radius"])),
+		"damage": int(definition["damage"]),
+		"posture": float(definition["posture"]),
 		"kind": "javelin",
 		"launch_direction": direction,
 		"turn_rate": 0.0,
 		"max_track_angle": 0.0,
 		"source_id": int(enemy["id"]),
 		"layer": String(enemy.get("layer", current_layer)),
+		"travelled": 0.0,
+		"max_range": float(action.get("max_range", arc_span + float(definition["landing_margin"]))),
 	})
 	_set_message("A javelin is away.")
 
@@ -8621,6 +8666,7 @@ func _update_projectiles(dt: float) -> void:
 		var finish := start + Vector2(projectile["vel"]) * dt
 		projectile["pos"] = finish
 		projectile["travelled"] = float(projectile.get("travelled", 0.0)) + start.distance_to(finish)
+		projectile["elevation"] = _projectile_elevation(projectile)
 		# One faction rule for every shot in the game. An ordinary projectile passes
 		# through actors allied with its original source. Only a projectile explicitly
 		# marked misdirected -- currently by Gale -- may collide with that original side,
@@ -8633,8 +8679,8 @@ func _update_projectiles(dt: float) -> void:
 		# javelin's arc and the reason the check is not conditioned on allegiance.
 		# A raised segment stops a shot at ground level. An arcing javelin sails over it,
 		# which is the same friend-blind elevation rule doing double duty.
-		if not spent and _projectile_elevation(projectile) <= PROJECTILE_GROUND_ELEVATION and _segment_crosses_barrier(start, finish): spent = true
-		if not spent and _projectile_elevation(projectile) <= PROJECTILE_GROUND_ELEVATION:
+		if not spent and float(projectile["elevation"]) <= PROJECTILE_GROUND_ELEVATION and _segment_crosses_barrier(start, finish): spent = true
+		if not spent and float(projectile["elevation"]) <= PROJECTILE_GROUND_ELEVATION:
 			var nearest_enemy: Dictionary = {}
 			var nearest_order := INF
 			for enemy in _nearby_enemies(start, start.distance_to(finish) + 100.0):
@@ -8654,7 +8700,7 @@ func _update_projectiles(dt: float) -> void:
 				player_order = start.distance_to(player_pos)
 			# Whatever eligible body it reaches first along this step resolves the hit.
 			if player_order < nearest_order:
-				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "arrow"
+				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "javelin" if projectile_kind == "javelin" else "arrow"
 				if player_same_side: survey_misdirected_ally_hits += 1
 				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized(), Vector2.INF, float(projectile.get("posture", -1.0)))
 				continue

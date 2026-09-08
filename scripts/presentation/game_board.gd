@@ -2576,7 +2576,8 @@ func _draw_projectile(projectile: Dictionary) -> void:
 	var direction := _screen_direction(world_direction)
 	var kind := String(projectile.get("kind", "arrow"))
 	var radius := maxf(4.0, float(projectile.get("radius", 8.0)) * world_scale)
-	var elevation := (18.0 if kind == "firebolt" else 10.0) * world_scale if view_mode == "isometric" else 0.0
+	var default_elevation := 18.0 if kind == "firebolt" else 10.0
+	var elevation := float(projectile.get("elevation", default_elevation)) * world_scale if view_mode == "isometric" else 0.0
 	var center := ground + Vector2(0.0, -elevation)
 	if view_mode == "isometric":
 		var shadow_direction := _world_to_screen(world_center + world_direction * 14.0) - ground
@@ -3342,6 +3343,8 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		# drawn as a circle: the renderer keying on a name the simulation had moved on from.
 		if String(action.get("label", "")) in ["firebolt", "fireball"]: _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fireball")["color"])))
 		else: _draw_bow(pos, facing, radius, action, world_pos)
+	elif String(action["kind"]) == "hurl":
+		_draw_javelin_telegraph(action)
 	elif String(action["kind"]) in ["charge", "pounce_combo"]: draw_line(pos, pos - facing * radius * 2.2, Color(color, 0.5), maxf(3.0, radius * 0.25))
 	elif String(action["kind"]) == "evade": draw_line(pos, pos - _screen_direction(Vector2(action.get("direction", Vector2.ZERO))) * radius * 1.8, Color(color, 0.42), maxf(3.0, radius * 0.22))
 	elif String(action["kind"]) == "slam":
@@ -3374,6 +3377,22 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	# Width was radius x 4.4, which clipped "DRAWING BREATH" to "DRAWING BREAT". A telegraph
 	# that cannot finish its own word is not a telegraph.
 	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
+
+# The hurl promises both a lane and a landing point at commitment. Its projectile will
+# follow this exact line; neither marker chases the player during the wind-up.
+func _draw_javelin_telegraph(action: Dictionary) -> void:
+	if not action.has("launch") or not action.has("target"): return
+	var startup := maxf(0.001, float(action.get("startup", 0.86)))
+	if float(action.get("elapsed", 0.0)) >= startup: return
+	var launch := Vector2(action["launch"])
+	var target := Vector2(action["target"])
+	var radius := float(action.get("projectile_radius", 22.0))
+	var commitment := clampf(float(action.get("elapsed", 0.0)) / startup, 0.0, 1.0)
+	var color := Color(String(AbilityCatalogScript.enemy_ability("hurl")["color"]))
+	var lane := _project_world_capsule(launch, target, radius)
+	draw_colored_polygon(lane, Color(color, lerpf(0.07, 0.16, commitment)))
+	draw_polyline(_closed_points(lane), Color(color, lerpf(0.30, 0.72, commitment)), maxf(1.5, world_scale * 2.4))
+	_draw_projected_world_circle(target, radius, Color(color, lerpf(0.08, 0.20, commitment)), Color(color, lerpf(0.48, 0.92, commitment)), maxf(2.0, world_scale * 3.0))
 
 func _draw_enemy_conditions(pos: Vector2, radius: float, enemy: Dictionary) -> void:
 	var conditions := Dictionary(enemy.get("conditions", {}))

@@ -181,7 +181,7 @@ func test_dynamic_presentation_uses_stable_ids() -> void:
 	state.visibility_revision += 1
 	state.discovery_revision += 1
 	state._add_barrier({"pos":Vector2.ZERO, "axis":Vector2.RIGHT, "half_length":10.0, "thickness":2.0, "hp":1.0, "source_id":0, "layer":state.current_layer})
-	state._add_projectile({"kind":"arrow", "pos":state.player_pos, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":int(enemy["id"]), "friendly":false, "layer":state.current_layer, "elevation":12.0, "elevation_profile":"arc", "misdirected":true})
+	state._add_projectile({"kind":"arrow", "pos":state.player_pos, "vel":Vector2.RIGHT, "radius":4.0, "damage":1, "source_id":int(enemy["id"]), "friendly":false, "layer":state.current_layer, "elevation":12.0, "elevation_profile":"arc", "arc_span":10.0, "misdirected":true})
 	state._add_effect("lightning", state.player_pos + Vector2.RIGHT * 80.0, 13, {"origin":state.player_pos, "strength":1.4})
 	var current = PresentationFrameScript.new()
 	var following = PresentationFrameScript.new()

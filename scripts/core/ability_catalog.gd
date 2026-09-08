@@ -38,6 +38,11 @@ const SPELLS := {
 # whichever generic action carrier happens to deliver it. Fireball uses `shoot`
 # in the simulator, for example, but it is not an Archer shot in presentation.
 const ENEMY_ABILITIES := {
+	# A committed ballistic intercept, not a homing shot. The Javelineer predicts the
+	# player's current course at the beginning of the wind-up, then throws along that
+	# announced line. A valid throw must be able to reach its intercept before this
+	# authored range; otherwise the AI repositions instead of knowingly missing.
+	"hurl": {"action_kind": "hurl", "startup": 0.86, "duration": 1.46, "phase_before": "SIGHTING", "phase_after": "THROWN", "color": "d8c28f", "executor": "projectile", "min_range": 190.0, "max_commit_range": 720.0, "projectile_speed": 580.0, "projectile_radius": 22.0, "max_arc_range": 1200.0, "launch_offset": 44.0, "landing_margin": 44.0, "damage": 16, "posture": 4.0, "elevation_peak": 78.0, "cooldown": 2.30, "cooldown_step": 0.20},
 	"fireball": {"action_kind": "shoot", "startup": 0.64, "duration": 1.58, "phase_before": "KINDLING", "phase_after": "RECOVERING", "color": "ff8a45", "executor": "projectile"},
 	"fire_breath": {"action_kind": "fire_breath", "startup": 0.74, "duration": 1.82, "phase_before": "DRAWING BREATH", "phase_after": "BREATHING FIRE", "color": "ff8a45", "executor": "hazard"},
 	"frost_lance": {"action_kind": "frost_lance", "startup": 0.78, "duration": 1.66, "phase_before": "CONDENSING", "phase_after": "LOOSED", "color": "9be7ff", "executor": "projectile"},

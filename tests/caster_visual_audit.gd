@@ -29,6 +29,7 @@ func _initialize() -> void:
 	await _player_staff()
 	await _player_spells()
 	await _state_cues()
+	await _javelin_tell()
 	quit(0)
 
 func _reset(loadout: String):
@@ -152,3 +153,21 @@ func _state_cues() -> void:
 	})
 	await _shoot("audit-e-state-cues-frozen")
 	await _shoot_streamed("audit-e-state-cues-streamed")
+
+func _javelin_tell() -> void:
+	# One frame carries both halves of the 0.2.88 presentation contract: the exact
+	# committed lane/landing point and a projectile visibly raised on its own arc.
+	var s = _reset("warrior")
+	s.walls.clear()
+	s._build_wall_spatial_index()
+	s.player_action = s._action("move", 3.0, Vector2.DOWN)
+	var javelineer = _put(s, "javelineer", Vector2.RIGHT * 300.0)
+	s._choose_enemy_action(javelineer)
+	assert(String(Dictionary(javelineer["action"]).get("kind", "")) == "hurl")
+	javelineer["action"]["elapsed"] = float(javelineer["action"]["startup"]) * 0.55
+	s._spawn_javelin(javelineer)
+	var shot := Dictionary(s.projectiles[0])
+	shot["travelled"] = float(shot["arc_span"]) * 0.382
+	shot["pos"] = Vector2(shot["pos"]) + Vector2(shot["vel"]).normalized() * float(shot["travelled"])
+	shot["elevation"] = s._projectile_elevation(shot)
+	await _shoot("audit-f-javelin")

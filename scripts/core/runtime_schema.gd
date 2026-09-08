@@ -23,6 +23,8 @@ static func validate(schema: String, value: Dictionary) -> PackedStringArray:
 		return errors
 	for field in Array(REQUIRED[schema]):
 		if not value.has(field): errors.append("%s is missing required field %s" % [schema, field])
+	if schema == "projectile" and String(value.get("elevation_profile", "flat")) == "arc" and not value.has("arc_span"):
+		errors.append("arcing projectile is missing required field arc_span")
 	return errors
 
 static func validate_registry() -> PackedStringArray:

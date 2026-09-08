@@ -34,11 +34,13 @@ const ELEMENTALIST_EXPECTED := {
 	"elementalist_spellbook": {
 		# 0.2.84 deliberately changes the player component: the same authored Earth Wall
 		# leaves a different Energy remainder under the new Intelligence soft-cap curve.
-		"all": "f2578df6417debd8df53e624f4201556f6498e47e3cc92bd866df550db7744b9",
-		"enemies": "8990a1322f78608ec7dc54f667e0e096bb7ca9d3a8e8fa4788ed8abb695f4ac7",
+		# 0.2.88 deliberately changes the enemy and world components: the Javelineer now
+		# carries its committed intercept on the hurl action and its real arc on the shot.
+		"all": "e11f57b982e306ee0195aea44cc219ef236337320ddaa353e0eb03e568d18afe",
+		"enemies": "1ec1fd201150964a10f2395f1d908fbbe2e3d2f5f536659601264eb56a2bb163",
 		"player": "c486c4ec20c8d39e6049393c39bf889c607cdd9e35f15d346918663c08bbdbc0",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
-		"world": "640b447166bd8d4214378aab55d6c1aab09a1e3695689d8e21966b54f25dc5e1",
+		"world": "87c4ad94448ce5a5eab26e9e7bc331bf00bf7d0f39fe808084491c1558deb395",
 	},
 }
 
@@ -95,9 +97,15 @@ func elementalist_state() -> RunState:
 	state.player_energy = 1000.0
 	check(state.request_spell("earth_wall", state.player_pos + Vector2.RIGHT * 180.0), "Elementalist golden must raise a wall")
 	var javelineer := state._make_enemy("javelineer", state.player_pos + Vector2.RIGHT * 300.0, 2)
+	javelineer["awareness"] = "alerted"
+	javelineer["facing"] = Vector2.LEFT
 	state.enemies.append(javelineer)
 	state._invalidate_active_enemy_cache()
 	state._build_enemy_spatial_index()
+	var intercept := state._javelin_intercept(javelineer)
+	check(not intercept.is_empty(), "Elementalist golden must find a legal javelin intercept")
+	javelineer["action"] = state._enemy_ability_action("hurl", Vector2(intercept.get("direction", Vector2.LEFT)))
+	javelineer["action"].merge(intercept, true)
 	state._spawn_javelin(javelineer)
 	state._resolve_gale(Vector2(state.projectiles[0]["pos"]))
 	check(state.barriers.size() == state.EARTH_WALL_SEGMENTS, "Elementalist golden must retain its wall")

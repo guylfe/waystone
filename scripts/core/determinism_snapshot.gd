@@ -12,6 +12,7 @@ const ACTION_FIELDS := [
 	"kind", "technique_id", "label", "elapsed", "duration", "startup",
 	"active_end", "direction", "movement_direction", "cast_move_scale", "target", "reach", "damage", "posture",
 	"advance_distance", "advance_end", "speed", "phase", "guard_capacity", "guard_remaining",
+	"flight_time", "projectile_speed", "projectile_radius", "launch", "arc_span", "max_range",
 	"battle_flow_damage", "battle_flow_posture", "battle_flow_registered", "force_hit_reaction",
 ]
 

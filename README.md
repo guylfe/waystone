@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.87` (Android version code `287`).
+Current prototype version: `0.2.88` (Android version code `288`).
+
+## v0.2.88 — the Javelineer takes your course, not your position
+
+The Javelineer now solves a real constant-speed intercept when it begins its `0.86s` wind-up. The solution includes both that wind-up and the projectile's flight time, and uses the player's actual committed movement speed and direction. Standing still is aimed at directly; lateral movement is led laterally; approach and retreat stay on the same radial line. There is no radial fudge and no homing.
+
+That complete solution is stored on the hurl action. The thrower faces it immediately, the board draws its exact lane and landing point throughout the tell, and release uses the stored direction without looking at the player again. Continuing the course that was read leads into the projectile; changing course after the tell makes it miss. If there is no positive intercept inside the authored `1200`-unit arc or the reachable world, the Javelineer repositions instead of throwing at a point it cannot hit.
+
+Javelins now fly at `580` units per second, still slower and wider than arrows. Each projectile carries its own true landing distance, separate from its lifetime margin, so the visible arc rises and returns to ground at the promised target rather than over a fixed `600` units. The renderer reads that simulated elevation instead of drawing every javelin at a fixed height.
+
+The hurl's timing, projectile geometry, range and damage now live in the enemy ability catalog rather than as scattered constants. Runtime validation requires every arcing projectile to name its arc span, and deterministic snapshots include the committed target, launch point and flight solution. Regression coverage now includes stationary, lateral, direct-approach, direct-retreat, post-commitment course changes, impossible intercepts and per-throw landing arcs.
+
+Presentation version is `11`. Save schema remains `37`; old in-flight projectiles retain a safe legacy arc fallback. Combat Survey format remains `30`.
 
 ## v0.2.87 — a pip is worth a sequence, and the room waits for the last blow
 
