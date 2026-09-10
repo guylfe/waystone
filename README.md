@@ -1,6 +1,25 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.89` (Android version code `289`).
+Current prototype version: `0.2.90` (Android version code `290`).
+
+## v0.2.90 — Hounds go over, Boars push aside, Oxen go through
+
+Pouncers no longer share one accidental answer to allied traffic. A Hound's active
+pounce visibly vaults allied bodies while walls, barriers, floor edges, and the player
+remain solid. A Boar parts allies of mass 1.0 or less, dealing no health damage but
+shoving them laterally, inflicting 1.5 posture, and briefly disrupting their action. A
+heavy ally, another committed charger, or a light body with nowhere to be displaced
+still stops and staggers the Boar. The Ox keeps its existing unstoppable, damaging
+gore through its own side. These are authored charge properties in the enemy catalog,
+not kind checks embedded in locomotion.
+
+Combat Survey format 31 replaces the misleading generic `environment / obstacle`
+charge result with the actual collision cause (`wall`, `barrier`, `floor_edge`, allied
+body, or fallback geometry), and reports every ally vaulted, shoved, or crashed into
+with its kind, ID, and mass. This is the second consumer anticipated by the structure
+audit's deferred structured-occupancy recommendation: the simulator now needs both the
+occupancy answer and its reason in order to distinguish a tactical body block from a
+map collision.
 
 ## v0.2.89 — room clear reaches the room report
 

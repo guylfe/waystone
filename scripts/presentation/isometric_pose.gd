@@ -52,6 +52,12 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 		commitment = motion
 		offset = direction * world_radius * (0.12 + motion * 0.12)
 		lift = world_radius * motion * (0.18 if kind in ["dodge", "evade", "vault"] else 0.07)
+		# A Hound passing through an allied body is a leap, not intangible clipping.
+		# The simulation authors the airborne flag on its charge profile; presentation
+		# merely makes the active travel legible and never changes the collision point.
+		if kind == "charge" and bool(action.get("airborne", false)) and elapsed >= float(action.get("startup", 0.0)) and elapsed <= float(action.get("active_end", duration)):
+			var flight := clampf((elapsed - float(action.get("startup", 0.0))) / maxf(0.001, float(action.get("active_end", duration)) - float(action.get("startup", 0.0))), 0.0, 1.0)
+			lift += world_radius * 0.95 * sin(flight * PI)
 		width_scale = 1.0 + motion * 0.10
 		height_scale = 1.0 - motion * 0.10
 		stride = sin(progress * TAU) * world_radius * 0.30

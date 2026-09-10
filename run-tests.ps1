@@ -65,6 +65,7 @@ $HeadlessSuite = @(
     'sweeping_cut_test',
     'defense_input_test',
     'capture_telemetry_test',
+    'charge_ally_collision_test',
     'energy_test',
     'warrior_character_test',
     'rogue_characters_test',
@@ -73,6 +74,7 @@ $HeadlessSuite = @(
 	'structure_audit_test',
     'combat_survey_test',
     'combat_survey_ui_test',
+    'isometric_pose_test',
     'weapon_geometry_test',
     'strike_diagnostic_smoke'
 )

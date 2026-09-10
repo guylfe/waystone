@@ -69,6 +69,7 @@ func _init() -> void:
 	assert(recovery_clear.survey_feedback_pending)
 	var first_seed: int = first.survey_room_seed
 	first._annotate_player_action("test_ability")
+	first.survey_charge_traffic_events.append({"charger_id": 1, "charger_kind": "hound", "interaction": "vaulted", "cause": "", "ally_id": 2, "ally_kind": "knife", "ally_mass": 1.0, "at": first.simulation_time})
 	for enemy in first.enemies: enemy["hp"] = 0
 	first._remove_dead_enemies()
 	assert(first.survey_feedback_pending)
@@ -98,7 +99,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Energy:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Energy depleted:" in report and "Energy overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 30" in report and "Presentation version: 11" in report and "Combat rules: Recovery" in report)
+	assert("Report format: 31" in report and "Presentation version: 12" in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Energy regeneration delay:" in report)
@@ -108,6 +109,7 @@ func _init() -> void:
 	assert("Unable to afford: a basic attack" in report and "a full combo" in report)
 	assert("with an enemy alerted)" in report)
 	assert("Pacing:" in report and "Recipe:" in report and "Roles:" in report)
+	assert("Charge traffic: 1 allies vaulted; 0 shoved; 0 ally-body crashes; 0 geometry crashes" in report)
 	assert("Presentation version:" in report and "View: isometric + top_down" in report and "View switches: 1" in report)
 
 	var director = RunStateScript.new(false)

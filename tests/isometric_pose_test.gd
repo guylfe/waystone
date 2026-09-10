@@ -24,6 +24,9 @@ func _init() -> void:
 	var vault := IsometricPoseScript.sample({"kind": "vault", "elapsed": 0.25, "duration": 0.54}, direction, 30.0)
 	assert(float(vault["vertical_lift"]) > 0.0)
 	assert(absf(float(vault["stride"])) > 0.0)
+	var grounded_charge := IsometricPoseScript.sample({"kind": "charge", "elapsed": 0.89, "duration": 1.58, "startup": 0.70, "active_end": 1.08}, direction, 25.0)
+	var airborne_charge := IsometricPoseScript.sample({"kind": "charge", "elapsed": 0.89, "duration": 1.58, "startup": 0.70, "active_end": 1.08, "airborne": true}, direction, 25.0)
+	assert(float(airborne_charge["vertical_lift"]) > float(grounded_charge["vertical_lift"]))
 	for index in range(8):
 		var facing := Vector2.UP.rotated(float(index) * TAU / 8.0)
 		assert(IsometricPoseScript.direction_bucket(facing) >= 0 and IsometricPoseScript.direction_bucket(facing) < 8)

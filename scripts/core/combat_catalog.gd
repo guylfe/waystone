@@ -40,6 +40,14 @@ const PROPERTY_DEFAULTS := {
 	"cooldown_multiplier": 1.0,
 	"temporal_authority": 0,
 	"offhand": "",
+	# A charge owns how it meets its own side. Ordinary bodies still collide.
+	# `block` preserves the default; `vault` crosses allies while airborne;
+	# `shove_lighter` parts only bodies at or below the authored mass limit; and
+	# `gore` is the Ox's existing no-slowdown, damaging pass-through.
+	"charge_ally_collision": "block",
+	"charge_ally_mass_limit": 0.0,
+	"charge_ally_posture": 0.0,
+	"charge_airborne": false,
 }
 
 # These three values are shared martial learning. They are not Dark Souls-style
@@ -357,9 +365,9 @@ const CHARACTER_TRACKS := {
 }
 
 const ARCHETYPES := {
-	"boar": {"role": "frontline", "ai_id": "boar", "base_hp": 35, "radius": 42.0, "posture_base": 0.0, "move_speed": 245.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.58, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25}, "presentation": {"name": "Boar", "color": "9b6541", "speed": "Medium", "reach": "Medium", "trait": "Pounce only", "signature_technique": ""}},
-	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Unstoppable gore; runs its line until it hits something", "signature_technique": ""}},
-	"hound": {"role": "flanker", "ai_id": "hound", "base_hp": 30, "radius": 25.0, "posture_base": 0.0, "move_speed": 325.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75}, "presentation": {"name": "Hound", "color": "6f91b8", "speed": "Fast", "reach": "Medium", "trait": "Pounce; agile retreat", "signature_technique": ""}},
+	"boar": {"role": "frontline", "ai_id": "boar", "base_hp": 35, "radius": 42.0, "posture_base": 0.0, "move_speed": 245.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.58, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25, "charge_ally_collision": "shove_lighter", "charge_ally_mass_limit": 1.0, "charge_ally_posture": 1.5}, "presentation": {"name": "Boar", "color": "9b6541", "speed": "Medium", "reach": "Medium", "trait": "Pounce; parts light ranks but crashes into heavy bodies", "signature_technique": ""}},
+	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4, "charge_ally_collision": "gore"}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Unstoppable gore; runs its line until it hits something", "signature_technique": ""}},
+	"hound": {"role": "flanker", "ai_id": "hound", "base_hp": 30, "radius": 25.0, "posture_base": 0.0, "move_speed": 325.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75, "charge_ally_collision": "vault", "charge_airborne": true}, "presentation": {"name": "Hound", "color": "6f91b8", "speed": "Fast", "reach": "Medium", "trait": "Pounce over allies; agile retreat", "signature_technique": ""}},
 	"bandit": {"role": "flanker", "ai_id": "bandit", "base_hp": 25, "radius": 23.0, "posture_base": 0.5, "move_speed": 285.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": ["twin_evasive_counter"], "equipped_weapon_art": "twin_evasive_counter", "defense_id": "dodge", "attributes": {"health": 4, "speed": 6, "stealth": 3, "awareness": 5, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Bandit", "color": "d2b05c", "speed": "Fast", "reach": "Short", "trait": "Quick knife; evasive", "signature_technique": "quick_cut"}},
 	"knife": {"role": "flanker", "ai_id": "knife", "base_hp": 20, "radius": 22.0, "posture_base": 0.0, "move_speed": 290.0, "survey_cost": 1, "xp": 1, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 3, "speed": 6, "stealth": 2, "awareness": 4, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Knife", "color": "e5be55", "speed": "Fast", "reach": "Short", "trait": "Low stability", "signature_technique": "quick_cut"}},
 	"blade": {"role": "frontline", "ai_id": "blade", "base_hp": 35, "radius": 28.0, "posture_base": 0.0, "move_speed": 230.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.48, "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 5, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Blade", "color": "e46c63", "speed": "Medium", "reach": "Medium", "trait": "Balanced melee", "signature_technique": "diagonal_cut"}},
@@ -616,6 +624,15 @@ static func validate_catalog() -> Array[String]:
 			if not presentation_data.has(key): errors.append("%s presentation is missing %s" % [kind, key])
 		var signature := String(presentation_data.get("signature_technique", ""))
 		if signature != "" and not AttackGeometryScript.TECHNIQUES.has(signature): errors.append("%s names unknown signature technique %s" % [kind, signature])
+		var properties := Dictionary(PROPERTY_DEFAULTS).duplicate(true)
+		properties.merge(Dictionary(profile.get("properties", {})), true)
+		var ally_collision := String(properties.get("charge_ally_collision", "block"))
+		if ally_collision not in ["block", "vault", "shove_lighter", "gore"]:
+			errors.append("%s names unknown charge ally collision %s" % [kind, ally_collision])
+		if ally_collision == "shove_lighter" and float(properties.get("charge_ally_mass_limit", 0.0)) <= 0.0:
+			errors.append("%s must author a positive charge ally mass limit" % kind)
+		if bool(properties.get("charge_airborne", false)) and ally_collision != "vault":
+			errors.append("%s is airborne without a vault charge profile" % kind)
 	for kind_value in MELEE_ATTACK_PLANS:
 		var kind := String(kind_value)
 		if not ARCHETYPES.has(kind): errors.append("melee plan names unknown archetype %s" % kind)

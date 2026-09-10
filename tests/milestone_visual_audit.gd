@@ -31,9 +31,14 @@ func _initialize() -> void:
 	await _d_sweeping_cut()
 	await _the_unplayed_ox()
 	await _f_warrior_vanguard_status()
+	await _g_hound_vault()
 	quit(0)
 
 func _fresh(loadout: String, rules: String = "energy"):
+	# Each authored frame is independent. Do not let the board-level banner from a
+	# preceding cleared setup obscure the next visual subject.
+	board.room_clear_remaining = 0.0
+	board.room_clear_latched = false
 	var s = board.state
 	s.start_run(loadout, "combat_survey", 4242, "encounter", rules)
 	s.enemies.clear()
@@ -142,3 +147,16 @@ func _f_warrior_vanguard_status() -> void:
 	s.request_attack(s.player_pos + Vector2.RIGHT * 100.0, false)
 	s.player_action["elapsed"] = float(s.player_action.get("startup", 0.0)) + 0.04
 	await _shoot("milestone-f-warrior-vanguard-status")
+
+# --- G: 0.2.90 Hound ally vault ----------------------------------------------------------
+func _g_hound_vault() -> void:
+	var s = _fresh("warrior")
+	var knife = _put(s, "knife", Vector2(0, -150), 20)
+	var hound = _put(s, "hound", Vector2(0, -150), 30)
+	hound["action"] = s._enemy_charge_action(hound, 1.58, 0.70, 1.08, 500.0, 14, Vector2.DOWN)
+	hound["action"]["label"] = "pounce"
+	hound["action"]["elapsed"] = 0.89
+	# The coincident world positions are deliberate: the frame must make the Hound
+	# read as passing above the Knife rather than as two bodies clipping together.
+	knife["facing"] = Vector2.DOWN
+	await _shoot("milestone-g-hound-vault")

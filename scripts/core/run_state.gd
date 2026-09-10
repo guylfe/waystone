@@ -441,9 +441,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.89"
+const GAME_VERSION := "0.2.90"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 11
+const PRESENTATION_VERSION := 12
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -914,6 +914,7 @@ var survey_crowding_nearest_sum := 0.0
 var survey_crowding_close_samples := 0
 var survey_misdirected_ally_hits := 0
 var survey_interruption_events: Array[Dictionary] = []
+var survey_charge_traffic_events: Array[Dictionary] = []
 var survey_strike_diagnostics: Array[Dictionary] = []
 
 func _init(auto_start: bool = true) -> void:
@@ -1127,6 +1128,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_crowding_close_samples = 0
 	survey_misdirected_ally_hits = 0
 	survey_interruption_events.clear()
+	survey_charge_traffic_events.clear()
 	survey_engagement_multi_samples = 0
 	survey_isolated_kills = 0
 	survey_engaged_kills = 0
@@ -6579,6 +6581,153 @@ func _gore_allies_in_path(charger: Dictionary, origin: Vector2, finish: Vector2,
 		_damage_enemy_from_consumable(other, int(action.get("damage_max", action.get("damage", 10))), 4.0, Vector2(other["pos"]))
 	action["gored_ids"] = gored
 
+# Charge traffic is a combat rule, not ordinary locomotion. A Hound crosses allies
+# only during the damaging leap; a Boar parts light ranks but can still be stopped by
+# a heavy or genuinely jammed body; and the Ox retains its full-damage gore. The
+# profile is copied from the canonical enemy properties when the action is authored,
+# so neither movement nor presentation has to infer identity from an enemy kind.
+func _record_charge_traffic(charger: Dictionary, interaction: String, blocker: Dictionary = {}, cause: String = "") -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	var event := {
+		"charger_id": int(charger.get("id", -1)),
+		"charger_kind": String(charger.get("kind", "enemy")),
+		"interaction": interaction,
+		"cause": cause,
+		"at": simulation_time,
+	}
+	if not blocker.is_empty():
+		event.merge({
+			"ally_id": int(blocker.get("id", -1)),
+			"ally_kind": String(blocker.get("kind", "enemy")),
+			"ally_mass": _enemy_mass(String(blocker.get("kind", ""))),
+		}, true)
+	survey_charge_traffic_events.append(event)
+
+func _allies_crossed_by_charge(charger: Dictionary, origin: Vector2, finish: Vector2) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var charger_id := int(charger.get("id", -2))
+	var reach := float(charger.get("radius", ENEMY_RADIUS))
+	for other in _nearby_enemies(origin, origin.distance_to(finish) + reach + 90.0):
+		if int(other.get("id", -1)) == charger_id or int(other.get("hp", 0)) <= 0: continue
+		if not _enemy_on_current_layer(other): continue
+		if _segment_distance_to_point(origin, finish, Vector2(other["pos"])) <= reach + float(other.get("radius", ENEMY_RADIUS)):
+			result.append(other)
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", -1)) < int(b.get("id", -1)))
+	return result
+
+func _note_vaulted_allies(charger: Dictionary, origin: Vector2, finish: Vector2, action: Dictionary) -> void:
+	var vaulted: Array = action.get("vaulted_ally_ids", [])
+	for other in _allies_crossed_by_charge(charger, origin, finish):
+		var other_id := int(other.get("id", -1))
+		if vaulted.has(other_id): continue
+		vaulted.append(other_id)
+		_record_charge_traffic(charger, "vaulted", other)
+	action["vaulted_ally_ids"] = vaulted
+
+func _charge_ally_blocker(charger: Dictionary, position: Vector2) -> Dictionary:
+	var radius := float(charger.get("radius", ENEMY_RADIUS))
+	var candidates: Array[Dictionary] = []
+	for other in _nearby_enemies(position, radius + 90.0):
+		if int(other.get("id", -1)) == int(charger.get("id", -2)) or int(other.get("hp", 0)) <= 0: continue
+		if not _enemy_on_current_layer(other): continue
+		if position.distance_to(Vector2(other["pos"])) < radius + float(other.get("radius", ENEMY_RADIUS)):
+			candidates.append(other)
+	if candidates.is_empty(): return {}
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_distance := position.distance_squared_to(Vector2(a["pos"]))
+		var b_distance := position.distance_squared_to(Vector2(b["pos"]))
+		return int(a.get("id", -1)) < int(b.get("id", -1)) if is_equal_approx(a_distance, b_distance) else a_distance < b_distance)
+	return candidates[0]
+
+func _charge_collision_context(charger: Dictionary, origin: Vector2, delta: Vector2) -> Dictionary:
+	var radius := float(charger.get("radius", ENEMY_RADIUS))
+	var probes := [origin + delta, Vector2(origin.x + delta.x, origin.y), Vector2(origin.x, origin.y + delta.y)]
+	for position_value in probes:
+		var position := Vector2(position_value)
+		if not _inside_world(position, radius) or not _actor_footprint_on_floor(position, radius): return {"cause": "floor_edge"}
+		if _point_in_barrier(position, radius, int(charger.get("id", -1))): return {"cause": "barrier"}
+		for wall in _nearby_walls(position, radius + 8.0):
+			if _circle_intersects_rect(position, radius, wall): return {"cause": "wall"}
+		var ally := _charge_ally_blocker(charger, position)
+		if not ally.is_empty(): return {"cause": "ally_body", "blocker": ally}
+		if position.distance_to(player_pos) < radius + PLAYER_RADIUS: return {"cause": "player_body"}
+	return {"cause": "other_geometry"}
+
+func _boar_shove_reaction(ally: Dictionary, charger: Dictionary, action: Dictionary) -> void:
+	var posture := float(action.get("ally_shove_posture", 0.0))
+	var contact := Vector2(ally["pos"])
+	if _apply_posture_damage(ally, posture, contact, "enemy", "boar_shove"): return
+	var existing: Dictionary = ally.get("action", {})
+	if String(existing.get("kind", "idle")) in ["hit_reaction", "stagger"]: return
+	_interrupt_enemy_action(ally, "enemy", "boar_shove")
+	var away := (Vector2(ally["pos"]) - Vector2(charger["pos"])).normalized()
+	if away.length_squared() < 0.001: away = Vector2.RIGHT
+	ally["action"] = _action("hit_reaction", 0.26, Vector2.ZERO)
+	ally["action"].merge({
+		"reaction_contact": contact,
+		"reaction_direction": away,
+		"reaction_strength": 0.72,
+		"reaction_source_kind": "charge",
+		"interrupted_action": existing.duplicate(true),
+	}, true)
+	ally["posture_recovery_delay"] = maxf(float(ally.get("posture_recovery_delay", 0.0)), 0.26)
+	_add_effect("interrupt", contact, 0, {"direction": away, "strength": 0.72})
+
+func _try_shove_charge_ally(charger: Dictionary, origin: Vector2, delta: Vector2, action: Dictionary) -> bool:
+	var candidate := origin + delta
+	var ally := _charge_ally_blocker(charger, candidate)
+	if ally.is_empty(): return false
+	if String(Dictionary(ally.get("action", {})).get("kind", "")) == "charge": return false
+	if _enemy_mass(String(ally.get("kind", ""))) > float(action.get("ally_shove_mass_limit", 0.0)) + 0.001: return false
+	var direction := delta.normalized()
+	if direction.length_squared() < 0.001: return false
+	var side := direction.rotated(PI * 0.5)
+	var relative := Vector2(ally["pos"]) - candidate
+	var along := relative.dot(direction)
+	var lateral := relative.dot(side)
+	var required := float(charger.get("radius", ENEMY_RADIUS)) + float(ally.get("radius", ENEMY_RADIUS)) + 2.0
+	var required_lateral := sqrt(maxf(0.0, required * required - along * along))
+	var shift := maxf(4.0, required_lateral - absf(lateral) + 2.0)
+	var preferred_sign := signf(lateral)
+	if is_zero_approx(preferred_sign): preferred_sign = 1.0 if (int(charger.get("id", 0)) + int(ally.get("id", 0))) % 2 == 0 else -1.0
+	var ally_origin := Vector2(ally["pos"])
+	var moved := _move_actor(ally_origin, side * preferred_sign * shift, float(ally["radius"]), int(ally["id"]))
+	if moved.is_equal_approx(ally_origin):
+		moved = _move_actor(ally_origin, side * -preferred_sign * shift, float(ally["radius"]), int(ally["id"]))
+	_set_enemy_position(ally, moved)
+	if candidate.distance_to(moved) < required - 1.0: return false
+	var shoved: Array = action.get("shoved_ally_ids", [])
+	var ally_id := int(ally.get("id", -1))
+	if not shoved.has(ally_id):
+		shoved.append(ally_id)
+		_boar_shove_reaction(ally, charger, action)
+		_record_charge_traffic(charger, "shoved", ally)
+	action["shoved_ally_ids"] = shoved
+	return true
+
+func _settle_vault_landing(charger: Dictionary, origin: Vector2, finish: Vector2, action: Dictionary, landing: bool) -> Vector2:
+	var blocker := _charge_ally_blocker(charger, finish)
+	if blocker.is_empty():
+		action["last_clear_landing"] = finish
+		return finish
+	if not landing: return finish
+	# Crossing an ally is allowed only while the Hound is visibly airborne. If its
+	# authored endpoint is still occupied, finish at the most recent clear point
+	# instead of spending recovery interpenetrating another body.
+	return Vector2(action.get("last_clear_landing", origin))
+
+func _move_charging_actor(charger: Dictionary, origin: Vector2, delta: Vector2, action: Dictionary, landing: bool = false) -> Dictionary:
+	var ally_collision := String(action.get("ally_collision", "block"))
+	if ally_collision == "shove_lighter": _try_shove_charge_ally(charger, origin, delta, action)
+	var ignores_allies := ally_collision in ["vault", "gore"]
+	var finish := _move_actor(origin, delta, float(charger["radius"]), int(charger["id"]), ignores_allies)
+	if ally_collision == "vault":
+		_note_vaulted_allies(charger, origin, finish, action)
+		finish = _settle_vault_landing(charger, origin, finish, action, landing)
+	elif ally_collision == "gore": _gore_allies_in_path(charger, origin, finish, action)
+	var collision := {} if not finish.is_equal_approx(origin) else _charge_collision_context(charger, origin, delta)
+	return {"position": finish, "collision": collision}
+
 # Straight rather than an arc, so the ends stay a real option. Perpendicular to the
 # player's escape heading -- their movement direction if moving, otherwise straight away
 # from the caster -- and placed ahead of them, so it cuts retreat rather than shielding it.
@@ -6941,19 +7090,31 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				_resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 			var charge_origin := Vector2(enemy["pos"])
-			var ploughs_through := bool(action.get("unstoppable", false))
-			_set_enemy_position(enemy, _move_actor(charge_origin, Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"]), ploughs_through))
-			if ploughs_through: _gore_allies_in_path(enemy, charge_origin, Vector2(enemy["pos"]), action)
+			var charge_delta := Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt
+			var landing := elapsed + enemy_dt > float(action["active_end"])
+			var charge_motion := _move_charging_actor(enemy, charge_origin, charge_delta, action, landing)
+			_set_enemy_position(enemy, Vector2(charge_motion["position"]))
 			if Vector2(enemy["pos"]).is_equal_approx(charge_origin):
+				var collision: Dictionary = charge_motion.get("collision", {})
+				var collision_cause := String(collision.get("cause", "other_geometry"))
+				# Body collision is resolved before this branch. A charge meeting the
+				# player's actual circle is already inside its larger authored contact
+				# allowance, so let the contact path below own that outcome.
+				if collision_cause == "player_body":
+					pass
+				else:
+					var blocker: Dictionary = collision.get("blocker", {})
+					_record_charge_traffic(enemy, "crashed", blocker, collision_cause)
 				# Released before the action is replaced -- afterwards the charge
 				# dictionary and its record are already gone.
-				_interrupt_enemy_action(enemy, "environment", "obstacle")
-				enemy["action"] = _action("stagger", 0.62, Vector2.ZERO)
-				enemy["posture"] = maxf(0.0, float(enemy["posture"]) - 1.0)
-				_add_effect("posture_break", charge_origin)
-				_set_message("The %s crashes into an obstacle." % String(enemy["kind"]))
-				enemies[index] = enemy
-				continue
+					_interrupt_enemy_action(enemy, "environment", collision_cause)
+					enemy["action"] = _action("stagger", 0.62, Vector2.ZERO)
+					enemy["posture"] = maxf(0.0, float(enemy["posture"]) - 1.0)
+					_add_effect("posture_break", charge_origin)
+					var crash_name := String(blocker.get("kind", collision_cause)).replace("_", " ")
+					_set_message("The %s crashes into %s." % [String(enemy["kind"]), crash_name])
+					enemies[index] = enemy
+					continue
 			var cap := float(action.get("charge_cap", 0.0))
 			if cap > 0.0:
 				action["charge_travelled"] = float(action.get("charge_travelled", 0.0)) + charge_origin.distance_to(Vector2(enemy["pos"]))
@@ -7086,7 +7247,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# single strike everywhere except point-blank, where standing inside a Boar's
 		# reach and committing anyway is a risk rather than an injustice.
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.70, 1.50):
-			enemy["action"] = _charge_action(1.95, 0.70, 1.50, 360.0, 25, direction)
+			enemy["action"] = _enemy_charge_action(enemy, 1.95, 0.70, 1.50, 360.0, 25, direction)
 			enemy["action"]["label"] = "pounce"
 			# A charging body is wider than the circle it collides on: the shoulders carry
 			# past the centre line. Without this the Boar missed a sidestep begun at the
@@ -7212,7 +7373,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# floor meant it walked up and never charged again -- two gores in 36 seconds
 		# in the 0.2.28 survey. Changing the silhouette must not disarm the attack.
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= float(enemy["radius"]) + PLAYER_RADIUS + OX_CHARGE_MIN_GAP and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _charge_action(OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 35, direction)
+			enemy["action"] = _enemy_charge_action(enemy, OX_CHARGE_DURATION, OX_CHARGE_STARTUP, OX_CHARGE_ACTIVE_END, OX_CHARGE_SPEED, 35, direction)
 			enemy["action"]["label"] = "gore"
 			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90
 			enemy["action"]["charge_cap"] = OX_CHARGE_CAP
@@ -7233,8 +7394,12 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# it reopens a lane instead of becoming the Hound's unbounded retreat, which
 			# measured 495 units. A cornered Ox still crashes into the wall behind it.
 			var reset_end := OX_DISENGAGE_STARTUP + OX_DISENGAGE_CAP / OX_DISENGAGE_SPEED
-			enemy["action"] = _charge_action(reset_end + 0.20, OX_DISENGAGE_STARTUP, reset_end, OX_DISENGAGE_SPEED, 0, -direction)
+			enemy["action"] = _enemy_charge_action(enemy, reset_end + 0.20, OX_DISENGAGE_STARTUP, reset_end, OX_DISENGAGE_SPEED, 0, -direction)
 			enemy["action"]["label"] = "reset"
+			# Only the committed forward gore ploughs through allies. The short reverse
+			# reset keeps its historical body collision, so it cannot damage or ghost
+			# through an ally behind the Ox.
+			enemy["action"]["ally_collision"] = "block"
 			enemy["action"]["charge_cap"] = OX_DISENGAGE_CAP
 			enemy["action"]["charge_travelled"] = 0.0
 			# A disengage has no contact window; it must never resolve a hit on the way out.
@@ -7251,7 +7416,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# cadence instead, all of which are visible before you commit. Commit
 			# the Dodge on first sight or wear it -- but it costs 2 rather than 5, and
 			# the narrow body leaves a sidestep genuinely available at range.
-			enemy["action"] = _charge_action(1.58, 0.70, 1.08, 500.0, 14, direction)
+			enemy["action"] = _enemy_charge_action(enemy, 1.58, 0.70, 1.08, 500.0, 14, direction)
 			enemy["action"]["label"] = "pounce"
 			enemy["action"]["tracking_end"] = 0.70 * 0.85
 			# A charge's effective walk-safe fraction is dominated by launch distance
@@ -7408,7 +7573,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and _charge_can_contact(enemy, distance, 420.0, 0.34, 0.76):
 			if rng.randf() < 0.55: enemy["action"] = _werewolf_pounce_combo(direction)
 			else:
-				enemy["action"] = _charge_action(1.42, 0.34, 0.78, 430.0, 20, direction)
+				enemy["action"] = _enemy_charge_action(enemy, 1.42, 0.34, 0.78, 430.0, 20, direction)
 				enemy["action"]["label"] = "pounce"
 			enemy["pounce_cooldown"] = 1.72
 		elif distance <= 148.0:
@@ -7428,7 +7593,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 				enemy["action"]["damage"] = 20
 			else: enemy["action"] = _melee_action(2.15, 0.76, 1.30, 205.0, 20, direction, "heavy_cleave")
 		elif distance <= 520.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
-			enemy["action"] = _charge_action(1.80, 0.62, 1.05, 300.0, 20, direction)
+			enemy["action"] = _enemy_charge_action(enemy, 1.80, 0.62, 1.05, 300.0, 20, direction)
 		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.72)
 	else:
 		if distance <= 690.0 and distance >= 230.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
@@ -8076,6 +8241,15 @@ func _charge_action(duration: float, startup: float, active_end: float, speed: f
 	result["active_end"] = active_end
 	result["speed"] = speed
 	result["damage"] = damage
+	return result
+
+func _enemy_charge_action(enemy: Dictionary, duration: float, startup: float, active_end: float, speed: float, damage: int, direction: Vector2) -> Dictionary:
+	var result := _charge_action(duration, startup, active_end, speed, damage, direction)
+	var properties: Dictionary = enemy.get("properties", {})
+	result["ally_collision"] = String(properties.get("charge_ally_collision", "block"))
+	result["ally_shove_mass_limit"] = float(properties.get("charge_ally_mass_limit", 0.0))
+	result["ally_shove_posture"] = float(properties.get("charge_ally_posture", 0.0))
+	result["airborne"] = bool(properties.get("charge_airborne", false))
 	return result
 
 func _werewolf_claw_combo(direction: Vector2) -> Dictionary:

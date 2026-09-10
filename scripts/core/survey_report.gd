@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 30
+const FORMAT_VERSION := 31
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -191,6 +191,27 @@ static func build_text(session: Dictionary) -> String:
 				100.0 * float(room.get("crowding_close_samples", 0)) / float(crowding_samples),
 			])
 		lines.append("Misdirected same-side hits: %d" % int(room.get("misdirected_ally_hits", 0)))
+		var charge_traffic: Array = room.get("charge_traffic_events", [])
+		if not charge_traffic.is_empty():
+			var vaults := 0
+			var shoves := 0
+			var ally_crashes := 0
+			var geometry_crashes := 0
+			for event_value in charge_traffic:
+				var interaction := String(Dictionary(event_value).get("interaction", ""))
+				if interaction == "vaulted": vaults += 1
+				elif interaction == "shoved": shoves += 1
+				elif String(Dictionary(event_value).get("cause", "")) == "ally_body": ally_crashes += 1
+				elif interaction == "crashed": geometry_crashes += 1
+			lines.append("Charge traffic: %d allies vaulted; %d shoved; %d ally-body crashes; %d geometry crashes" % [vaults, shoves, ally_crashes, geometry_crashes])
+			for event_value in charge_traffic:
+				var event := Dictionary(event_value)
+				var charger := "%s#%d" % [String(event.get("charger_kind", "enemy")), int(event.get("charger_id", -1))]
+				var interaction := String(event.get("interaction", "event"))
+				if event.has("ally_id"):
+					lines.append("  %s %s %s#%d (mass %.2f)" % [charger, interaction, String(event.get("ally_kind", "enemy")), int(event.get("ally_id", -1)), float(event.get("ally_mass", 0.0))])
+				else:
+					lines.append("  %s %s: %s" % [charger, interaction, String(event.get("cause", "unknown")).replace("_", " ")])
 		var interruption_events: Array = room.get("interruption_events", [])
 		if not interruption_events.is_empty():
 			lines.append("Hostile commitments interrupted: %d" % interruption_events.size())

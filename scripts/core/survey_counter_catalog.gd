@@ -36,6 +36,7 @@ const DESCRIPTORS := [
 	{"key":"crowding_close_samples", "source":"survey_crowding_close_samples", "policy":"delta", "format":"integer"},
 	{"key":"misdirected_ally_hits", "source":"survey_misdirected_ally_hits", "policy":"delta", "format":"integer"},
 	{"key":"interruption_events", "source":"survey_interruption_events", "baseline_key":"interruption_event_count", "policy":"array_slice", "format":"records"},
+	{"key":"charge_traffic_events", "source":"survey_charge_traffic_events", "baseline_key":"charge_traffic_event_count", "policy":"array_slice", "format":"records"},
 	{"key":"isolated_kills", "source":"survey_isolated_kills", "policy":"delta", "format":"integer"},
 	{"key":"engaged_kills", "source":"survey_engaged_kills", "policy":"delta", "format":"integer"},
 	{"key":"energy_spent", "source":"energy_spent_total", "policy":"delta", "format":"decimal"},
