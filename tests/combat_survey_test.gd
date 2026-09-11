@@ -70,6 +70,13 @@ func _init() -> void:
 	var first_seed: int = first.survey_room_seed
 	first._annotate_player_action("test_ability")
 	first.survey_charge_traffic_events.append({"charger_id": 1, "charger_kind": "hound", "interaction": "vaulted", "cause": "", "ally_id": 2, "ally_kind": "knife", "ally_mass": 1.0, "at": first.simulation_time})
+	first.survey_battle_flow_events.append({"type":"gain", "cause":"sequence", "before":0, "after":1, "at":first.simulation_time})
+	first.survey_battle_flow_events.append({"type":"refresh", "cause":"advance", "before":1, "after":1, "at":first.simulation_time})
+	first.survey_battle_flow_events.append({"type":"loss", "cause":"hit", "before":1, "after":0, "at":first.simulation_time})
+	first.survey_enemy_control_events.append({"enemy_id":2, "enemy_kind":"ox", "control":"crash_stagger", "interrupted_action":"charge", "action_label":"gore", "duration":0.62, "alerted":true, "at":first.simulation_time})
+	first.survey_enemy_action_events.append({"enemy_id":2, "enemy_kind":"ox", "event":"committed", "action":"charge", "label":"gore", "elapsed":0.0, "startup":0.85, "at":first.simulation_time})
+	first.survey_enemy_action_events.append({"enemy_id":2, "enemy_kind":"ox", "event":"launched", "action":"charge", "label":"gore", "elapsed":0.85, "startup":0.85, "at":first.simulation_time})
+	first.survey_enemy_control_time_by_kind["ox"] = 0.62
 	for enemy in first.enemies: enemy["hp"] = 0
 	first._remove_dead_enemies()
 	assert(first.survey_feedback_pending)
@@ -99,7 +106,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Energy:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Energy depleted:" in report and "Energy overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 31" in report and "Presentation version: 12" in report and "Combat rules: Recovery" in report)
+	assert("Report format: 32" in report and "Presentation version: 13" in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Energy regeneration delay:" in report)
@@ -110,6 +117,9 @@ func _init() -> void:
 	assert("with an enemy alerted)" in report)
 	assert("Pacing:" in report and "Recipe:" in report and "Roles:" in report)
 	assert("Charge traffic: 1 allies vaulted; 0 shoved; 0 ally-body crashes; 0 geometry crashes" in report)
+	assert("Battle Flow: 1 pips gained; peak 1; 1 Advance refreshes; losses hit 1" in report)
+	assert("Enemy control: 0 hit reactions; 0 posture breaks; 1 crash staggers; 0 holds; 0.62s controlled while alerted" in report)
+	assert("Ox gore: 1 committed; 1 launched; 0 interrupted before launch; 1 terrain crashes" in report)
 	assert("Presentation version:" in report and "View: isometric + top_down" in report and "View switches: 1" in report)
 
 	var director = RunStateScript.new(false)

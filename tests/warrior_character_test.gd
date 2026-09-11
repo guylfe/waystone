@@ -134,8 +134,12 @@ func test_resolve_is_the_natural_poise_authority() -> void:
 func test_battle_flow_rules() -> void:
 	var state := fresh_state()
 	state.track_ranks["vanguard"] = 1
+	assert(is_equal_approx(state.BATTLE_FLOW_DECAY_SECONDS, 15.0))
 	state._register_battle_flow_contact()
 	assert(state.battle_flow_pips == 1)
+	assert(is_equal_approx(state.battle_flow_remaining, 15.0))
+	assert(not state._battle_flow_sequence_complete({"kind":"combo", "phases":[{}, {}], "committed_phase":0}))
+	assert(state._battle_flow_sequence_complete({"kind":"combo", "phases":[{}, {}], "committed_phase":1}))
 	var action := {"kind":"attack"}
 	state._stamp_battle_flow(action)
 	assert(is_equal_approx(float(action["battle_flow_damage"]), 1.0 / 6.0))

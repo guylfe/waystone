@@ -441,19 +441,18 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.90"
+const GAME_VERSION := "0.2.91"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 12
+const PRESENTATION_VERSION := 13
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
 const RALLY_DRAIN_PER_SECOND := 8.0
-# 10.0, up from 3.5. A pip now costs a completed combo rather than a connecting strike,
-# and a full sword sequence is 3.3 seconds on its own -- at 3.5 the ramp decayed faster
-# than it could be built. Ten seconds covers finishing a combo, crossing to the next body
-# and finishing another, so the decay punishes disengaging rather than punishing the
-# sequence length the pip now requires.
-const BATTLE_FLOW_DECAY_SECONDS := 10.0
+# A pip costs a completed sequence rather than a connecting strike. Fifteen seconds
+# gives the Vanguard time to finish, read the next lane, and reach another body without
+# making a brief reposition count as disengagement. Hits, evasions, exhaustion and a
+# genuinely long break still spend the chain through their existing rules.
+const BATTLE_FLOW_DECAY_SECONDS := 15.0
 const ADVANCE_TARGET_RANGE := 280.0
 const ADVANCE_TARGET_HALF_ANGLE := PI * 0.30
 const COOLDOWN_DODGE := "dodge"
@@ -915,6 +914,10 @@ var survey_crowding_close_samples := 0
 var survey_misdirected_ally_hits := 0
 var survey_interruption_events: Array[Dictionary] = []
 var survey_charge_traffic_events: Array[Dictionary] = []
+var survey_battle_flow_events: Array[Dictionary] = []
+var survey_enemy_control_events: Array[Dictionary] = []
+var survey_enemy_action_events: Array[Dictionary] = []
+var survey_enemy_control_time_by_kind: Dictionary = {}
 var survey_strike_diagnostics: Array[Dictionary] = []
 
 func _init(auto_start: bool = true) -> void:
@@ -1129,6 +1132,10 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_misdirected_ally_hits = 0
 	survey_interruption_events.clear()
 	survey_charge_traffic_events.clear()
+	survey_battle_flow_events.clear()
+	survey_enemy_control_events.clear()
+	survey_enemy_action_events.clear()
+	survey_enemy_control_time_by_kind.clear()
 	survey_engagement_multi_samples = 0
 	survey_isolated_kills = 0
 	survey_engaged_kills = 0
@@ -2954,7 +2961,7 @@ func _record_exhaustion_threat(start: bool) -> void:
 
 func _begin_exhaustion() -> void:
 	if not uses_energy_rules(): return
-	_break_battle_flow()
+	_break_battle_flow(false, "exhaustion")
 	if rally_active: _end_rally("exhausted")
 	player_overexertion_pending = false
 	player_exhaustion_remaining = EXHAUSTION_DURATION
@@ -3537,7 +3544,7 @@ const TAKE_AIM_ENERGY := 33.0
 func request_vault(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	var vault_energy := VAULT_ENERGY * (0.6 if has_track_rank("acrobat", 4) else 1.0)
 	if not is_player_ready() or (subclass_ability_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(vault_energy): return false
-	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow()
+	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow(false, "evasion")
 	player_facing = direction.normalized()
 	var recovery := 0.10 if has_track_rank("acrobat", 1) else 0.20
 	player_action = _action("vault", 0.34 + recovery, player_facing)
@@ -3989,7 +3996,7 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	if not desperate and not _spend_energy(DODGE_ENERGY_COST):
 		return false
 	_break_player_combo()
-	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow()
+	if track_choice("flow_discipline") != "sword_dance": _break_battle_flow(false, "evasion")
 	player_facing = direction.normalized()
 	var style := track_choice("evasion_style")
 	var duration := 0.60 if has_track_rank("evasion", 1) else 0.66
@@ -5212,19 +5219,33 @@ func _stamp_battle_flow(action: Dictionary) -> void:
 
 func _register_battle_flow_contact(from_advance: bool = false) -> void:
 	if not has_track_rank("vanguard", 1): return
+	var before := battle_flow_pips
 	if not from_advance: battle_flow_pips = mini(_battle_flow_max_pips(), battle_flow_pips + 1)
 	battle_flow_remaining = BATTLE_FLOW_DECAY_SECONDS
+	_record_battle_flow_event("refresh" if battle_flow_pips == before else "gain", "advance" if from_advance else "sequence", before, battle_flow_pips)
 
-func _break_battle_flow(force_all: bool = false) -> void:
+func _record_battle_flow_event(event_type: String, cause: String, before: int, after: int) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	survey_battle_flow_events.append({
+		"type": event_type,
+		"cause": cause,
+		"before": before,
+		"after": after,
+		"at": simulation_time,
+	})
+
+func _break_battle_flow(force_all: bool = false, cause: String = "other") -> void:
 	if battle_flow_pips <= 0:
 		battle_flow_remaining = 0.0
 		return
+	var before := battle_flow_pips
 	if not force_all and has_track_rank("vanguard", 3):
 		battle_flow_pips -= 1
 		battle_flow_remaining = BATTLE_FLOW_DECAY_SECONDS if battle_flow_pips > 0 else 0.0
 	else:
 		battle_flow_pips = 0
 		battle_flow_remaining = 0.0
+	_record_battle_flow_event("loss", cause, before, battle_flow_pips)
 
 func _begin_rally() -> void:
 	if rally_active: return
@@ -5312,7 +5333,7 @@ func _tick(dt: float) -> void:
 	if rally_active: _drain_rally(dt)
 	if battle_flow_remaining > 0.0:
 		battle_flow_remaining = maxf(0.0, battle_flow_remaining - dt)
-		if battle_flow_remaining <= 0.0: _break_battle_flow()
+		if battle_flow_remaining <= 0.0: _break_battle_flow(false, "decay")
 	if player_posture_recovery_delay > 0.0:
 		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
 	if player_posture < player_posture_max and player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
@@ -6387,6 +6408,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 	# a real blow or by leaving -- never by chip damage, and never by nothing.
 	if (_enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
 		enemy["posture"] = 0.25
+		_record_enemy_control(enemy, "posture_hold", action, 0.0)
 		_add_effect("strain", Vector2(enemy["pos"]))
 		_set_message("The heavy enemy holds its grounded attack.")
 		return false
@@ -6403,6 +6425,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 		player_recovery_world_seconds = player_action_remaining / maxf(0.01, _player_personal_tempo())
 	var guaranteed_world_seconds := player_recovery_world_seconds + POSTURE_BREAK_OPENING_SECONDS + break_bonus_seconds
 	stagger_duration = maxf(stagger_duration, guaranteed_world_seconds * _enemy_personal_tempo(enemy))
+	_record_enemy_control(enemy, "posture_break", action, stagger_duration / maxf(0.01, _enemy_personal_tempo(enemy)))
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
@@ -6446,6 +6469,20 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	var elapsed := float(action_before.get("elapsed", 0.0))
 	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
 	var high_impact := impact >= 3.5
+	# A committed charge may explicitly own its whole promise, including wind-up.
+	# Damage and posture have already resolved; only death or the charge's own solid-
+	# geometry crash may replace it. This is action data, not an Ox name check.
+	if action_kind == "charge" and bool(action_before.get("unstoppable_from_commit", false)):
+		_record_enemy_control(enemy, "reaction_held", action_before, 0.0)
+		_add_effect("strain", Vector2(enemy["pos"]))
+		return false
+	# Some bodies answer ordinary attacks through posture rather than a flinch on every
+	# health hit. Explicit forced reactions remain valid before they commit an action.
+	var reaction_policy := String(Dictionary(enemy.get("properties", {})).get("hit_reaction_policy", "ordinary"))
+	if not forced and reaction_policy == "posture_only":
+		_record_enemy_control(enemy, "reaction_held", action_before, 0.0)
+		_add_effect("strain", Vector2(enemy["pos"]))
+		return false
 	# Heavy bodies do not lose an authored attack to every light contact. Strong
 	# impacts may still interrupt startup, and accumulated posture damage remains
 	# the universal route to a full break. Once the weapon moves, even a strong
@@ -6455,11 +6492,6 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# A boar earns armour only after its pounce has accelerated. The crouch and
 	# early travel remain interruptible, and a posture-heavy technique can still
 	# arrest a full-speed charge.
-	# Nothing short of lethal stops a running Ox. The damage has already been applied
-	# by the caller, so reaching here means the blow did not kill it.
-	if not forced and action_kind == "charge" and bool(action_before.get("unstoppable", false)) and elapsed >= float(action_before.get("startup", 0.0)):
-		_add_effect("strain", Vector2(enemy["pos"]))
-		return false
 	if not forced and enemy_kind == "boar" and action_kind == "charge" and String(action_before.get("label", "")) == "pounce":
 		var armour_start := float(action_before.get("momentum_armour_start", INF))
 		if elapsed >= armour_start and not high_impact:
@@ -6491,6 +6523,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	var reaction_strength := 1.18 if high_impact else 1.0
 	if action_kind == "charge": reaction_strength += 0.16
 	var source_tool := String(source_action.get("ability_id", source_action.get("technique_id", source_action.get("kind", "melee"))))
+	_record_enemy_control(enemy, "hit_reaction", action_before, duration / maxf(0.01, _enemy_personal_tempo(enemy)))
 	_interrupt_enemy_action(enemy, "player", source_tool)
 	enemy["action"] = _action("hit_reaction", duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
@@ -6602,6 +6635,32 @@ func _record_charge_traffic(charger: Dictionary, interaction: String, blocker: D
 			"ally_mass": _enemy_mass(String(blocker.get("kind", ""))),
 		}, true)
 	survey_charge_traffic_events.append(event)
+
+func _record_enemy_control(enemy: Dictionary, control: String, action_before: Dictionary, duration: float = 0.0) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	survey_enemy_control_events.append({
+		"enemy_id": int(enemy.get("id", -1)),
+		"enemy_kind": String(enemy.get("kind", "unknown")),
+		"control": control,
+		"interrupted_action": String(action_before.get("kind", "idle")),
+		"action_label": String(action_before.get("label", action_before.get("technique_id", ""))),
+		"duration": duration,
+		"alerted": String(enemy.get("awareness", "idle")) == "alerted",
+		"at": simulation_time,
+	})
+
+func _record_enemy_action_event(enemy: Dictionary, event_type: String, action: Dictionary) -> void:
+	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	survey_enemy_action_events.append({
+		"enemy_id": int(enemy.get("id", -1)),
+		"enemy_kind": String(enemy.get("kind", "unknown")),
+		"event": event_type,
+		"action": String(action.get("kind", "idle")),
+		"label": String(action.get("label", action.get("technique_id", ""))),
+		"elapsed": float(action.get("elapsed", 0.0)),
+		"startup": float(action.get("startup", 0.0)),
+		"at": simulation_time,
+	})
 
 func _allies_crossed_by_charge(charger: Dictionary, origin: Vector2, finish: Vector2) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
@@ -6958,6 +7017,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if posture < posture_max and recovery_delay <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
 			enemy["posture"] = minf(posture_max, posture + enemy_dt * float(enemy.get("posture_recovery_rate", 1.8)))
 		var action: Dictionary = enemy["action"]
+		if mode_id == ModeRulesScript.COMBAT_SURVEY and String(enemy.get("awareness", "idle")) == "alerted" and String(action.get("kind", "idle")) in ["hit_reaction", "stagger"]:
+			var control_kind := String(enemy.get("kind", "unknown"))
+			survey_enemy_control_time_by_kind[control_kind] = float(survey_enemy_control_time_by_kind.get(control_kind, 0.0)) + dt
 		if String(action["kind"]) == "idle":
 			var awareness := String(enemy.get("awareness", "idle"))
 			if awareness == "idle":
@@ -6991,7 +7053,11 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					enemy["facing"] = search_facing.rotated(search_sign * dt * 1.8).normalized()
 					enemies[index] = enemy
 					continue
-			else: _choose_enemy_action(enemy)
+			else:
+				_choose_enemy_action(enemy)
+				var chosen_action: Dictionary = enemy["action"]
+				if String(chosen_action.get("kind", "idle")) in ENEMY_ATTACK_ACTION_KINDS:
+					_record_enemy_action_event(enemy, "committed", chosen_action)
 			action = enemy["action"]
 		if String(action["kind"]) != "idle":
 			# Action execution remains intentionally unchanged, but every committed
@@ -7002,9 +7068,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if not action.has("ability_id"):
 				action["ability_id"] = String(action.get("label", action.get("technique_id", action["kind"])))
 			enemy["action"] = action
-		action["elapsed"] = float(action["elapsed"]) + enemy_dt
+		var previous_elapsed := float(action["elapsed"])
+		action["elapsed"] = previous_elapsed + enemy_dt
 		var kind := String(action["kind"])
 		var elapsed := float(action["elapsed"])
+		if kind in ENEMY_ATTACK_ACTION_KINDS and action.has("startup") and previous_elapsed < float(action["startup"]) and elapsed >= float(action["startup"]):
+			_record_enemy_action_event(enemy, "launched", action)
 		if kind not in ["move", "evade"]:
 			enemy["is_moving"] = false
 			enemy["last_motion"] = Vector2.ZERO
@@ -7107,6 +7176,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					_record_charge_traffic(enemy, "crashed", blocker, collision_cause)
 				# Released before the action is replaced -- afterwards the charge
 				# dictionary and its record are already gone.
+					_record_enemy_control(enemy, "crash_stagger", action, 0.62 / maxf(0.01, _enemy_personal_tempo(enemy)))
 					_interrupt_enemy_action(enemy, "environment", collision_cause)
 					enemy["action"] = _action("stagger", 0.62, Vector2.ZERO)
 					enemy["posture"] = maxf(0.0, float(enemy["posture"]) - 1.0)
@@ -7378,8 +7448,10 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"]["tracking_end"] = OX_CHARGE_STARTUP * 0.90
 			enemy["action"]["charge_cap"] = OX_CHARGE_CAP
 			enemy["action"]["charge_travelled"] = 0.0
-			# Nothing short of a killing blow stops it once it is moving.
+			# The catalog says whether the promise begins at commitment rather than only
+			# after locomotion starts. The Ox owns that rule today; the resolver owns it.
 			enemy["action"]["unstoppable"] = true
+			enemy["action"]["unstoppable_from_commit"] = bool(Dictionary(enemy.get("properties", {})).get("charge_unstoppable_from_commit", false))
 			_attach_charge_capture(enemy["action"], 0.50, "gore")
 			enemy["pounce_cooldown"] = 3.20
 		elif float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
@@ -7736,6 +7808,10 @@ func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "system", 
 			"enemy_id": int(enemy.get("id", -1)),
 			"enemy_kind": String(enemy.get("kind", "unknown")),
 			"interrupted_action": interrupted_kind,
+			"action_label": String(action.get("label", action.get("technique_id", ""))),
+			"elapsed": float(action.get("elapsed", 0.0)),
+			"startup": float(action.get("startup", 0.0)),
+			"before_active": action.has("startup") and float(action.get("elapsed", 0.0)) < float(action.get("startup", 0.0)),
 			"interrupter": interrupter,
 			"tool": tool,
 			"at": simulation_time,
@@ -9102,7 +9178,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	# not safety, and a lethal hit still kills through it.
 	if interrupted_kind in ["hit_reaction", "stagger"] or _player_reaction_completed_this_tick or was_protected:
 		interruptions_prevented_total += 1
-		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow(false, "hit")
 		if was_protected and interrupted_kind not in ["hit_reaction", "stagger"]:
 			_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
 			_set_message("The %s lands, but cannot take your answer away." % source_name)
@@ -9114,14 +9190,14 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		player_action["guard_remaining"] = maxf(0.0, guard_before - posture_damage)
 		survey_unbreakable_suppressions_total += 1
 		interruptions_prevented_total += 1
-		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow(false, "hit")
 		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
 		_set_message("The %s lands, but Rally makes your attack unbreakable." % source_name)
 		return
 	if poise_holds:
 		player_action["guard_remaining"] = maxf(0.0, guard_before - posture_damage)
 		survey_poise_holds_total += 1
-		if track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+		if track_choice("flow_discipline") != "unshaken": _break_battle_flow(false, "hit")
 		_add_effect("strain", impact, 0, {"direction": (player_pos - impact).normalized()})
 		_set_message("The %s hurts you, but your committed action holds." % source_name)
 		return
@@ -9129,7 +9205,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		rally_cooldown = 3.0
 	if interrupted_kind == "combo": set_attack_hold(false)
 	if interrupted_kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("interrupted")
-	if posture_broken or track_choice("flow_discipline") != "unshaken": _break_battle_flow()
+	if posture_broken or track_choice("flow_discipline") != "unshaken": _break_battle_flow(false, "stagger" if posture_broken else "hit")
 	_break_player_combo()
 	var reaction_duration := 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage))
 	# Reaching this line means no protection was active -- the guard above returns

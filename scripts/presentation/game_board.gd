@@ -3218,16 +3218,20 @@ func _draw_warrior_status(pos: Vector2, radius: float, action: Dictionary) -> vo
 	if state.has_track_rank("vanguard", 1):
 		var pip_count := 4 if state.has_track_rank("vanguard", 4) else 3
 		var active_pips := int(visual.get("battle_flow_pips", state.battle_flow_pips))
-		var spacing := maxf(8.0, radius * 0.48)
+		var spacing := maxf(11.0, radius * 0.64)
 		var origin := pos + Vector2(-spacing * float(pip_count - 1) * 0.5, radius * 1.82)
+		var pip_radius := maxf(4.2, radius * 0.18)
 		for index in range(pip_count):
-			draw_circle(origin + Vector2(spacing * index, 0.0), maxf(2.8, radius * 0.12), Color("e8c35d") if index < active_pips else Color("465359"))
+			var pip_pos := origin + Vector2(spacing * index, 0.0)
+			draw_circle(pip_pos, pip_radius, Color("f2ca62") if index < active_pips else Color("28353b"))
+			draw_arc(pip_pos, pip_radius, 0.0, TAU, 16, Color("fff0b0") if index < active_pips else Color("718087"), maxf(1.2, radius * 0.045))
 		if active_pips > 0:
 			var remaining := float(visual.get("battle_flow_remaining", state.battle_flow_remaining))
-			var timer_width := spacing * float(pip_count - 1) + maxf(5.6, radius * 0.24)
-			var timer := Rect2(Vector2(pos.x - timer_width * 0.5, origin.y + maxf(5.0, radius * 0.23)), Vector2(timer_width, maxf(2.0, radius * 0.08)))
+			var timer_width := spacing * float(pip_count - 1) + pip_radius * 2.0
+			var timer := Rect2(Vector2(pos.x - timer_width * 0.5, origin.y + pip_radius + maxf(3.0, radius * 0.10)), Vector2(timer_width, maxf(3.0, radius * 0.11)))
 			draw_rect(timer, Color("27343a"))
 			draw_rect(Rect2(timer.position, Vector2(timer.size.x * clampf(remaining / state.BATTLE_FLOW_DECAY_SECONDS, 0.0, 1.0), timer.size.y)), Color("d7aa58"))
+			draw_rect(timer, Color("ecd995"), false, 1.0)
 	var guard_capacity := float(action.get("guard_capacity", 0.0))
 	if guard_capacity <= 0.0: return
 	var guard_remaining := clampf(float(action.get("guard_remaining", guard_capacity)), 0.0, guard_capacity)

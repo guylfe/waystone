@@ -48,6 +48,13 @@ const PROPERTY_DEFAULTS := {
 	"charge_ally_mass_limit": 0.0,
 	"charge_ally_posture": 0.0,
 	"charge_airborne": false,
+	# Most enemies flinch from an ordinary health hit when the shared resolver permits
+	# it. `posture_only` reserves ordinary control for a genuine posture break while
+	# preserving explicit forced reactions such as Advance.
+	"hit_reaction_policy": "ordinary",
+	# A charge with this property cannot be cancelled after the AI commits it, including
+	# during wind-up. Death and collision with solid level geometry remain authoritative.
+	"charge_unstoppable_from_commit": false,
 }
 
 # These three values are shared martial learning. They are not Dark Souls-style
@@ -366,7 +373,7 @@ const CHARACTER_TRACKS := {
 
 const ARCHETYPES := {
 	"boar": {"role": "frontline", "ai_id": "boar", "base_hp": 35, "radius": 42.0, "posture_base": 0.0, "move_speed": 245.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.58, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25, "charge_ally_collision": "shove_lighter", "charge_ally_mass_limit": 1.0, "charge_ally_posture": 1.5}, "presentation": {"name": "Boar", "color": "9b6541", "speed": "Medium", "reach": "Medium", "trait": "Pounce; parts light ranks but crashes into heavy bodies", "signature_technique": ""}},
-	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4, "charge_ally_collision": "gore"}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Unstoppable gore; runs its line until it hits something", "signature_technique": ""}},
+	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4, "charge_ally_collision": "gore", "hit_reaction_policy": "posture_only", "charge_unstoppable_from_commit": true}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Shrugs off ordinary blows; committed gore stops only for death or solid terrain", "signature_technique": ""}},
 	"hound": {"role": "flanker", "ai_id": "hound", "base_hp": 30, "radius": 25.0, "posture_base": 0.0, "move_speed": 325.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75, "charge_ally_collision": "vault", "charge_airborne": true}, "presentation": {"name": "Hound", "color": "6f91b8", "speed": "Fast", "reach": "Medium", "trait": "Pounce over allies; agile retreat", "signature_technique": ""}},
 	"bandit": {"role": "flanker", "ai_id": "bandit", "base_hp": 25, "radius": 23.0, "posture_base": 0.5, "move_speed": 285.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": ["twin_evasive_counter"], "equipped_weapon_art": "twin_evasive_counter", "defense_id": "dodge", "attributes": {"health": 4, "speed": 6, "stealth": 3, "awareness": 5, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Bandit", "color": "d2b05c", "speed": "Fast", "reach": "Short", "trait": "Quick knife; evasive", "signature_technique": "quick_cut"}},
 	"knife": {"role": "flanker", "ai_id": "knife", "base_hp": 20, "radius": 22.0, "posture_base": 0.0, "move_speed": 290.0, "survey_cost": 1, "xp": 1, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 3, "speed": 6, "stealth": 2, "awareness": 4, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Knife", "color": "e5be55", "speed": "Fast", "reach": "Short", "trait": "Low stability", "signature_technique": "quick_cut"}},
@@ -633,6 +640,8 @@ static func validate_catalog() -> Array[String]:
 			errors.append("%s must author a positive charge ally mass limit" % kind)
 		if bool(properties.get("charge_airborne", false)) and ally_collision != "vault":
 			errors.append("%s is airborne without a vault charge profile" % kind)
+		if String(properties.get("hit_reaction_policy", "ordinary")) not in ["ordinary", "posture_only"]:
+			errors.append("%s names unknown hit reaction policy %s" % [kind, String(properties.get("hit_reaction_policy", ""))])
 	for kind_value in MELEE_ATTACK_PLANS:
 		var kind := String(kind_value)
 		if not ARCHETYPES.has(kind): errors.append("melee plan names unknown archetype %s" % kind)

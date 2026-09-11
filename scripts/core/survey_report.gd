@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 31
+const FORMAT_VERSION := 32
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -150,6 +150,24 @@ static func build_text(session: Dictionary) -> String:
 			lines.append("Warrior holds: poise %d; Power Through %d (%d damage prevented); Unbreakable %d" % [
 				int(room.get("poise_holds", 0)), int(room.get("power_through_triggers", 0)),
 				int(room.get("power_through_damage_prevented", 0)), int(room.get("unbreakable_suppressions", 0))])
+		var battle_flow_events: Array = room.get("battle_flow_events", [])
+		if not battle_flow_events.is_empty():
+			var flow_gained := 0
+			var flow_peak := 0
+			var flow_refreshes := 0
+			var flow_losses := {}
+			for event_value in battle_flow_events:
+				var event := Dictionary(event_value)
+				flow_peak = maxi(flow_peak, int(event.get("after", 0)))
+				if String(event.get("type", "")) == "gain": flow_gained += maxi(0, int(event.get("after", 0)) - int(event.get("before", 0)))
+				elif String(event.get("type", "")) == "refresh": flow_refreshes += 1
+				elif String(event.get("type", "")) == "loss":
+					var cause := String(event.get("cause", "other"))
+					flow_losses[cause] = int(flow_losses.get(cause, 0)) + maxi(0, int(event.get("before", 0)) - int(event.get("after", 0)))
+			var loss_parts: Array[String] = []
+			for cause in ["hit", "stagger", "evasion", "exhaustion", "decay", "other"]:
+				if int(flow_losses.get(cause, 0)) > 0: loss_parts.append("%s %d" % [cause, int(flow_losses[cause])])
+			lines.append("Battle Flow: %d pips gained; peak %d; %d Advance refreshes; losses %s" % [flow_gained, flow_peak, flow_refreshes, ", ".join(loss_parts) if not loss_parts.is_empty() else "none"])
 		lines.append("Vulnerable Dodge recovery: %.2fs; damage received: %d" % [float(room.get("dodge_vulnerable_time", 0.0)), int(room.get("dodge_recovery_damage", 0))])
 		lines.append("Potions: %d -> %d" % [int(room.get("entry_potions", 0)), int(room.get("exit_potions", 0))])
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))
@@ -212,12 +230,47 @@ static func build_text(session: Dictionary) -> String:
 					lines.append("  %s %s %s#%d (mass %.2f)" % [charger, interaction, String(event.get("ally_kind", "enemy")), int(event.get("ally_id", -1)), float(event.get("ally_mass", 0.0))])
 				else:
 					lines.append("  %s %s: %s" % [charger, interaction, String(event.get("cause", "unknown")).replace("_", " ")])
+		var control_events: Array = room.get("enemy_control_events", [])
+		var control_time := Dictionary(room.get("enemy_control_time_by_kind", {}))
+		if not control_events.is_empty() or not control_time.is_empty():
+			var reactions := 0
+			var breaks := 0
+			var crashes := 0
+			var holds := 0
+			for event_value in control_events:
+				match String(Dictionary(event_value).get("control", "")):
+					"hit_reaction": reactions += 1
+					"posture_break": breaks += 1
+					"crash_stagger": crashes += 1
+					"reaction_held", "posture_hold": holds += 1
+			var total_control_time := 0.0
+			for kind in control_time: total_control_time += float(control_time[kind])
+			lines.append("Enemy control: %d hit reactions; %d posture breaks; %d crash staggers; %d holds; %.2fs controlled while alerted" % [reactions, breaks, crashes, holds, total_control_time])
 		var interruption_events: Array = room.get("interruption_events", [])
 		if not interruption_events.is_empty():
 			lines.append("Hostile commitments interrupted: %d" % interruption_events.size())
 			for event_value in interruption_events:
 				var event := Dictionary(event_value)
-				lines.append("  %s %s by %s using %s" % [String(event.get("enemy_kind", "enemy")), String(event.get("interrupted_action", "action")), String(event.get("interrupter", "unknown")), String(event.get("tool", "unknown"))])
+				var phase := " during wind-up" if bool(event.get("before_active", false)) else ""
+				lines.append("  %s %s%s by %s using %s" % [String(event.get("enemy_kind", "enemy")), String(event.get("action_label", event.get("interrupted_action", "action"))), phase, String(event.get("interrupter", "unknown")), String(event.get("tool", "unknown"))])
+		var enemy_action_events: Array = room.get("enemy_action_events", [])
+		var ox_committed := 0
+		var ox_launched := 0
+		for event_value in enemy_action_events:
+			var event := Dictionary(event_value)
+			if String(event.get("enemy_kind", "")) != "ox" or String(event.get("label", "")) != "gore": continue
+			if String(event.get("event", "")) == "committed": ox_committed += 1
+			elif String(event.get("event", "")) == "launched": ox_launched += 1
+		var ox_prelaunch_interrupts := 0
+		for event_value in interruption_events:
+			var event := Dictionary(event_value)
+			if String(event.get("enemy_kind", "")) == "ox" and String(event.get("action_label", "")) == "gore" and bool(event.get("before_active", false)): ox_prelaunch_interrupts += 1
+		var ox_crashes := 0
+		for event_value in control_events:
+			var event := Dictionary(event_value)
+			if String(event.get("enemy_kind", "")) == "ox" and String(event.get("action_label", "")) == "gore" and String(event.get("control", "")) == "crash_stagger": ox_crashes += 1
+		if ox_committed > 0 or ox_launched > 0 or ox_prelaunch_interrupts > 0 or ox_crashes > 0:
+			lines.append("Ox gore: %d committed; %d launched; %d interrupted before launch; %d terrain crashes" % [ox_committed, ox_launched, ox_prelaunch_interrupts, ox_crashes])
 		var view_modes := PackedStringArray(room.get("view_modes", []))
 		lines.append("View: %s" % (" + ".join(view_modes) if not view_modes.is_empty() else "unknown"))
 		lines.append("View switches: %d" % int(room.get("view_switches", 0)))

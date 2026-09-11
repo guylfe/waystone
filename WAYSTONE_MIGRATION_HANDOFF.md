@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-05
-**Current source baseline:** `0.2.85` (`versionCode 285`, save schema `37`, presentation version `10`, Combat Survey format `30`)
+**Updated:** 2026-09-11
+**Current source baseline:** `0.2.91` (`versionCode 291`, save schema `37`, presentation version `13`, Combat Survey format `32`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -520,7 +520,32 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.85`, 2026-09-05)
+### Latest verified package boundary (`0.2.91`, 2026-09-11)
+
+- All 21 default test files pass, with the single documented expected failure in
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- The real-renderer milestone audit regenerated its 13 frames. The larger Battle Flow pips and
+  decay bar were inspected at the Fold's portrait aspect ratio, and the Ox's wind-up and committed
+  charge remained visually legible.
+- `0.2.91` gives the Ox a posture-governed control identity: ordinary weapon contacts no longer
+  flinch it, a committed Gore ignores even forced hit reactions, and posture break, death, or solid
+  terrain can still stop it. Battle Flow now remains active for `15` seconds after a qualifying
+  contact or Advance refresh, up from `10`, with larger HUD pips and decay feedback.
+- Combat Survey format `32` records Battle Flow gain, refresh, peak and loss causes; enemy reaction,
+  posture-break and crash control; controlled time by enemy kind; and Ox Gore commitments, launches,
+  pre-launch interruptions, and terrain crashes. Presentation version is `13`; save schema remains
+  `37` because no persisted structure changed.
+- Windows SHA-256:
+  `7E0F8F035127A3ABADECCB7913D4B59212B5832705C0D2EEE7305474A1FD9691`;
+  file and product version both read back as `0.2.91`.
+- Android SHA-256:
+  `76DFDEA9443EDED995A66E28C1B32ECCDEA7A383EC8B8EC767732054809A4E2E`;
+  package metadata reads `com.waystone.prototype`, version name `0.2.91`, version code `291`.
+- Fold installation remains pending. ADB reported no connected device and discovered no wireless
+  debugging service on 2026-09-11, so a live pairing endpoint is required. The verified package and
+  device deployment remain separate claims.
+
+### Previous verified package boundary (`0.2.85`, 2026-09-05)
 
 - All 19 default test files pass, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.

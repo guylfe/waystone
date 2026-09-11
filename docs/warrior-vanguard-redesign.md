@@ -10,6 +10,15 @@
 
 **Implementation resolution (`0.2.85`).** Rally drains `8` Energy per second, or `6` with Enduring Rally; Battle Flow decays after `3.5` seconds; natural action poise is `floor(Resolve / 2)` with no separate character, weapon, or action base; the L7/L9 Vanguard nodes are **Steady Momentum** and **Full Momentum**. Battle Flow pips, decay, and action-poise capacity are visible. Survey format `30` records the requested attribution. Claude's principal breakpoint objection was resolved by carrying the already-authored melee posture values through action construction and by authoring posture on hostile projectiles and damaging hazards, rather than reverting to damage-derived values at the shared hit boundary. The Mage comment identified in O4 was corrected without changing Mage gameplay.
 
+**Playtest follow-up (`0.2.87` and `0.2.91`).** `0.2.87` changed a pip from one connecting
+phase to one completed weapon sequence and therefore raised decay from `3.5` to `10`
+seconds. The `0.2.89` Encounter survey still made Battle Flow difficult to notice and
+left too little time to finish a sequence, read a new lane, and cross to the next body.
+`0.2.91` raises the window to `15` seconds and enlarges the pips and decay bar. It does
+not change how pips are earned, their bonuses, Advance's refresh, or any loss rule.
+Survey format `32` now records gains, peak, refreshes, and loss causes so the next run can
+distinguish a chain that never started from one that started and was immediately broken.
+
 ---
 
 ## 1. Why change anything

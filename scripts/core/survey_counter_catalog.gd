@@ -37,6 +37,10 @@ const DESCRIPTORS := [
 	{"key":"misdirected_ally_hits", "source":"survey_misdirected_ally_hits", "policy":"delta", "format":"integer"},
 	{"key":"interruption_events", "source":"survey_interruption_events", "baseline_key":"interruption_event_count", "policy":"array_slice", "format":"records"},
 	{"key":"charge_traffic_events", "source":"survey_charge_traffic_events", "baseline_key":"charge_traffic_event_count", "policy":"array_slice", "format":"records"},
+	{"key":"battle_flow_events", "source":"survey_battle_flow_events", "baseline_key":"battle_flow_event_count", "policy":"array_slice", "format":"records"},
+	{"key":"enemy_control_events", "source":"survey_enemy_control_events", "baseline_key":"enemy_control_event_count", "policy":"array_slice", "format":"records"},
+	{"key":"enemy_action_events", "source":"survey_enemy_action_events", "baseline_key":"enemy_action_event_count", "policy":"array_slice", "format":"records"},
+	{"key":"enemy_control_time_by_kind", "source":"survey_enemy_control_time_by_kind", "policy":"dictionary_decimal_delta", "format":"seconds_by_kind"},
 	{"key":"isolated_kills", "source":"survey_isolated_kills", "policy":"delta", "format":"integer"},
 	{"key":"engaged_kills", "source":"survey_engaged_kills", "policy":"delta", "format":"integer"},
 	{"key":"energy_spent", "source":"energy_spent_total", "policy":"delta", "format":"decimal"},
@@ -120,6 +124,7 @@ static func room_values(state: Object, baseline: Dictionary) -> Dictionary:
 		match policy:
 			"delta": result[key] = current - baseline.get(baseline_key, current)
 			"dictionary_delta": result[key] = _dictionary_delta(Dictionary(current), Dictionary(baseline.get(baseline_key, {})))
+			"dictionary_decimal_delta": result[key] = _dictionary_decimal_delta(Dictionary(current), Dictionary(baseline.get(baseline_key, {})))
 			"array_slice": result[key] = Array(current).slice(int(baseline.get(baseline_key, 0))).duplicate(true)
 			"room": result[key] = current.duplicate(true) if current is Array or current is Dictionary else current
 	return result
@@ -129,6 +134,13 @@ static func _dictionary_delta(current: Dictionary, baseline: Dictionary) -> Dict
 	for key in current:
 		var difference := int(current[key]) - int(baseline.get(key, 0))
 		if difference > 0: result[key] = difference
+	return result
+
+static func _dictionary_decimal_delta(current: Dictionary, baseline: Dictionary) -> Dictionary:
+	var result := {}
+	for key in current:
+		var difference := float(current[key]) - float(baseline.get(key, 0.0))
+		if difference > 0.0001: result[key] = difference
 	return result
 
 static func validate() -> PackedStringArray:
@@ -141,6 +153,6 @@ static func validate() -> PackedStringArray:
 		var key := String(definition.get("key", ""))
 		if keys.has(key): errors.append("Duplicate survey counter: %s" % key)
 		keys[key] = true
-		if String(definition.get("policy", "")) not in ["delta", "dictionary_delta", "array_slice", "room"]:
+		if String(definition.get("policy", "")) not in ["delta", "dictionary_delta", "dictionary_decimal_delta", "array_slice", "room"]:
 			errors.append("Unknown survey counter policy for %s" % key)
 	return errors

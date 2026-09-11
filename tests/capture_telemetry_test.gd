@@ -445,6 +445,28 @@ func test_a_heavy_telegraph_still_answers_to_a_real_blow() -> void:
 	var heavy: bool = state._apply_enemy_hit_reaction(brute, 4.0, "alerted", brute["action"], Vector2.ZERO, {})
 	check(heavy, "a high-impact blow should still interrupt a heavy's wind-up")
 
+func test_the_ox_is_controlled_by_posture_not_ordinary_flinches() -> void:
+	var state := survey_state()
+	var ox := armed_enemy(state, "ox", Vector2.RIGHT * 400.0)
+	var idle := Dictionary(ox["action"]).duplicate(true)
+	check(not state._apply_enemy_hit_reaction(ox, 4.0, "alerted", idle, Vector2(ox["pos"]), {}),
+		"an ordinary high-impact hit must not flinch an uncommitted Ox")
+	check(String(Dictionary(ox["action"]).get("kind", "")) == "idle", "the resisted hit must leave the Ox ready to choose")
+	check(state._apply_posture_damage(ox, 99.0, Vector2(ox["pos"]), "player", "test_break"),
+		"a genuine posture break must still stagger an uncommitted Ox")
+	check(String(Dictionary(ox["action"]).get("kind", "")) == "stagger", "the Ox posture break must create a stagger")
+
+func test_committed_ox_gore_ignores_even_forced_reactions() -> void:
+	var state := survey_state()
+	var ox := armed_enemy(state, "ox", Vector2.RIGHT * 400.0)
+	state._choose_enemy_action(ox)
+	var gore := Dictionary(ox["action"])
+	check(String(gore.get("label", "")) == "gore" and bool(gore.get("unstoppable_from_commit", false)),
+		"the Ox gore must carry catalogued commitment armour")
+	check(not state._apply_enemy_hit_reaction(ox, 99.0, "alerted", gore, Vector2(ox["pos"]), {"force_hit_reaction":true}),
+		"a committed gore must not be cancelled during wind-up, even by a forced reaction")
+	check(String(Dictionary(ox["action"]).get("label", "")) == "gore", "the protected gore must remain committed")
+
 func test_the_ox_reopens_its_own_charge_lane() -> void:
 	# Standing inside its own minimum range, walking toward the player can never
 	# restore the gap a gore needs. The 0.2.30 Ox landed four charges and then milled
@@ -1664,6 +1686,8 @@ func _init() -> void:
 	test_charges_produce_capture_records()
 	test_a_heavy_telegraph_survives_posture_pressure()
 	test_a_heavy_telegraph_still_answers_to_a_real_blow()
+	test_the_ox_is_controlled_by_posture_not_ordinary_flinches()
+	test_committed_ox_gore_ignores_even_forced_reactions()
 	test_the_ox_reopens_its_own_charge_lane()
 	test_the_ox_still_gores_from_open_ground()
 	test_a_screen_does_not_strike_a_free_player()

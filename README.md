@@ -1,6 +1,28 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.90` (Android version code `290`).
+Current prototype version: `0.2.91` (Android version code `291`).
+
+## v0.2.91 — the Ox commits, Battle Flow has room to breathe
+
+The Ox no longer loses its role before it begins. Ordinary health hits still deal full
+damage and posture damage, but do not produce the repeated flinches that kept an idle
+Ox from ever choosing Gore. A genuine posture break still staggers it before commitment,
+and explicit forced reactions such as Advance still work then. Once Gore is committed,
+however, neither ordinary flinch, forced reaction, nor posture break cancels its wind-up
+or run. Death still stops it, and solid terrain still produces the authored crash stagger.
+Both permissions are catalogued enemy properties consumed by the shared reaction resolver.
+
+Battle Flow now remains active for **15 seconds**, up from 10. Building a pip still
+requires finishing a weapon sequence, and Advance still refreshes without granting one;
+the longer window changes only how much repositioning can happen before decay. The HUD
+pips and decay bar are larger and outlined so gaining the passive is visible on a phone.
+
+Combat Survey format 32 records Battle Flow gains, peak, Advance refreshes, and each
+loss cause. It also records enemy hit reactions, posture breaks, crash staggers, resisted
+control, actual controlled time while alerted, and enemy attack commitment/launch events.
+Ox rooms receive a derived Gore line showing commitments, launches, pre-launch
+interruptions, and terrain crashes. Presentation version is `13`; save schema remains
+`37`.
 
 ## v0.2.90 — Hounds go over, Boars push aside, Oxen go through
 
