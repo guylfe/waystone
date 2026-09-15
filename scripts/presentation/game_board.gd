@@ -3473,6 +3473,12 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling, Vector2(pose["body_scale"]), float(pose["stride"]))
 	_draw_enemy_conditions(pos, radius, enemy)
 	_draw_enemy_identity(kind, pos, facing, radius, color, action)
+	if kind == "werewolf" and int(enemy.get("boss_phase", 1)) >= 2:
+		var phase_side := facing.rotated(PI * 0.5)
+		draw_line(pos + phase_side * radius * 0.55, pos + phase_side * radius * 1.25 + facing * radius * 0.35, Color("f0b09a"), maxf(2.0, radius * 0.10))
+		draw_line(pos - phase_side * radius * 0.55, pos - phase_side * radius * 1.25 + facing * radius * 0.35, Color("f0b09a"), maxf(2.0, radius * 0.10))
+	if kind == "werewolf" and bool(enemy.get("boss_posture_break_pending", false)):
+		draw_arc(pos, radius * 1.48, 0.0, TAU, 20, Color("fff0a6", 0.88), maxf(2.0, radius * 0.09))
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
 		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
 	# The guard cannot be drawn while the sword is out. run_state's _enemy_blocks_attack
@@ -3838,11 +3844,33 @@ func _draw_claw_combo(world_pos: Vector2, action: Dictionary, color: Color) -> v
 	var first_end := float(action.get("first_end", 0.42))
 	var second_start := float(action.get("second_start", 0.57))
 	var second_end := float(action.get("second_end", 0.79))
-	if String(action.get("kind", "")) == "pounce_combo" and elapsed < first_start:
+	if String(action.get("kind", "")) == "pounce_combo":
 		var center := _world_to_screen(world_pos)
 		var facing := _screen_direction(Vector2(action.get("direction", Vector2.UP)))
-		draw_line(center, center - facing * 92.0 * world_scale, Color(color, 0.46), maxf(4.0, world_scale * 8.0))
-		return
+		var leap_start := float(action.get("startup", 0.52))
+		var ability_id := String(action.get("ability_id", "hunting_leap"))
+		if elapsed < leap_start:
+			if ability_id == "bounding_rake":
+				var side := facing.rotated(PI * 0.5)
+				# Paired open claws and a split lane announce the landing rake from the
+				# first preparation frame; Hunting Leap has one narrow pursuit line.
+				for sign_value in [-1.0, 1.0]:
+					var claw_origin: Vector2 = center + side * sign_value * 18.0 * world_scale
+					draw_line(claw_origin, claw_origin + facing * 118.0 * world_scale + side * sign_value * 20.0 * world_scale, Color("f0b09a", 0.78), maxf(3.0, world_scale * 5.0))
+					draw_arc(claw_origin, 20.0 * world_scale, facing.angle() - 0.7, facing.angle() + 0.7, 8, Color("f1d3bd", 0.92), maxf(2.0, world_scale * 3.0))
+			else:
+				draw_line(center, center + facing * 132.0 * world_scale, Color("d99a8a", 0.72), maxf(4.0, world_scale * 7.0))
+				draw_circle(center + facing * 132.0 * world_scale, maxf(4.0, world_scale * 6.0), Color("d99a8a", 0.72))
+			return
+		if not bool(action.get("landed", false)):
+			draw_line(center, center - facing * 92.0 * world_scale, Color(color, 0.58), maxf(4.0, world_scale * 8.0))
+			return
+		if ability_id != "bounding_rake" or bool(action.get("claw_cancelled", false)):
+			return
+		first_start = float(action.get("followup_start", INF))
+		first_end = float(action.get("followup_end", INF))
+		second_start = INF
+		second_end = INF
 	var second := elapsed >= second_start
 	var sampled := action.duplicate(false)
 	sampled["technique_id"] = "reverse_cut" if second else "quick_cut"
@@ -4393,12 +4421,16 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action.get("second_end", 0.79)): return "RIGHT CLAW"
 		return "RECOVERING"
 	if kind == "pounce_combo":
-		if elapsed < float(action.get("startup", 0.34)): return "CROUCHING"
-		if elapsed < float(action.get("pounce_end", 0.76)): return "POUNCING"
-		if elapsed < float(action.get("first_end", 1.01)): return "LEFT CLAW"
-		if elapsed < float(action.get("second_start", 1.13)): return "TURNING"
-		if elapsed < float(action.get("second_end", 1.34)): return "RIGHT CLAW"
+		var ability_id := String(action.get("ability_id", "hunting_leap"))
+		if elapsed < float(action.get("startup", 0.52)):
+			return "CLAWS SPREAD — RAKE FOLLOWS" if ability_id == "bounding_rake" else "SIGHTING PREY"
+		if not bool(action.get("landed", false)): return "BOUNDING RAKE" if ability_id == "bounding_rake" else "HUNTING LEAP"
+		if bool(action.get("crashed", false)): return "CRASHED — OPEN"
+		if ability_id == "bounding_rake":
+			if elapsed < float(action.get("followup_start", INF)): return "RAKE COMING"
+			if elapsed <= float(action.get("followup_end", -INF)): return "LANDING RAKE"
 		return "RECOVERING"
+	if kind == "phase_change": return "CHANGING POSTURE"
 	if kind == "slam": return "RAISING" if elapsed < float(action.get("startup", 1.0)) else "RECOVERING"
 	if kind == "hit_reaction": return "REELING"
 	if kind == "stagger": return "STAGGERED"

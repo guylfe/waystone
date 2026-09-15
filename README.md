@@ -1,6 +1,32 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.94` (Android version code `294`).
+Current prototype version: `0.2.95` (Android version code `295`).
+
+## v0.2.95 — the Werewolf commits to the hunt
+
+The solo Werewolf has been rebuilt around three declared actions rather than a generic
+charge followed by reconstructed claws. Phase one alternates readable **Hunting Leap**
+and **Double Rake** pressure, with at most one short lateral stalk between attacks.
+Hunting Leap tracks only during its 0.52-second crouch, then locks a line for a single
+impact and begins its 0.90-second recovery from the actual landing. An unreachable leap
+becomes ordinary navigation instead of a knowingly wasted attack.
+
+At 55% Health, the Werewolf queues a one-second, non-damaging posture change after its
+current action or earned opening. Phase two adds **Bounding Rake**: its spread-claw tell
+announces the landing follow-up from the first frame, its flight locks at launch, and a
+terrain collision cancels the claw for a 1.10-second crash opening. Hounds may be vaulted
+in flight; terrain and every other body remain solid, and no blocked landing is repaired
+with an overlap.
+
+Ordinary hits still deal damage but no longer flinch the boss repeatedly. A real posture
+break interrupts grounded states immediately, latches through airborne motion or the
+current claw contact, and then executes once without later hits postponing it. The
+Werewolf retains 210 Health and 14 posture; the pack variant remains disabled. Boss Lab
+now reports phase transitions and missed Double Rakes. Focused contracts cover contact
+count, world timing and Frost, unreachable selection, diagonal terrain crashes, Hound
+vaulting, delayed posture breaks, phase/death order, and exact seeded retry.
+
+Report format is `35`; presentation version is `16`; save schema remains `37`.
 
 ## v0.2.94 — the Knife promises a side
 

@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 34
+const FORMAT_VERSION := 35
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -278,6 +278,9 @@ static func build_text(session: Dictionary) -> String:
 			var launches := 0
 			var completions := 0
 			var invisible_commitments := 0
+			var phase_starts := 0
+			var phase_completions := 0
+			var action_misses := 0
 			for event_value in enemy_action_events:
 				var event := Dictionary(event_value)
 				if String(event.get("event", "")) == "committed":
@@ -285,10 +288,15 @@ static func build_text(session: Dictionary) -> String:
 					if not bool(event.get("visible", true)): invisible_commitments += 1
 				elif String(event.get("event", "")) == "launched": launches += 1
 				elif String(event.get("event", "")) == "completed": completions += 1
+				elif String(event.get("event", "")) == "phase_started": phase_starts += 1
+				elif String(event.get("event", "")) == "phase_completed": phase_completions += 1
+				elif String(event.get("event", "")) == "missed": action_misses += 1
 			var misses := 0
 			for row_value in Array(capture.get("attacks", [])):
 				misses += int(Dictionary(row_value).get("miss", 0))
+			misses += action_misses
 			lines.append("Boss actions: %d begun; %d completed; %d interrupted; %d missed (%d launched; %d begun while not visible)" % [commitments, completions, interruption_events.size(), misses, launches, invisible_commitments])
+			lines.append("Boss phases: %d transition begun; %d completed" % [phase_starts, phase_completions])
 		var ox_committed := 0
 		var ox_launched := 0
 		for event_value in enemy_action_events:

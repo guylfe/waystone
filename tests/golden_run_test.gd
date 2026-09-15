@@ -9,23 +9,24 @@ const DeterminismSnapshotScript = preload("res://scripts/core/determinism_snapsh
 const EXPECTED := {
 	"started": {
 		# 0.2.93 changes the opening deck and stable Shield ward. 0.2.94 adds the
-		# Knife's stable flank state to every deterministic enemy record.
-		"all": "9218df2e9e06ce6cdae61ce1185c55f23fa984539ee82c582f3a29d56267dc76",
-		"enemies": "924d7ba701e083db2c6955f1e1e890542afd921681fe65455fef8b56846fafe8",
+		# Knife's stable flank state to every deterministic enemy record. 0.2.95 adds
+		# explicit shared boss phase, stalk, and pending-break defaults.
+		"all": "6cd210f5de6b10b7f64628e6ddf0303eec9a939140056557b452cd911a27abb7",
+		"enemies": "f7e8f07c4a71d06534839e247393566bf0f0743a23b941a7b381a1f4a281ca1f",
 		"player": "9d12c4220ec5ba713708f7f838d96b59c6580f46863f1d491debc8eea7d0eaf4",
 		"run": "7cb9b3f199278f0d02f6962cb25c8215362aac218e75f143480243279589aa35",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_move": {
-		"all": "a5f540af83154c8bb3df40dad4877ec98946d1bd3af65d7105f423f6a70c5af4",
-		"enemies": "ef28bf9da98158a6e164df0b1f0a95f4d809c3c6fe4b69d2f30496dce9918470",
+		"all": "3b8f25c2fd9802a5232c0f09d3e7c3d0a365bc11f4a004cf453380db831aa6e2",
+		"enemies": "6c195bb8a225c71ba943869de016703ecd2bfb61132a07a9057c39d5b413dde3",
 		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "2e15565515cf5e79d8df23f40e6fc8578aaf6c218c2f4ba42f48aaf862a339b5",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_wait": {
-		"all": "83defba60c7a471095fc77d321c8801a728dc94329e823d57ca1075f6b0c0fcb",
-		"enemies": "eea0957a715f303379f987dba6abea11afa41b05dfce084178ff2a9f47ce069f",
+		"all": "b19e2fd8497c2f64e0f3df042c9fa3e5a080185b7f8561e0ca62168cb946213b",
+		"enemies": "69ec062431007b211ba0129313b062841500e39bff8b7e386560cd054e8a29f4",
 		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "4898a4f3bd11370193d827a941662c68deeb03eaa254b042e447cbb56f25ff04",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
@@ -39,9 +40,10 @@ const ELEMENTALIST_EXPECTED := {
 		# 0.2.88 deliberately changes the enemy and world components: the Javelineer now
 		# carries its committed intercept on the hurl action and its real arc on the shot.
 		# 0.2.93 adds the stable ward relationship to deterministic enemy state;
-		# 0.2.94 adds stable Knife flank state to the same component.
-		"all": "f5e18984becd680b8a425d724ee0965392a9e3cc55040ca584bb9aceea9f897d",
-		"enemies": "cbd32d702c5b3c3dc0af9fa24f35a69596ed5477b3e8e3ebd9376b51f5b119a0",
+		# 0.2.94 adds stable Knife flank state to the same component; 0.2.95 adds
+		# explicit shared boss lifecycle defaults.
+		"all": "bfbee6548542d4c5055f98e9bc02a28f5120c90536bd11cdcfca816445feb4b9",
+		"enemies": "132ce910764b17a0969a29edaba04cc9cdd9fa9db3f4a3a7a7d72eab5259ee7e",
 		"player": "c486c4ec20c8d39e6049393c39bf889c607cdd9e35f15d346918663c08bbdbc0",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
 		"world": "87c4ad94448ce5a5eab26e9e7bc331bf00bf7d0f39fe808084491c1558deb395",

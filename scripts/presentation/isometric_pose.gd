@@ -22,7 +22,7 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 	var stride := 0.0
 	var commitment := 0.0
 
-	if kind in ["attack", "sweep", "melee", "combo", "art_combo", "twin_fang", "dodge_strike", "claw_combo", "pounce_combo"]:
+	if kind in ["attack", "sweep", "melee", "combo", "art_combo", "twin_fang", "dodge_strike", "claw_combo"]:
 		var phase := _commitment_curve(progress, startup, active_end)
 		commitment = phase
 		offset = direction * world_radius * lerpf(-0.13, 0.24, phase)
@@ -47,6 +47,28 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 		# Keep the placeholder body steady so repeated short movement pulses do
 		# not read as bobbing or squash-and-stretch.
 		commitment = progress
+	elif kind == "pounce_combo":
+		var leap_start := float(action.get("startup", 0.0))
+		var leap_end := float(action.get("pounce_end", action.get("flight_end", duration)))
+		if elapsed < leap_start:
+			var coil := clampf(elapsed / maxf(0.001, leap_start), 0.0, 1.0)
+			commitment = coil
+			offset = -direction * world_radius * 0.12 * coil
+			lift = -world_radius * 0.12 * coil
+			width_scale = 1.0 + coil * (0.22 if String(action.get("ability_id", "")) == "bounding_rake" else 0.10)
+			height_scale = 1.0 - coil * 0.18
+		elif not bool(action.get("landed", false)) or elapsed <= leap_end:
+			var flight := clampf((elapsed - leap_start) / maxf(0.001, leap_end - leap_start), 0.0, 1.0)
+			commitment = 1.0
+			offset = direction * world_radius * 0.20
+			lift = world_radius * (0.48 + 0.72 * sin(flight * PI))
+			width_scale = 0.92
+			height_scale = 1.10
+		else:
+			var recovery := clampf((elapsed - leap_end) / maxf(0.001, duration - leap_end), 0.0, 1.0)
+			commitment = 1.0 - recovery
+			lift = world_radius * 0.08 * (1.0 - recovery)
+			height_scale = 1.0 - 0.12 * (1.0 - recovery)
 	elif kind in ["charge", "advance", "dodge", "evade", "vault"]:
 		var motion := sin(progress * PI)
 		commitment = motion
@@ -68,6 +90,13 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 		lift = -world_radius * 0.08 * brace
 		width_scale = 1.0 + brace * 0.12
 		height_scale = 1.0 - brace * 0.12
+	elif kind == "phase_change":
+		var shift := sin(progress * PI)
+		commitment = shift
+		lift = -world_radius * 0.10 * shift
+		width_scale = 1.0 + 0.24 * shift
+		height_scale = 1.0 - 0.16 * shift
+		twist = 0.16 * sin(progress * TAU)
 	elif kind in ["hit_reaction", "stagger"]:
 		commitment = 1.0 - progress
 		twist = 0.30 * (1.0 - progress)

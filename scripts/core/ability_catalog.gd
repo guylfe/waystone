@@ -38,6 +38,12 @@ const SPELLS := {
 # whichever generic action carrier happens to deliver it. Fireball uses `shoot`
 # in the simulator, for example, but it is not an Archer shot in presentation.
 const ENEMY_ABILITIES := {
+	# Werewolf timings are authored in reference-world seconds. RunState converts them
+	# once through the boss's native tempo; a later condition such as Frost still slows
+	# the action instead of being cancelled out at action creation.
+	"hunting_leap": {"action_kind":"pounce_combo", "startup":0.52, "duration":2.12, "flight_duration":0.70, "recovery":0.90, "speed":500.0, "travel_cap":350.0, "damage":20, "posture":3.0, "phase_before":"SIGHTING PREY", "phase_after":"HUNTING LEAP", "color":"d99a8a", "executor":"melee", "ally_collision":"vault_hounds"},
+	"double_rake": {"action_kind":"claw_combo", "startup":0.46, "duration":1.68, "first_start":0.46, "first_end":0.62, "second_start":0.84, "second_end":1.00, "reach":148.0, "damage":12, "posture":3.0, "phase_before":"DRAWING CLAWS", "phase_after":"DOUBLE RAKE", "color":"f1d3bd", "executor":"melee"},
+	"bounding_rake": {"action_kind":"pounce_combo", "startup":0.68, "duration":2.44, "flight_duration":0.60, "recovery":1.00, "crash_recovery":1.10, "followup_delay":0.36, "followup_duration":0.16, "speed":500.0, "travel_cap":300.0, "damage":16, "posture":3.0, "claw_damage":12, "claw_posture":3.0, "reach":148.0, "phase_before":"CLAWS SPREAD", "phase_after":"BOUNDING RAKE", "color":"f0b09a", "executor":"melee", "ally_collision":"vault_hounds"},
 	# A committed ballistic intercept, not a homing shot. The Javelineer predicts the
 	# player's current course at the beginning of the wind-up, then throws along that
 	# announced line. A valid throw must be able to reach its intercept before this
@@ -70,7 +76,7 @@ const ACTION_EXECUTORS := {
 	"chant": "support", "earth_wall": "barrier",
 	"gale": "hazard", "windstep": "movement", "cold_front": "hazard",
 	"frost_lance": "projectile", "fire_breath": "hazard",
-	"stagger": "reaction", "hit_reaction": "reaction", "parry_stance": "defense",
+	"stagger": "reaction", "hit_reaction": "reaction", "parry_stance": "defense", "phase_change": "boss_state",
 	"attack": "player", "sweep": "player", "combo": "player", "art_combo": "player",
 	"twin_fang": "player", "cast": "player", "wait": "player", "circle": "player",
 	"bow_draw": "player", "dodge": "player", "vault": "player", "advance": "player",
@@ -117,6 +123,8 @@ static func enemy_ability(id: String) -> Dictionary:
 	return Dictionary(ENEMY_ABILITIES[id]).duplicate(true)
 
 static func enemy_ability_for_action(action: Dictionary) -> Dictionary:
+	var ability_id := String(action.get("ability_id", ""))
+	if ENEMY_ABILITIES.has(ability_id): return enemy_ability(ability_id)
 	var kind := String(action.get("kind", ""))
 	if kind == "shoot" and String(action.get("label", "")) in ["firebolt", "fireball"]: return enemy_ability("fireball")
 	for id in ENEMY_ABILITIES:

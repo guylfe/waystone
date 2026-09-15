@@ -67,6 +67,7 @@ $HeadlessSuite = @(
     'capture_telemetry_test',
     'charge_ally_collision_test',
     'knife_identity_test',
+	'werewolf_boss_test',
     'energy_test',
     'warrior_character_test',
     'rogue_characters_test',

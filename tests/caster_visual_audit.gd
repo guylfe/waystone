@@ -32,6 +32,7 @@ func _initialize() -> void:
 	await _javelin_tell()
 	await _support_relationships()
 	await _knife_flank_preparation()
+	await _werewolf_leap_tells()
 	quit(0)
 
 func _reset(loadout: String):
@@ -218,3 +219,16 @@ func _knife_flank_preparation() -> void:
 	knife["action"]["elapsed"] = 0.18
 	blade["action"]["elapsed"] = 0.18
 	await _shoot("audit-h-knife-flank")
+
+func _werewolf_leap_tells() -> void:
+	# The acceptance frame for 0.2.95: Hunting Leap is one narrow pursuit line;
+	# Bounding Rake spreads both claws and declares the follow-up immediately.
+	var s = _reset("warrior")
+	var hunting = _put(s, "werewolf", Vector2(-260, -80), 210)
+	var bounding = _put(s, "werewolf", Vector2(260, -80), 210)
+	hunting["action"] = s._werewolf_attack_action(hunting, "hunting_leap", Vector2.DOWN)
+	bounding["boss_phase"] = 2
+	bounding["action"] = s._werewolf_attack_action(bounding, "bounding_rake", Vector2.DOWN)
+	hunting["action"]["elapsed"] = float(hunting["action"]["startup"]) * 0.55
+	bounding["action"]["elapsed"] = float(bounding["action"]["startup"]) * 0.55
+	await _shoot("audit-i-werewolf-leap-tells")

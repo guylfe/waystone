@@ -1728,9 +1728,9 @@ func test_back_half_expedition_roles() -> void:
 	assert(float(knight["posture_max"]) >= 20.0 and state._enemy_move_speed(knight) <= 70.0)
 	var wolf := state._make_enemy("werewolf", state.player_pos + Vector2.UP * 125.0, 42)
 	state._choose_enemy_action(wolf)
-	assert(String(Dictionary(wolf["action"])["kind"]) == "claw_combo")
-	var leap_chain: Dictionary = state._werewolf_pounce_combo(Vector2.DOWN)
-	assert(String(leap_chain["kind"]) == "pounce_combo" and int(leap_chain["pounce_damage"]) > 0)
+	assert(String(Dictionary(wolf["action"])["kind"]) == "claw_combo" and String(Dictionary(wolf["action"])["ability_id"]) == "double_rake")
+	var leap_chain: Dictionary = state._werewolf_attack_action(wolf, "hunting_leap", Vector2.DOWN)
+	assert(String(leap_chain["kind"]) == "pounce_combo" and int(leap_chain["impact_damage"]) == 20)
 
 func test_progressive_expedition_rooms() -> void:
 	for seed in [11, 22, 33, 44, 55, 739391]:

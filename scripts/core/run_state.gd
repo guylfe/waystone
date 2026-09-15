@@ -445,9 +445,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.94"
+const GAME_VERSION := "0.2.95"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 15
+const PRESENTATION_VERSION := 16
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -2661,6 +2661,16 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"knife_flank_anchor": position,
 		"knife_flank_elapsed": 0.0,
 		"knife_flank_abandoned": false,
+		# Boss phase/control state is explicit runtime data. The same fields will carry
+		# the Warden in the next update; boss scripts do not get private hidden flags.
+		"boss_phase": 1,
+		"boss_phase_pending": false,
+		"boss_attack_index": 0,
+		"boss_stalk_available": false,
+		"boss_posture_break_pending": false,
+		"boss_posture_break_contact": Vector2.ZERO,
+		"boss_posture_break_interrupter": "system",
+		"boss_posture_break_tool": "unknown",
 		"shot_cooldown": 0.22 * float(_next_enemy_id % 3) if kind == "archer" else 0.0,
 		"weapon_frame": String(combat_profile["weapon_frame"]),
 		"weapon_art_ids": Array(combat_profile["weapon_arts"]).duplicate(),
@@ -6526,8 +6536,41 @@ func _enemy_evades_attack(enemy: Dictionary) -> bool:
 	var elapsed := float(action.get("elapsed", 0.0))
 	return (action_kind == "evade" and elapsed >= 0.04 and elapsed <= 0.30) or (action_kind == "dodge_strike" and elapsed <= float(action.get("dodge_end", 0.30)))
 
+func _werewolf_break_must_wait(action: Dictionary) -> bool:
+	if String(action.get("kind", "")) == "pounce_combo":
+		var elapsed := float(action.get("elapsed", 0.0))
+		if not bool(action.get("landed", false)) and elapsed >= float(action.get("startup", INF)):
+			return true
+		if String(action.get("ability_id", "")) == "bounding_rake" and not bool(action.get("claw_cancelled", false)):
+			return elapsed >= float(action.get("followup_start", INF)) and elapsed <= float(action.get("followup_end", -INF))
+	if String(action.get("kind", "")) == "claw_combo":
+		var elapsed := float(action.get("elapsed", 0.0))
+		return (elapsed >= float(action.get("first_start", INF)) and elapsed <= float(action.get("first_end", -INF))) or (elapsed >= float(action.get("second_start", INF)) and elapsed <= float(action.get("second_end", -INF)))
+	return false
+
+func _latch_werewolf_posture_break(enemy: Dictionary, contact: Vector2, interrupter: String, tool: String) -> void:
+	if bool(enemy.get("boss_posture_break_pending", false)): return
+	enemy["boss_posture_break_pending"] = true
+	enemy["boss_posture_break_contact"] = Vector2(enemy["pos"]) if not contact.is_finite() else contact
+	enemy["boss_posture_break_interrupter"] = interrupter
+	enemy["boss_posture_break_tool"] = tool
+	_record_enemy_control(enemy, "posture_latched", Dictionary(enemy.get("action", {})), 0.0)
+	_add_effect("strain", Vector2(enemy["pos"]))
+	_set_message("The Werewolf's footing gives, but its committed motion finishes.")
+
+func _release_werewolf_posture_break(enemy: Dictionary) -> bool:
+	if not bool(enemy.get("boss_posture_break_pending", false)): return false
+	var contact := Vector2(enemy.get("boss_posture_break_contact", enemy["pos"]))
+	var interrupter := String(enemy.get("boss_posture_break_interrupter", "system"))
+	var tool := String(enemy.get("boss_posture_break_tool", "unknown"))
+	enemy["boss_posture_break_pending"] = false
+	return _break_posture(enemy, contact, interrupter, tool, false)
+
 func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown") -> bool:
 	if amount <= 0.0 or int(enemy["hp"]) <= 0: return false
+	if String(enemy.get("kind", "")) == "werewolf" and bool(enemy.get("boss_posture_break_pending", false)):
+		enemy["posture"] = 0.0
+		return false
 	# Stagger is one authored opening, not a state that quick follow-up attacks
 	# may perpetually refresh. Health damage has already resolved at each caller;
 	# only additional posture damage is suppressed until the original reaction
@@ -6541,10 +6584,13 @@ func _apply_posture_damage(enemy: Dictionary, amount: float, contact: Vector2 = 
 		return _break_posture(enemy, contact, interrupter, tool)
 	return false
 
-func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown") -> bool:
+func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupter: String = "system", tool: String = "unknown", allow_defer: bool = true) -> bool:
 	var action: Dictionary = enemy["action"]
 	var kind := String(enemy["kind"])
 	var action_kind := String(action.get("kind", "idle"))
+	if allow_defer and kind == "werewolf" and _werewolf_break_must_wait(action):
+		_latch_werewolf_posture_break(enemy, contact, interrupter, tool)
+		return false
 	# Armour covers the WIND-UP, not just the swing. The hold used to require
 	# active_started, which left the telegraph -- the entire reason a heavy enemy
 	# exists -- as a free cancel window: the 0.2.30 survey recorded ten heavy attacks
@@ -6827,18 +6873,20 @@ func _allies_crossed_by_charge(charger: Dictionary, origin: Vector2, finish: Vec
 func _note_vaulted_allies(charger: Dictionary, origin: Vector2, finish: Vector2, action: Dictionary) -> void:
 	var vaulted: Array = action.get("vaulted_ally_ids", [])
 	for other in _allies_crossed_by_charge(charger, origin, finish):
+		if String(action.get("ally_collision", "vault")) == "vault_hounds" and String(other.get("kind", "")) != "hound": continue
 		var other_id := int(other.get("id", -1))
 		if vaulted.has(other_id): continue
 		vaulted.append(other_id)
 		_record_charge_traffic(charger, "vaulted", other)
 	action["vaulted_ally_ids"] = vaulted
 
-func _charge_ally_blocker(charger: Dictionary, position: Vector2) -> Dictionary:
+func _charge_ally_blocker(charger: Dictionary, position: Vector2, ignored_kinds: Array = []) -> Dictionary:
 	var radius := float(charger.get("radius", ENEMY_RADIUS))
 	var candidates: Array[Dictionary] = []
 	for other in _nearby_enemies(position, radius + 90.0):
 		if int(other.get("id", -1)) == int(charger.get("id", -2)) or int(other.get("hp", 0)) <= 0: continue
 		if not _enemy_on_current_layer(other): continue
+		if ignored_kinds.has(String(other.get("kind", ""))): continue
 		if position.distance_to(Vector2(other["pos"])) < radius + float(other.get("radius", ENEMY_RADIUS)):
 			candidates.append(other)
 	if candidates.is_empty(): return {}
@@ -6848,7 +6896,7 @@ func _charge_ally_blocker(charger: Dictionary, position: Vector2) -> Dictionary:
 		return int(a.get("id", -1)) < int(b.get("id", -1)) if is_equal_approx(a_distance, b_distance) else a_distance < b_distance)
 	return candidates[0]
 
-func _charge_collision_context(charger: Dictionary, origin: Vector2, delta: Vector2) -> Dictionary:
+func _charge_collision_context(charger: Dictionary, origin: Vector2, delta: Vector2, action: Dictionary = {}) -> Dictionary:
 	var radius := float(charger.get("radius", ENEMY_RADIUS))
 	var probes := [origin + delta, Vector2(origin.x + delta.x, origin.y), Vector2(origin.x, origin.y + delta.y)]
 	for position_value in probes:
@@ -6857,7 +6905,8 @@ func _charge_collision_context(charger: Dictionary, origin: Vector2, delta: Vect
 		if _point_in_barrier(position, radius, int(charger.get("id", -1))): return {"cause": "barrier"}
 		for wall in _nearby_walls(position, radius + 8.0):
 			if _circle_intersects_rect(position, radius, wall): return {"cause": "wall"}
-		var ally := _charge_ally_blocker(charger, position)
+		var ignored_kinds: Array = ["hound"] if String(action.get("ally_collision", "block")) == "vault_hounds" else []
+		var ally := _charge_ally_blocker(charger, position, ignored_kinds)
 		if not ally.is_empty(): return {"cause": "ally_body", "blocker": ally}
 		if position.distance_to(player_pos) < radius + PLAYER_RADIUS: return {"cause": "player_body"}
 	return {"cause": "other_geometry"}
@@ -6929,12 +6978,17 @@ func _move_charging_actor(charger: Dictionary, origin: Vector2, delta: Vector2, 
 	var ally_collision := String(action.get("ally_collision", "block"))
 	if ally_collision == "shove_lighter": _try_shove_charge_ally(charger, origin, delta, action)
 	var ignores_allies := ally_collision in ["vault", "gore"]
-	var finish := _move_actor(origin, delta, float(charger["radius"]), int(charger["id"]), ignores_allies)
-	if ally_collision == "vault":
+	var ignored_kinds: Array = ["hound"] if ally_collision == "vault_hounds" else []
+	var finish := _move_actor(origin, delta, float(charger["radius"]), int(charger["id"]), ignores_allies, ignored_kinds)
+	if ally_collision in ["vault", "vault_hounds"]:
 		_note_vaulted_allies(charger, origin, finish, action)
 		finish = _settle_vault_landing(charger, origin, finish, action, landing)
 	elif ally_collision == "gore": _gore_allies_in_path(charger, origin, finish, action)
-	var collision := {} if not finish.is_equal_approx(origin) else _charge_collision_context(charger, origin, delta)
+	# Axis-separated locomotion may slide a normal mover along a wall. A launched
+	# attack still needs to know that its promised full line was obstructed, even
+	# when one axis happened to advance, so its own crash/landing policy can decide.
+	var intended_finish := origin + delta
+	var collision := {} if finish.is_equal_approx(intended_finish) else _charge_collision_context(charger, origin, delta, action)
 	return {"position": finish, "collision": collision}
 
 # Straight rather than an arc, so the ends stay a real option. Perpendicular to the
@@ -7140,6 +7194,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		enemy["smoked_remaining"] = maxf(0.0, float(enemy.get("smoked_remaining", 0.0)) - dt)
 		_update_enemy_awareness(enemy, dt)
 		_update_enemy_alarm(enemy, dt)
+		_queue_werewolf_phase(enemy)
 		_update_bandit_concealment(enemy, dt)
 		var pounce_cooldown := float(enemy.get("pounce_cooldown", 0.0))
 		if pounce_cooldown > 0.0: enemy["pounce_cooldown"] = maxf(0.0, pounce_cooldown - enemy_dt)
@@ -7205,7 +7260,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					enemies[index] = enemy
 					continue
 			else:
-				_choose_enemy_action(enemy)
+				if String(enemy.get("kind", "")) != "werewolf" or not _begin_werewolf_phase_change(enemy):
+					_choose_enemy_action(enemy)
 				var chosen_action: Dictionary = enemy["action"]
 				if String(chosen_action.get("kind", "idle")) in ENEMY_ATTACK_ACTION_KINDS:
 					_record_enemy_action_event(enemy, "committed", chosen_action)
@@ -7240,6 +7296,13 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					action["direction"] = aim.normalized()
 					enemy["facing"] = Vector2(action["direction"])
 			_observe_capture(enemy, action, elapsed)
+		elif kind == "pounce_combo" and not bool(action.get("landed", false)) and elapsed < float(action.get("startup", 0.0)):
+			# Both leap tells may follow the target while the Werewolf is visibly
+			# preparing. The bearing freezes when flight begins.
+			var leap_aim := player_pos - Vector2(enemy["pos"])
+			if leap_aim.length_squared() > 0.01:
+				action["direction"] = leap_aim.normalized()
+				enemy["facing"] = Vector2(action["direction"])
 		if kind in ["move", "evade"]:
 			if String(enemy.get("kind", "")) == "knife" and kind == "move" and String(action.get("intent", "")) == "knife_flank":
 				# A flank is an approach choice, not an indefinite permission to orbit.
@@ -7287,14 +7350,18 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]): _resolve_enemy_melee_tick(enemy, elapsed)
 		elif kind == "claw_combo":
 			_resolve_enemy_combo_tick(enemy, elapsed)
+			for contact_end_key in ["first_end", "second_end"]:
+				var contact_end := float(action.get(contact_end_key, INF))
+				if previous_elapsed < contact_end and elapsed >= contact_end and bool(enemy.get("boss_posture_break_pending", false)):
+					_release_werewolf_posture_break(enemy)
+					break
+			if Dictionary(enemy.get("action", {})) != action:
+				enemies[index] = enemy
+				continue
 		elif kind == "pounce_combo":
-			if elapsed >= float(action["startup"]) and elapsed <= float(action["pounce_end"]):
-				var pounce_origin := Vector2(enemy["pos"])
-				_set_enemy_position(enemy, _move_actor(pounce_origin, Vector2(action["direction"]) * float(action.get("speed", 410.0)) * enemy_dt, float(enemy["radius"]), int(enemy["id"])))
-				if not bool(action.get("pounce_hit", false)) and Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0:
-					action["pounce_hit"] = true
-					_resolve_incoming_hit(int(enemy["id"]), int(action.get("pounce_damage", 16)), String(enemy["kind"]))
-			_resolve_enemy_combo_tick(enemy, elapsed)
+			if _resolve_werewolf_leap_tick(enemy, previous_elapsed, elapsed, enemy_dt):
+				enemies[index] = enemy
+				continue
 		elif kind == "melee":
 			# Attack capture. The attacker advances along the vector it committed to,
 			# which is what lets an attack reach a player who read the telegraph late.
@@ -7402,9 +7469,19 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			action["effect_done"] = true
 			_spawn_fire_breath(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
 		if elapsed + 0.00001 >= float(action["duration"]):
-			if kind in ["melee", "charge"]: _finalise_capture_record(enemy, action)
+			if kind in ["melee", "charge", "pounce_combo"]: _finalise_capture_record(enemy, action)
+			if String(enemy.get("kind", "")) == "werewolf" and kind == "claw_combo" and not bool(action.get("hit_one", false)) and not bool(action.get("hit_two", false)):
+				_record_enemy_action_event(enemy, "missed", action)
 			if kind in ENEMY_ATTACK_ACTION_KINDS: _record_enemy_action_event(enemy, "completed", action)
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
+			if kind == "phase_change" and String(enemy.get("kind", "")) == "werewolf":
+				enemy["boss_phase"] = 2
+				enemy["boss_phase_pending"] = false
+				_record_enemy_action_event(enemy, "phase_completed", action)
+				_add_effect("strain", Vector2(enemy["pos"]))
+				_set_message("The Werewolf spreads its claws and changes its hunt.")
+			if String(enemy.get("kind", "")) == "werewolf" and kind in ["claw_combo", "pounce_combo"]:
+				enemy["boss_stalk_available"] = true
 			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
 				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
 			if String(enemy.get("kind", "")) == "knife" and kind == "melee":
@@ -7818,19 +7895,23 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			_clear_melee_intent(enemy)
 		else: enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(knight_intent["distance"])), 0.72)
 	elif enemy_kind == "werewolf":
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 165.0 and _charge_can_contact(enemy, distance, 420.0, 0.34, 0.76):
-			if rng.randf() < 0.55: enemy["action"] = _werewolf_pounce_combo(direction)
+		if bool(enemy.get("boss_stalk_available", false)):
+			enemy["action"] = _werewolf_stalk_action(enemy, direction)
+			enemy["boss_stalk_available"] = false
+		elif distance <= 148.0 + STRIKE_COMMIT_BAND and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			enemy["action"] = _werewolf_attack_action(enemy, "double_rake", direction)
+		elif distance >= 165.0 and _has_line_of_sight(Vector2(enemy["pos"]), player_pos):
+			var leap_id := "hunting_leap"
+			if int(enemy.get("boss_phase", 1)) >= 2 and int(enemy.get("boss_attack_index", 0)) % 2 == 1:
+				leap_id = "bounding_rake"
+			var leap_definition := AbilityCatalogScript.enemy_ability(leap_id)
+			var contact_range := float(leap_definition.get("travel_cap", 0.0)) + float(enemy.get("radius", ENEMY_RADIUS)) + PLAYER_RADIUS + 8.0
+			if distance <= contact_range:
+				enemy["action"] = _werewolf_attack_action(enemy, leap_id, direction)
 			else:
-				enemy["action"] = _enemy_charge_action(enemy, 1.42, 0.34, 0.78, 430.0, 20, direction)
-				enemy["action"]["label"] = "pounce"
-			enemy["pounce_cooldown"] = 1.72
-		elif distance <= 148.0:
-			enemy["action"] = _werewolf_claw_combo(direction)
-		elif float(enemy.get("pounce_cooldown", 0.0)) > 0.0:
-			var wolf_retreat := (-direction + direction.rotated(PI * 0.5 if int(enemy["id"]) % 2 == 0 else -PI * 0.5) * 0.46).normalized()
-			enemy["action"] = _action("evade", 0.34, wolf_retreat)
-			enemy["action"]["speed_multiplier"] = 1.34
-		else: enemy["action"] = _enemy_move_action(enemy, player_pos, 0.36)
+				enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, 142.0), 0.36)
+		else:
+			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, 142.0), 0.36)
 	elif enemy_kind == "warden":
 		if distance <= 215.0:
 			if rng.randf() < 0.46:
@@ -7992,7 +8073,7 @@ func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "system", 
 			"tool": tool,
 			"at": simulation_time,
 		})
-	if String(action.get("kind", "")) in ["melee", "charge"]:
+	if String(action.get("kind", "")) in ["melee", "charge", "pounce_combo"]:
 		_finalise_capture_record(enemy, action, true)
 
 func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted: bool = false) -> void:
@@ -8618,14 +8699,70 @@ func _enemy_charge_action(enemy: Dictionary, duration: float, startup: float, ac
 	result["airborne"] = bool(properties.get("charge_airborne", false))
 	return result
 
-func _werewolf_claw_combo(direction: Vector2) -> Dictionary:
-	var result := _action("claw_combo", 1.26, direction)
-	result.merge({"first_start": 0.22, "first_end": 0.42, "second_start": 0.57, "second_end": 0.79, "reach": 148.0, "damage": 14, "posture": 3.0, "hit_one": false, "hit_two": false})
+func _werewolf_clock(enemy: Dictionary, world_seconds: float) -> float:
+	# Convert reference-world timings through the native clock only. Using the
+	# current (Frost-reduced) tempo here would cancel Frost for the whole action.
+	var native_tempo := float(enemy.get("personal_tempo", _tempo_from_attributes(Dictionary(enemy.get("attributes", {})))))
+	return world_seconds * maxf(0.01, native_tempo)
+
+func _werewolf_attack_action(enemy: Dictionary, ability_id: String, direction: Vector2) -> Dictionary:
+	var definition := AbilityCatalogScript.enemy_ability(ability_id)
+	if definition.is_empty(): return _idle_action()
+	var tempo := _werewolf_clock(enemy, 1.0)
+	var result := _action(String(definition["action_kind"]), float(definition["duration"]) * tempo, direction.normalized())
+	result.merge({
+		"ability_id": ability_id,
+		"label": ability_id,
+		"startup": float(definition["startup"]) * tempo,
+		"world_timing": true,
+	}, true)
+	if ability_id == "double_rake":
+		for key in ["first_start", "first_end", "second_start", "second_end"]:
+			result[key] = float(definition[key]) * tempo
+		result.merge({"reach":float(definition["reach"]), "damage":int(definition["damage"]), "posture":float(definition["posture"]), "hit_one":false, "hit_two":false}, true)
+	else:
+		result.merge({
+			"flight_duration": float(definition["flight_duration"]) * tempo,
+			"flight_end": (float(definition["startup"]) + float(definition["flight_duration"])) * tempo,
+			"active_end": (float(definition["startup"]) + float(definition["flight_duration"])) * tempo,
+			"pounce_end": (float(definition["startup"]) + float(definition["flight_duration"])) * tempo,
+			# enemy_dt already contains tempo; divide here to preserve the authored
+			# world-space speed rather than granting Speed a second multiplier.
+			"speed": float(definition["speed"]) / tempo,
+			"travel_cap": float(definition["travel_cap"]),
+			"charge_travelled": 0.0,
+			"recovery": float(definition["recovery"]) * tempo,
+			"impact_damage": int(definition["damage"]),
+			"impact_posture": float(definition["posture"]),
+			"pounce_hit": false,
+			"landed": false,
+			"crashed": false,
+			"airborne": true,
+			"ally_collision": String(definition.get("ally_collision", "vault_hounds")),
+			"last_clear_landing": Vector2(enemy["pos"]),
+		}, true)
+		if ability_id == "bounding_rake":
+			result.merge({
+				"crash_recovery": float(definition["crash_recovery"]) * tempo,
+				"followup_delay": float(definition["followup_delay"]) * tempo,
+				"followup_duration": float(definition["followup_duration"]) * tempo,
+				"reach": float(definition["reach"]),
+				"claw_damage": int(definition["claw_damage"]),
+				"claw_posture": float(definition["claw_posture"]),
+				"claw_hit": false,
+				"claw_cancelled": false,
+			}, true)
+		_attach_charge_capture(result, 0.50, ability_id)
+	enemy["boss_attack_index"] = int(enemy.get("boss_attack_index", 0)) + 1
 	return result
 
-func _werewolf_pounce_combo(direction: Vector2) -> Dictionary:
-	var result := _action("pounce_combo", 1.76, direction)
-	result.merge({"startup": 0.34, "pounce_end": 0.76, "speed": 420.0, "pounce_damage": 16, "pounce_hit": false, "first_start": 0.82, "first_end": 1.01, "second_start": 1.13, "second_end": 1.34, "reach": 152.0, "damage": 14, "posture": 3.0, "hit_one": false, "hit_two": false})
+func _werewolf_stalk_action(enemy: Dictionary, direction: Vector2) -> Dictionary:
+	var side_sign := 1.0 if (int(enemy.get("id", 0)) + int(enemy.get("boss_attack_index", 0))) % 2 == 0 else -1.0
+	var stalk_direction := direction.rotated(side_sign * PI * 0.5).normalized()
+	var result := _enemy_move_action(enemy, Vector2(enemy["pos"]) + stalk_direction * 160.0, _werewolf_clock(enemy, 0.50))
+	result["intent"] = "werewolf_stalk"
+	result["label"] = "lateral_stalk"
+	result["travel_cap"] = 160.0
 	return result
 
 func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
@@ -8661,6 +8798,100 @@ func _resolve_enemy_combo_tick(enemy: Dictionary, elapsed: float) -> void:
 			action[hit_key] = true
 			var contact := AttackGeometryScript.contact_point(sample, player_pos)
 			_resolve_incoming_hit(int(enemy["id"]), int(action.get("damage", 14)), String(enemy["kind"]), Vector2.ZERO, contact, float(action.get("posture", -1.0)))
+
+func _queue_werewolf_phase(enemy: Dictionary) -> void:
+	if String(enemy.get("kind", "")) != "werewolf" or int(enemy.get("boss_phase", 1)) >= 2: return
+	if int(enemy.get("hp", 0)) <= 0 or float(enemy.get("hp", 0)) > float(enemy.get("max_hp", 1)) * 0.55: return
+	enemy["boss_phase_pending"] = true
+
+func _begin_werewolf_phase_change(enemy: Dictionary) -> bool:
+	if not bool(enemy.get("boss_phase_pending", false)): return false
+	var action := _action("phase_change", _werewolf_clock(enemy, 1.0), Vector2(enemy.get("facing", Vector2.DOWN)))
+	action["label"] = "predatory_posture"
+	action["ability_id"] = "predatory_posture"
+	enemy["action"] = action
+	_record_enemy_action_event(enemy, "phase_started", action)
+	return true
+
+func _finish_werewolf_leap(enemy: Dictionary, action: Dictionary, elapsed: float, crashed: bool = false, collision_cause: String = "") -> void:
+	if bool(action.get("landed", false)): return
+	action["landed"] = true
+	action["crashed"] = crashed
+	action["pounce_end"] = elapsed
+	action["active_end"] = elapsed
+	var ability_id := String(action.get("ability_id", "hunting_leap"))
+	if ability_id == "bounding_rake" and not crashed:
+		action["followup_start"] = elapsed + float(action.get("followup_delay", 0.0))
+		action["followup_end"] = float(action["followup_start"]) + float(action.get("followup_duration", 0.0))
+		action["duration"] = float(action["followup_end"]) + float(action.get("recovery", 0.0))
+	else:
+		action["claw_cancelled"] = ability_id == "bounding_rake"
+		action["duration"] = elapsed + (float(action.get("crash_recovery", action.get("recovery", 0.0))) if crashed else float(action.get("recovery", 0.0)))
+	if crashed:
+		_record_charge_traffic(enemy, "crashed", {}, collision_cause)
+		_record_enemy_control(enemy, "crash_recovery", action, (float(action["duration"]) - elapsed) / maxf(0.01, _enemy_personal_tempo(enemy)))
+		_add_effect("posture_break", Vector2(enemy["pos"]))
+		_set_message("The Werewolf crashes and must recover.")
+	else:
+		_add_effect("dust", Vector2(enemy["pos"]))
+	if bool(enemy.get("boss_posture_break_pending", false)):
+		_release_werewolf_posture_break(enemy)
+
+func _resolve_werewolf_followup(enemy: Dictionary, action: Dictionary, previous_elapsed: float, elapsed: float) -> void:
+	if bool(action.get("claw_cancelled", false)): return
+	var followup_start := float(action.get("followup_start", INF))
+	var followup_end := float(action.get("followup_end", INF))
+	if elapsed >= followup_start and elapsed <= followup_end and not bool(action.get("claw_hit", false)):
+		var sampled := action.duplicate(false)
+		sampled["startup"] = followup_start
+		sampled["active_end"] = followup_end
+		sampled["technique_id"] = "quick_cut"
+		var sample := AttackGeometryScript.pose(sampled, Vector2(enemy["pos"]), Vector2(action["direction"]), _nearby_walls(Vector2(enemy["pos"]), float(action.get("reach", 148.0)) + 90.0))
+		if AttackGeometryScript.hits_circle(sample, player_pos, PLAYER_RADIUS):
+			action["claw_hit"] = true
+			var contact := AttackGeometryScript.contact_point(sample, player_pos)
+			_resolve_incoming_hit(int(enemy["id"]), int(action.get("claw_damage", 12)), String(enemy["kind"]), Vector2.ZERO, contact, float(action.get("claw_posture", 3.0)))
+	if previous_elapsed < followup_end and elapsed >= followup_end and bool(enemy.get("boss_posture_break_pending", false)):
+		_release_werewolf_posture_break(enemy)
+
+func _resolve_werewolf_leap_tick(enemy: Dictionary, previous_elapsed: float, elapsed: float, enemy_dt: float) -> bool:
+	var action: Dictionary = enemy["action"]
+	_observe_capture(enemy, action, elapsed)
+	if not bool(action.get("landed", false)) and elapsed >= float(action.get("startup", INF)):
+		var remaining_cap := maxf(0.0, float(action.get("travel_cap", 0.0)) - float(action.get("charge_travelled", 0.0)))
+		var requested_distance := minf(float(action.get("speed", 0.0)) * enemy_dt, remaining_cap)
+		if requested_distance <= 0.001:
+			_finish_werewolf_leap(enemy, action, elapsed)
+			return Dictionary(enemy.get("action", {})) != action
+		# `elapsed` has already advanced for this simulation tick. Comparing it with
+		# another enemy_dt shortened every leap by one tick.
+		var flight_ending := elapsed >= float(action.get("flight_end", elapsed)) or requested_distance >= remaining_cap - 0.001
+		var origin := Vector2(enemy["pos"])
+		var motion := _move_charging_actor(enemy, origin, Vector2(action["direction"]) * requested_distance, action, flight_ending)
+		_set_enemy_position(enemy, Vector2(motion["position"]))
+		var travelled := origin.distance_to(Vector2(enemy["pos"]))
+		action["charge_travelled"] = float(action.get("charge_travelled", 0.0)) + travelled
+		var collision: Dictionary = motion.get("collision", {})
+		var collision_cause := String(collision.get("cause", ""))
+		if collision_cause in ["wall", "floor_edge", "barrier"]:
+			_finish_werewolf_leap(enemy, action, elapsed, true, collision_cause)
+		elif not bool(action.get("pounce_hit", false)) and (collision_cause == "player_body" or Vector2(enemy["pos"]).distance_to(player_pos) <= float(enemy["radius"]) + PLAYER_RADIUS + 8.0):
+			action["pounce_hit"] = true
+			var record: Dictionary = action.get("capture_record", {})
+			if not record.is_empty(): record["resolution"] = "evaded" if _is_evasive() else "contact"
+			_resolve_incoming_hit(int(enemy["id"]), int(action.get("impact_damage", 16)), String(enemy["kind"]), Vector2.ZERO, Vector2.INF, float(action.get("impact_posture", 3.0)))
+			_finish_werewolf_leap(enemy, action, elapsed)
+		elif collision_cause == "ally_body":
+			# Non-Hound allies remain solid. Contact ends the leap at the last legal
+			# position; it never repairs the landing by overlapping the blocker.
+			_finish_werewolf_leap(enemy, action, elapsed)
+		elif flight_ending or elapsed >= float(action.get("flight_end", elapsed)) or remaining_cap <= 0.001:
+			_finish_werewolf_leap(enemy, action, elapsed)
+	if Dictionary(enemy.get("action", {})) != action:
+		return true
+	if bool(action.get("landed", false)) and String(action.get("ability_id", "")) == "bounding_rake":
+		_resolve_werewolf_followup(enemy, action, previous_elapsed, elapsed)
+	return Dictionary(enemy.get("action", {})) != action
 
 func _melee_action(duration: float, startup: float, active_end: float, reach: float, damage: int, direction: Vector2, technique_id: String = "diagonal_cut", action_kind: String = "melee") -> Dictionary:
 	# Energy shortens player commitments only. Before v0.2.6 this helper also
@@ -9999,15 +10230,17 @@ func _displace_light_bodies(position: Vector2, radius: float, local_enemies: Arr
 		if away.length_squared() < 0.001: away = Vector2.RIGHT
 		_set_enemy_position(enemy, _move_actor(enemy_pos, away.normalized() * overlap, float(enemy["radius"]), int(enemy["id"])))
 
-func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false) -> Vector2:
+func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, ignore_bodies: bool = false, ignored_body_kinds: Array = []) -> Vector2:
 	# Both axis candidates share the same nearby geometry. Querying the spatial
 	# buckets twice was a major dense-crowd movement cost with no behavior gain.
 	var query_padding := delta.length() + 8.0
 	var local_walls := _nearby_walls(origin, radius + query_padding)
 	var local_enemies := _nearby_enemies(origin, radius + delta.length() + 80.0)
 	# An unstoppable charge is stopped by geometry, never by a body.
-	var no_bodies: Array[Dictionary] = []
-	var blocking_bodies := no_bodies if ignore_bodies else local_enemies
+	var blocking_bodies: Array[Dictionary] = []
+	if not ignore_bodies:
+		for body in local_enemies:
+			if not ignored_body_kinds.has(String(body.get("kind", ""))): blocking_bodies.append(body)
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
 	if _can_move_with_overlap_recovery(origin, candidate, radius, actor_id, local_walls, blocking_bodies):
