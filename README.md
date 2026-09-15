@@ -1,6 +1,23 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.93` (Android version code `293`).
+Current prototype version: `0.2.94` (Android version code `294`).
+
+## v0.2.94 — the Knife promises a side
+
+The Knife's inherited flanker path is now a readable approach rather than a target
+recomputed from scratch every decision. It chooses one deterministic side, lowers its
+silhouette, levels both weapons down the lane, and labels the preparation while that
+side remains usable. Small player movement translates the lane without rotating it;
+terrain, another body, or major displacement invalidates it cleanly.
+
+Flank preparation has a one-world-second budget. If neither side is usable or the
+Knife cannot establish its angle in time, it resumes direct pursuit immediately rather
+than orbiting or waiting for a perfect opening. At normal range it still uses the exact
+existing quick cut: no added lunge, invulnerability, retreat, startup change, or recovery
+change. A dedicated behavior contract covers stable sides, invalidation, blocked-lane
+fallback, the world-time budget, solo activity, and unchanged attack timing.
+
+Presentation version is `15`; report format and save schema remain unchanged.
 
 ## v0.2.93 — support relationships and lean introductions
 

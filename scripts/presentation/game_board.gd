@@ -3431,6 +3431,11 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		if reaction_direction.length_squared() > 0.001: world_facing = reaction_direction
 	var pose_direction := Vector2(action.get("direction", world_facing)).normalized()
 	var pose := IsometricPoseScript.sample(action, pose_direction, world_radius) if view_mode == "isometric" else {"world_offset": Vector2.ZERO, "vertical_lift": 0.0, "body_scale": Vector2.ONE, "facing_twist": 0.0, "stride": 0.0}
+	if String(enemy.get("kind", "")) == "knife" and String(action.get("intent", "")) == "knife_flank":
+		# A lowered, widened body reads as preparation rather than ordinary upright
+		# locomotion. This changes only the pose; posture as a combat resource is not
+		# spent or protected by setting up the flank.
+		pose["body_scale"] = Vector2(float(Vector2(pose["body_scale"]).x) * 1.10, float(Vector2(pose["body_scale"]).y) * 0.72)
 	var visual_world_pos := world_pos + reaction_offset
 	var pos := _actor_visual_center(world_pos, world_radius) + _project_world_delta(Vector2(pose["world_offset"]) + reaction_offset) - Vector2(0.0, float(pose["vertical_lift"]) * world_scale)
 	var facing := _screen_direction(world_facing).rotated(float(pose["facing_twist"]))
@@ -3620,8 +3625,20 @@ func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: f
 		draw_line(pos - side * radius * 0.70 + facing * radius * 0.55, pos - side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
 		draw_line(pos + side * radius * 0.70 + facing * radius * 0.55, pos + side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
 	elif kind in ["knife", "bandit"]:
-		draw_line(pos + side * radius * 0.45, pos + side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
-		if kind == "knife": draw_line(pos - side * radius * 0.45, pos - side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
+		var knife_facing := facing
+		if kind == "knife" and String(action.get("intent", "")) == "knife_flank":
+			var lane_direction := Vector2(action.get("direction", Vector2.ZERO)).normalized()
+			if lane_direction.length_squared() > 0.001: knife_facing = _screen_direction(lane_direction)
+			var knife_side := knife_facing.rotated(PI * 0.5)
+			# Both points level down the chosen lane, with a restrained trailing line.
+			# Blade's upright side-sword silhouette asks for timing; this crouched paired
+			# silhouette asks whether the player permits the angle to form.
+			draw_line(pos - knife_facing * radius * 1.42, pos - knife_facing * radius * 0.66, Color(color, 0.36), maxf(2.0, radius * 0.09))
+			draw_line(pos + knife_side * radius * 0.52, pos + knife_side * radius * 0.52 + knife_facing * radius * 1.28, Color("f3e5aa"), maxf(2.0, radius * 0.10))
+			draw_line(pos - knife_side * radius * 0.52, pos - knife_side * radius * 0.52 + knife_facing * radius * 1.28, Color("f3e5aa"), maxf(2.0, radius * 0.10))
+		else:
+			draw_line(pos + side * radius * 0.45, pos + side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
+			if kind == "knife": draw_line(pos - side * radius * 0.45, pos - side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
 	elif kind == "hound":
 		draw_line(pos - facing * radius * 0.9, pos + facing * radius * 0.75, color.lightened(0.35), maxf(3.0, radius * 0.35))
 	elif kind == "blade":
@@ -4297,6 +4314,7 @@ func _draw_posture(pos: Vector2, radius: float, posture: float, maximum: float) 
 func _phase(action: Dictionary) -> String:
 	var kind := String(action.get("kind", "idle"))
 	var elapsed := float(action.get("elapsed", 0.0))
+	if kind == "move" and String(action.get("intent", "")) == "knife_flank": return "SEEKING FLANK"
 	var ability := AbilityCatalogScript.enemy_ability_for_action(action)
 	if not ability.is_empty():
 		return String(ability["phase_before"]) if elapsed < float(action.get("startup", ability["startup"])) else String(ability["phase_after"])

@@ -58,6 +58,8 @@ const STRIKE_SELECTION_SOFTNESS := 90.0
 const STRIKE_INTENT_ABANDON_MARGIN := 60.0
 const ENEMY_STALL_REPATH_TIME := 0.12
 const ENEMY_STALL_ABORT_TIME := 0.42
+const KNIFE_FLANK_ATTEMPT_SECONDS := 1.0
+const KNIFE_FLANK_MAJOR_DISPLACEMENT := 220.0
 const TWIN_KNIFE_SEQUENCE_RECOVERY := 1.0
 # Physical Energy prices are now the numbers the player actually pays. The scale
 # remains as an explicit future global tuning lever, but 1.0 keeps catalog values,
@@ -443,9 +445,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.93"
+const GAME_VERSION := "0.2.94"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 14
+const PRESENTATION_VERSION := 15
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -2654,6 +2656,11 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"patience_max": _shield_patience_budget(kind, position, _next_enemy_id),
 		"dodge_cooldown": 0.0,
 		"neutral_cooldown": 0.0,
+		"knife_flank_side": 0,
+		"knife_flank_bearing": Vector2.ZERO,
+		"knife_flank_anchor": position,
+		"knife_flank_elapsed": 0.0,
+		"knife_flank_abandoned": false,
 		"shot_cooldown": 0.22 * float(_next_enemy_id % 3) if kind == "archer" else 0.0,
 		"weapon_frame": String(combat_profile["weapon_frame"]),
 		"weapon_art_ids": Array(combat_profile["weapon_arts"]).duplicate(),
@@ -7234,6 +7241,15 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 					enemy["facing"] = Vector2(action["direction"])
 			_observe_capture(enemy, action, elapsed)
 		if kind in ["move", "evade"]:
+			if String(enemy.get("kind", "")) == "knife" and kind == "move" and String(action.get("intent", "")) == "knife_flank":
+				# A flank is an approach choice, not an indefinite permission to orbit.
+				# Count ordinary world time so Quickening cannot secretly make the
+				# decision last longer or shorter. Once the attempt has had a full
+				# second, end this step and let the next decision pursue directly.
+				enemy["knife_flank_elapsed"] = float(enemy.get("knife_flank_elapsed", 0.0)) + dt
+				if float(enemy["knife_flank_elapsed"]) >= KNIFE_FLANK_ATTEMPT_SECONDS:
+					enemy["knife_flank_abandoned"] = true
+					action["duration"] = minf(float(action["duration"]), float(action["elapsed"]))
 			if update_locomotion:
 				var speed := _enemy_move_speed(enemy) * float(action.get("speed_multiplier", 1.0))
 				_advance_enemy_locomotion(enemy, action, speed * enemy_dt * 2.0, enemy_dt * 2.0)
@@ -7391,6 +7407,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
 			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
 				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
+			if String(enemy.get("kind", "")) == "knife" and kind == "melee":
+				_clear_knife_flank(enemy)
 			enemy["action"] = _idle_action()
 		_update_enemy_bucket_membership(enemy)
 		enemies[index] = enemy
@@ -7512,7 +7530,15 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _intent_melee_action(knife_intent, direction)
 			_clear_melee_intent(enemy)
 		else:
-			enemy["action"] = _enemy_move_action(enemy, _approach_target(enemy, float(knife_intent["distance"])), 0.32)
+			var knife_target := _knife_approach_target(enemy, float(knife_intent["distance"]))
+			enemy["action"] = _enemy_move_action(enemy, knife_target, 0.32)
+			if not bool(enemy.get("knife_flank_abandoned", false)):
+				enemy["action"]["intent"] = "knife_flank"
+				enemy["action"]["label"] = "flank_preparation"
+				enemy["action"]["lane_side"] = int(enemy.get("knife_flank_side", 0))
+				enemy["action"]["lane_bearing"] = Vector2(enemy.get("knife_flank_bearing", Vector2.ZERO))
+			else:
+				enemy["action"]["intent"] = "knife_direct"
 	elif enemy_kind == "polearm":
 		# The shaft cut answers a player who walks through the point; the long thrust
 		# remains the spear identity. Which one it commits to is now chosen before the
@@ -8118,6 +8144,71 @@ func _enemy_move_action(enemy: Dictionary, target: Vector2, duration: float) -> 
 	result["steer_elapsed"] = 0.0
 	result["recovery_elapsed"] = 0.0
 	return result
+
+func _clear_knife_flank(enemy: Dictionary) -> void:
+	enemy["knife_flank_side"] = 0
+	enemy["knife_flank_bearing"] = Vector2.ZERO
+	enemy["knife_flank_anchor"] = player_pos
+	enemy["knife_flank_elapsed"] = 0.0
+	enemy["knife_flank_abandoned"] = false
+
+func _knife_flank_candidate(enemy: Dictionary, bearing: Vector2, strike_distance: float) -> Vector2:
+	var target := player_pos + bearing.normalized() * strike_distance
+	# The lane is a place the Knife can actually occupy. A wall, arena edge, barrier,
+	# or allied body invalidates it before the actor spends a second walking at an
+	# impossible point. Actor identity is passed so the Knife does not block itself.
+	return target if _can_occupy(target, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy.get("id", -1))) else Vector2.INF
+
+func _begin_knife_flank(enemy: Dictionary, strike_distance: float) -> Vector2:
+	var route := player_facing.normalized()
+	if String(player_action.get("kind", "idle")) == "move":
+		route = Vector2(player_action.get("direction", player_facing)).normalized()
+	if route.length_squared() < 0.001:
+		route = Vector2(enemy["pos"]).direction_to(player_pos)
+	if route.length_squared() < 0.001: route = Vector2.UP
+	var preferred_side := 1 if absi(int(enemy.get("id", 0))) % 2 == 1 else -1
+	for side in [preferred_side, -preferred_side]:
+		var bearing := route.rotated(float(side) * PI * 0.5).normalized()
+		var candidate := _knife_flank_candidate(enemy, bearing, strike_distance)
+		if candidate != Vector2.INF:
+			enemy["knife_flank_side"] = side
+			enemy["knife_flank_bearing"] = bearing
+			enemy["knife_flank_anchor"] = player_pos
+			enemy["knife_flank_elapsed"] = 0.0
+			enemy["knife_flank_abandoned"] = false
+			return candidate
+	# Neither side is usable. Direct pursuit is always the fallback; there is no
+	# idle state waiting for terrain or another enemy to move out of the way.
+	enemy["knife_flank_abandoned"] = true
+	enemy["knife_flank_anchor"] = player_pos
+	return player_pos
+
+func _knife_approach_target(enemy: Dictionary, strike_distance: float) -> Vector2:
+	if bool(enemy.get("knife_flank_abandoned", false)): return player_pos
+	var bearing := Vector2(enemy.get("knife_flank_bearing", Vector2.ZERO))
+	if bearing.length_squared() < 0.001 or int(enemy.get("knife_flank_side", 0)) == 0:
+		return _begin_knife_flank(enemy, strike_distance)
+	# A lane is a commitment relative to one local exchange. If the player has
+	# displaced far enough to make that picture obsolete, the Knife closes directly
+	# instead of continually rotating the promised side around a fleeing target.
+	if player_pos.distance_to(Vector2(enemy.get("knife_flank_anchor", player_pos))) >= KNIFE_FLANK_MAJOR_DISPLACEMENT:
+		enemy["knife_flank_abandoned"] = true
+		return player_pos
+	var target := _knife_flank_candidate(enemy, bearing, strike_distance)
+	if target != Vector2.INF: return target
+	# Terrain or a body may invalidate the held lane. One opposite-side choice is
+	# allowed and then held; if that is blocked too, direct pursuit takes over.
+	var opposite := -int(enemy.get("knife_flank_side", 1))
+	var opposite_bearing := -bearing
+	var opposite_target := _knife_flank_candidate(enemy, opposite_bearing, strike_distance)
+	if opposite_target != Vector2.INF:
+		enemy["knife_flank_side"] = opposite
+		enemy["knife_flank_bearing"] = opposite_bearing
+		enemy["knife_flank_anchor"] = player_pos
+		enemy["knife_flank_elapsed"] = 0.0
+		return opposite_target
+	enemy["knife_flank_abandoned"] = true
+	return player_pos
 
 func _charge_can_contact(enemy: Dictionary, distance: float, speed: float, startup: float, active_end: float) -> bool:
 	if not _has_line_of_sight(Vector2(enemy["pos"]), player_pos): return false

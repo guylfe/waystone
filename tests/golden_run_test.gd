@@ -8,24 +8,24 @@ const DeterminismSnapshotScript = preload("res://scripts/core/determinism_snapsh
 # them. A deliberate rules change must explain and update the affected component.
 const EXPECTED := {
 	"started": {
-		# 0.2.93 deliberately changes the opening encounter deck and gives Shields a
-		# stable ward ID. The generated enemy component therefore has a new baseline.
-		"all": "9c4e334e3208a79ed7ecac18aa65ed07c3186fe760b98677ee13577b2ce5f662",
-		"enemies": "e617cc055e02c62119770e724424b3adac26c3941964ba88062e7e0f8dfc0f54",
+		# 0.2.93 changes the opening deck and stable Shield ward. 0.2.94 adds the
+		# Knife's stable flank state to every deterministic enemy record.
+		"all": "9218df2e9e06ce6cdae61ce1185c55f23fa984539ee82c582f3a29d56267dc76",
+		"enemies": "924d7ba701e083db2c6955f1e1e890542afd921681fe65455fef8b56846fafe8",
 		"player": "9d12c4220ec5ba713708f7f838d96b59c6580f46863f1d491debc8eea7d0eaf4",
 		"run": "7cb9b3f199278f0d02f6962cb25c8215362aac218e75f143480243279589aa35",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_move": {
-		"all": "be874aeab0ff4b2bf96b11d70f9e16f5c915e18acc1aa09a5e2e6f2aab41a16a",
-		"enemies": "f0b46e88e79219700b282c352b1da1898f426c87ce949cff77a7fde4194b518a",
+		"all": "a5f540af83154c8bb3df40dad4877ec98946d1bd3af65d7105f423f6a70c5af4",
+		"enemies": "ef28bf9da98158a6e164df0b1f0a95f4d809c3c6fe4b69d2f30496dce9918470",
 		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "2e15565515cf5e79d8df23f40e6fc8578aaf6c218c2f4ba42f48aaf862a339b5",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
 	},
 	"after_wait": {
-		"all": "33539e6113939bf4bbafed701a8298fab2c8b80a3788dcd2d0a5e507d10847e0",
-		"enemies": "5e3e99323444caf3a825ac0d5fc638e54dc107802e3ea25e05515f06f146a28d",
+		"all": "83defba60c7a471095fc77d321c8801a728dc94329e823d57ca1075f6b0c0fcb",
+		"enemies": "eea0957a715f303379f987dba6abea11afa41b05dfce084178ff2a9f47ce069f",
 		"player": "98ab9c5c784663340dc019ef833defbcc9c43e2a64f4053b3bb25c7125653973",
 		"run": "4898a4f3bd11370193d827a941662c68deeb03eaa254b042e447cbb56f25ff04",
 		"world": "70b59a3d24fcd432bcc7e39db8bc226cef5febfa90cf8d9fbcdacc356067fbe2",
@@ -38,9 +38,10 @@ const ELEMENTALIST_EXPECTED := {
 		# leaves a different Energy remainder under the new Intelligence soft-cap curve.
 		# 0.2.88 deliberately changes the enemy and world components: the Javelineer now
 		# carries its committed intercept on the hurl action and its real arc on the shot.
-		# 0.2.93 adds the stable ward relationship to deterministic enemy state.
-		"all": "bef4473dadca421a7b9490c0e587234e321a849bfb45ec6b388720bf7d2616e6",
-		"enemies": "44e3a75bdd335f80cf685027a8b06d102684c9ffcb9a9e23b4a1245d5f091330",
+		# 0.2.93 adds the stable ward relationship to deterministic enemy state;
+		# 0.2.94 adds stable Knife flank state to the same component.
+		"all": "f5e18984becd680b8a425d724ee0965392a9e3cc55040ca584bb9aceea9f897d",
+		"enemies": "cbd32d702c5b3c3dc0af9fa24f35a69596ed5477b3e8e3ebd9376b51f5b119a0",
 		"player": "c486c4ec20c8d39e6049393c39bf889c607cdd9e35f15d346918663c08bbdbc0",
 		"run": "15b7cda574869ce8caf33f87e765f7b4cfff33c52654d931ee140c864a9a5c95",
 		"world": "87c4ad94448ce5a5eab26e9e7bc331bf00bf7d0f39fe808084491c1558deb395",

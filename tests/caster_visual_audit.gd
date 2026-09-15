@@ -31,6 +31,7 @@ func _initialize() -> void:
 	await _state_cues()
 	await _javelin_tell()
 	await _support_relationships()
+	await _knife_flank_preparation()
 	quit(0)
 
 func _reset(loadout: String):
@@ -202,3 +203,18 @@ func _support_relationships() -> void:
 		chanter["action"]["label"] = String(spec[0])
 		chanter["action"]["target_ids"] = [int(target["id"])]
 	await _shoot("audit-g-support-relationships")
+
+func _knife_flank_preparation() -> void:
+	# Side-by-side identity check for 0.2.94. The Knife should be low, paired, and
+	# visibly traveling down a promised side lane while the Blade stays upright and
+	# direct. Quick-cut timing is deliberately not represented here because it did
+	# not change.
+	var s = _reset("warrior")
+	s.player_facing = Vector2.UP
+	var knife = _put(s, "knife", Vector2(-320, 0))
+	var blade = _put(s, "blade", Vector2(320, 0))
+	s._choose_enemy_action(knife)
+	s._choose_enemy_action(blade)
+	knife["action"]["elapsed"] = 0.18
+	blade["action"]["elapsed"] = 0.18
+	await _shoot("audit-h-knife-flank")
