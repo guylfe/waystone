@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 32
+const FORMAT_VERSION := 33
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -37,13 +37,15 @@ static func load_archive() -> Dictionary:
 static func report_filename(session: Dictionary) -> String:
 	var seed := int(session.get("run_seed", 0))
 	var started := String(session.get("started_at", "unknown")).replace(":", "-").replace(" ", "_")
-	return "Waystone_Combat_Survey_%d_%s.txt" % [seed, started]
+	var prefix := "Waystone_Boss_Lab" if String(session.get("mode_id", "combat_survey")) == "boss_lab" else "Waystone_Combat_Survey"
+	return "%s_%d_%s.txt" % [prefix, seed, started]
 
 static func build_text(session: Dictionary) -> String:
 	var rooms: Array = session.get("rooms", [])
 	var lines: Array[String] = []
-	lines.append("WAYSTONE COMBAT SURVEY")
-	lines.append("======================")
+	var boss_lab := String(session.get("mode_id", "combat_survey")) == "boss_lab"
+	lines.append("WAYSTONE BOSS LAB" if boss_lab else "WAYSTONE COMBAT SURVEY")
+	lines.append("==================" if boss_lab else "======================")
 	lines.append("Report format: %d" % FORMAT_VERSION)
 	lines.append("Game version: %s" % String(session.get("game_version", "unknown")))
 	lines.append("Run seed: %d" % int(session.get("run_seed", 0)))
@@ -52,6 +54,11 @@ static func build_text(session: Dictionary) -> String:
 	lines.append("Profile: %s" % String(session.get("profile", "encounter")).capitalize())
 	lines.append("Combat rules: %s" % String(session.get("combat_rules", "energy")).capitalize())
 	lines.append("Character: %s" % String(session.get("loadout", "unknown")))
+	if boss_lab:
+		lines.append("Boss: %s" % String(session.get("boss_kind", "unknown")).replace("_", " ").capitalize())
+		lines.append("Variant: %s" % String(session.get("boss_variant", "unknown")).replace("_", " "))
+		lines.append("Arena: %s" % String(session.get("arena", "unknown")).replace("_", " "))
+		lines.append("Setup identity: %s" % String(session.get("setup_identity", "unknown")))
 	lines.append("Started: %s" % String(session.get("started_at", "unknown")))
 	lines.append("Ended: %s" % String(session.get("ended_at", "unknown")))
 	lines.append("End reason: %s" % String(session.get("end_reason", "unknown")))
@@ -173,6 +180,15 @@ static func build_text(session: Dictionary) -> String:
 		lines.append("Combat time: %.2fs" % float(room.get("combat_time", 0.0)))
 		lines.append("Damage dealt: %d" % int(room.get("damage_dealt", 0)))
 		lines.append("Damage received: %d" % int(room.get("damage_received", 0)))
+		var damage_sources := Dictionary(room.get("damage_sources", {}))
+		if boss_lab:
+			var damage_parts: Array[String] = []
+			var source_names: Array = damage_sources.keys()
+			source_names.sort()
+			for source_value in source_names:
+				var source_name := String(source_value)
+				damage_parts.append("%s %d" % [source_name, int(damage_sources[source_name])])
+			lines.append("Damage sources: %s" % (", ".join(damage_parts) if not damage_parts.is_empty() else "none"))
 		lines.append("Hits received: %d" % int(room.get("hits_received", 0)))
 		lines.append("Interruptions prevented: %d; damage taken under post-hit protection: %d" % [int(room.get("interruptions_prevented", 0)), int(room.get("protected_damage", 0))])
 		lines.append("Clean evades: %d by Dodge, %d by Vault; Turnabout primed %d, consumed %d" % [
@@ -254,6 +270,22 @@ static func build_text(session: Dictionary) -> String:
 				var phase := " during wind-up" if bool(event.get("before_active", false)) else ""
 				lines.append("  %s %s%s by %s using %s" % [String(event.get("enemy_kind", "enemy")), String(event.get("action_label", event.get("interrupted_action", "action"))), phase, String(event.get("interrupter", "unknown")), String(event.get("tool", "unknown"))])
 		var enemy_action_events: Array = room.get("enemy_action_events", [])
+		if boss_lab:
+			var commitments := 0
+			var launches := 0
+			var completions := 0
+			var invisible_commitments := 0
+			for event_value in enemy_action_events:
+				var event := Dictionary(event_value)
+				if String(event.get("event", "")) == "committed":
+					commitments += 1
+					if not bool(event.get("visible", true)): invisible_commitments += 1
+				elif String(event.get("event", "")) == "launched": launches += 1
+				elif String(event.get("event", "")) == "completed": completions += 1
+			var misses := 0
+			for row_value in Array(capture.get("attacks", [])):
+				misses += int(Dictionary(row_value).get("miss", 0))
+			lines.append("Boss actions: %d begun; %d completed; %d interrupted; %d missed (%d launched; %d begun while not visible)" % [commitments, completions, interruption_events.size(), misses, launches, invisible_commitments])
 		var ox_committed := 0
 		var ox_launched := 0
 		for event_value in enemy_action_events:
@@ -311,6 +343,11 @@ static func build_text(session: Dictionary) -> String:
 		var ratings := Dictionary(room.get("ratings", {}))
 		if bool(room.get("subjective_skipped", false)):
 			lines.append("Subjective ratings: skipped / not enough information")
+		elif boss_lab:
+			lines.append("Difficulty: %s" % _rating_text(ratings.get("difficulty", 0)))
+			lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))
+			lines.append("Fairness: %s" % _rating_text(ratings.get("fairness", 0)))
+			lines.append("Desire to retry: %s" % _rating_text(ratings.get("want_retry", 0)))
 		else:
 			lines.append("Difficulty: %s" % _rating_text(ratings.get("difficulty", 0)))
 			lines.append("Fun: %s" % _rating_text(ratings.get("fun", 0)))

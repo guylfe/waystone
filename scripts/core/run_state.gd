@@ -441,7 +441,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.91"
+const GAME_VERSION := "0.2.92"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 13
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -875,6 +875,10 @@ var custom_room_xp := 0
 var custom_room_repeat := false
 var custom_room_used_kinds: Dictionary = {}
 var custom_room_last_roster: Array[String] = []
+var boss_lab_boss_kind := "werewolf"
+var boss_lab_arena_id := "open_ring"
+var boss_lab_variant_id := "solo_current"
+var boss_lab_initial_setup: Dictionary = {}
 var survey_room_seed := 0
 var survey_feedback_pending := false
 # The last enemy has fallen but the room has not been handed over yet. The killing blow is
@@ -892,6 +896,7 @@ var survey_session: Dictionary = {}
 var survey_last_report: Dictionary = {}
 var survey_action_counts: Dictionary = {}
 var survey_last_damage_source := ""
+var survey_damage_sources: Dictionary = {}
 var survey_current_view_mode := "isometric"
 var survey_room_view_modes: Array[String] = ["isometric"]
 var survey_view_switches := 0
@@ -1103,7 +1108,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	dodge_style_uses_total.clear()
 	dodge_vulnerable_time_total = 0.0
 	dodge_recovery_damage_total = 0
-	survey_room_number = 1 if mode_id == ModeRulesScript.COMBAT_SURVEY else 0
+	survey_room_number = 1 if is_measurement_mode() else 0
 	custom_room_used_kinds.clear()
 	custom_room_last_roster.clear()
 	# Granted once, and spent through the character sheet the player already uses. That
@@ -1120,6 +1125,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_last_report.clear()
 	survey_action_counts.clear()
 	survey_last_damage_source = ""
+	survey_damage_sources.clear()
 	survey_room_view_modes.assign([survey_current_view_mode])
 	survey_view_switches = 0
 	survey_empty_melee_contacts = 0
@@ -1142,6 +1148,11 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	survey_strike_diagnostics.clear()
 	survey_session = {
 		"format_version": SurveyReportScript.FORMAT_VERSION,
+		"mode_id": mode_id,
+		"boss_kind": boss_lab_boss_kind if mode_id == ModeRulesScript.BOSS_LAB else "",
+		"boss_variant": boss_lab_variant_id if mode_id == ModeRulesScript.BOSS_LAB else "",
+		"arena": boss_lab_arena_id if mode_id == ModeRulesScript.BOSS_LAB else "",
+		"setup_identity": "%s|%s|%s|%s|%s|%s|%d" % [mode_id, loadout_id, boss_lab_boss_kind if mode_id == ModeRulesScript.BOSS_LAB else survey_profile, boss_lab_variant_id if mode_id == ModeRulesScript.BOSS_LAB else "", boss_lab_arena_id if mode_id == ModeRulesScript.BOSS_LAB else "", combat_rules, run_seed],
 		"game_version": GAME_VERSION,
 		"generator_version": SURVEY_GENERATOR_VERSION,
 		"presentation_version": PRESENTATION_VERSION,
@@ -1153,7 +1164,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 		"ended_at": "",
 		"end_reason": "",
 		"rooms": [],
-	} if mode_id == ModeRulesScript.COMBAT_SURVEY else {}
+	} if is_measurement_mode() else {}
 	effects.clear()
 	hazards.clear()
 	projectiles.clear()
@@ -1163,7 +1174,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	shortcut_unlocked = false
 	_boss_defeated = false
 	rng.seed = run_seed
-	var layout: Dictionary = _generate_survey_layout(survey_room_number) if mode_id == ModeRulesScript.COMBAT_SURVEY else FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
+	var layout: Dictionary = _generate_survey_layout(survey_room_number) if is_measurement_mode() else FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
 	world_size = Vector2(layout.get("world_size", WORLD_SIZE))
 	geometry_style = String(layout.get("geometry_style", "rooms"))
 	areas.assign(Array(layout["areas"]).duplicate(true))
@@ -1183,7 +1194,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	base_walls_by_layer = Dictionary(layout.get("layer_walls", {})).duplicate(true)
 	bonfire_pos = Vector2(layout["bonfire_pos"])
 	active_waystone_id = String(waystones[0]["id"]) if not waystones.is_empty() else ""
-	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "survey_arena" if mode_id == ModeRulesScript.COMBAT_SURVEY else "expedition_surface"
+	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "survey_arena" if is_measurement_mode() else "expedition_surface"
 	if base_walls_by_layer.is_empty(): base_walls_by_layer[current_layer] = Array(layout["base_walls"]).duplicate()
 	_player_start = Vector2(layout["player_start"])
 	player_pos = _player_start
@@ -1207,10 +1218,25 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	_apply_shortcut_world_state()
 	run_active = true
 	_update_exploration(true)
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		_capture_survey_room_entry()
+		if mode_id == ModeRulesScript.BOSS_LAB:
+			boss_lab_initial_setup = {
+				"format_version": 1,
+				"game_version": GAME_VERSION,
+				"loadout_id": loadout_id,
+				"combat_rules": combat_rules,
+				"run_seed": run_seed,
+				"boss_kind": boss_lab_boss_kind,
+				"boss_variant": boss_lab_variant_id,
+				"arena": boss_lab_arena_id,
+				"entry_hp": player_hp,
+				"entry_energy": player_energy,
+				"entry_potions": potions,
+			}
+			survey_session["initial_setup"] = boss_lab_initial_setup.duplicate(true)
 		SurveyReportScript.save_current(survey_session)
-		message = "Combat Survey room 1. %s" % _combat_rules_intro()
+		message = ("Boss Lab: %s. " % boss_lab_boss_kind.replace("_", " ").capitalize() if mode_id == ModeRulesScript.BOSS_LAB else "Combat Survey room 1. ") + _combat_rules_intro()
 	elif bool(mode_config["waystone_available"]):
 		_capture_anchor_history()
 		message = "The Waystone anchors this moment. %s" % _combat_rules_intro()
@@ -1228,7 +1254,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	var threat_band := _survey_threat_band(pacing_phase, room_rng)
 	var composition := _custom_room_composition(room_rng) if _custom_room_active() else _survey_composition(room_rng, room_number, threat_band, pacing_phase)
 	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
-	var arena_id := String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
+	var arena_id := boss_lab_arena_id if mode_id == ModeRulesScript.BOSS_LAB and boss_lab_arena_id in arena_ids else String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
 	var enemy_plan: Array = composition.get("enemies", [])
 	var layer := "survey_arena"
 	var center := SURVEY_ARENA_CENTER
@@ -1300,12 +1326,13 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"enemy_roles": enemy_roles,
 	}
 
-	var layers := {layer: {"name": "Combat Survey", "depth": 0}}
+	var lab_name := "Boss Lab" if mode_id == ModeRulesScript.BOSS_LAB else "Combat Survey"
+	var layers := {layer: {"name": lab_name, "depth": 0}}
 	var layer_walls := {layer: walls_for_layer}
 	return {
 		"world_size": Vector2(1700.0, 1400.0),
 		"geometry_style": "arena",
-		"areas": [{"id": 0, "name": "Survey Arena %d" % room_number, "arrival_text": "%s · %s" % [arena_id.replace("_", " ").capitalize(), formation_id.replace("_", " ").capitalize()], "kind": "survey", "rect": Rect2(175, 75, 1350, 1250), "center": center, "layer": layer, "discovered": true}],
+		"areas": [{"id": 0, "name": "%s Arena" % lab_name, "arrival_text": "%s · %s" % [arena_id.replace("_", " ").capitalize(), formation_id.replace("_", " ").capitalize()], "kind": "survey", "rect": Rect2(175, 75, 1350, 1250), "center": center, "layer": layer, "discovered": true}],
 		"connections": [],
 		"route_recipe": [],
 		"run_graph": {"nodes": [0], "edges": []},
@@ -1466,7 +1493,24 @@ func _recipe_non_melee_count(recipe: Dictionary) -> int:
 	return count
 
 func _custom_room_active() -> bool:
-	return mode_id == ModeRulesScript.COMBAT_SURVEY and not custom_room_kinds.is_empty()
+	return is_measurement_mode() and not custom_room_kinds.is_empty()
+
+func is_measurement_mode() -> bool:
+	return ModeRulesScript.measurement_enabled(mode_id)
+
+func retry_boss_lab() -> bool:
+	if mode_id != ModeRulesScript.BOSS_LAB or boss_lab_initial_setup.is_empty(): return false
+	var setup := boss_lab_initial_setup.duplicate(true)
+	boss_lab_boss_kind = String(setup.get("boss_kind", "werewolf"))
+	boss_lab_variant_id = String(setup.get("boss_variant", "solo_current"))
+	boss_lab_arena_id = String(setup.get("arena", "open_ring"))
+	custom_room_kinds.assign([boss_lab_boss_kind])
+	custom_room_formation = ""
+	custom_room_hp_percent = 1.0
+	custom_room_xp = 0
+	custom_room_repeat = false
+	start_run(String(setup.get("loadout_id", "warrior")), ModeRulesScript.BOSS_LAB, int(setup.get("run_seed", run_seed)), "encounter", String(setup.get("combat_rules", "energy")))
+	return true
 
 func _custom_selectable_kinds() -> Array[String]:
 	var kinds: Array[String] = []
@@ -1502,7 +1546,9 @@ func _custom_room_composition(room_rng: RandomNumberGenerator) -> Dictionary:
 		cost += _survey_enemy_cost(kind)
 	custom_room_last_roster.assign(labels)
 	return {
-		"id": "custom_room", "label": "Custom Room", "family": "custom",
+		"id": "boss_lab" if mode_id == ModeRulesScript.BOSS_LAB else "custom_room",
+		"label": "%s Lab" % boss_lab_boss_kind.replace("_", " ").capitalize() if mode_id == ModeRulesScript.BOSS_LAB else "Custom Room",
+		"family": "boss_lab" if mode_id == ModeRulesScript.BOSS_LAB else "custom",
 		"min_tier": 1, "phases": ["opening"], "enemies": enemies, "reinforcements": [],
 		"cost": cost, "ranged_pressure_count": _recipe_non_melee_count({"enemies": enemies}),
 		"melee_experiment": false,
@@ -1788,7 +1834,7 @@ func _on_player_hit_landed(enemy: Dictionary) -> void:
 	_note_player_reached(enemy)
 
 func _note_player_reached(enemy: Dictionary) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY or bool(enemy.get("survey_reached", false)): return
+	if not is_measurement_mode() or bool(enemy.get("survey_reached", false)): return
 	enemy["survey_reached"] = true
 	var kind := String(enemy.get("kind", ""))
 	if _formation_band_for_kind(kind) != "rear": return
@@ -2063,6 +2109,7 @@ func _capture_survey_room_entry() -> void:
 	# so carrying the previous room's attacks in would blend two encounters.
 	survey_attack_records.clear()
 	survey_reach_times.clear()
+	survey_damage_sources.clear()
 	exhausted_dodge_room_max_chain = 0
 	survey_room_entry = {
 		"time": simulation_time,
@@ -2151,7 +2198,7 @@ func record_survey_view_mode(mode: String, switched: bool) -> void:
 	if mode not in ["isometric", "top_down"]: return
 	var changed_mode := mode != survey_current_view_mode
 	survey_current_view_mode = mode
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	if not survey_room_view_modes.has(mode): survey_room_view_modes.append(mode)
 	if switched and changed_mode: survey_view_switches += 1
 
@@ -2193,7 +2240,7 @@ func _survey_build_summary() -> String:
 	return "%s; %s; %s" % [CombatCatalogScript.loadout_name(loadout_id), CombatCatalogScript.weapon_frame(player_weapon_frame).get("label", player_weapon_frame), ", ".join(ranks) if not ranks.is_empty() else "base tracks"]
 
 func _complete_survey_room(outcome: String) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY or survey_feedback_pending or trial_complete: return
+	if not is_measurement_mode() or survey_feedback_pending or trial_complete: return
 	_survey_finalize_strike_probe("room_ended")
 	survey_pending_record = survey_room_definition.duplicate(true)
 	survey_pending_record.merge({
@@ -2209,6 +2256,7 @@ func _complete_survey_room(outcome: String) -> void:
 		"entry_potions": int(survey_room_entry.get("potions", potions)),
 		"exit_potions": potions,
 		"death_source": survey_last_damage_source if outcome == "death" else "",
+		"damage_sources": survey_damage_sources.duplicate(true),
 		"action_usage": _survey_action_count_delta(),
 		"view_modes": survey_room_view_modes.duplicate(),
 		"view_switches": survey_view_switches - int(survey_room_entry.get("view_switches", survey_view_switches)),
@@ -2292,7 +2340,7 @@ func _complete_survey_room(outcome: String) -> void:
 	survey_pending_record.merge(SurveyCounterCatalogScript.room_values(self, survey_room_entry), true)
 	survey_feedback_pending = true
 	# A one-shot custom room finishes the run when its room finishes, whatever the outcome.
-	survey_run_ending = outcome in ["death", "manual_end"] or (_custom_room_active() and not custom_room_repeat)
+	survey_run_ending = outcome in ["death", "manual_end"] or mode_id == ModeRulesScript.BOSS_LAB or (_custom_room_active() and not custom_room_repeat)
 	survey_end_reason = outcome
 	player_action = _idle_action()
 	projectiles.clear()
@@ -2341,7 +2389,7 @@ func _resolve_pending_room_clear() -> void:
 	_complete_survey_room("victory")
 
 func end_survey_run() -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY or trial_complete or survey_feedback_pending: return
+	if not is_measurement_mode() or trial_complete or survey_feedback_pending: return
 	_complete_survey_room("manual_end")
 
 func _finalize_survey_run(reason: String) -> void:
@@ -2350,7 +2398,7 @@ func _finalize_survey_run(reason: String) -> void:
 	survey_last_report = SurveyReportScript.archive_session(survey_session)
 	trial_complete = true
 	survey_run_ending = true
-	_set_message("Combat Survey saved: %d rooms recorded." % Array(survey_session.get("rooms", [])).size())
+	_set_message("Boss Lab attempt saved." if mode_id == ModeRulesScript.BOSS_LAB else "Combat Survey saved: %d rooms recorded." % Array(survey_session.get("rooms", [])).size())
 	changed.emit()
 
 func _load_next_survey_room() -> void:
@@ -2942,7 +2990,7 @@ func _threat_snapshot() -> Dictionary:
 	return {"alerted": alerted, "nearest": nearest, "pending": pending, "reacting": reacting, "soonest": soonest}
 
 func _record_exhaustion_threat(start: bool) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	var snapshot := _threat_snapshot()
 	var alerted := int(snapshot["alerted"])
 	if start:
@@ -3870,7 +3918,7 @@ func request_spell(spell_id: String, target: Vector2, simulate_immediately: bool
 	if not _spend_energy(spell_energy_cost(spell_id), false): return false
 	selected_spell = spell_id
 	player_facing = direction
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		survey_spell_counts[spell_id] = int(survey_spell_counts.get(spell_id, 0)) + 1
 	var spell_definition := AbilityCatalogScript.spell(spell_id)
 	player_action = _spell_action(spell_id, direction, float(spell_definition["player_startup"]), float(spell_definition["player_duration"]))
@@ -4407,7 +4455,7 @@ func level_up_context() -> String:
 	if not is_player_ready() or trial_complete: return ""
 	if mode_id == ModeRulesScript.EXPEDITION:
 		return "expedition" if carried_xp >= next_upgrade_cost() else ""
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		return "survey" if carried_xp >= next_upgrade_cost() else ""
 	if mode_id == ModeRulesScript.CAMPAIGN_LAB and not nearby_waystone().is_empty() and secured_xp >= next_upgrade_cost():
 		return "waystone"
@@ -5157,7 +5205,7 @@ func _annotate_player_action(ability_id: String) -> void:
 	player_action["weapon_frame"] = player_weapon_frame
 	player_action["ability_id"] = ability_id
 	player_action["defense_id"] = defense_id
-	if mode_id == ModeRulesScript.COMBAT_SURVEY and ability_id != "bow_draw":
+	if is_measurement_mode() and ability_id != "bow_draw":
 		survey_action_counts[ability_id] = int(survey_action_counts.get(ability_id, 0)) + 1
 
 func _is_committed_physical_action(action: Dictionary) -> bool:
@@ -5225,7 +5273,7 @@ func _register_battle_flow_contact(from_advance: bool = false) -> void:
 	_record_battle_flow_event("refresh" if battle_flow_pips == before else "gain", "advance" if from_advance else "sequence", before, battle_flow_pips)
 
 func _record_battle_flow_event(event_type: String, cause: String, before: int, after: int) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	survey_battle_flow_events.append({
 		"type": event_type,
 		"cause": cause,
@@ -5309,7 +5357,7 @@ func _simulate_until_ready() -> void:
 func _tick(dt: float) -> void:
 	_simulation_tick_index += 1
 	simulation_time += dt
-	if mode_id == ModeRulesScript.COMBAT_SURVEY: _sample_engagement()
+	if is_measurement_mode(): _sample_engagement()
 	_player_reaction_completed_this_tick = false
 	var player_dt := dt * _player_personal_tempo()
 	for slot in cooldowns:
@@ -5402,6 +5450,7 @@ func _trigger_player_condition(condition_id: String) -> void:
 		"laceration":
 			_change_actor_hp(0, -15)
 			survey_last_damage_source = "laceration"
+			_record_survey_damage_source("laceration", 15)
 		"poison": player_conditions[condition_id] = 8.0
 		"sleep":
 			player_conditions[condition_id] = 3.0
@@ -5445,6 +5494,7 @@ func _update_conditions(dt: float) -> void:
 			damage_received_total += applied
 			survey_burn_damage_total += applied
 			survey_last_damage_source = "burning"
+			_record_survey_damage_source("burning", applied)
 			if player_hp <= 0:
 				_begin_death()
 				return
@@ -5460,6 +5510,7 @@ func _update_conditions(dt: float) -> void:
 		if float(player_conditions.get("poison", 0.0)) > 0.0:
 			_change_actor_hp(0, -3)
 			survey_last_damage_source = "poison"
+			_record_survey_damage_source("poison", 3)
 		# Burning is charged per world-second above, not in this once-a-second sweep. Both
 		# were running, so fire cost 27 health across two seconds while reporting 21 --
 		# the meter and the damage disagreeing is exactly the kind of invisible combat
@@ -5596,7 +5647,7 @@ func _update_player(dt: float) -> void:
 	if elapsed + 0.00001 >= float(player_action["duration"]):
 		if kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("complete")
 		if kind in ["attack", "sweep", "combo", "art_combo"] and Array(player_action["hit_ids"]).is_empty():
-			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
+			if is_measurement_mode(): survey_empty_melee_contacts += 1
 			_set_message("Your cut finds only air.")
 		elif kind == "block" and not bool(player_action["effect_done"]):
 			_set_message("You lower the guard without contact.")
@@ -5750,7 +5801,7 @@ func _update_player_combo(elapsed: float) -> void:
 	if int(player_action.get("phase_index", -1)) != committed_phase:
 		if int(player_action.get("phase_index", -1)) >= 0: _survey_finalize_strike_probe("phase_complete")
 		if int(player_action.get("phase_index", -1)) >= 0 and Array(player_action.get("hit_ids", [])).is_empty():
-			if mode_id == ModeRulesScript.COMBAT_SURVEY: survey_empty_melee_contacts += 1
+			if is_measurement_mode(): survey_empty_melee_contacts += 1
 			if bool(player_action.get("knife_sequence", false)): player_action["knife_contact_chain"] = 0
 		player_action["phase_index"] = committed_phase
 		player_action["hit_done"] = false
@@ -5903,7 +5954,7 @@ func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
 	return result
 
 func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY or not bool(sample.get("active", false)): return
+	if not is_measurement_mode() or not bool(sample.get("active", false)): return
 	var technique_id := String(sample.get("technique_id", player_action.get("technique_id", "attack")))
 	var phase_index := int(player_action.get("phase_index", 0))
 	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
@@ -5981,7 +6032,7 @@ func _survey_update_strike_probe(sample: Dictionary, elapsed: float) -> void:
 	player_action["survey_strike_probe"] = probe
 
 func _survey_mark_strike_resolution(enemy: Dictionary, result: String) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
 	if probe.is_empty(): return
 	var targets: Array = probe.get("targets", [])
@@ -5993,7 +6044,7 @@ func _survey_mark_strike_resolution(enemy: Dictionary, result: String) -> void:
 	player_action["survey_strike_probe"] = probe
 
 func _survey_finalize_strike_probe(end_reason: String) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	var probe: Dictionary = Dictionary(player_action.get("survey_strike_probe", {}))
 	if probe.is_empty(): return
 	probe["end_reason"] = end_reason
@@ -6620,7 +6671,7 @@ func _gore_allies_in_path(charger: Dictionary, origin: Vector2, finish: Vector2,
 # profile is copied from the canonical enemy properties when the action is authored,
 # so neither movement nor presentation has to infer identity from an enemy kind.
 func _record_charge_traffic(charger: Dictionary, interaction: String, blocker: Dictionary = {}, cause: String = "") -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	var event := {
 		"charger_id": int(charger.get("id", -1)),
 		"charger_kind": String(charger.get("kind", "enemy")),
@@ -6637,7 +6688,7 @@ func _record_charge_traffic(charger: Dictionary, interaction: String, blocker: D
 	survey_charge_traffic_events.append(event)
 
 func _record_enemy_control(enemy: Dictionary, control: String, action_before: Dictionary, duration: float = 0.0) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	survey_enemy_control_events.append({
 		"enemy_id": int(enemy.get("id", -1)),
 		"enemy_kind": String(enemy.get("kind", "unknown")),
@@ -6650,7 +6701,7 @@ func _record_enemy_control(enemy: Dictionary, control: String, action_before: Di
 	})
 
 func _record_enemy_action_event(enemy: Dictionary, event_type: String, action: Dictionary) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	survey_enemy_action_events.append({
 		"enemy_id": int(enemy.get("id", -1)),
 		"enemy_kind": String(enemy.get("kind", "unknown")),
@@ -6659,6 +6710,7 @@ func _record_enemy_action_event(enemy: Dictionary, event_type: String, action: D
 		"label": String(action.get("label", action.get("technique_id", ""))),
 		"elapsed": float(action.get("elapsed", 0.0)),
 		"startup": float(action.get("startup", 0.0)),
+		"visible": enemy_visible_to_player(enemy),
 		"at": simulation_time,
 	})
 
@@ -7017,7 +7069,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if posture < posture_max and recovery_delay <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
 			enemy["posture"] = minf(posture_max, posture + enemy_dt * float(enemy.get("posture_recovery_rate", 1.8)))
 		var action: Dictionary = enemy["action"]
-		if mode_id == ModeRulesScript.COMBAT_SURVEY and String(enemy.get("awareness", "idle")) == "alerted" and String(action.get("kind", "idle")) in ["hit_reaction", "stagger"]:
+		if is_measurement_mode() and String(enemy.get("awareness", "idle")) == "alerted" and String(action.get("kind", "idle")) in ["hit_reaction", "stagger"]:
 			var control_kind := String(enemy.get("kind", "unknown"))
 			survey_enemy_control_time_by_kind[control_kind] = float(survey_enemy_control_time_by_kind.get(control_kind, 0.0)) + dt
 		if String(action["kind"]) == "idle":
@@ -7243,6 +7295,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			_spawn_fire_breath(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
 		if elapsed + 0.00001 >= float(action["duration"]):
 			if kind in ["melee", "charge"]: _finalise_capture_record(enemy, action)
+			if kind in ENEMY_ATTACK_ACTION_KINDS: _record_enemy_action_event(enemy, "completed", action)
 			if kind == "stagger": enemy["posture"] = float(enemy["posture_max"])
 			if String(enemy.get("kind", "")) == "bandit" and kind in ["melee", "dodge_strike"]:
 				enemy["neutral_cooldown"] = maxf(float(enemy.get("neutral_cooldown", 0.0)), 0.34)
@@ -7740,7 +7793,7 @@ func _melee_intent(enemy: Dictionary, gap: float) -> Dictionary:
 # these are report instruments, and sampling attack geometry every active frame
 # is not worth the cost in ordinary play.
 func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> void:
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
 	var player_kind := String(player_action.get("kind", "idle"))
@@ -7803,7 +7856,7 @@ func _attach_charge_capture(action: Dictionary, authored_f: float, technique: St
 func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "system", tool: String = "unknown") -> void:
 	var action: Dictionary = enemy.get("action", {})
 	var interrupted_kind := String(action.get("kind", "idle"))
-	if mode_id == ModeRulesScript.COMBAT_SURVEY and interrupted_kind in ENEMY_ATTACK_ACTION_KINDS:
+	if is_measurement_mode() and interrupted_kind in ENEMY_ATTACK_ACTION_KINDS:
 		survey_interruption_events.append({
 			"enemy_id": int(enemy.get("id", -1)),
 			"enemy_kind": String(enemy.get("kind", "unknown")),
@@ -7823,7 +7876,7 @@ func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
 	action.erase("capture_record")
-	if mode_id != ModeRulesScript.COMBAT_SURVEY: return
+	if not is_measurement_mode(): return
 	if interrupted and String(record.get("resolution", "")).is_empty():
 		record["resolution"] = "interrupted"
 		# Where in the wind-up the answer landed. Below 1.0 means the attack was
@@ -9064,6 +9117,11 @@ func _aggregate_damage_effect(key: String, impact: Vector2, amount: int) -> bool
 		return true
 	return false
 
+func _record_survey_damage_source(source_name: String, amount: int) -> void:
+	if not is_measurement_mode() or amount <= 0: return
+	var key := source_name if not source_name.is_empty() else "unknown"
+	survey_damage_sources[key] = int(survey_damage_sources.get(key, 0)) + amount
+
 func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, incoming_from: Vector2 = Vector2.ZERO, contact_position: Vector2 = Vector2.INF, authored_posture: float = -1.0, aggregate_key: String = "", direct_hit: bool = true) -> void:
 	# Zero authored damage is not an attack -- sundered ground and the disengage shove both
 	# arrive here with nothing to deal.
@@ -9087,6 +9145,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		var leakage := 0.25 if guard_profile in ["dual", "awkward"] else 0.0
 		var chip_damage := roundi(float(mitigated_damage) * leakage)
 		if chip_damage > 0: survey_last_damage_source = source_name
+		_record_survey_damage_source(source_name, chip_damage)
 		_change_actor_hp(0, -chip_damage)
 		damage_received_total += chip_damage
 		hits_received_total += 1
@@ -9108,6 +9167,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		player_action["effect_done"] = true
 		var endured_damage := int(ceil(float(mitigated_damage) * 0.50))
 		survey_last_damage_source = source_name
+		_record_survey_damage_source(source_name, endured_damage)
 		_change_actor_hp(0, -endured_damage)
 		damage_received_total += endured_damage
 		hits_received_total += 1
@@ -9148,6 +9208,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		survey_power_through_triggers_total += 1
 		survey_power_through_damage_prevented_total += maxi(0, unreduced - damage_received)
 	survey_last_damage_source = source_name
+	_record_survey_damage_source(source_name, damage_received)
 	_change_actor_hp(0, -damage_received)
 	damage_received_total += damage_received
 	if was_protected: protected_damage_total += damage_received
@@ -9270,7 +9331,7 @@ func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 
 func _begin_death() -> void:
 	if death_pending: return
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		room_clear_pending = false
 		_complete_survey_room("death")
 		return
@@ -9370,7 +9431,7 @@ func _remove_dead_enemies() -> void:
 			living.append(enemy)
 		else:
 			enemies_defeated += 1
-			if mode_id == ModeRulesScript.COMBAT_SURVEY:
+			if is_measurement_mode():
 				# Everything still standing, alerted and near the body that just fell. Zero
 				# means this one was fought alone, which is what "picked them off one by
 				# one" looks like in data.
@@ -9394,7 +9455,7 @@ func _remove_dead_enemies() -> void:
 				else: _set_message("The Warden falls. The path beyond remains anchored.")
 			else: _set_message("The %s falls. XP gained." % kind)
 	_replace_enemy_actors(living)
-	if mode_id == ModeRulesScript.COMBAT_SURVEY and enemies.is_empty():
+	if is_measurement_mode() and enemies.is_empty():
 		# Hold the handover only while the blow that won the room is still resolving.
 		# With nothing in flight there is nothing to wait for, so the room completes at
 		# once and a headless caller sees the behaviour it always saw.
@@ -9477,7 +9538,7 @@ func _navigation_cache_key() -> String:
 	return "%s|%s|%s" % [current_layer, region_ids, hash(walls)]
 
 func prewarm_expedition_navigation() -> void:
-	if mode_id not in [ModeRulesScript.EXPEDITION, ModeRulesScript.COMBAT_SURVEY] or areas.is_empty(): return
+	if mode_id != ModeRulesScript.EXPEDITION and not is_measurement_mode() or areas.is_empty(): return
 	var started := Time.get_ticks_usec()
 	var original_area_id := current_area_id
 	for area_value in areas:
@@ -10142,6 +10203,11 @@ func snapshot(lightweight: bool = false) -> Dictionary:
 		"death_pending": death_pending,
 		"run_failed": run_failed,
 		"survey_profile": survey_profile,
+		"boss_lab_boss_kind": boss_lab_boss_kind,
+		"boss_lab_arena_id": boss_lab_arena_id,
+		"boss_lab_variant_id": boss_lab_variant_id,
+		"boss_lab_initial_setup": boss_lab_initial_setup.duplicate(true),
+		"custom_room_kinds": custom_room_kinds.duplicate(),
 		"survey_room_number": survey_room_number,
 		"survey_room_seed": survey_room_seed,
 		"survey_feedback_pending": survey_feedback_pending,
@@ -10376,6 +10442,15 @@ func _build_save_payload() -> Dictionary:
 		"successful_blocks": successful_blocks,
 		"successful_endures": successful_endures,
 		"survey_profile": survey_profile,
+		"boss_lab_boss_kind": boss_lab_boss_kind,
+		"boss_lab_arena_id": boss_lab_arena_id,
+		"boss_lab_variant_id": boss_lab_variant_id,
+		"boss_lab_initial_setup": boss_lab_initial_setup.duplicate(true),
+		"custom_room_kinds": custom_room_kinds.duplicate(),
+		"custom_room_formation": custom_room_formation,
+		"custom_room_hp_percent": custom_room_hp_percent,
+		"custom_room_xp": custom_room_xp,
+		"custom_room_repeat": custom_room_repeat,
 		"survey_room_number": survey_room_number,
 		"survey_room_seed": survey_room_seed,
 		"survey_feedback_pending": survey_feedback_pending,
@@ -10388,6 +10463,7 @@ func _build_save_payload() -> Dictionary:
 		"survey_last_report": survey_last_report.duplicate(true),
 		"survey_action_counts": survey_action_counts.duplicate(true),
 		"survey_last_damage_source": survey_last_damage_source,
+		"survey_damage_sources": survey_damage_sources.duplicate(true),
 		"survey_current_view_mode": survey_current_view_mode,
 		"survey_room_view_modes": survey_room_view_modes.duplicate(),
 		"survey_view_switches": survey_view_switches,
@@ -10455,8 +10531,17 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
 	run_seed = int(payload.get("run_seed", run_seed))
+	boss_lab_boss_kind = String(payload.get("boss_lab_boss_kind", "werewolf"))
+	boss_lab_arena_id = String(payload.get("boss_lab_arena_id", "open_ring"))
+	boss_lab_variant_id = String(payload.get("boss_lab_variant_id", "solo_current"))
+	boss_lab_initial_setup = Dictionary(payload.get("boss_lab_initial_setup", {})).duplicate(true)
+	custom_room_kinds.assign(Array(payload.get("custom_room_kinds", [boss_lab_boss_kind] if mode_id == ModeRulesScript.BOSS_LAB else [])))
+	custom_room_formation = String(payload.get("custom_room_formation", ""))
+	custom_room_hp_percent = float(payload.get("custom_room_hp_percent", 1.0))
+	custom_room_xp = int(payload.get("custom_room_xp", 0))
+	custom_room_repeat = bool(payload.get("custom_room_repeat", false))
 	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")))
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		var saved_survey_room := int(payload.get("survey_room_number", 1))
 		if saved_survey_room > 1:
 			survey_room_number = saved_survey_room - 1
@@ -10721,7 +10806,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	counter_hits = int(payload.get("counter_hits", 0))
 	successful_blocks = int(payload.get("successful_blocks", 0))
 	successful_endures = int(payload.get("successful_endures", 0))
-	if mode_id == ModeRulesScript.COMBAT_SURVEY:
+	if is_measurement_mode():
 		survey_profile = String(payload.get("survey_profile", "encounter"))
 		survey_room_number = int(payload.get("survey_room_number", 1))
 		survey_room_seed = int(payload.get("survey_room_seed", _survey_seed_for_room(survey_room_number)))
@@ -10735,6 +10820,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		survey_last_report = Dictionary(payload.get("survey_last_report", {})).duplicate(true)
 		survey_action_counts = Dictionary(payload.get("survey_action_counts", {})).duplicate(true)
 		survey_last_damage_source = String(payload.get("survey_last_damage_source", ""))
+		survey_damage_sources = Dictionary(payload.get("survey_damage_sources", {})).duplicate(true)
 		survey_current_view_mode = String(payload.get("survey_current_view_mode", "isometric"))
 		survey_room_view_modes.assign(Array(payload.get("survey_room_view_modes", [survey_current_view_mode])))
 		survey_view_switches = int(payload.get("survey_view_switches", 0))

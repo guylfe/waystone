@@ -106,7 +106,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Energy:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Energy depleted:" in report and "Energy overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 32" in report and "Presentation version: 13" in report and "Combat rules: Recovery" in report)
+	assert("Report format: 33" in report and "Presentation version: 13" in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Energy regeneration delay:" in report)
@@ -169,5 +169,47 @@ func _init() -> void:
 	var skipped := Dictionary(Array(encounter.survey_session["rooms"])[0])
 	assert(bool(skipped["subjective_skipped"]))
 	assert(Dictionary(skipped["ratings"]).is_empty())
+
+	# Boss Lab is a measured one-enemy attempt, not an expedition with a boss placed in it.
+	# It shares the counter/report authority but has its own setup identity and always stops
+	# for feedback so the exact same seed can be retried.
+	var boss_lab = RunStateScript.new(false)
+	boss_lab.boss_lab_boss_kind = "warden"
+	boss_lab.boss_lab_arena_id = "central_cover"
+	boss_lab.custom_room_kinds.assign(["warden"])
+	boss_lab.start_run("warrior", "boss_lab", 717171, "encounter", "energy")
+	assert(boss_lab.is_measurement_mode())
+	assert(boss_lab.mode_id == "boss_lab")
+	assert(boss_lab.enemies.size() == 1 and String(boss_lab.enemies[0]["kind"]) == "warden")
+	assert(String(boss_lab.survey_session["mode_id"]) == "boss_lab")
+	assert(String(boss_lab.survey_session["boss_kind"]) == "warden")
+	var boss_seed: int = boss_lab.survey_room_seed
+	var boss_definition: Dictionary = boss_lab.survey_room_definition.duplicate(true)
+	boss_lab.survey_enemy_action_events.append({"enemy_id":1, "enemy_kind":"warden", "event":"committed", "action":"melee", "label":"test", "at":0.1})
+	boss_lab.survey_enemy_action_events.append({"enemy_id":1, "enemy_kind":"warden", "event":"launched", "action":"melee", "label":"test", "at":0.2})
+	boss_lab.survey_enemy_action_events.append({"enemy_id":1, "enemy_kind":"warden", "event":"completed", "action":"melee", "label":"test", "at":0.3})
+	boss_lab._record_survey_damage_source("heavy_cleave", 12)
+	for enemy in boss_lab.enemies: enemy["hp"] = 0
+	boss_lab._remove_dead_enemies()
+	assert(boss_lab.survey_feedback_pending and boss_lab.survey_run_ending)
+	boss_lab.submit_survey_feedback({"difficulty":3, "fun":4, "fairness":5, "want_retry":4}, [], "Boss Lab regression.")
+	assert(boss_lab.trial_complete)
+	var boss_report := boss_lab.survey_report_text()
+	assert("WAYSTONE BOSS LAB" in boss_report and "Boss: Warden" in boss_report)
+	assert("Variant: solo current" in boss_report and "Arena: central cover" in boss_report)
+	assert("Boss actions: 1 begun; 1 completed; 0 interrupted; 0 missed" in boss_report)
+	assert("Damage sources: heavy_cleave 12" in boss_report)
+	assert("Fairness: 5/5" in boss_report and "Desire to retry: 4/5" in boss_report)
+	# The state-level retry contract: same setup and seed, but a completely fresh actor and
+	# full player resources. No campaign/expedition progression crosses the boundary.
+	assert(boss_lab.retry_boss_lab())
+	assert(boss_lab.survey_room_seed == boss_seed)
+	assert(boss_lab.survey_room_definition == boss_definition)
+	assert(boss_lab.boss_lab_arena_id == "central_cover")
+	assert(boss_lab.player_hp == boss_lab.player_max_hp and is_equal_approx(boss_lab.player_energy, boss_lab.player_max_energy))
+	assert(boss_lab.potions == boss_lab.healing_capacity() and not boss_lab.trial_complete)
+	var expedition = RunStateScript.new(false)
+	expedition.start_run("warrior", "expedition", 717171)
+	assert(not expedition.is_measurement_mode() and expedition.survey_session.is_empty())
 	print("COMBAT SURVEY deterministic rooms, feedback, archive, and report: PASS")
 	quit(0)

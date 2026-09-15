@@ -1,6 +1,23 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.91` (Android version code `291`).
+Current prototype version: `0.2.92` (Android version code `292`).
+
+## v0.2.92 — a repeatable Boss Lab
+
+Boss Lab is now an explicit fourth mode rather than a Combat Survey convention or an
+Expedition fallback. It launches a solo current-version Werewolf or Warden with a real
+character loadout, chosen combat rules, seed, and one of the six current arena layouts.
+Every attempt is isolated from persistent progression and records a versioned initial
+setup. **Retry same setup** restores that exact identity and seeded generation with full
+starting Health, Energy, and potion capacity; **Change setup** and **Leave Boss Lab**
+provide the other two exits from the report.
+
+The post-attempt screen asks only difficulty, fun, fairness, desire to retry, and an
+optional note. Boss Lab shares the Combat Survey measurement authority without turning
+other modes into surveys. Report format 33 identifies the boss, experimental variant,
+arena, and exact setup, then reports boss actions begun, launched, completed, interrupted,
+and missed; visibility at the tell; damage by source; existing posture/control events;
+player resources; and death. Save schema remains `37`; presentation version remains `13`.
 
 ## v0.2.91 — the Ox commits, Battle Flow has room to breathe
 

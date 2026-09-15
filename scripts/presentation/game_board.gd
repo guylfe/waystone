@@ -41,6 +41,7 @@ const AREA_TITLE_DURATION := 2.8
 const MELEE_TAP_ANTICIPATION := 90.0
 const MELEE_TAP_NEARBY_ALLOWANCE := 24.0
 const MELEE_TAP_NEARBY_HALF_ANGLE := deg_to_rad(35.0)
+const BOSS_LAB_ARENAS: Array[String] = ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
 
 var state: RunState
 var visual: Dictionary = {}
@@ -114,6 +115,8 @@ var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var survey_profile_rects: Dictionary = {}
 var combat_rule_rects: Dictionary = {}
+var boss_choice_rects: Dictionary = {}
+var boss_arena_rect := Rect2()
 # The custom room picker. A full-screen overlay rather than another row in the setup
 # panel, which is already carrying three mode chips, two profiles, two rule sets, a seed
 # field and a start button -- twenty-one enemy chips would not fit beside them on a phone.
@@ -208,6 +211,8 @@ var setup_loadout := "warrior"
 var setup_mode := "expedition"
 var setup_survey_profile := "encounter"
 var setup_combat_rules := "energy"
+var setup_boss_kind := "werewolf"
+var setup_boss_arena := "open_ring"
 var waystone_menu_open := false
 var seed_input: LineEdit
 var setup_seed_error := ""
@@ -265,6 +270,8 @@ func _ready() -> void:
 	setup_mode = state.mode_id
 	setup_survey_profile = state.survey_profile
 	setup_combat_rules = state.combat_rules
+	setup_boss_kind = state.boss_lab_boss_kind
+	setup_boss_arena = state.boss_lab_arena_id
 	map_view_layer = state.current_layer
 	visual = _presentation_snapshot()
 	_update_area_title(0.0)
@@ -322,10 +329,10 @@ func _sync_survey_overlay() -> void:
 	if room_clear_remaining > 0.0:
 		survey_overlay.visible = false
 		return
-	if state.mode_id == "combat_survey" and state.survey_feedback_pending:
+	if state.is_measurement_mode() and state.survey_feedback_pending:
 		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "feedback": _build_survey_feedback_overlay()
 		survey_overlay.visible = true
-	elif state.mode_id == "combat_survey" and state.trial_complete and state.run_active:
+	elif state.is_measurement_mode() and state.trial_complete and state.run_active:
 		if not survey_overlay.visible or survey_overlay.get_meta("kind", "") != "report": _build_survey_report_overlay()
 		survey_overlay.visible = true
 	else:
@@ -354,7 +361,7 @@ func _build_survey_feedback_overlay() -> void:
 	content.add_theme_constant_override("separation", 13)
 	scroll.add_child(content)
 	var title := Label.new()
-	title.text = "ROOM %d COMPLETE" % state.survey_room_number
+	title.text = "%s ATTEMPT COMPLETE" % state.boss_lab_boss_kind.replace("_", " ").to_upper() if state.mode_id == "boss_lab" else "ROOM %d COMPLETE" % state.survey_room_number
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	content.add_child(title)
@@ -369,6 +376,11 @@ func _build_survey_feedback_overlay() -> void:
 	prompt.add_theme_font_size_override("font_size", 18)
 	content.add_child(prompt)
 	var questions := {
+		"difficulty": "Difficulty",
+		"fun": "Fun",
+		"fairness": "Fairness",
+		"want_retry": "Desire to retry",
+	} if state.mode_id == "boss_lab" else {
 		"difficulty": "Difficulty",
 		"fun": "Fun",
 		"tactical_interest": "Tactical interest",
@@ -399,31 +411,32 @@ func _build_survey_feedback_overlay() -> void:
 			buttons.append(button)
 		survey_rating_buttons[String(question_id)] = buttons
 		content.add_child(row)
-	var tag_label := Label.new()
-	tag_label.text = "Tags — choose any that apply"
-	tag_label.add_theme_font_size_override("font_size", 20)
-	content.add_child(tag_label)
-	var tag_grid := GridContainer.new()
-	tag_grid.columns = 3
-	tag_grid.add_theme_constant_override("h_separation", 7)
-	tag_grid.add_theme_constant_override("v_separation", 7)
-	for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure", "energy meaningful", "energy frustrating"]:
-		var button := Button.new()
-		button.text = String(tag).to_upper()
-		button.toggle_mode = true
-		button.custom_minimum_size = Vector2(150, 50)
-		button.add_theme_font_size_override("font_size", 15)
-		_apply_survey_toggle_style(button)
-		button.toggled.connect(_survey_tag_toggled.bind(String(tag)))
-		tag_grid.add_child(button)
-		survey_tag_buttons[String(tag)] = button
-	content.add_child(tag_grid)
+	if state.mode_id != "boss_lab":
+		var tag_label := Label.new()
+		tag_label.text = "Tags — choose any that apply"
+		tag_label.add_theme_font_size_override("font_size", 20)
+		content.add_child(tag_label)
+		var tag_grid := GridContainer.new()
+		tag_grid.columns = 3
+		tag_grid.add_theme_constant_override("h_separation", 7)
+		tag_grid.add_theme_constant_override("v_separation", 7)
+		for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure", "energy meaningful", "energy frustrating"]:
+			var button := Button.new()
+			button.text = String(tag).to_upper()
+			button.toggle_mode = true
+			button.custom_minimum_size = Vector2(150, 50)
+			button.add_theme_font_size_override("font_size", 15)
+			_apply_survey_toggle_style(button)
+			button.toggled.connect(_survey_tag_toggled.bind(String(tag)))
+			tag_grid.add_child(button)
+			survey_tag_buttons[String(tag)] = button
+		content.add_child(tag_grid)
 	var notes_label := Label.new()
 	notes_label.text = "Optional notes"
 	notes_label.add_theme_font_size_override("font_size", 20)
 	content.add_child(notes_label)
 	survey_notes = TextEdit.new()
-	survey_notes.placeholder_text = "What made this room work or fail?"
+	survey_notes.placeholder_text = "What made this attempt work or fail?" if state.mode_id == "boss_lab" else "What made this room work or fail?"
 	survey_notes.custom_minimum_size = Vector2(0, 132)
 	survey_notes.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	survey_notes.virtual_keyboard_enabled = true
@@ -494,7 +507,7 @@ func _survey_rating_pressed(question_id: String, rating: int) -> void:
 		rating_button.set_pressed_no_signal(index + 1 == rating)
 	if survey_submit_button != null:
 		survey_submit_button.disabled = survey_feedback_ratings.size() < 4
-		survey_submit_button.text = "SUBMIT ROOM & CONTINUE" if not survey_submit_button.disabled else "ANSWER ALL FOUR RATINGS"
+		survey_submit_button.text = ("SUBMIT ATTEMPT" if state.mode_id == "boss_lab" else "SUBMIT ROOM & CONTINUE") if not survey_submit_button.disabled else "ANSWER ALL FOUR RATINGS"
 
 func _survey_tag_toggled(enabled: bool, tag: String) -> void:
 	if enabled and not survey_feedback_tags.has(tag): survey_feedback_tags.append(tag)
@@ -528,7 +541,7 @@ func _build_survey_report_overlay() -> void:
 	content.add_theme_constant_override("separation", 12)
 	survey_overlay.add_child(content)
 	var title := Label.new()
-	title.text = "COMBAT SURVEY SAVED"
+	title.text = "BOSS LAB ATTEMPT SAVED" if state.mode_id == "boss_lab" else "COMBAT SURVEY SAVED"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 28)
 	content.add_child(title)
@@ -538,11 +551,17 @@ func _build_survey_report_overlay() -> void:
 	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	summary.add_theme_font_size_override("font_size", 16)
 	content.add_child(summary)
-	content.add_child(_survey_action_button("SAVE TXT TO DOWNLOADS", _save_current_survey_report))
-	content.add_child(_survey_action_button("SHARE REPORT", _share_current_survey_report))
-	content.add_child(_survey_action_button("COPY REPORT", _copy_current_survey_report))
-	content.add_child(_survey_action_button("VIEW ARCHIVE", _build_survey_archive_overlay))
-	content.add_child(_survey_action_button("RETURN TO SETUP", _return_from_survey_report))
+	if state.mode_id == "boss_lab":
+		content.add_child(_survey_action_button("RETRY SAME SETUP", _retry_boss_lab))
+		content.add_child(_survey_action_button("CHANGE SETUP", _change_boss_lab_setup))
+		content.add_child(_survey_action_button("COPY REPORT", _copy_current_survey_report))
+		content.add_child(_survey_action_button("LEAVE BOSS LAB", _leave_boss_lab))
+	else:
+		content.add_child(_survey_action_button("SAVE TXT TO DOWNLOADS", _save_current_survey_report))
+		content.add_child(_survey_action_button("SHARE REPORT", _share_current_survey_report))
+		content.add_child(_survey_action_button("COPY REPORT", _copy_current_survey_report))
+		content.add_child(_survey_action_button("VIEW ARCHIVE", _build_survey_archive_overlay))
+		content.add_child(_survey_action_button("RETURN TO SETUP", _return_from_survey_report))
 
 func _survey_action_button(label: String, callback: Callable) -> Button:
 	var button := Button.new()
@@ -565,12 +584,12 @@ func _build_survey_end_confirmation() -> void:
 	content.add_theme_constant_override("separation", 18)
 	center.add_child(content)
 	var title := Label.new()
-	title.text = "END THIS SURVEY RUN?"
+	title.text = "END THIS BOSS ATTEMPT?" if state.mode_id == "boss_lab" else "END THIS SURVEY RUN?"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	content.add_child(title)
 	var warning := Label.new()
-	warning.text = "This ends the current room and the run. You will still rate this room, then Waystone will archive the complete report."
+	warning.text = "This ends the current attempt. You will still rate it, then Waystone will archive the report." if state.mode_id == "boss_lab" else "This ends the current room and the run. You will still rate this room, then Waystone will archive the complete report."
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warning.add_theme_font_size_override("font_size", 19)
@@ -593,7 +612,7 @@ func _cancel_survey_end_confirmation() -> void:
 	queue_redraw()
 
 func _confirm_survey_end_run() -> void:
-	if state.mode_id != "combat_survey" or state.survey_feedback_pending or state.trial_complete: return
+	if not state.is_measurement_mode() or state.survey_feedback_pending or state.trial_complete: return
 	state.end_survey_run()
 	visual = _presentation_snapshot()
 	_mark_autosave(true)
@@ -702,6 +721,37 @@ func _close_survey_archive() -> void:
 func _return_from_survey_report() -> void:
 	survey_overlay.visible = false
 	_restart()
+
+func _retry_boss_lab() -> void:
+	if state.mode_id != "boss_lab": return
+	survey_overlay.visible = false
+	if not state.retry_boss_lab(): return
+	setup_mode = "boss_lab"
+	setup_loadout = state.loadout_id
+	setup_boss_kind = state.boss_lab_boss_kind
+	setup_boss_arena = state.boss_lab_arena_id
+	setup_combat_rules = state.combat_rules
+	seed_input.text = str(state.run_seed)
+	_finish_run_start()
+
+func _change_boss_lab_setup() -> void:
+	if state.mode_id != "boss_lab": return
+	survey_overlay.visible = false
+	setup_mode = "boss_lab"
+	setup_loadout = state.loadout_id
+	setup_boss_kind = state.boss_lab_boss_kind
+	setup_boss_arena = state.boss_lab_arena_id
+	setup_combat_rules = state.combat_rules
+	seed_input.text = str(state.run_seed)
+	setup_stage = "options"
+	_restart()
+	_layout()
+
+func _leave_boss_lab() -> void:
+	survey_overlay.visible = false
+	setup_stage = "root"
+	_restart()
+	_layout()
 
 func _copy_current_survey_report() -> void:
 	DisplayServer.clipboard_set(state.survey_report_text())
@@ -833,6 +883,7 @@ func _layout() -> void:
 	dev_section_rects.clear()
 	survey_profile_rects.clear()
 	combat_rule_rects.clear()
+	boss_choice_rects.clear()
 	spell_rects.clear()
 	var names := ["defense", "skill", "rally", "advance", "adopted"]
 	var belt_names := ["healing", "slot_0", "slot_1", "slot_2"]
@@ -935,18 +986,19 @@ func _layout() -> void:
 	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.52, 620.0)
 	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5
 	setup_class_rects.clear()
+	boss_arena_rect = Rect2()
 	if setup_stage == "root" or custom_room_open:
-		# Three buttons and nothing else. Any additional control on this screen is another
+		# Four buttons and nothing else. Any additional control on this screen is another
 		# chance to overlap something.
 		seed_input.visible = false
 		setup_back_rect = Rect2()
 		custom_open_rect = Rect2()
 		start_rect = Rect2()
-		var button_height := clampf(layout_size.y * 0.13, 76.0, 132.0)
-		var stack_height := button_height * 3.0 + setup_gap * 2.0
+		var button_height := clampf(layout_size.y * 0.105, 64.0, 106.0)
+		var stack_height := button_height * 4.0 + setup_gap * 3.0
 		var stack_top := layout_origin.y + (layout_size.y - stack_height) * 0.5
-		for index in range(3):
-			var mode_id: String = ["expedition", "campaign_lab", "combat_survey"][index]
+		for index in range(4):
+			var mode_id: String = ["expedition", "campaign_lab", "combat_survey", "boss_lab"][index]
 			progression_rects[mode_id] = Rect2(setup_left, stack_top + float(index) * (button_height + setup_gap), setup_width, button_height)
 	else:
 		# _sync_setup_controls already decides this correctly; _layout used to overrule it
@@ -968,6 +1020,13 @@ func _layout() -> void:
 			survey_profile_rects["encounter"] = Rect2(setup_left, row, half, option_height)
 			survey_profile_rects["attrition"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
 			row += option_height + 8.0
+		if setup_mode == "boss_lab":
+			boss_choice_rects["werewolf"] = Rect2(setup_left, row, half, option_height)
+			boss_choice_rects["warden"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
+			row += option_height + 8.0
+			boss_arena_rect = Rect2(setup_left, row, setup_width, option_height)
+			row += option_height + 8.0
+		if setup_mode in ["combat_survey", "boss_lab"]:
 			combat_rule_rects["recovery"] = Rect2(setup_left, row, half, option_height)
 			combat_rule_rects["energy"] = Rect2(setup_left + half + setup_gap, row, half, option_height)
 			row += option_height + 8.0
@@ -1024,7 +1083,7 @@ func _process(delta: float) -> void:
 	# simulation may hand the room over in well under two seconds -- the banner is not
 	# allowed to be cut short by that, because the whole point is that the beat is long
 	# enough to see. The rating overlay waits behind it.
-	var clearing := state != null and (state.room_clear_pending or (state.mode_id == "combat_survey" and state.survey_feedback_pending))
+	var clearing := state != null and (state.room_clear_pending or (state.is_measurement_mode() and state.survey_feedback_pending))
 	if clearing and not room_clear_latched:
 		room_clear_latched = true
 		room_clear_remaining = ROOM_CLEAR_HOLD_SECONDS
@@ -1263,12 +1322,12 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			_build_survey_archive_overlay()
 			return
 		if setup_stage == "root":
-			# Three buttons, and nothing else can be hit. Choosing a path is the only
+			# Four buttons, and nothing else can be hit. Choosing a path is the only
 			# decision this screen offers.
 			for mode in progression_rects:
 				if Rect2(progression_rects[mode]).has_point(position):
 					setup_mode = String(mode)
-					if setup_mode != "combat_survey": setup_combat_rules = "energy"
+					if setup_mode not in ["combat_survey", "boss_lab"]: setup_combat_rules = "energy"
 					setup_stage = "options"
 					_layout()
 					return
@@ -1300,9 +1359,25 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 					setup_combat_rules = String(rule)
 					queue_redraw()
 					return
+		elif setup_mode == "boss_lab":
+			for boss_kind in boss_choice_rects:
+				if Rect2(boss_choice_rects[boss_kind]).has_point(position):
+					setup_boss_kind = String(boss_kind)
+					queue_redraw()
+					return
+			if boss_arena_rect.has_point(position):
+				var arena_index := BOSS_LAB_ARENAS.find(setup_boss_arena)
+				setup_boss_arena = BOSS_LAB_ARENAS[(arena_index + 1) % BOSS_LAB_ARENAS.size()]
+				queue_redraw()
+				return
+			for rule in combat_rule_rects:
+				if Rect2(combat_rule_rects[rule]).has_point(position):
+					setup_combat_rules = String(rule)
+					queue_redraw()
+					return
 		if start_rect.has_point(position): _start_run()
 		return
-	if state.mode_id == "combat_survey" and survey_end_rect.has_point(position) and not state.survey_feedback_pending and not state.trial_complete:
+	if state.is_measurement_mode() and survey_end_rect.has_point(position) and not state.survey_feedback_pending and not state.trial_complete:
 		_build_survey_end_confirmation()
 		return
 	if character_sheet_open:
@@ -1710,9 +1785,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if setup_stage == "root":
 			match event.keycode:
 				KEY_TAB:
-					var modes := ["expedition", "campaign_lab", "combat_survey"]
+					var modes := ["expedition", "campaign_lab", "combat_survey", "boss_lab"]
 					setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
-					if setup_mode != "combat_survey": setup_combat_rules = "energy"
+					if setup_mode not in ["combat_survey", "boss_lab"]: setup_combat_rules = "energy"
 				KEY_ENTER:
 					setup_stage = "options"
 					_layout()
@@ -2220,12 +2295,19 @@ func _start_run() -> void:
 	# Written before start_run, because the first room is generated inside it.
 	var roster: Array[String] = []
 	if _custom_section_active(): roster.assign(custom_room_roster)
+	elif setup_mode == "boss_lab": roster.assign([setup_boss_kind])
 	state.custom_room_kinds = roster
 	state.custom_room_formation = custom_room_formation
 	state.custom_room_hp_percent = custom_room_hp
-	state.custom_room_xp = RunStateScript.xp_for_character_level(custom_room_level)
+	state.custom_room_xp = 0 if setup_mode == "boss_lab" else RunStateScript.xp_for_character_level(custom_room_level)
 	state.custom_room_repeat = custom_room_repeat
+	state.boss_lab_boss_kind = setup_boss_kind
+	state.boss_lab_arena_id = setup_boss_arena
+	state.boss_lab_variant_id = "solo_current"
 	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
+	_finish_run_start()
+
+func _finish_run_start() -> void:
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
 	playing = false
@@ -2403,7 +2485,7 @@ func _draw() -> void:
 	_draw_view_button()
 	_draw_map_button()
 	_draw_sheet_button()
-	if state.mode_id == "combat_survey": _draw_survey_end_button()
+	if state.is_measurement_mode(): _draw_survey_end_button()
 	if map_open: _draw_map()
 	if character_sheet_open: _draw_character_sheet()
 	if state.death_pending: _draw_death_overlay()
@@ -2542,7 +2624,7 @@ func _draw_world() -> void:
 	_draw_area_title()
 	_draw_room_clear_banner()
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
-	if state.mode_id == "combat_survey": label += "  •  RUN %d" % state.run_seed
+	if state.is_measurement_mode(): label += "  •  RUN %d" % state.run_seed
 	var color := Color("f0b45a") if playing else DODGE_COLOR
 	var font := maxi(14, int(minf(size.x, size.y) * 0.026))
 	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, font + 10), label, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.5, font, color)
@@ -2551,6 +2633,7 @@ func _draw_world() -> void:
 	var risk_xp := maxi(0, current_xp - safe_xp)
 	var area_text := "%s  •  %d XP" % [state.current_area_name().to_upper(), current_xp]
 	if state.mode_id == "combat_survey": area_text = "ROOM %d  •  SEED %d" % [state.survey_room_number, state.survey_room_seed]
+	elif state.mode_id == "boss_lab": area_text = "%s  •  SEED %d" % [state.boss_lab_boss_kind.replace("_", " ").to_upper(), state.survey_room_seed]
 	if state.mode_id == "campaign_lab":
 		area_text = "%s  •  TIMELINE SECURE" % state.current_area_name().to_upper() if risk_xp == 0 else "%s  •  %d XP AT RISK" % [state.current_area_name().to_upper(), risk_xp]
 	var area_width := minf(board_rect.size.x * 0.50, 360.0)
@@ -4236,6 +4319,8 @@ func _draw_hud() -> void:
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
 	if state.mode_id == "combat_survey":
 		hp_text = "ROOM %d" % state.survey_room_number
+	elif state.mode_id == "boss_lab":
+		hp_text = "BOSS LAB"
 	if state.mode_id == "campaign_lab":
 		var safe := int(visual.get("secured_xp", state.secured_xp))
 		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
@@ -4808,7 +4893,7 @@ func _draw_setup() -> void:
 		if desktop_controls and portrait:
 			draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
 	else:
-		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else ("DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS")
+		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else "BOSS LAB" if setup_mode == "boss_lab" else ("DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS")
 		draw_rect(setup_back_rect, Color("17272d"))
 		draw_rect(setup_back_rect, Color("718087"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, 14, Color("d7dddd"))
@@ -4824,8 +4909,8 @@ func _draw_setup() -> void:
 		var selected: bool = setup_mode == String(mode)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN" if String(mode) == "campaign_lab" else "DEV"
-		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "TESTING INSTRUMENTS"
+		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN" if String(mode) == "campaign_lab" else "BOSS LAB" if String(mode) == "boss_lab" else "DEV"
+		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "REPEATABLE BOSS TESTS" if String(mode) == "boss_lab" else "TESTING INSTRUMENTS"
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	if setup_mode == "combat_survey":
@@ -4838,6 +4923,19 @@ func _draw_setup() -> void:
 			var subtitle := "RESET BETWEEN ROOMS" if String(profile) == "encounter" else "RESOURCES CARRY"
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.43), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.76), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(body_font * 0.54)), Color("9fb2b7"))
+	if setup_mode == "boss_lab":
+		for boss_kind in boss_choice_rects:
+			var rect := Rect2(boss_choice_rects[boss_kind])
+			var selected := setup_boss_kind == String(boss_kind)
+			draw_rect(rect, Color("17272d"))
+			draw_rect(rect, Color("c9a3e6") if selected else Color("45545a"), false, 2.0)
+			draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.62), String(boss_kind).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(12, int(body_font * 0.82)), Color("eef0e9"))
+		if boss_arena_rect.size.x > 0.0:
+			draw_rect(boss_arena_rect, Color("17272d"))
+			draw_rect(boss_arena_rect, Color("6f91b8"), false, 2.0)
+			var arena_label := setup_boss_arena.replace("_", " ").to_upper()
+			draw_string(ThemeDB.fallback_font, boss_arena_rect.position + Vector2(0, boss_arena_rect.size.y * 0.62), "ARENA · %s — TAP TO CHANGE" % arena_label, HORIZONTAL_ALIGNMENT_CENTER, boss_arena_rect.size.x, maxi(11, int(body_font * 0.72)), Color("eef0e9"))
+	if setup_mode in ["combat_survey", "boss_lab"]:
 		for rule in combat_rule_rects:
 			var rect := Rect2(combat_rule_rects[rule])
 			var selected := setup_combat_rules == String(rule)
@@ -4866,7 +4964,7 @@ func _draw_setup() -> void:
 func _draw_survey_end_button() -> void:
 	draw_rect(survey_end_rect, Color(0.10, 0.055, 0.055, 0.92))
 	draw_rect(survey_end_rect, Color("d76a68"), false, 1.5)
-	var label := "END RUN"
+	var label := "END ATTEMPT" if state.mode_id == "boss_lab" else "END RUN"
 	draw_string(ThemeDB.fallback_font, survey_end_rect.position + Vector2(0, survey_end_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, survey_end_rect.size.x, maxi(8, int(survey_end_rect.size.y * 0.26)), Color("f0d2cf"))
 
 # Read from what _layout() produced. This used to compute its own geometry, which is how

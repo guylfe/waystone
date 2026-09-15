@@ -10,6 +10,46 @@ func _initialize() -> void:
 	board.visual = board.state.snapshot(true)
 	board._sync_setup_controls()
 
+	# --- Boss Lab setup, feedback, and exact retry ------------------------------------
+	board.state.abandon_run()
+	board.setup_stage = "root"
+	board._layout()
+	assert(board.progression_rects.size() == 4 and board.progression_rects.has("boss_lab"))
+	board._pointer_pressed(Rect2(board.progression_rects["boss_lab"]).get_center())
+	assert(board.setup_stage == "options" and board.setup_mode == "boss_lab")
+	assert(board.boss_choice_rects.has("werewolf") and board.boss_choice_rects.has("warden"))
+	assert(board.boss_arena_rect.size.x > 0.0)
+	assert(board.combat_rule_rects.size() == 2 and board.survey_profile_rects.is_empty())
+	assert(board.custom_open_rect.size.x <= 0.0)
+	board._pointer_pressed(Rect2(board.boss_choice_rects["warden"]).get_center())
+	assert(board.setup_boss_kind == "warden")
+	board.setup_boss_arena = "open_ring"
+	board._pointer_pressed(board.boss_arena_rect.get_center())
+	assert(board.setup_boss_arena == "central_cover")
+	board.seed_input.text = "818181"
+	board._start_run()
+	assert(board.state.mode_id == "boss_lab")
+	assert(board.state.enemies.size() == 1 and String(board.state.enemies[0]["kind"]) == "warden")
+	assert(board.state.boss_lab_arena_id == "central_cover")
+	var boss_room_seed: int = board.state.survey_room_seed
+	for enemy in board.state.enemies: enemy["hp"] = 0
+	board.state._remove_dead_enemies()
+	if board.state.room_clear_pending: board.state._resolve_pending_room_clear()
+	assert(board.state.survey_feedback_pending)
+	board._build_survey_feedback_overlay()
+	assert(board.survey_rating_buttons.has("fairness") and board.survey_rating_buttons.has("want_retry"))
+	assert(not board.survey_rating_buttons.has("tactical_interest") and board.survey_tag_buttons.is_empty())
+	for rating_id in ["difficulty", "fun", "fairness", "want_retry"]: board._survey_rating_pressed(rating_id, 4)
+	board._submit_survey_feedback()
+	assert(board.state.trial_complete)
+	board._sync_survey_overlay()
+	assert(board.survey_overlay.get_meta("kind", "") == "report")
+	board._retry_boss_lab()
+	assert(board.state.mode_id == "boss_lab" and not board.state.trial_complete)
+	assert(board.state.survey_room_seed == boss_room_seed)
+	assert(board.state.boss_lab_arena_id == "central_cover")
+	assert(board.state.player_hp == board.state.player_max_hp and is_equal_approx(board.state.player_energy, board.state.player_max_energy))
+
 	# --- the Elementalist spellbook drawer ---------------------------------------------
 	board.state.start_run("mage_elementalist", "combat_survey", 4242, "encounter", "energy")
 	board.spellbook_open = true
