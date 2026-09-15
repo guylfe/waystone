@@ -495,7 +495,25 @@ func shield_room() -> Array:
 	var state := survey_state()
 	armed_enemy(state, "archer", Vector2.UP * 240.0)
 	var shield := armed_enemy(state, "shield", Vector2.UP * 60.0)
+	state._assign_shield_wards()
 	return [state, shield]
+
+func test_a_screen_keeps_one_real_ward() -> void:
+	var state := survey_state()
+	var first_archer := armed_enemy(state, "archer", Vector2.UP * 300.0)
+	var second_archer := armed_enemy(state, "archer", Vector2.RIGHT * 420.0)
+	var shield := armed_enemy(state, "shield", Vector2.UP * 120.0)
+	state._assign_shield_wards()
+	check(int(shield.get("ward_id", -1)) == int(first_archer["id"]), "a Shield should assign the nearest eligible ward once")
+	second_archer["pos"] = state.player_pos + Vector2.UP * 130.0
+	state._choose_enemy_action(shield)
+	check(int(shield.get("ward_id", -1)) == int(first_archer["id"]), "a Shield must not retarget when another ally becomes closer")
+	var station := state._shield_station(Vector2(first_archer["pos"]))
+	check(absf(station.distance_to(Vector2(first_archer["pos"])) - state.SHIELD_WARD_STATION) < 0.01, "the screen station should use the authored ward spacing")
+	check(Vector2(first_archer["pos"]).direction_to(station).dot(Vector2(first_archer["pos"]).direction_to(state.player_pos)) > 0.99, "the Shield station should remain between ward and player")
+	first_archer["hp"] = 0
+	state._update_shield_ward(shield, state.SIM_DT)
+	check(int(shield.get("ward_id", -1)) == -1, "a dead ward should release the Shield into fallback behaviour")
 
 func test_a_screen_does_not_strike_a_free_player() -> void:
 	# Proximity is a trigger the player can pull at will by stepping in and out, which
@@ -674,8 +692,8 @@ func test_a_chanter_puts_an_ally_between_itself_and_you() -> void:
 	check(String(Dictionary(chanter["action"])["kind"]) == "move", "with the staff spent it should reposition")
 
 func test_a_chant_suits_the_allies_it_has() -> void:
-	# You know it buffs. You do not know which buff, because you cannot see which
-	# allies it has counted -- the same information shape as an enemy with two attacks.
+	# Its choice still follows the bodies in the room; presentation now announces that
+	# choice and the exact recipients while the cast can still be interrupted.
 	var heavy := survey_state()
 	alerted(heavy, "brute", Vector2.UP * 150.0)
 	var heavy_caster := alerted(heavy, "chanter", Vector2.UP * 400.0)
@@ -684,6 +702,22 @@ func test_a_chant_suits_the_allies_it_has() -> void:
 	alerted(fast, "hound", Vector2.UP * 150.0)
 	var fast_caster := alerted(fast, "chanter", Vector2.UP * 400.0)
 	check(fast._choose_chant(fast._chant_targets(fast_caster)) == "haste", "fast allies should be quickened")
+
+func test_a_chant_resolves_on_the_allies_it_announced() -> void:
+	var state := survey_state()
+	var brute := alerted(state, "brute", Vector2.UP * 170.0)
+	var chanter := alerted(state, "chanter", Vector2.UP * 400.0)
+	state._choose_enemy_action(chanter)
+	var action := Dictionary(chanter["action"])
+	check(String(action.get("kind", "")) == "chant", "a screened Chanter should begin an interruptible chant")
+	if String(action.get("kind", "")) != "chant": return
+	var announced := Array(action.get("target_ids", []))
+	check(announced == [int(brute["id"])], "the chant should store the exact recipient IDs it announced")
+	check(not String(action.get("sound_cue", "")).is_empty(), "each chant should carry its authored sound identity")
+	var late_blade := alerted(state, "blade", Vector2.UP * 190.0)
+	state._resolve_chant(chanter, String(action.get("label", "ward")), announced)
+	check(not Dictionary(brute.get("chants", {})).is_empty(), "the announced ally should receive the chant")
+	check(Dictionary(late_blade.get("chants", {})).is_empty(), "an ally entering after commitment must not silently join the chant")
 
 func test_bulwark_lends_telegraph_armour_to_a_light_body() -> void:
 	# The yellow chant is not a stat: it makes a Blade behave like a heavy for as long
@@ -1168,7 +1202,8 @@ func test_rooms_are_populated_enough_for_the_pressure_to_matter() -> void:
 			# Reach shipped as a TWO enemy room in two consecutive surveys. A room that
 			# small cannot answer the question the experiment exists to ask.
 			var floor_size := 3 if room_phase(room_number) == "respite" else 4
-			check(size >= floor_size, "room %d fielded only %d enemies" % [room_number, size])
+			if not bool(recipe.get("exact_roster", false)):
+				check(size >= floor_size, "room %d fielded only %d enemies" % [room_number, size])
 			if bool(recipe.get("melee_experiment", false)):
 				check(size >= 4, "a melee experiment fielded only %d enemies; it cannot show enemies interacting" % size)
 	var in_band := int(counts.get(4, 0)) + int(counts.get(5, 0))
@@ -1373,6 +1408,8 @@ func generated_rooms(salts: int = 12) -> Array:
 				"templates": Array(Dictionary(layout["encounters"])[0]),
 				"player_start": Vector2(layout["player_start"]),
 				"formation_ids": Array(state.survey_room_definition.get("formation_ids", [])),
+				"recipe_id": String(state.survey_room_definition.get("recipe_id", "")),
+				"exact_roster": bool(state.survey_room_definition.get("exact_roster", false)),
 			})
 	return rooms
 
@@ -1384,6 +1421,9 @@ func test_a_ranged_body_always_has_something_in_front_of_it() -> void:
 	var unscreened := 0
 	for room_value in generated_rooms():
 		var room := Dictionary(room_value)
+		# Lean teaching cards deliberately expose their exact relationship: Light
+		# Crossfire has no melee screen, while the other cards teach one named pair.
+		if bool(room.get("exact_roster", false)): continue
 		var state: RunState = room["state"]
 		var templates: Array = room["templates"]
 		var player_start: Vector2 = room["player_start"]
@@ -1402,6 +1442,49 @@ func test_a_ranged_body_always_has_something_in_front_of_it() -> void:
 	check(rear_total > 60, "not enough ranged bodies generated to judge, got %d" % rear_total)
 	var rate := float(unscreened) / maxf(1.0, float(rear_total))
 	check(rate < 0.08, "%d of %d ranged bodies had nothing in front of them (%.1f%%)" % [unscreened, rear_total, rate * 100.0])
+
+func test_exact_introductions_keep_their_rosters_and_geometry() -> void:
+	var state := survey_state()
+	var expected := {
+		"crossfire_light": ["archer", "archer"],
+		"screened_shot": ["shield", "archer"],
+		"pinch_and_escape": ["boar", "archer"],
+		"knight_introduction": ["knight", "archer"],
+	}
+	var found := {}
+	for recipe_value in state._survey_recipe_catalog():
+		var recipe := Dictionary(recipe_value)
+		var recipe_id := String(recipe.get("id", ""))
+		if not expected.has(recipe_id): continue
+		found[recipe_id] = true
+		check(bool(recipe.get("exact_roster", false)), "%s must opt into exact-roster generation" % recipe_id)
+		check(Array(recipe.get("reinforcements", [])).is_empty(), "%s must not carry filler reinforcements" % recipe_id)
+		var kinds: Array[String] = []
+		for entry_value in Array(recipe.get("enemies", [])): kinds.append(String(Dictionary(entry_value).get("kind", "")))
+		check(kinds == Array(expected[recipe_id]), "%s roster drifted to %s" % [recipe_id, kinds])
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 70293 + recipe_id.hash()
+		var player_start := Vector2(850.0, 1080.0)
+		var placement := state._survey_place_exact_variant(recipe, rng, player_start, [])
+		var seats := Array(placement.get("seats", []))
+		check(seats.size() == kinds.size(), "%s placement must preserve every exact body" % recipe_id)
+		if seats.size() != kinds.size(): continue
+		for index in range(seats.size()):
+			var position := Vector2(Dictionary(seats[index])["pos"])
+			var radius := float(CombatCatalogScript.enemy_fact(kinds[index], "radius"))
+			for other_index in range(index):
+				var other_position := Vector2(Dictionary(seats[other_index])["pos"])
+				var other_radius := float(CombatCatalogScript.enemy_fact(kinds[other_index], "radius"))
+				check(position.distance_to(other_position) >= radius + other_radius, "%s spawned overlapping bodies" % recipe_id)
+		if recipe_id == "crossfire_light":
+			var first_direction := player_start.direction_to(Vector2(Dictionary(seats[0])["pos"]))
+			var second_direction := player_start.direction_to(Vector2(Dictionary(seats[1])["pos"]))
+			var divergence := absf(rad_to_deg(first_direction.angle_to(second_direction)))
+			check(divergence >= 50.0 and divergence <= 100.0, "Light Crossfire should open two readable firing lines")
+		if recipe_id == "screened_shot":
+			var separation := Vector2(Dictionary(seats[0])["pos"]).distance_to(Vector2(Dictionary(seats[1])["pos"]))
+			check(separation >= 140.0 and separation <= 220.0, "Screened Shot should preserve Shield-ward spacing")
+	check(found.size() == expected.size(), "all four exact introduction recipes must remain in the catalog")
 
 func test_the_polearm_is_never_put_in_the_front_rank() -> void:
 	# `reach` holds at 200 against the frontline's 88, so a Polearm spawned in the van
@@ -1691,6 +1774,7 @@ func _init() -> void:
 	test_the_ox_reopens_its_own_charge_lane()
 	test_the_ox_still_gores_from_open_ground()
 	test_a_screen_does_not_strike_a_free_player()
+	test_a_screen_keeps_one_real_ward()
 	test_a_screen_punishes_a_committed_player()
 	test_a_screen_loses_composure_on_its_own()
 	test_screen_tempers_differ_between_instances()
@@ -1705,6 +1789,7 @@ func _init() -> void:
 	test_a_chanter_carries_only_a_staff()
 	test_a_chanter_puts_an_ally_between_itself_and_you()
 	test_a_chant_suits_the_allies_it_has()
+	test_a_chant_resolves_on_the_allies_it_announced()
 	test_bulwark_lends_telegraph_armour_to_a_light_body()
 	test_ward_reduces_damage_without_granting_immunity()
 	test_a_javelin_is_thrown_where_you_are_going()
@@ -1746,6 +1831,7 @@ func _init() -> void:
 	test_a_deeper_pool_shortens_recovery_cooldowns()
 	test_the_shield_opens_and_closes_on_one_list()
 	test_a_ranged_body_always_has_something_in_front_of_it()
+	test_exact_introductions_keep_their_rosters_and_geometry()
 	test_the_polearm_is_never_put_in_the_front_rank()
 	test_the_library_stays_small_enough_to_measure()
 	test_every_formation_actually_gets_drawn()

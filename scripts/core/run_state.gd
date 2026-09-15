@@ -407,7 +407,9 @@ const OX_DISENGAGE_CAP := 190.0
 # covers what it can stand in front of.
 const ROLE_ANCHOR_RADIUS := 420.0
 const SHIELD_GUARD_RADIUS := 150.0
-const SHIELD_WARD_STATION := 104.0
+const SHIELD_WARD_STATION := 180.0
+const SHIELD_WARD_MAX_SEPARATION := 720.0
+const SHIELD_WARD_LOST_GRACE := 1.5
 const SHIELD_STRIKE_WINDUP := 0.46
 const SHIELD_PATIENCE_MIN := 2.6
 const SHIELD_PATIENCE_MAX := 4.4
@@ -441,9 +443,9 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.92"
+const GAME_VERSION := "0.2.93"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 13
+const PRESENTATION_VERSION := 14
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -1254,7 +1256,11 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	var threat_band := _survey_threat_band(pacing_phase, room_rng)
 	var composition := _custom_room_composition(room_rng) if _custom_room_active() else _survey_composition(room_rng, room_number, threat_band, pacing_phase)
 	var arena_ids := ["open_ring", "central_cover", "broken_sightline", "split_approach", "scattered_cover", "wide_lane"]
+	var allowed_arenas: Array = composition.get("allowed_arenas", arena_ids)
+	if allowed_arenas.is_empty(): allowed_arenas = arena_ids
 	var arena_id := boss_lab_arena_id if mode_id == ModeRulesScript.BOSS_LAB and boss_lab_arena_id in arena_ids else String(arena_ids[room_rng.randi_range(0, arena_ids.size() - 1)])
+	if mode_id != ModeRulesScript.BOSS_LAB and bool(composition.get("exact_roster", false)):
+		arena_id = String(allowed_arenas[room_rng.randi_range(0, allowed_arenas.size() - 1)])
 	var enemy_plan: Array = composition.get("enemies", [])
 	var layer := "survey_arena"
 	var center := SURVEY_ARENA_CENTER
@@ -1277,7 +1283,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	# same four enemies in different placements and rated 2/2/2 against 3/4/3 in both rule
 	# profiles -- the cleanest signal the archive has produced, and it happened by luck.
 	# This manufactures those matched pairs on purpose.
-	var placement := _survey_place_formations(enemy_plan, room_rng, player_start, obstacle_rects, threat_band, custom_room_formation if _custom_room_active() else "")
+	var placement := _survey_place_exact_variant(composition, room_rng, player_start, obstacle_rects) if bool(composition.get("exact_roster", false)) else _survey_place_formations(enemy_plan, room_rng, player_start, obstacle_rects, threat_band, custom_room_formation if _custom_room_active() else "")
 	var formation_ids: Array = placement["formation_ids"]
 	var formation_id := " + ".join(PackedStringArray(formation_ids))
 	var templates: Array[Dictionary] = []
@@ -1288,10 +1294,14 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		var planned_enemy := Dictionary(seat["entry"])
 		var kind := String(planned_enemy["kind"])
 		var role := CombatCatalogScript.role(kind)
-		var jitter := Vector2(room_rng.randf_range(-22.0, 22.0), room_rng.randf_range(-18.0, 18.0))
+		# Exact introductions preserve the geometry they were authored to test. Ordinary
+		# rooms keep the small jitter that stops formations from reading as a grid.
+		var jitter := Vector2.ZERO if bool(composition.get("exact_roster", false)) else Vector2(room_rng.randf_range(-22.0, 22.0), room_rng.randf_range(-18.0, 18.0))
 		var spawn_position := _survey_settle_spawn(Vector2(seat["pos"]) + jitter, obstacle_rects, player_start)
 		var initial_facing := (spawn_position - player_start).normalized()
-		templates.append({"kind": kind, "role": role, "pos": spawn_position, "facing": initial_facing, "layer": layer})
+		var template := {"kind": kind, "role": role, "pos": spawn_position, "facing": initial_facing, "layer": layer}
+		if String(composition.get("id", "")) == "screened_shot" and kind == "shield": template["ward_kind"] = "archer"
+		templates.append(template)
 		enemy_labels.append(kind.replace("_", " ").capitalize())
 		enemy_roles.append("%s: %s" % [kind.replace("_", " ").capitalize(), role.replace("_", " ")])
 	# Set per room rather than once, so replaying the same composition at a different
@@ -1320,6 +1330,8 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 		"recipe_id": String(composition.get("id", "unknown")),
 		"recipe_label": String(composition.get("label", "Unknown")),
 		"recipe_family": String(composition.get("family", "unknown")),
+		"exact_roster": bool(composition.get("exact_roster", false)),
+		"placement_policy": String(placement.get("policy", "formation")),
 		"composition_cost": int(composition.get("cost", 0)),
 		"ranged_pressure_count": int(composition.get("ranged_pressure_count", 0)),
 		"enemy_labels": enemy_labels,
@@ -1409,6 +1421,12 @@ func _survey_threat_band(pacing_phase: String, room_rng: RandomNumberGenerator) 
 
 func _survey_recipe_catalog() -> Array[Dictionary]:
 	return [
+		# Small introductions are explicit exceptions to the ordinary four-body floor.
+		# Their roster IS the experiment, so the generator may neither pad nor trim it.
+		{"id": "crossfire_light", "label": "Light Crossfire", "family": "introduction", "exact_roster": true, "min_tier": 1, "phases": ["opening"], "allowed_arenas": ["central_cover", "broken_sightline", "scattered_cover"], "fallback_formation": "crossfire", "enemies": [{"kind": "archer"}, {"kind": "archer"}], "reinforcements": []},
+		{"id": "screened_shot", "label": "Screened Shot", "family": "introduction", "exact_roster": true, "min_tier": 1, "phases": ["development", "respite"], "allowed_arenas": ["central_cover", "broken_sightline", "scattered_cover"], "fallback_formation": "screen_line", "enemies": [{"kind": "shield"}, {"kind": "archer"}], "reinforcements": []},
+		{"id": "pinch_and_escape", "label": "Pinch and Escape", "family": "introduction", "exact_roster": true, "min_tier": 2, "phases": ["pressure", "contrast"], "allowed_arenas": ["central_cover", "split_approach", "wide_lane"], "fallback_formation": "pincer", "enemies": [{"kind": "boar"}, {"kind": "archer"}], "reinforcements": []},
+		{"id": "knight_introduction", "label": "Knight Introduction", "family": "introduction", "exact_roster": true, "min_tier": 4, "phases": ["opening"], "allowed_arenas": ["central_cover", "broken_sightline", "scattered_cover"], "fallback_formation": "retinue", "enemies": [{"kind": "knight"}, {"kind": "archer"}], "reinforcements": []},
 		# Every room carries non-melee pressure unless it is explicitly flagged as a
 		# melee experiment below. That is not a preference: across 200 rooms of archive,
 		# rooms with 0/1/2 non-melee enemies rate 1.61/2.48/3.20 for fun, the effect
@@ -1622,6 +1640,11 @@ func _survey_composition(room_rng: RandomNumberGenerator, room_number: int, thre
 	var target_budget := mini(18, 4 + tier + (2 if threat_band == "stress" else 1 if threat_band == "unusual" else 0))
 	if pacing_phase == "respite": target_budget = maxi(3, target_budget - 2)
 	var cost := _survey_composition_cost(enemies)
+	if bool(chosen.get("exact_roster", false)):
+		chosen["enemies"] = enemies
+		chosen["cost"] = cost
+		chosen["ranged_pressure_count"] = _survey_ranged_pressure_count(enemies)
+		return chosen
 	var reinforcements: Array = chosen.get("reinforcements", [])
 	var attempts := 0
 	# Capped at five, not six. The archive rates six-enemy rooms at 2.29 mean fun -- its
@@ -1813,6 +1836,68 @@ func _survey_formation_catalog() -> Array[Dictionary]:
 			{"band": "rear", "at": Vector2(0.0, 258.0)},
 		]},
 	]
+
+# Four lean encounter cards use bounded authored candidates. They bypass only roster
+# filling and arrangement selection; collision settling, actor construction, and all
+# combat rules remain shared. If their preferred geometry is incompatible with the
+# chosen arena, the named fallback seats the SAME roster.
+func _survey_place_exact_variant(recipe: Dictionary, room_rng: RandomNumberGenerator, player_start: Vector2, obstacle_rects: Array) -> Dictionary:
+	var recipe_id := String(recipe.get("id", ""))
+	var plan: Array = recipe.get("enemies", [])
+	var forward := player_start.direction_to(SURVEY_ARENA_CENTER)
+	if forward.length_squared() < 0.001: forward = Vector2.UP
+	var local_positions: Array[Vector2] = []
+	match recipe_id:
+		"crossfire_light":
+			local_positions = [forward.rotated(deg_to_rad(-40.0)) * 480.0, forward.rotated(deg_to_rad(40.0)) * 480.0]
+		"screened_shot":
+			local_positions = [forward * 380.0, forward * 560.0]
+		"pinch_and_escape":
+			local_positions = [forward.rotated(deg_to_rad(-25.0)) * 400.0, forward.rotated(deg_to_rad(30.0)) * 545.0]
+		"knight_introduction":
+			local_positions = [forward * 390.0, forward.rotated(deg_to_rad(55.0)) * 530.0]
+		_:
+			return _survey_place_formations(plan, room_rng, player_start, obstacle_rects, "conventional", String(recipe.get("fallback_formation", "")))
+	var base_rotation := deg_to_rad(room_rng.randf_range(-12.0, 12.0))
+	var attempts := [0.0, 20.0, -20.0, 40.0, -40.0, 65.0, -65.0, 95.0, -95.0, 180.0]
+	for turn_value in attempts:
+		var turn := base_rotation + deg_to_rad(float(turn_value))
+		var positions: Array[Vector2] = []
+		for local in local_positions: positions.append(player_start + local.rotated(turn))
+		if not _survey_exact_candidate_valid(recipe_id, plan, positions, player_start, obstacle_rects): continue
+		var seats: Array = []
+		for index in range(plan.size()): seats.append({"entry": Dictionary(plan[index]), "pos": positions[index]})
+		return {"seats": seats, "formation_ids": [recipe_id], "policy": "authored_candidate"}
+	var fallback := _survey_place_formations(plan, room_rng, player_start, obstacle_rects, "conventional", String(recipe.get("fallback_formation", "")))
+	fallback["policy"] = "named_fallback"
+	return fallback
+
+func _survey_exact_candidate_valid(recipe_id: String, plan: Array, positions: Array[Vector2], player_start: Vector2, obstacle_rects: Array) -> bool:
+	if positions.size() != plan.size(): return false
+	for index in range(positions.size()):
+		var position := positions[index]
+		var kind := String(Dictionary(plan[index]).get("kind", "blade"))
+		var radius := float(CombatCatalogScript.enemy_fact(kind, "radius"))
+		if position.distance_to(player_start) < 360.0: return false
+		if position.distance_to(SURVEY_ARENA_CENTER) > SURVEY_ARENA_RADIUS - SURVEY_ARENA_MARGIN: return false
+		for obstacle_value in obstacle_rects:
+			if Rect2(obstacle_value).grow(radius + 8.0).has_point(position): return false
+		for other_index in range(index):
+			var other_kind := String(Dictionary(plan[other_index]).get("kind", "blade"))
+			var other_radius := float(CombatCatalogScript.enemy_fact(other_kind, "radius"))
+			if position.distance_to(positions[other_index]) < radius + other_radius + 20.0: return false
+	if recipe_id == "crossfire_light":
+		if positions[0].distance_to(positions[1]) < 180.0: return false
+		var first := player_start.direction_to(positions[0])
+		var second := player_start.direction_to(positions[1])
+		var divergence := absf(rad_to_deg(first.angle_to(second)))
+		if divergence < 50.0 or divergence > 100.0: return false
+	elif recipe_id == "screened_shot":
+		var separation := positions[0].distance_to(positions[1])
+		if separation < 140.0 or separation > 220.0: return false
+		# Shield first, ward second, on one readable line from the player.
+		if player_start.direction_to(positions[0]).dot(player_start.direction_to(positions[1])) < 0.98: return false
+	return true
 
 func _formation_band_for_role(role: String) -> String:
 	return String(ROLE_FORMATION_BAND.get(role, "van"))
@@ -2562,6 +2647,8 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 		"pounce_cooldown": 0.0,
 		"chants": {},
 		"chant_source_id": -1,
+		"ward_id": -1,
+		"ward_lost_time": 0.0,
 		"parry_cooldown": 0.0,
 		"patience": _shield_patience_budget(kind, position, _next_enemy_id),
 		"patience_max": _shield_patience_budget(kind, position, _next_enemy_id),
@@ -2598,8 +2685,10 @@ func _respawn_enemies() -> void:
 			if template.has("facing"):
 				var authored_facing := Vector2(template["facing"])
 				if authored_facing.length_squared() > 0.001: enemy["facing"] = authored_facing.normalized()
+			enemy["ward_kind_hint"] = String(template.get("ward_kind", ""))
 			enemy["heard_sound_sequence"] = _sound_sequence
 			_add_enemy_actor(enemy)
+	_assign_shield_wards()
 
 func _enemy_posture_base(kind: String) -> float:
 	# Resolve supplies the universal portion. These hidden bases preserve body
@@ -2629,6 +2718,8 @@ func _hydrate_enemy_combat_profile(enemy: Dictionary) -> Dictionary:
 	if not enemy.has("los_refresh_remaining"): enemy["los_refresh_remaining"] = 0.0
 	if not enemy.has("condition_buildup"): enemy["condition_buildup"] = {}
 	if not enemy.has("conditions"): enemy["conditions"] = {}
+	if not enemy.has("ward_id"): enemy["ward_id"] = -1
+	if not enemy.has("ward_lost_time"): enemy["ward_lost_time"] = 0.0
 	enemy["personal_tempo"] = _tempo_from_attributes(Dictionary(enemy["attributes"]))
 	enemy["posture_recovery_rate"] = float(Dictionary(enemy["properties"]).get("posture_recovery", 1.8))
 	var posture_max := _enemy_posture_base(String(enemy.get("kind", "blade"))) + float(Dictionary(enemy["attributes"]).get("resolve", 5))
@@ -7049,6 +7140,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if dodge_cooldown > 0.0: enemy["dodge_cooldown"] = maxf(0.0, dodge_cooldown - enemy_dt)
 		_try_bandit_counter(enemy)
 		if float(enemy.get("patience_max", 0.0)) > 0.0: _update_shield_patience(enemy, enemy_dt)
+		if String(enemy.get("kind", "")) == "shield": _update_shield_ward(enemy, enemy_dt)
 		if not Dictionary(enemy.get("chants", {})).is_empty():
 			if not living_chanters.has(int(enemy.get("chant_source_id", -1))):
 				enemy["chants"] = {}
@@ -7270,7 +7362,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			_spawn_sundered_ground(Vector2(action.get("target", player_pos)), int(enemy["id"]), String(enemy.get("layer", current_layer)))
 		elif kind == "chant" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
-			_resolve_chant(enemy, String(action.get("label", "ward")))
+			_resolve_chant(enemy, String(action.get("label", "ward")), Array(action.get("target_ids", [])))
 		elif kind == "earth_wall" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
 			_raise_earth_wall(Vector2(enemy["pos"]), int(enemy["id"]))
@@ -7467,8 +7559,8 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		# survey caught it swinging nine times in one room off a proximity gate, which
 		# is a trigger the player can pull at will by stepping in and out.
 		var shield_intent := _melee_intent(enemy, distance)
-		var ward := _ally_anchor(enemy, ["ranged_pressure", "area_denial", "reach"])
-		var guarding := not ward.is_equal_approx(player_pos)
+		var ward_enemy := _shield_ward(enemy)
+		var guarding := not ward_enemy.is_empty()
 		var sees_player := _has_line_of_sight(Vector2(enemy["pos"]), player_pos)
 		var in_guard := distance <= SHIELD_GUARD_RADIUS and sees_player
 		if distance <= float(shield_intent["distance"]) + STRIKE_COMMIT_BAND and sees_player and _shield_wants_to_strike(enemy, in_guard, guarding):
@@ -7478,7 +7570,7 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			# connects, so one read cannot cascade into a chain of free ones.
 			enemy["patience"] = float(enemy.get("patience_max", 0.0))
 		elif guarding:
-			enemy["action"] = _enemy_move_action(enemy, _shield_station(ward), 0.58)
+			enemy["action"] = _enemy_move_action(enemy, _shield_station(Vector2(ward_enemy["pos"])), 0.58)
 		else:
 			# Nothing left to guard. A screen with no ward is just a defensive frontliner;
 			# holding a line to nowhere would stall the last enemy alive.
@@ -7586,6 +7678,11 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 			enemy["action"] = _action("chant", CHANT_STARTUP + 0.46, direction)
 			enemy["action"]["startup"] = CHANT_STARTUP
 			enemy["action"]["label"] = chant
+			var target_ids: Array[int] = []
+			for ally in chant_allies: target_ids.append(int(ally["id"]))
+			target_ids.sort()
+			enemy["action"]["target_ids"] = target_ids
+			enemy["action"]["sound_cue"] = String(AbilityCatalogScript.chant(chant).get("sound_cue", ""))
 			enemy["shot_cooldown"] = CHANT_COOLDOWN
 		else:
 			enemy["action"] = _enemy_move_action(enemy, _chanter_retreat_target(enemy, chant_allies), 0.42)
@@ -8118,6 +8215,53 @@ func _shield_patience_budget(kind: String, position: Vector2, id: int) -> float:
 	var mixed := absi(hash(Vector2i(position.round())) ^ (id * 2654435761))
 	return SHIELD_PATIENCE_MIN + float(mixed % 1000) / 999.0 * (SHIELD_PATIENCE_MAX - SHIELD_PATIENCE_MIN)
 
+# Ward identity is assigned after the whole encounter has been constructed, so it is
+# an entity relationship rather than a position sampled on each AI decision. An
+# authored `ward_kind` wins; ordinary screen recipes choose the nearest defenseless
+# role once. Neither path retargets during combat.
+func _assign_shield_wards() -> void:
+	for shield in enemies:
+		if String(shield.get("kind", "")) != "shield": continue
+		var hint := String(shield.get("ward_kind_hint", ""))
+		var best_id := -1
+		var best_score := INF
+		for candidate in enemies:
+			if int(candidate.get("id", -1)) == int(shield.get("id", -2)): continue
+			if int(candidate.get("hp", 0)) <= 0: continue
+			if int(candidate.get("area_id", -1)) != int(shield.get("area_id", -2)): continue
+			if String(candidate.get("layer", "")) != String(shield.get("layer", "")): continue
+			var candidate_kind := String(candidate.get("kind", ""))
+			var candidate_role := _enemy_role(candidate)
+			if not hint.is_empty() and candidate_kind != hint: continue
+			if hint.is_empty() and candidate_role not in ["ranged_pressure", "area_denial", "movement_denial", "support", "reach"]: continue
+			var role_priority := 0.0 if candidate_role in ["ranged_pressure", "area_denial", "movement_denial", "support"] else 1000.0
+			var score := role_priority + Vector2(shield["pos"]).distance_to(Vector2(candidate["pos"]))
+			if score < best_score:
+				best_score = score
+				best_id = int(candidate["id"])
+		shield["ward_id"] = best_id
+		shield["ward_lost_time"] = 0.0
+		shield.erase("ward_kind_hint")
+
+func _shield_ward(shield: Dictionary) -> Dictionary:
+	var ward := _enemy_by_id(int(shield.get("ward_id", -1)))
+	if ward.is_empty() or int(ward.get("hp", 0)) <= 0: return {}
+	if String(ward.get("layer", "")) != String(shield.get("layer", "")): return {}
+	return ward
+
+func _update_shield_ward(shield: Dictionary, dt: float) -> void:
+	if int(shield.get("ward_id", -1)) < 0: return
+	var ward := _shield_ward(shield)
+	if ward.is_empty():
+		shield["ward_id"] = -1
+		shield["ward_lost_time"] = 0.0
+		return
+	var too_far := Vector2(shield["pos"]).distance_to(Vector2(ward["pos"])) > SHIELD_WARD_MAX_SEPARATION
+	shield["ward_lost_time"] = float(shield.get("ward_lost_time", 0.0)) + dt if too_far else 0.0
+	if float(shield["ward_lost_time"]) >= SHIELD_WARD_LOST_GRACE:
+		shield["ward_id"] = -1
+		shield["ward_lost_time"] = 0.0
+
 # Patience runs only during a standoff -- the player inside the guard zone and not
 # committed to anything worth punishing. A screen has no reason to lose composure
 # over someone who is not threatening its ward, and none while it is reeling.
@@ -8238,7 +8382,9 @@ func _ally_anchor(subject: Dictionary, roles: Array) -> Vector2:
 func _role_bearing(enemy: Dictionary, role: String) -> Vector2:
 	var anchor := player_pos
 	if role == "frontline": anchor = _ally_anchor(enemy, [])
-	elif role == "screen": anchor = _ally_anchor(enemy, ["ranged_pressure", "area_denial", "reach"])
+	elif role == "screen":
+		var ward := _shield_ward(enemy)
+		anchor = Vector2(ward["pos"]) if not ward.is_empty() else Vector2(enemy["pos"])
 	var outward := anchor - player_pos
 	if outward.length_squared() < 1.0: outward = Vector2(enemy["pos"]) - player_pos
 	if outward.length_squared() < 0.001: outward = -player_facing
@@ -8604,8 +8750,16 @@ func _spawn_sundered_ground(position: Vector2, source_id: int, layer: String) ->
 	})
 	_set_message("The ground splits and buckles.")
 
-func _resolve_chant(caster: Dictionary, chant: String) -> void:
-	var targets := _chant_targets(caster)
+func _resolve_chant(caster: Dictionary, chant: String, announced_target_ids: Array = []) -> void:
+	var targets: Array[Dictionary] = []
+	if announced_target_ids.is_empty():
+		targets = _chant_targets(caster)
+	else:
+		for target_id in announced_target_ids:
+			var target := _enemy_by_id(int(target_id))
+			if target.is_empty() or int(target.get("hp", 0)) <= 0: continue
+			if String(target.get("layer", "")) != String(caster.get("layer", "")): continue
+			targets.append(target)
 	if targets.is_empty(): return
 	for enemy in targets:
 		var chants: Dictionary = enemy.get("chants", {})

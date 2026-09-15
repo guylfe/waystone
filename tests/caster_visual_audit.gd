@@ -30,12 +30,19 @@ func _initialize() -> void:
 	await _player_spells()
 	await _state_cues()
 	await _javelin_tell()
+	await _support_relationships()
 	quit(0)
 
 func _reset(loadout: String):
 	var s = board.state
 	s.start_run(loadout, "combat_survey", 4242, "encounter", "energy")
+	board.room_clear_remaining = 0.0
+	board.room_clear_latched = false
+	s.room_clear_pending = false
+	s.survey_feedback_pending = false
 	s.enemies.clear()
+	s.walls.clear()
+	s._build_wall_spatial_index()
 	s.hazards.clear()
 	s.barriers.clear()
 	s.projectiles.clear()
@@ -54,6 +61,10 @@ func _put(s, kind: String, offset: Vector2, hp: int = 40):
 	return e
 
 func _shoot(path: String):
+	board.room_clear_remaining = 0.0
+	board.room_clear_latched = false
+	board.state.room_clear_pending = false
+	board.state.survey_feedback_pending = false
 	board.visual = board.state.snapshot(true)
 	board._layout()
 	board.queue_redraw()
@@ -171,3 +182,23 @@ func _javelin_tell() -> void:
 	shot["pos"] = Vector2(shot["pos"]) + Vector2(shot["vel"]).normalized() * float(shot["travelled"])
 	shot["elevation"] = s._projectile_elevation(shot)
 	await _shoot("audit-f-javelin")
+
+func _support_relationships() -> void:
+	var s = _reset("warrior")
+	var archer = _put(s, "archer", Vector2(-220, -280))
+	var shield = _put(s, "shield", Vector2(-220, -100))
+	shield["ward_id"] = int(archer["id"])
+	var chant_specs = [
+		["haste", Vector2(210, -260), Vector2(210, -80), "hound"],
+		["bulwark", Vector2(0, 80), Vector2(0, 260), "brute"],
+		["ward", Vector2(-220, 180), Vector2(-220, 360), "blade"],
+	]
+	for spec in chant_specs:
+		var target = _put(s, String(spec[3]), Vector2(spec[2]))
+		var chanter = _put(s, "chanter", Vector2(spec[1]))
+		chanter["action"] = s._action("chant", s.CHANT_STARTUP + 0.46, Vector2(chanter["pos"]).direction_to(Vector2(target["pos"])))
+		chanter["action"]["startup"] = s.CHANT_STARTUP
+		chanter["action"]["elapsed"] = s.CHANT_STARTUP * 0.62
+		chanter["action"]["label"] = String(spec[0])
+		chanter["action"]["target_ids"] = [int(target["id"])]
+	await _shoot("audit-g-support-relationships")

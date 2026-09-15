@@ -1523,9 +1523,11 @@ func test_air_caster_gale_and_windstep() -> void:
 	# actually be pushed across.
 	state.start_run("warrior", "combat_survey", 4114, "encounter", "recovery")
 	state.walls.clear()
+	state._build_wall_spatial_index()
 	state.barriers.clear()
 	state.enemies.clear()
 	var air := state._make_enemy("air_caster", state.player_pos + Vector2.UP * 420.0, 6)
+	air["shot_cooldown"] = 0.0
 	state.enemies = [air]
 	state._invalidate_active_enemy_cache()
 	state._choose_enemy_action(air)

@@ -2733,6 +2733,64 @@ func _draw_chant_marks(pos: Vector2, radius: float, enemy: Dictionary) -> void:
 		draw_arc(mark, size * 1.55, -PI * 0.5, -PI * 0.5 + TAU * duration_fraction, 14, Color(0.95, 0.95, 0.88, 0.82), maxf(1.0, size * 0.20))
 		slot += 1
 
+func _visual_enemy_by_id(enemy_id: int) -> Dictionary:
+	if enemy_id < 0: return {}
+	for enemy_value in Array(visual.get("enemies", [])):
+		var enemy := Dictionary(enemy_value)
+		if int(enemy.get("id", -1)) == enemy_id: return enemy
+	return {}
+
+# A Shield's assignment is persistent combat information. Its stance and movement
+# remain the primary tell; this restrained tether makes the protected body explicit
+# during an introduction without turning the relationship into a full-screen effect.
+func _draw_shield_ward_relationship(shield: Dictionary, shield_world_pos: Vector2) -> void:
+	var ward := _visual_enemy_by_id(int(shield.get("ward_id", -1)))
+	if ward.is_empty() or int(ward.get("hp", 0)) <= 0: return
+	if String(ward.get("layer", "")) != String(shield.get("layer", "")): return
+	var ward_world_pos := Vector2(ward.get("pos", shield_world_pos))
+	if not _world_point_on_camera(ward_world_pos, float(ward.get("radius", 30.0)) * 2.5): return
+	if not state.is_visible(ward_world_pos, _render_visible_cells()) and not bool(ward.get("touch_revealed", false)): return
+	var start := _world_to_screen(shield_world_pos)
+	var finish := _world_to_screen(ward_world_pos)
+	var screen_delta := finish - start
+	if screen_delta.length_squared() < 4.0: return
+	var direction := screen_delta.normalized()
+	var color := Color(0.66, 0.82, 0.91, 0.34)
+	draw_line(start + direction * 10.0, finish - direction * 10.0, color, maxf(1.5, world_scale * 1.7))
+	var ward_radius := float(ward.get("radius", 30.0)) * world_scale
+	draw_arc(finish, maxf(7.0, ward_radius * 1.24), -PI * 0.82, -PI * 0.18, 10, Color(color, 0.72), maxf(2.0, world_scale * 2.2))
+
+func _draw_chant_symbol(center: Vector2, size: float, chant_id: String, color: Color, alpha: float = 1.0) -> void:
+	var ink := Color(color, alpha)
+	match String(AbilityCatalogScript.chant(chant_id).get("shape", "diamond")):
+		"ring":
+			draw_arc(center, size, 0.0, TAU, 18, ink, maxf(2.0, size * 0.18))
+		"chevron":
+			draw_polyline(PackedVector2Array([center + Vector2(-size, size * 0.62), center + Vector2(0.0, -size * 0.72), center + Vector2(size, size * 0.62)]), ink, maxf(2.0, size * 0.18))
+		_:
+			draw_polyline(_closed_points(PackedVector2Array([center + Vector2(0.0, -size), center + Vector2(size, 0.0), center + Vector2(0.0, size), center + Vector2(-size, 0.0)])), ink, maxf(2.0, size * 0.18))
+
+# Preparation and resolution consume the same chant ID and stable target IDs. Thus
+# interrupting the Chanter stops exactly the relationship the player was shown.
+func _draw_chant_preparation(pos: Vector2, facing: Vector2, radius: float, action: Dictionary) -> void:
+	var chant_id := String(action.get("label", "ward"))
+	var chant := AbilityCatalogScript.chant(chant_id)
+	var color := Color(String(chant.get("color", "e06868")))
+	var startup := maxf(0.01, float(action.get("startup", 0.9)))
+	var progress := clampf(float(action.get("elapsed", 0.0)) / startup, 0.0, 1.0)
+	_draw_spell_cast(pos, facing, radius, action, color)
+	var focus := pos + facing * radius * (1.48 + progress * 0.25)
+	_draw_chant_symbol(focus, radius * (0.34 + progress * 0.20), chant_id, color)
+	for target_id in Array(action.get("target_ids", [])):
+		var target := _visual_enemy_by_id(int(target_id))
+		if target.is_empty() or int(target.get("hp", 0)) <= 0: continue
+		var target_world_pos := Vector2(target.get("pos", Vector2.ZERO))
+		if not _world_point_on_camera(target_world_pos, float(target.get("radius", 30.0)) * 2.5): continue
+		if not state.is_visible(target_world_pos, _render_visible_cells()) and not bool(target.get("touch_revealed", false)): continue
+		var target_screen := _actor_visual_center(target_world_pos, float(target.get("radius", 30.0)))
+		draw_line(focus, target_screen, Color(color, 0.18 + progress * 0.28), maxf(1.0, world_scale * 1.4))
+		_draw_chant_symbol(target_screen + Vector2(0.0, -float(target.get("radius", 30.0)) * world_scale * 1.52), maxf(4.0, radius * 0.20), chant_id, color, 0.48 + progress * 0.42)
+
 # Centred and brief. It reads as a beat in the fight rather than a screen, which is the
 # point: the room is over, the swing that ended it is still landing behind this.
 func _draw_room_clear_banner() -> void:
@@ -3383,6 +3441,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var color := Color(String(presentation["color"]))
 	if reeling: color = color.lerp(Color("d9e2e4"), 0.20)
 	_draw_actor_footprint(world_pos, world_radius, color.lightened(0.28), false)
+	if kind == "shield": _draw_shield_ward_relationship(enemy, world_pos)
 	if reeling: _draw_reaction_motion(pos, facing, radius, action, color)
 	_draw_chant_marks(pos, radius, enemy)
 	# A Bandit that still has its slip is dangerous to swing at; one that has spent it
@@ -3408,7 +3467,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			draw_arc(pos, radius * 1.34, ready_angle + offset - 0.16, ready_angle + offset + 0.16, 6, Color("e8e0a8"), maxf(2.0, radius * 0.10))
 	_draw_actor(pos, foot, facing, radius, color, color.lightened(0.46), reeling, Vector2(pose["body_scale"]), float(pose["stride"]))
 	_draw_enemy_conditions(pos, radius, enemy)
-	_draw_enemy_identity(kind, pos, facing, radius, color)
+	_draw_enemy_identity(kind, pos, facing, radius, color, action)
 	if int(enemy.get("id", -1)) == int(visual.get("aimed_enemy_id", -1)):
 		draw_arc(pos, radius * 1.62, 0.0, TAU, 26, Color("f2d16b"), maxf(2.0, radius * 0.12))
 	# The guard cannot be drawn while the sword is out. run_state's _enemy_blocks_attack
@@ -3450,7 +3509,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		if action.has("target"): draw_circle(_world_to_screen(Vector2(action["target"])), 14.0, Color(0.53, 0.67, 0.49, 0.75))
 	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("frost_lance")["color"])))
 	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fire_breath")["color"])))
-	elif String(action["kind"]) == "chant": _draw_spell_cast(pos, facing, radius, action, Color("e0c46a"))
+	elif String(action["kind"]) == "chant": _draw_chant_preparation(pos, facing, radius, action)
 	elif String(action["kind"]) == "cold_front": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0, Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
 	if awareness in ["suspicious", "alerted"]:
@@ -3555,7 +3614,7 @@ func _draw_reaction_motion(pos: Vector2, facing: Vector2, radius: float, action:
 	if String(action.get("reaction_source_kind", "")) == "charge":
 		draw_line(pos - facing * trail * 1.18 - side * radius * 0.18, pos - facing * radius * 0.46 - side * radius * 0.06, Color("d7c59c", 0.45), maxf(1.5, radius * 0.10))
 
-func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: float, color: Color) -> void:
+func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: float, color: Color, action: Dictionary = {}) -> void:
 	var side := facing.rotated(PI * 0.5)
 	if kind == "boar":
 		draw_line(pos - side * radius * 0.70 + facing * radius * 0.55, pos - side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
@@ -3565,6 +3624,13 @@ func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: f
 		if kind == "knife": draw_line(pos - side * radius * 0.45, pos - side * radius * 0.75 + facing * radius * 1.05, Color("f3e5aa"), 2.0)
 	elif kind == "hound":
 		draw_line(pos - facing * radius * 0.9, pos + facing * radius * 0.75, color.lightened(0.35), maxf(3.0, radius * 0.35))
+	elif kind == "blade":
+		# Upright shoulders and a sword held on one side make the direct presser read
+		# differently from Knife's paired points before either one commits.
+		draw_line(pos - side * radius * 0.62 - facing * radius * 0.18, pos + side * radius * 0.62 - facing * radius * 0.18, color.lightened(0.42), maxf(2.0, radius * 0.11))
+		if String(action.get("kind", "idle")) not in ["melee", "hit_reaction", "stagger"]:
+			var hand := pos + side * radius * 0.50 + facing * radius * 0.18
+			draw_line(hand - facing * radius * 0.22, hand + facing * radius * 1.18, Color("ead9c8"), maxf(2.0, radius * 0.10))
 	elif kind == "polearm":
 		draw_line(pos - facing * radius * 0.8, pos + facing * radius * 1.9, Color("e7c590"), maxf(2.0, radius * 0.10))
 	elif kind == "brute":
@@ -3685,7 +3751,10 @@ func _draw_attack_sector(sample: Dictionary, action: Dictionary, player_weapon: 
 	var elapsed := float(action.get("elapsed", 0.0))
 	var telegraph := 0.0
 	if not player_weapon and elapsed < startup:
-		telegraph = clampf((elapsed / startup - 0.48) / 0.52, 0.0, 1.0)
+		# Brute's forward smash is taught as a lateral-movement check, so its narrow
+		# lane appears for the whole commitment instead of only in the final half.
+		var telegraph_start := 0.0 if String(sample.get("technique_id", "")) == "forward_smash" else 0.48
+		telegraph = clampf((elapsed / startup - telegraph_start) / maxf(0.01, 1.0 - telegraph_start), 0.0, 1.0)
 	if effect_alpha <= 0.001 and telegraph <= 0.001 and not debug_hitboxes: return
 	var origin := Vector2(sample["origin"])
 	var direction := Vector2(sample.get("direction", Vector2.UP)).normalized()
@@ -4268,6 +4337,15 @@ func _phase(action: Dictionary) -> String:
 		if elapsed < float(action["active_end"]): return "ENDURING"
 		return "RECOVERING"
 	if kind == "melee":
+		var technique := String(action.get("technique_id", ""))
+		if technique == "thrust":
+			if elapsed < float(action["startup"]): return "LEVELING"
+			if elapsed < float(action["active_end"]): return "DRIVING"
+			return "RECOVERING"
+		if technique == "heavy_cleave":
+			if elapsed < float(action["startup"]): return "RAISING CLEAVE"
+			if elapsed < float(action["active_end"]): return "CLEAVING"
+			return "RECOVERING"
 		if elapsed < float(action["startup"]): return "WINDING UP"
 		if elapsed < float(action["active_end"]): return "STRIKING"
 		return "RECOVERING"
@@ -4278,7 +4356,9 @@ func _phase(action: Dictionary) -> String:
 	# right about Earth Wall and Sunder and wrong about the other two, and because the new
 	# branches came first they shadowed the originals into unreachable code. Two authored
 	# descriptions each, one of them dead.
-	if kind == "chant": return "CHANTING" if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
+	if kind == "chant":
+		var chant := AbilityCatalogScript.chant(String(action.get("label", "ward")))
+		return String(chant.get("phase_before", "CHANTING")) if elapsed < float(action.get("startup", 0.9)) else "RECOVERING"
 	if kind == "charge":
 		if elapsed < float(action.get("startup", 0.4)): return "CROUCHING"
 		if elapsed < float(action.get("active_end", 0.8)): return "POUNCING" if String(action.get("label", "")) == "pounce" else "CHARGING"

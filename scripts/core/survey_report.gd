@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 33
+const FORMAT_VERSION := 34
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -83,6 +83,9 @@ static func build_text(session: Dictionary) -> String:
 			lines.append("Custom room: yes (entry HP %d%%)" % roundi(100.0 * float(room.get("entry_hp_percent", 1.0))))
 		lines.append("Arena: %s" % String(room.get("arena", "unknown")))
 		lines.append("Formation: %s" % String(room.get("formation", "unknown")))
+		if bool(room.get("exact_roster", false)):
+			lines.append("Exact roster: yes")
+			lines.append("Placement policy: %s" % String(room.get("placement_policy", "unknown")).replace("_", " "))
 		lines.append("Enemies: %s" % ", ".join(PackedStringArray(room.get("enemy_labels", []))))
 		lines.append("Roles: %s" % ", ".join(PackedStringArray(room.get("enemy_roles", []))))
 		lines.append("Build: %s" % String(room.get("build_summary", "unknown")))

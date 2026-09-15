@@ -83,6 +83,8 @@ const ENEMY_FIELDS := [
 	{"key":"condition_buildup", "audiences":[PRESENTATION, DETERMINISM], "copy":"dictionary", "default":{}},
 	{"key":"chants", "audiences":[PRESENTATION, DETERMINISM], "copy":"dictionary", "default":{}},
 	{"key":"chant_source_id", "audiences":[PRESENTATION, DETERMINISM], "default":-1},
+	{"key":"ward_id", "audiences":[PRESENTATION, DETERMINISM], "default":-1},
+	{"key":"ward_lost_time", "audiences":[DETERMINISM], "default":0.0, "interpolate":"float"},
 	{"key":"gale_velocity", "audiences":[PRESENTATION, DETERMINISM], "interpolate":"vector", "default":Vector2.ZERO},
 	{"key":"pounce_cooldown", "audiences":[DETERMINISM]},
 	{"key":"parry_cooldown", "audiences":[DETERMINISM]},

@@ -53,6 +53,16 @@ const ENEMY_ABILITIES := {
 	"windstep": {"action_kind": "windstep", "startup": 0.26, "duration": 0.86, "phase_before": "GONE", "phase_after": "GONE", "color": "d8ecf6", "executor": "movement"},
 }
 
+# Support tells have the same one-definition rule as damaging abilities. The game has
+# no audio playback layer yet, so `sound_cue` is an authored identity for that future
+# layer rather than a claim that a sample is currently played. Shape, colour, phase
+# copy, and recipient identity are already consumed by the renderer.
+const CHANTS := {
+	"haste": {"label":"Quickening", "phase_before":"QUICKENING", "color":"5fb8f0", "shape":"ring", "sound_cue":"rising_chime"},
+	"bulwark": {"label":"Bulwark", "phase_before":"HARDENING", "color":"f2cf4a", "shape":"chevron", "sound_cue":"low_knell"},
+	"ward": {"label":"Ward", "phase_before":"WARDING", "color":"e06868", "shape":"diamond", "sound_cue":"sealed_tone"},
+}
+
 const ACTION_EXECUTORS := {
 	"idle": "none", "move": "locomotion", "evade": "locomotion", "dodge_strike": "melee",
 	"claw_combo": "melee", "pounce_combo": "melee", "melee": "melee", "charge": "melee",
@@ -114,6 +124,9 @@ static func enemy_ability_for_action(action: Dictionary) -> Dictionary:
 		if String(definition["action_kind"]) == kind: return definition.duplicate(true)
 	return {}
 
+static func chant(id: String) -> Dictionary:
+	return Dictionary(CHANTS.get(id, CHANTS["ward"])).duplicate(true)
+
 static func validate_catalog() -> Array[String]:
 	var errors: Array[String] = []
 	var learned: Dictionary = {}
@@ -131,6 +144,10 @@ static func validate_catalog() -> Array[String]:
 		for key in ["action_kind", "startup", "duration", "phase_before", "phase_after", "color", "executor"]:
 			if not definition.has(key): errors.append("enemy ability %s is missing %s" % [id, key])
 		if not ACTION_EXECUTORS.has(String(definition.get("action_kind", ""))): errors.append("enemy ability %s names an unhandled action" % id)
+	for id in CHANTS:
+		var definition := Dictionary(CHANTS[id])
+		for key in ["label", "phase_before", "color", "shape", "sound_cue"]:
+			if not definition.has(key): errors.append("chant %s is missing %s" % [id, key])
 	for kind in HAZARD_EXECUTORS:
 		if String(HAZARD_EXECUTORS[kind]) == "": errors.append("hazard %s has no executor" % kind)
 		if not HAZARD_LIFECYCLE.has(kind): errors.append("hazard %s has no lifecycle definition" % kind)

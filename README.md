@@ -1,6 +1,30 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.92` (Android version code `292`).
+Current prototype version: `0.2.93` (Android version code `293`).
+
+## v0.2.93 — support relationships and lean introductions
+
+Shields now receive one stable ward by entity ID when an encounter is created. They
+hold the authored 140–220-unit screen relationship instead of reconsidering which ally
+to protect every decision tick, and fall back to ordinary frontline behaviour only
+after the ward dies or remains unreachable. A restrained persistent tether and ward
+mark make the relationship readable without replacing the Shield's stance and movement
+as its primary evidence.
+
+Chanter support is announced before it resolves. Quickening, Bulwark, and Ward now use
+different colours, shapes, preparation language, and authored future sound identities;
+the interruptible action stores the exact recipient IDs it displays, and resolution
+applies only to those surviving recipients. Blade now has a direct, upright side-sword
+silhouette, Brute's forward-smash lane is visible for its full commitment, and Knight's
+thrust and cleave have distinct preparation and active language.
+
+Four lean teaching encounters enter the Survey deck: two Archers in **Light Crossfire**,
+Shield plus Archer in **Screened Shot**, Boar plus Archer in **Pinch and Escape**, and
+Knight plus Archer in **Knight Introduction**. These are exact rosters: budget filling
+cannot add bodies, incompatible arenas are excluded, placement searches a bounded set
+of authored candidates, and failure uses a named formation fallback without mutating
+the roster. Report format `34` records exact-roster and placement policy; presentation
+version is `14`; save schema remains `37`.
 
 ## v0.2.92 — a repeatable Boss Lab
 
