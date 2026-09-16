@@ -633,6 +633,7 @@ Installation is a deployment step after implementation and verification, not evi
 - `WAYSTONE_MIGRATION_HANDOFF.md` — current operational priorities, latest decisions, roadmap, survey interpretation, and handoff procedure.
 - `README.md` — implemented-version history, controls, local run/build instructions, and current version number.
 - `docs/design-foundations.md` — the reasoning behind the design: lineage from Cardinal Quest 2, Dark Souls, and Hades, what is deliberately refused from each, the frozen-time and determinism commitments, mode architecture, world philosophy, the narrative layer, and a record of rejected directions. Read before making design decisions.
+- `docs/battle-design-bible.md` — consolidated enemy, attack, encounter and boss principles, with an explicit credence and decision-status ledger plus recorded disagreements with the Dark Souls-derived enemy specification. Use it to prevent provisional suggestions from becoming silent rules.
 - `docs/design-brief.md` — concise enduring product promise, modes, world foundation, and design pillars.
 - `docs/combat-character-framework.md` — detailed shared combat/character architecture and concrete Rogue specifications. It is an authoritative design target where not superseded by later playtesting, but exact balance values are provisional.
 - `docs/expedition-encounter-redesign.md` — deferred data-driven encounter/Expedition plan. It explicitly depends on successful Combat Survey analysis.
