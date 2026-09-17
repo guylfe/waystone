@@ -1,7 +1,9 @@
 .godot/
 .runtime/
 tools/
-builds/
+.tools/
+builds/*
+!builds/.gdignore
 export_templates/
 
 # Generated Android packages and signatures

@@ -1,0 +1,664 @@
+class_name CombatCatalog
+extends RefCounted
+
+const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
+
+# This is intentionally a data catalogue rather than a second combat simulator.
+# RunState still owns timing, collision, and current prototype balancing.  The
+# catalogue gives every actor the same vocabulary so future character tracks,
+# equipment, and enemy variants can use one foundation.
+
+const ATTRIBUTE_KEYS := ["health", "energy", "strength", "defense", "speed", "stealth", "awareness", "resolve", "resistance", "intelligence", "faith"]
+
+const ATTRIBUTE_DEFAULTS := {
+	"health": 5,
+	"energy": 100,
+	"strength": 5,
+	"defense": 0,
+	"speed": 5,
+	"stealth": 0,
+	"awareness": 5,
+	"resolve": 5,
+	"resistance": 5,
+	"intelligence": 0,
+	"faith": 0,
+}
+
+const PROPERTY_DEFAULTS := {
+	"armor": 0,
+	"resistances": {"physical": 0, "fire": 0, "ice": 0, "arcane": 0},
+	"status_resistance": 0,
+	"mass": 1.0,
+	"posture_base": 5.0,
+	"posture_recovery": 1.8,
+	"collision_radius": 28.0,
+	"vision_range": 520.0,
+	"hearing_range": 260.0,
+	"alertness_decay": 1.0,
+	"healing_received": 1.0,
+	"action_speed_multiplier": 1.0,
+	"cooldown_multiplier": 1.0,
+	"temporal_authority": 0,
+	"offhand": "",
+	# A charge owns how it meets its own side. Ordinary bodies still collide.
+	# `block` preserves the default; `vault` crosses allies while airborne;
+	# `shove_lighter` parts only bodies at or below the authored mass limit; and
+	# `gore` is the Ox's existing no-slowdown, damaging pass-through.
+	"charge_ally_collision": "block",
+	"charge_ally_mass_limit": 0.0,
+	"charge_ally_posture": 0.0,
+	"charge_airborne": false,
+	# Most enemies flinch from an ordinary health hit when the shared resolver permits
+	# it. `posture_only` reserves ordinary control for a genuine posture break while
+	# preserving explicit forced reactions such as Advance.
+	"hit_reaction_policy": "ordinary",
+	# A charge with this property cannot be cancelled after the AI commits it, including
+	# during wind-up. Death and collision with solid level geometry remain authoritative.
+	"charge_unstoppable_from_commit": false,
+}
+
+# These three values are shared martial learning. They are not Dark Souls-style
+# coefficients and do not scale an arbitrary weapon from a generic Strength.
+# A weapon frame maps its own tiers to its chosen attacks when progression is
+# implemented later.
+const MARTIAL_DEFAULTS := {
+	"power": 0,
+	"impact": 0,
+	"handling": 0,
+	"technique_capacity": 1,
+}
+
+const WEAPON_FRAMES := {
+	"knife": {"label": "Knife", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["knife_execution", "knife_twin_fang"], "guard_profile": "light"},
+	"sword": {"label": "Sword", "delivery": "melee", "basic_technique": "diagonal_cut", "art_ids": ["sword_thrust", "sword_riposte"]},
+	"axe": {"label": "Hand Axe", "delivery": "melee", "basic_technique": "heavy_chop", "art_ids": ["axe_hook", "axe_splitter"]},
+	"zweihander": {"label": "Zweihander", "delivery": "melee", "basic_technique": "heavy_cleave", "art_ids": ["zweihander_sweep", "zweihander_half_sword"]},
+	"spear": {"label": "Spear", "delivery": "melee", "basic_technique": "thrust", "art_ids": ["spear_brace", "spear_lunge"]},
+	"twin_knives": {"label": "Twin Knives", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["knife_twin_fang"], "guard_profile": "dual"},
+	"bow": {"label": "Bow", "delivery": "ranged", "basic_technique": "drawn_shot", "art_ids": ["bow_piercing_shot", "bow_fan_shot"], "guard_profile": "awkward"},
+	"impact": {"label": "Impact Weapon", "delivery": "melee", "basic_technique": "forward_smash", "art_ids": ["impact_ground_smash", "impact_guard_break"]},
+	"staff": {"label": "Staff", "delivery": "melee", "basic_technique": "staff_thrust", "art_ids": ["staff_whirlwind", "staff_leg_sweep"]},
+	"natural": {"label": "Natural Weapon", "delivery": "melee", "basic_technique": "bite", "art_ids": ["natural_pounce", "natural_flurry"]},
+	"unarmed": {"label": "Unarmed", "delivery": "melee", "basic_technique": "quick_cut", "art_ids": ["unarmed_step_in", "unarmed_breaker"]},
+}
+
+const WEAPON_ARTS := {
+	"knife_execution": {"label": "Execution", "frame": "knife", "style": "unaware", "gate": "first_rank"},
+	"knife_twin_fang": {"label": "Twin Fang", "frame": "knife", "style": "pressure", "gate": "first_rank"},
+	"bow_piercing_shot": {"label": "Piercing Shot", "frame": "bow", "style": "line", "gate": "first_rank"},
+	"bow_fan_shot": {"label": "Fan Shot", "frame": "bow", "style": "space_control", "gate": "first_rank"},
+	"sword_thrust": {"label": "Measured Thrust", "frame": "sword", "style": "reach", "gate": "martial_manual"},
+	"sword_riposte": {"label": "Guarding Riposte", "frame": "sword", "style": "counter", "gate": "veteran_trainer"},
+	"axe_hook": {"label": "Hooking Chop", "frame": "axe", "style": "displace", "gate": "hunter_cache"},
+	"axe_splitter": {"label": "Splitter", "frame": "axe", "style": "impact", "gate": "elite_foe"},
+	"zweihander_sweep": {"label": "Sweeping Cut", "frame": "zweihander", "style": "space_control", "gate": "warrior_manual"},
+	"zweihander_half_sword": {"label": "Half-Sword Thrust", "frame": "zweihander", "style": "precision", "gate": "ruin_lesson"},
+	"spear_brace": {"label": "Brace", "frame": "spear", "style": "counter", "gate": "watchpost"},
+	"spear_lunge": {"label": "Long Lunge", "frame": "spear", "style": "reach", "gate": "elite_foe"},
+	"twin_flurry": {"label": "Knife Flurry", "frame": "twin_knives", "style": "pressure", "gate": "thieves_mark"},
+	"twin_evasive_counter": {"label": "Evasive Counter", "frame": "twin_knives", "style": "mobility", "gate": "duelist_trainer"},
+	"bow_drawn_shot": {"label": "Drawn Shot", "frame": "bow", "style": "pressure", "gate": "ranger_cache"},
+	"bow_scatter_shot": {"label": "Scatter Shot", "frame": "bow", "style": "space_control", "gate": "elite_foe"},
+	"impact_ground_smash": {"label": "Ground Smash", "frame": "impact", "style": "impact", "gate": "quarry_lesson"},
+	"impact_guard_break": {"label": "Guard Break", "frame": "impact", "style": "disrupt", "gate": "armory_manual"},
+	"staff_whirlwind": {"label": "Whirlwind", "frame": "staff", "style": "space_control", "gate": "academy_lesson"},
+	"staff_leg_sweep": {"label": "Sweep the Legs", "frame": "staff", "style": "posture_break", "gate": "academy_lesson"},
+	"natural_pounce": {"label": "Pounce", "frame": "natural", "style": "engage", "gate": "natural"},
+	"natural_flurry": {"label": "Claw Flurry", "frame": "natural", "style": "pressure", "gate": "natural"},
+	"unarmed_step_in": {"label": "Step In", "frame": "unarmed", "style": "engage", "gate": "trainer"},
+	"unarmed_breaker": {"label": "Breaker", "frame": "unarmed", "style": "impact", "gate": "trainer"},
+	"prototype_sweeping_cut": {"label": "Sweeping Cut", "frame": "sword", "style": "space_control", "gate": "prototype"},
+	"prototype_drawing_cut": {"label": "Drawing Cut", "frame": "sword", "style": "precision", "gate": "prototype"},
+}
+
+const LOADOUT_PROFILES := {
+	"warrior": {"name": "Warrior · Vanguard", "weapon_frame": "sword", "track_order": ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 100, "strength": 5, "defense": 4, "speed": 5, "stealth": 1, "awareness": 5, "resolve": 7, "resistance": 6, "intelligence": 2, "faith": 2}, "properties": {"mass": 1.05}},
+	"rogue_acrobat": {"name": "Rogue · Acrobat", "weapon_frame": "knife", "track_order": ["knife", "evasion", "finesse", "rogue", "acrobat", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 80, "strength": 4, "defense": 2, "speed": 7, "stealth": 7, "awareness": 6, "resolve": 3, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.82}},
+	# Frailer than a Rogue and far frailer than a Warrior, with the game's only meaningful
+	# Intelligence. Resolve is deliberately low, so committed casts are easy to interrupt.
+	"mage_elementalist": {"name": "Mage · Elementalist", "weapon_frame": "staff", "track_order": ["staff", "evasion", "measured", "mage", "elementalist", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 75, "strength": 3, "defense": 2, "speed": 5, "stealth": 3, "awareness": 6, "resolve": 3, "resistance": 6, "intelligence": 7, "faith": 2}, "properties": {"mass": 0.85}},
+	"rogue_sharpshooter": {"name": "Rogue · Sharpshooter", "weapon_frame": "bow", "track_order": ["bow", "evasion", "patient", "rogue", "sharpshooter", "adopted"], "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "dodge", "attributes": {"health": 85, "strength": 4, "defense": 2, "speed": 6, "stealth": 7, "awareness": 8, "resolve": 4, "resistance": 4, "intelligence": 4, "faith": 2}, "properties": {"mass": 0.88}},
+}
+
+const CHARACTER_TRACK_ORDER := ["swordsmanship", "evasion", "steadfast", "warrior", "vanguard", "knife", "finesse", "rogue", "acrobat", "bow", "patient", "sharpshooter", "staff", "measured", "mage", "elementalist", "adopted"]
+
+# Each stage is the next node in a compact track. A gate is a minimum character
+# level, so an unchosen node remains available after its gate instead of
+# disappearing forever. Choice stages spend one level and permanently record
+# exactly one choice for that run.
+const CHARACTER_TRACKS := {
+	"swordsmanship": {
+		"label": "Swordsmanship",
+		"description": "A permanent Sword Art, precise combo control, and authored reach.",
+		"stages": [
+			{"id": "sword_art", "label": "Weapon Art", "gate": 2, "description": "Choose one Sword Art for this run.", "choices": [
+				{"id": "prototype_sweeping_cut", "label": "Sweeping Cut", "description": "A broad multi-target cut with exceptional posture force."},
+				{"id": "prototype_drawing_cut", "label": "Drawing Cut", "description": "A narrow, forceful cut that reaches through a precise opening."},
+			]},
+			{"id": "follow_the_opening", "label": "Follow the Opening", "gate": 4, "description": "A continued swing corrects toward a nearby enemy it would otherwise miss."},
+			{"id": "edge_control", "label": "Edge Control", "gate": 6, "description": "Every sword hit deals exactly +1 damage and +0.5 posture damage."},
+			{"id": "long_reach", "label": "Long Reach", "gate": 8, "description": "Your chosen Sword Art gains exactly +20 reach."},
+			{"id": "flowing_steel", "label": "Flowing Steel", "gate": 10, "description": "Basic sword recovery and combo transitions become approximately 8% faster."},
+		],
+	},
+	"evasion": {
+		"label": "Evasion",
+		"description": "Improve the basic Dodge, then commit to a distinct evasive form.",
+		"stages": [
+			{"id": "practised_footwork", "label": "Practised Footwork", "gate": 2, "description": "Basic Dodge recovery falls from 0.66 to 0.60 seconds and cooldown from 4.0 to 3.6."},
+			{"id": "evasion_style", "label": "Evasive Form", "gate": 5, "description": "Permanently specialize your Dodge for this run.", "choices": [
+				{"id": "sidestep", "label": "Sidestep", "description": "Cover the practised Dodge distance faster and regain control sooner."},
+				{"id": "long_roll", "label": "Long Roll", "description": "Cover 231 units with a longer protected window and dependable recovery."},
+			]},
+			{"id": "evasion_mastery", "label": "Perfect Form", "gate": 9, "description": "A clean Sidestep primes Counterstep; a clean Long Roll restores 2 seconds of Dodge cooldown."},
+		],
+	},
+	"steadfast": {
+		"label": "Steadfast",
+		"description": "Temperament: repeatedly choose between Toughness and Vigilance, up to four times.",
+		"stages": [
+			{"id": "steadfast_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Steadfast package.", "choices": [
+				{"id": "toughness", "label": "Toughness", "description": "+15 maximum health and +1 Resolve."},
+				{"id": "vigilance", "label": "Vigilance", "description": "+10 maximum Energy and +1 Awareness."},
+			]},
+			{"id": "steadfast_2", "label": "Temperament II", "gate": 4, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_3", "label": "Temperament III", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+			{"id": "steadfast_4", "label": "Temperament IV", "gate": 2, "description": "Choose Toughness or Vigilance again.", "choices_ref": "steadfast_1"},
+		],
+	},
+	"warrior": {
+		"label": "Warrior",
+		"description": "Hold committed attacks through pressure and decide how long Rally is worth its Energy drain.",
+		"stages": [
+			{"id": "warrior_method", "label": "Method of Force", "gate": 3, "description": "Permanently choose how your committed physical attacks use force.", "choices": [
+				{"id": "bear_down", "label": "Bear Down", "description": "Committed physical attacks deal 30% more posture damage."},
+				{"id": "brace", "label": "Brace", "description": "Committed physical attacks gain +2 poise."},
+			]},
+			{"id": "enduring_rally", "label": "Enduring Rally", "gate": 5, "description": "Rally's Energy drain falls from 8 to 6 per second."},
+			{"id": "warrior_reserve", "label": "Constitution", "gate": 7, "description": "Permanently choose greater Resolve or a larger Energy reserve.", "choices": [
+				{"id": "iron_constitution", "label": "Iron Constitution", "description": "+4 Resolve."},
+				{"id": "deep_reserves", "label": "Deep Reserves", "description": "+20 maximum Energy."},
+			]},
+			{"id": "power_through", "label": "Power Through", "gate": 9, "description": "While a committed physical attack holds through a direct hit, take 25% less final health damage."},
+			{"id": "unbreakable", "label": "Unbreakable", "gate": 10, "description": "While Rally is active, committed physical attacks cannot be interrupted or staggered."},
+		],
+	},
+	"vanguard": {
+		"label": "Vanguard",
+		"description": "Claim space with Advance and sustain visible Battle Flow through contact.",
+		"stages": [
+			{"id": "battle_flow", "label": "Battle Flow", "gate": 3, "description": "Consecutive weapon contacts build up to three visible pips: +50% damage and +25% posture at full flow. Advance preserves and refreshes it."},
+			{"id": "flow_discipline", "label": "Flow Discipline", "gate": 5, "description": "Permanently choose what no longer breaks Battle Flow.", "choices": [
+				{"id": "unshaken", "label": "Unshaken", "description": "Taking a non-staggering hit no longer breaks Battle Flow."},
+				{"id": "sword_dance", "label": "Sword Dance", "description": "Evasive actions no longer break Battle Flow."},
+			]},
+			{"id": "steady_momentum", "label": "Steady Momentum", "gate": 7, "description": "A Battle Flow break removes one pip instead of the entire chain."},
+			{"id": "full_momentum", "label": "Full Momentum", "gate": 9, "description": "Battle Flow gains a fourth pip; each pip grants +20% damage and +10% posture."},
+		],
+	},
+	"knife": {
+		"label": "Knife",
+		"description": "Fast compact cuts, a permanent fighting style, and sustained pressure.",
+		"stages": [
+			{"id": "knife_art", "label": "Knife Art", "gate": 2, "description": "Permanently choose Execution or Twin Fang for this run.", "choices": [
+				{"id": "knife_execution", "label": "Execution", "description": "Keep one knife and gain a short step-in cut whose damage is greatly multiplied against an unaware target."},
+				{"id": "knife_twin_fang", "label": "Twin Fang", "description": "Equip twin knives, gain a six-cut sequence, and lunge with two simultaneous crossing hits."},
+			]},
+			{"id": "honed_edges", "label": "Honed Edges", "gate": 4, "description": "Every Knife contact deals exactly +1 health damage."},
+			{"id": "light_hands", "label": "Light Hands", "gate": 6, "description": "Knife startup, continuation, and recovery resolve approximately 8% faster."},
+			{"id": "relentless_cuts", "label": "Relentless Cuts", "gate": 8, "description": "Uninterrupted contacts build from +1 to +3 damage until the sequence ends or misses."},
+			{"id": "ceaseless_cuts", "label": "Ceaseless Cuts", "gate": 10, "description": "Completing all six Twin-Knife cuts reduces sequence recovery from 1 second to 0.55 seconds."},
+		],
+	},
+	"finesse": {
+		"label": "Finesse",
+		"description": "Temperament: repeatedly choose Fleetness or Subtlety, up to four times.",
+		"stages": [
+			{"id": "finesse_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Finesse package.", "choices": [
+				{"id": "fleetness", "label": "Fleetness", "description": "+10 maximum Energy and +1 Speed."},
+				{"id": "subtlety", "label": "Subtlety", "description": "+5 maximum Health and +1 Stealth."},
+			]},
+			{"id": "finesse_2", "label": "Temperament II", "gate": 4, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+			{"id": "finesse_3", "label": "Temperament III", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+			{"id": "finesse_4", "label": "Temperament IV", "gate": 2, "description": "Choose Fleetness or Subtlety again.", "choices_ref": "finesse_1"},
+		],
+	},
+	"rogue": {
+		"label": "Rogue",
+		"description": "Unaware damage, disciplined training, alarm control, and advanced concealment.",
+		"stages": [
+			{"id": "ambush", "label": "Ambush", "gate": 3, "description": "Your universal unaware multiplier rises from 1.5× to 2× with every weapon."},
+			{"id": "rogue_training", "label": "Rogue's Training", "gate": 5, "description": "Permanently choose Shadow Training or Fleet Training.", "choices": [
+				{"id": "shadow_training", "label": "Shadow Training", "description": "+1 Speed and +2 Stealth."},
+				{"id": "fleet_training", "label": "Fleet Training", "description": "+2 Speed."},
+			]},
+			{"id": "clean_work", "label": "Clean Work", "gate": 7, "description": "An unaware victim cannot broadcast an alert until the current attack resolves."},
+			{"id": "vanish", "label": "Vanish", "gate": 9, "description": "Stealth may be activated while Engaged; enemies search the last known location."},
+			{"id": "ghost", "label": "Ghost", "gate": 10, "description": "A clean assassination after breaking Stealth restores full concealment when unwitnessed."},
+		],
+	},
+	"acrobat": {
+		"label": "Acrobat",
+		"description": "Refine Vault and turn universal clean evasions into counter-pressure.",
+		"stages": [
+			{"id": "soft_landing", "label": "Soft Landing", "gate": 3, "description": "Vault landing recovery falls from 0.20 to 0.10 authored seconds."},
+			{"id": "elastic_moment", "label": "Elastic Moment", "gate": 6, "description": "Every genuine i-frame window you possess gains approximately 0.06 seconds."},
+			{"id": "turnabout", "label": "Turnabout", "gate": 8, "description": "A clean evade empowers the next basic attack within 4 seconds for +8 health and +3 posture damage."},
+			{"id": "encore", "label": "Encore", "gate": 10, "description": "Vault cooldown falls from 8 to 4.8 personal-time seconds."},
+		],
+	},
+	"bow": {
+		"label": "Bow",
+		"description": "Release-scaled shots, a permanent Art, and deliberate follow-up pressure.",
+		"stages": [
+			{"id": "bow_art", "label": "Bow Art", "gate": 2, "description": "Permanently choose Piercing Shot or Fan Shot for this run.", "choices": [
+				{"id": "bow_piercing_shot", "label": "Piercing Shot", "description": "A slow, powerful line shot that passes through every crossed body."},
+				{"id": "bow_fan_shot", "label": "Fan Shot", "description": "Release three independent arrows in a compact short-range cone."},
+			]},
+			{"id": "instinctive_release", "label": "Instinctive Release", "gate": 4, "description": "Loose shots rise from 4 to 6 damage and from roughly 250 to 300 maximum range."},
+			{"id": "settled_draw", "label": "Settled Draw", "gate": 6, "description": "Full shots rise from 13 to 16 damage and from 2.5 to 3.25 posture damage."},
+			{"id": "quick_nock", "label": "Quick Nock", "gate": 8, "description": "Post-release recovery and a buffered next draw become approximately 20% faster."},
+			{"id": "following_arrow", "label": "Following Arrow", "gate": 10, "description": "A Full shot that hits permits one accelerated buffered follow-up draw."},
+		],
+	},
+	"patient": {
+		"label": "Patient",
+		"description": "Temperament: repeatedly choose Observation or Composure, up to four times.",
+		"stages": [
+			{"id": "patient_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent Patient package.", "choices": [
+				{"id": "observation", "label": "Observation", "description": "+10 maximum Energy and +1 Awareness."},
+				{"id": "composure", "label": "Composure", "description": "+5 maximum Health and +1 Resolve."},
+			]},
+			{"id": "patient_2", "label": "Temperament II", "gate": 4, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+			{"id": "patient_3", "label": "Temperament III", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+			{"id": "patient_4", "label": "Temperament IV", "gate": 2, "description": "Choose Observation or Composure again.", "choices_ref": "patient_1"},
+		],
+	},
+	"sharpshooter": {
+		"label": "Sharpshooter",
+		"description": "Perception, universal projectile range, and prepared physical attacks.",
+		"stages": [
+			{"id": "keen_eye", "label": "Keen Eye", "gate": 3, "description": "+2 Awareness and sense approximate enemy blobs beyond line of sight."},
+			{"id": "far_sight", "label": "Far Sight", "gate": 6, "description": "+25% unobstructed sight distance and +15% maximum range for every aimed projectile."},
+			{"id": "expose_weakness", "label": "Expose Weakness", "gate": 8, "description": "Take Aim grants +10 damage, ignores 6 Defense, and adds +3 posture damage."},
+			{"id": "dead_to_rights", "label": "Dead to Rights", "gate": 10, "description": "First Aimed contact deals +50% final physical damage and double posture; a kill refreshes Take Aim."},
+		],
+	},
+	"staff": {
+		"label": "Staff",
+		"description": "Reach, posture and ground covered. The staff never competes on damage.",
+		"stages": [
+			{"id": "staff_art", "label": "Weapon Art", "gate": 2, "description": "Choose one Staff Art for this run.", "choices": [
+				{"id": "staff_whirlwind", "label": "Whirlwind", "description": "A full circle that shoves bodies out. Expensive, and for when they are already on you."},
+				{"id": "staff_leg_sweep", "label": "Sweep the Legs", "description": "A long low arc at the staff's full length. Takes them off their feet before they arrive."},
+			]},
+			{"id": "long_guard", "label": "Long Guard", "gate": 4, "description": "Every staff attack gains exactly +18 reach."},
+			{"id": "flowing_form", "label": "Flowing Form", "gate": 6, "description": "The combo's second hit widens into a sweep that catches everything in front of you."},
+			{"id": "staff_art_mastery", "label": "Art Mastery", "gate": 8, "description": "Whirlwind pushes further and knocks down; Sweep the Legs holds them down longer."},
+			{"id": "conduit", "label": "Conduit", "gate": 10, "description": "Landing a staff hit returns 6 Energy. Fighting pays for casting."},
+		],
+	},
+	"measured": {
+		"label": "Measured",
+		"description": "Temperament: repeatedly choose between Temperance and Conviction, up to four times.",
+		"stages": [
+			# Intelligence and Energy are split across the two packages on purpose. Cooldown
+			# is `spend / pool x 24`, so Intelligence shrinks the numerator and a bigger pool
+			# grows the denominator -- both shorten cooldowns. Putting them together would
+			# have made one package the cooldown package and the fork would degenerate into
+			# a single decision taken four times.
+			{"id": "measured_1", "label": "Temperament I", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health. Needs little, lasts long."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve. Spends big, pushes through the hit."},
+			]},
+			{"id": "measured_2", "label": "Temperament II", "gate": 4, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+			{"id": "measured_3", "label": "Temperament III", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+			{"id": "measured_4", "label": "Temperament IV", "gate": 2, "description": "Choose one permanent package.", "choices": [
+				{"id": "temperance", "label": "Temperance", "description": "+1 Intelligence and +12 maximum health."},
+				{"id": "conviction", "label": "Conviction", "description": "+14 maximum Energy and +1 Resolve."},
+			]},
+		],
+	},
+	"mage": {
+		"label": "Mage",
+		"description": "The craft of casting itself, not the spells. Everything here serves any spellbook.",
+		"stages": [
+			{"id": "studious", "label": "Studious", "gate": 3, "description": "+1 Intelligence. Every spell costs less, and so cools faster."},
+			{"id": "faster_cast", "label": "Faster Cast", "gate": 5, "description": "Spell wind-up and recovery become approximately 12% faster."},
+			{"id": "learned", "label": "Learned", "gate": 7, "description": "+3 Intelligence. Every spell costs less, and so cools faster."},
+			{"id": "mobile_casting", "label": "Mobile Casting", "gate": 9, "description": "You may walk slowly throughout a spell's full cast, while world time continues.", "cast_move_scale": 0.45},
+			{"id": "circle_mastery", "label": "Deeper Circle", "gate": 10, "description": "Improve the Circle.", "choices": [
+				{"id": "swift_circle", "label": "Swift Circle", "description": "The wind-up halves, so the Circle can be laid down inside a fight rather than before it."},
+				{"id": "wide_circle", "label": "Wide Circle", "description": "The Circle grows past a Long Roll's travel, so any evasion keeps you inside it."},
+				{"id": "deep_circle", "label": "Deep Circle", "description": "+3 more Intelligence while you stand in it."},
+			]},
+		],
+	},
+	"elementalist": {
+		"label": "Elementalist",
+		"description": "Four elements, learned one at a time from the things that used them on you.",
+		"stages": [
+			# Every one of these eight is an enemy ability first. The spellbook is the bestiary,
+			# and each element keeps the decision it poses for the enemy that taught it.
+			{"id": "element_fire", "label": "Fire", "gate": 3, "description": "Near or far.", "choices": [
+				{"id": "fireball", "label": "Fireball", "description": "A heavy ball at range that barely kindles."},
+				{"id": "fire_breath", "label": "Fire Breath", "description": "A close cone that buries them in burn for moderate damage."},
+			]},
+			{"id": "element_ice", "label": "Ice", "gate": 6, "description": "A spike they can answer, or a drip they cannot.", "choices": [
+				{"id": "frost_lance", "label": "Frost Lance", "description": "One dodgeable shot that charges frost hard."},
+				{"id": "cold_front", "label": "Cold Front", "description": "A wide front that repeats, so backing off is not enough."},
+			]},
+			{"id": "element_earth", "label": "Earth", "gate": 8, "description": "Slow or block.", "choices": [
+				{"id": "earth_wall", "label": "Earth Wall", "description": "A wall you can place across an approach. It never blocks enemies -- only you and what is thrown."},
+				{"id": "sunder", "label": "Sunder", "description": "Broken ground that costs time to cross rather than health."},
+			]},
+			{"id": "element_air", "label": "Air", "gate": 10, "description": "Control the fight or survive it.", "choices": [
+				{"id": "gale", "label": "Gale", "description": "A placed point that shoves light bodies away from it and spoils shots crossing it."},
+				{"id": "windstep", "label": "Windstep", "description": "Roughly 400 units, over bodies, untouchable while you are gone."},
+			]},
+		],
+	},
+	"adopted": {
+		"label": "Undiscovered",
+		"description": "A late-run adopted discipline. It is deliberately unavailable in this prototype.",
+		"stages": [],
+	},
+}
+
+const ARCHETYPES := {
+	"boar": {"role": "frontline", "ai_id": "boar", "base_hp": 35, "radius": 42.0, "posture_base": 0.0, "move_speed": 245.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.58, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 6, "speed": 4, "stealth": 0, "awareness": 4, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.25, "charge_ally_collision": "shove_lighter", "charge_ally_mass_limit": 1.0, "charge_ally_posture": 1.5}, "presentation": {"name": "Boar", "color": "9b6541", "speed": "Medium", "reach": "Medium", "trait": "Pounce; parts light ranks but crashes into heavy bodies", "signature_technique": ""}},
+	"ox": {"role": "breaker", "ai_id": "ox", "base_hp": 96, "radius": 52.0, "posture_base": 6.0, "move_speed": 175.0, "survey_cost": 5, "xp": 2, "hit_reaction": 0.46, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 14, "speed": 6, "stealth": 0, "awareness": 4, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 2.4, "charge_ally_collision": "gore", "hit_reaction_policy": "posture_only", "charge_unstoppable_from_commit": true}, "presentation": {"name": "Ox", "color": "6f4a3a", "speed": "Fast", "reach": "Long", "trait": "Shrugs off ordinary blows; committed gore stops only for death or solid terrain", "signature_technique": ""}},
+	"hound": {"role": "flanker", "ai_id": "hound", "base_hp": 30, "radius": 25.0, "posture_base": 0.0, "move_speed": 325.0, "survey_cost": 1, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "natural", "weapon_arts": ["natural_pounce"], "equipped_weapon_art": "natural_pounce", "defense_id": "evasive_recovery", "attributes": {"health": 5, "speed": 8, "stealth": 3, "awareness": 6, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"mass": 0.75, "charge_ally_collision": "vault", "charge_airborne": true}, "presentation": {"name": "Hound", "color": "6f91b8", "speed": "Fast", "reach": "Medium", "trait": "Pounce over allies; agile retreat", "signature_technique": ""}},
+	"bandit": {"role": "flanker", "ai_id": "bandit", "base_hp": 25, "radius": 23.0, "posture_base": 0.5, "move_speed": 285.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": ["twin_evasive_counter"], "equipped_weapon_art": "twin_evasive_counter", "defense_id": "dodge", "attributes": {"health": 4, "speed": 6, "stealth": 3, "awareness": 5, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Bandit", "color": "d2b05c", "speed": "Fast", "reach": "Short", "trait": "Quick knife; evasive", "signature_technique": "quick_cut"}},
+	"knife": {"role": "flanker", "ai_id": "knife", "base_hp": 20, "radius": 22.0, "posture_base": 0.0, "move_speed": 290.0, "survey_cost": 1, "xp": 1, "hit_reaction": 0.64, "weapon_frame": "twin_knives", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 3, "speed": 6, "stealth": 2, "awareness": 4, "resolve": 2, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Knife", "color": "e5be55", "speed": "Fast", "reach": "Short", "trait": "Low stability", "signature_technique": "quick_cut"}},
+	"blade": {"role": "frontline", "ai_id": "blade", "base_hp": 35, "radius": 28.0, "posture_base": 0.0, "move_speed": 230.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.48, "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 5, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Blade", "color": "e46c63", "speed": "Medium", "reach": "Medium", "trait": "Balanced melee", "signature_technique": "diagonal_cut"}},
+	"archer": {"role": "ranged_pressure", "ai_id": "archer", "base_hp": 25, "radius": 28.0, "posture_base": 0.0, "move_speed": 175.0, "survey_cost": 2, "xp": 2, "hit_reaction": 0.56, "weapon_frame": "bow", "weapon_arts": ["bow_drawn_shot"], "equipped_weapon_art": "bow_drawn_shot", "defense_id": "", "attributes": {"health": 4, "speed": 4, "stealth": 2, "awareness": 7, "resolve": 3, "intelligence": 0, "faith": 0}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Archer", "color": "c68be4", "speed": "Medium", "reach": "Long", "trait": "Faster arrows; formation support", "signature_technique": ""}},
+	"shield": {"role": "screen", "ai_id": "shield", "base_hp": 50, "radius": 28.0, "posture_base": 1.0, "move_speed": 145.0, "survey_cost": 3, "xp": 2, "hit_reaction": 0.38, "weapon_frame": "sword", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "block", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 4, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.35, "offhand": "shield"}, "presentation": {"name": "Shieldbearer", "color": "6aa9c9", "speed": "Slow", "reach": "Medium", "trait": "Frontal guard", "signature_technique": ""}},
+	"polearm": {"role": "reach", "ai_id": "polearm", "base_hp": 34, "radius": 28.0, "posture_base": 1.0, "move_speed": 120.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.38, "weapon_frame": "spear", "weapon_arts": ["spear_lunge"], "equipped_weapon_art": "spear_lunge", "defense_id": "", "attributes": {"health": 7, "speed": 2, "stealth": 0, "awareness": 5, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.15}, "presentation": {"name": "Polearm", "color": "d08a48", "speed": "Slow", "reach": "Long", "trait": "Heavy long reach", "signature_technique": "thrust"}},
+	"ice_caster": {"role": "area_denial", "ai_id": "ice_caster", "base_hp": 40, "radius": 28.0, "posture_base": 0.5, "move_speed": 150.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"ice": 2}, "vision_range": 620.0}, "presentation": {"name": "Ice Caster", "color": "70bddd", "speed": "Medium", "reach": "Long", "trait": "Ice hex; expanding frost cone", "signature_technique": ""}},
+	"fire_caster": {"role": "area_denial", "ai_id": "fire_caster", "base_hp": 40, "radius": 28.0, "posture_base": 0.5, "move_speed": 160.0, "survey_cost": 3, "xp": 4, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 4, "stealth": 0, "awareness": 7, "resolve": 3, "intelligence": 8, "faith": 0}, "properties": {"resistances": {"fire": 2}, "vision_range": 620.0}, "presentation": {"name": "Fire Caster", "color": "db7447", "speed": "Medium", "reach": "Long", "trait": "Fire ring; tracking firebolt", "signature_technique": ""}},
+	"brute": {"role": "frontline", "ai_id": "brute", "base_hp": 80, "radius": 46.0, "posture_base": 5.0, "move_speed": 105.0, "survey_cost": 4, "xp": 5, "hit_reaction": 0.24, "weapon_frame": "impact", "weapon_arts": ["impact_ground_smash"], "equipped_weapon_art": "impact_ground_smash", "defense_id": "", "attributes": {"health": 9, "speed": 1, "stealth": 0, "awareness": 3, "resolve": 9, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.65}, "presentation": {"name": "Brute", "color": "9f554d", "speed": "Slow", "reach": "Medium", "trait": "Grounded heavy attacks", "signature_technique": "forward_smash"}},
+	"knight": {"role": "frontline", "ai_id": "knight", "base_hp": 140, "radius": 49.0, "posture_base": 10.0, "move_speed": 68.0, "survey_cost": 5, "xp": 7, "hit_reaction": 0.24, "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep", "zweihander_half_sword"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 1, "stealth": 0, "awareness": 5, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 2, "mass": 1.7}, "presentation": {"name": "Two-Handed Knight", "color": "77838e", "speed": "Very slow", "reach": "Long", "trait": "High health; grounded greatsword", "signature_technique": "heavy_cleave"}},
+	# The Captain is gone. Its identity was "strengthens nearby movement", which was
+	# a x1.14 locomotion buff inside 720 units -- invisible on the enemies it touched,
+	# imperceptible in size, and effectively always on for a whole room. Strip that
+	# and what remained was a fast enemy leading with a 142-reach thrust, which is why
+	# the 0.2.30 tester called it "the spear enemy" in a room with no Polearm in it.
+	#
+	# The Chanter is what that role was supposed to be: it buffs explicitly, visibly,
+	# and one effect at a time, so killing it first is a real decision with a price.
+	"chanter": {"role": "support", "ai_id": "chanter", "base_hp": 40, "radius": 28.0, "posture_base": 0.0, "move_speed": 150.0, "survey_cost": 4, "xp": 6, "hit_reaction": 0.58, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 3, "stealth": 0, "awareness": 7, "resolve": 4, "intelligence": 8, "faith": 6}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Chanter", "color": "c9a3e6", "speed": "Medium", "reach": "None", "trait": "Buffs allies; no attack of its own; hides behind them", "signature_technique": ""}},
+	# Lane denial, not damage. A javelin is easy to sidestep and that is the point --
+	# while it is in the air one direction is unavailable, so it is weak alone and
+	# strong in a room where something else has already spent your options. It throws
+	# where the player is GOING, which punishes the straight-line running that beats
+	# an Archer.
+	"javelineer": {"role": "ranged_pressure", "ai_id": "javelineer", "base_hp": 30, "radius": 28.0, "posture_base": 0.0, "move_speed": 170.0, "survey_cost": 2, "xp": 3, "hit_reaction": 0.54, "weapon_frame": "spear", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 3, "stealth": 0, "awareness": 6, "resolve": 5, "intelligence": 0, "faith": 0}, "properties": {}, "presentation": {"name": "Javelineer", "color": "bfa870", "speed": "Medium", "reach": "Long", "trait": "Slow throw that leads your movement; denies a lane", "signature_technique": ""}},
+	# The third currency. Fire and Ice deny ground by threatening damage; sundered
+	# earth costs you TIME, which in frozen time is the same as giving every other
+	# enemy in the room a free move.
+	# Air decides where things go -- bodies, and the things bodies throw. Its role is
+	# movement_denial like Earth's, but the verbs do not collide: Earth taxes crossing a
+	# place, Air changes which place you are in.
+	"air_caster": {"role": "movement_denial", "ai_id": "air_caster", "base_hp": 32, "radius": 28.0, "posture_base": 0.0, "move_speed": 175.0, "survey_cost": 3, "xp": 2, "hit_reaction": 0.74, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 5, "speed": 5, "stealth": 2, "awareness": 7, "resolve": 4, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0, "mass": 0.9}, "presentation": {"name": "Air Caster", "color": "bcd3e0", "speed": "Fast", "reach": "Long", "trait": "Gale shoves bodies and spoils shots; steps away when cornered", "signature_technique": ""}},
+	"earth_caster": {"role": "movement_denial", "ai_id": "earth_caster", "base_hp": 36, "radius": 28.0, "posture_base": 0.0, "move_speed": 140.0, "survey_cost": 3, "xp": 5, "hit_reaction": 0.56, "weapon_frame": "staff", "weapon_arts": [], "equipped_weapon_art": "", "defense_id": "", "attributes": {"health": 6, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 5, "intelligence": 7, "faith": 0}, "properties": {"vision_range": 620.0}, "presentation": {"name": "Earth Caster", "color": "6f9b6a", "speed": "Slow", "reach": "Long", "trait": "Sundered ground; costs time, not health", "signature_technique": ""}},
+	# The Bandit slips AROUND you and relocates; the Duellist holds its ground and
+	# takes your turn away. Its two attacks put their openings in different places --
+	# the poke is safe on the wind-up and exposed on the recovery, the swing is the
+	# reverse -- so it cannot be solved by repeating one answer.
+	"duellist": {"role": "flanker", "ai_id": "duellist", "base_hp": 45, "radius": 28.0, "posture_base": 1.5, "move_speed": 265.0, "survey_cost": 4, "xp": 6, "hit_reaction": 0.44, "weapon_frame": "sword", "weapon_arts": ["sword_thrust"], "equipped_weapon_art": "sword_thrust", "defense_id": "", "attributes": {"health": 6, "speed": 5, "stealth": 0, "awareness": 7, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.05}, "presentation": {"name": "Duellist", "color": "e0c24e", "speed": "Fast", "reach": "Medium", "trait": "Parries a swing it reads; two attacks, two different openings", "signature_technique": "rapier_thrust"}},
+	"warden": {"role": "boss", "ai_id": "warden", "base_hp": 130, "radius": 52.0, "posture_base": 8.0, "move_speed": 125.0, "survey_cost": 2, "xp": 12, "hit_reaction": 0.24, "weapon_frame": "zweihander", "weapon_arts": ["zweihander_sweep"], "equipped_weapon_art": "zweihander_sweep", "defense_id": "", "attributes": {"health": 10, "speed": 2, "stealth": 0, "awareness": 7, "resolve": 10, "intelligence": 0, "faith": 0}, "properties": {"armor": 1, "mass": 1.6}, "presentation": {"name": "Warden", "color": "d84b65", "speed": "Slow", "reach": "Long", "trait": "Grounded boss", "signature_technique": "heavy_cleave"}},
+	"werewolf": {"role": "boss", "ai_id": "werewolf", "base_hp": 210, "radius": 62.0, "posture_base": 7.0, "move_speed": 285.0, "survey_cost": 2, "xp": 18, "hit_reaction": 0.26, "weapon_frame": "natural", "weapon_arts": ["natural_pounce", "natural_flurry"], "equipped_weapon_art": "natural_pounce", "defense_id": "", "attributes": {"health": 10, "speed": 7, "stealth": 4, "awareness": 8, "resolve": 7, "intelligence": 0, "faith": 0}, "properties": {"mass": 1.45, "hit_reaction_policy":"posture_only"}, "presentation": {"name": "Werewolf", "color": "7f5965", "speed": "Fast", "reach": "Long", "trait": "Committed leap; double rake; earned recovery openings", "signature_technique": "quick_cut"}},
+}
+
+# Melee attack plans. Each entry is one complete committed option: the technique,
+# its authored timing and geometry, and `distance` -- the gap the enemy wants to be
+# at when it commits. An enemy selects one of these *before* approaching and then
+# walks to that distance, rather than firing whichever branch its current gap
+# happens to satisfy.
+#
+# This is what makes the walk-safe fraction `f` a controlled quantity. Attacks
+# previously committed anywhere across a ~70-unit band, because an enemy only
+# re-decides when its move action ends and a Blade covers 110 units in one. The
+# same attack was forgiving, harsh, or unavoidable depending on where that landed.
+#
+# Selection is probabilistic so the next move cannot be read from geometry alone,
+# but weighted by how well each option's distance matches the current gap: an enemy
+# leans long when long is warranted and short when short is warranted. `weight` is
+# a role bias on top of that, and is the intended tuning knob.
+#
+# `advance_distance` is the forward travel the attacker performs during the attack,
+# and `advance_end` the action-local time it stops. Together they are what lets an
+# attack reach a player who is walking away -- without them melee triggers at its
+# own maximum reach, stands still through its startup, and cannot hit a moving
+# target at any plausible speed.
+#
+# Neither is authored directly. Each is derived from `f_rad`: the fraction of this
+# attack's telegraph during which walking still saves you. It is carried in the
+# data so survey telemetry can compare authored intent against what players
+# actually achieve, rather than the intent living only in a design document. Author `f`, recompute,
+# and never hand-edit the distance -- that severs the number from its meaning and
+# returns the system to untraceable feel-tuning. See attack-capture-design.md.
+#
+# For arcs `advance_end` is 0.60 x startup, so the attacker visibly plants before
+# the damaging window and the lunge reads as a committed step rather than a slide.
+# Thrusts and the smash extend their own geometry through the active window, so
+# that plant rule does not apply to them and travel runs to contact.
+const MELEE_ATTACK_PLANS := {
+	# Every caster carries one. Same numbers for all five, deliberately: this is the weapon
+	# the class does not train with, so it should not develop personality per element. One
+	# damage, a wind-up longer than a Blade's, and a recovery long enough that throwing it
+	# is a real decision rather than something to do between spells.
+	#
+	# 168 reach is the point. A caster is not free to stand next to -- you have to commit
+	# through the poke rather than idle at contact range -- but it costs almost nothing to
+	# be hit by, so committing is the right answer nearly every time. It buys the caster a
+	# beat, not a fight.
+	"ice_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
+	],
+	"fire_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
+	],
+	"earth_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
+	],
+	"air_caster": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
+	],
+	"chanter": [
+		{"technique": "staff_poke", "distance": 158.0, "weight": 1.0, "duration": 1.78, "startup": 0.62, "active_end": 0.78, "reach": 168.0, "f_rad": 0.30, "advance_distance": 14.0, "advance_end": 0.40, "damage": 6, "posture": 1.5},
+	],
+	"blade": [
+		{"technique": "diagonal_cut", "distance": 132.0, "weight": 1.0, "duration": 1.50, "startup": 0.52, "active_end": 0.65, "reach": 112.0, "f_rad": 0.50, "advance_distance": 58.0, "advance_end": 0.31, "damage": 14, "posture": 3.0},
+	],
+	"knife": [
+		{"technique": "quick_cut", "distance": 108.0, "weight": 1.0, "duration": 1.15, "startup": 0.32, "active_end": 0.43, "reach": 80.0, "f_rad": 0.45, "advance_distance": 44.0, "advance_end": 0.19, "damage": 10, "posture": 1.5},
+	],
+	"bandit": [
+		{"technique": "quick_cut", "distance": 112.0, "weight": 1.0, "duration": 1.22, "startup": 0.36, "active_end": 0.47, "reach": 82.0, "f_rad": 0.45, "advance_distance": 51.0, "advance_end": 0.22, "damage": 10, "posture": 1.5},
+	],
+	"shield": [
+		# Longer than any other single cut, deliberately. A screen's guard is down for the
+		# whole of its own attack and that attack is its ONLY opening, so cutting its
+		# swing rate from nine a room to three -- which patience did in 0.2.31 -- shrank
+		# the number of openings without growing them. The 0.2.33 tester tagged it unfair
+		# twice for exactly that.
+		#
+		# 2.15s is sized against the player's 0.983s combo lockout: the Shield commits
+		# while you are busy, so the window has to still be open when you get control
+		# back. Anything under about 1.6s closes before you can reach it.
+		{"technique": "diagonal_cut", "distance": 120.0, "weight": 1.0, "duration": 2.15, "startup": 0.74, "active_end": 1.06, "reach": 122.0, "f_rad": 0.60, "advance_distance": 32.0, "advance_end": 0.44, "damage": 14, "posture": 3.0},
+	],
+	"brute": [
+		{"technique": "forward_smash", "distance": 155.0, "weight": 1.0, "duration": 2.55, "startup": 1.02, "active_end": 1.52, "reach": 158.0, "f_rad": 0.65, "advance_distance": 97.0, "advance_end": 1.02, "damage": 24, "posture": 6.0},
+	],
+	"polearm": [
+		{"technique": "thrust", "distance": 205.0, "weight": 1.7, "duration": 1.35, "startup": 0.42, "active_end": 0.62, "reach": 218.0, "f_rad": 0.85, "advance_distance": 60.0, "advance_end": 0.62, "damage": 18, "posture": 4.5},
+		{"technique": "reverse_cut", "distance": 112.0, "weight": 1.0, "duration": 1.62, "startup": 0.54, "active_end": 0.88, "reach": 126.0, "f_rad": 0.55, "advance_distance": 19.0, "advance_end": 0.32, "damage": 12, "posture": 3.0},
+	],
+	# Two attacks whose openings sit in different places, so no single habit answers
+	# both. The poke commits fast and is punished afterwards; the swing announces
+	# itself and is punished before. Guess wrong on which one is coming and the answer
+	# you brought is the one that loses.
+	"duellist": [
+		# A sword poke, not a spear thrust. At 132 reach it was longer than a Polearm's
+		# shaft cut and read as the wrong weapon entirely; the speed was right, the
+		# distance was not. Its own technique id so it draws with a rapier's slim profile
+		# rather than the spear's.
+		{"technique": "rapier_thrust", "distance": 118.0, "weight": 1.0, "duration": 1.46, "startup": 0.26, "active_end": 0.44, "reach": 104.0, "f_rad": 0.30, "advance_distance": 46.0, "advance_end": 0.44, "damage": 16, "posture": 4.5},
+		{"technique": "diagonal_cut", "distance": 104.0, "weight": 1.0, "duration": 1.06, "startup": 0.62, "active_end": 0.84, "reach": 116.0, "f_rad": 0.62, "advance_distance": 20.0, "advance_end": 0.30, "damage": 16, "posture": 4.5},
+	],
+	"knight": [
+		{"technique": "thrust", "distance": 252.0, "weight": 1.0, "duration": 2.54, "startup": 0.94, "active_end": 1.46, "reach": 248.0, "f_rad": 0.45, "advance_distance": 234.0, "advance_end": 1.46, "damage": 22, "posture": 6.0},
+		{"technique": "heavy_cleave", "distance": 185.0, "weight": 1.0, "duration": 2.78, "startup": 1.08, "active_end": 1.66, "reach": 194.0, "f_rad": 0.55, "advance_distance": 87.0, "advance_end": 0.65, "damage": 28, "posture": 6.0},
+	],
+}
+
+static func melee_attack_plan(kind: String) -> Array:
+	return Array(MELEE_ATTACK_PLANS.get(kind, [])).duplicate(true)
+
+static func has_melee_attack_plan(kind: String) -> bool:
+	return MELEE_ATTACK_PLANS.has(kind)
+
+static func weapon_frame(id: String) -> Dictionary:
+	return Dictionary(WEAPON_FRAMES.get(id, WEAPON_FRAMES["unarmed"])).duplicate(true)
+
+static func weapon_art(id: String) -> Dictionary:
+	return Dictionary(WEAPON_ARTS.get(id, {})).duplicate(true)
+
+static func character_track(id: String) -> Dictionary:
+	return Dictionary(CHARACTER_TRACKS.get(id, {})).duplicate(true)
+
+static func character_stage(track_id: String, rank: int) -> Dictionary:
+	var stages: Array = Dictionary(CHARACTER_TRACKS.get(track_id, {})).get("stages", [])
+	if rank < 0 or rank >= stages.size(): return {}
+	var result := Dictionary(stages[rank]).duplicate(true)
+	result["track_id"] = track_id
+	result["rank"] = rank + 1
+	if result.has("choices_ref"):
+		for source_value in stages:
+			var source := Dictionary(source_value)
+			if String(source.get("id", "")) == String(result["choices_ref"]):
+				result["choices"] = Array(source.get("choices", [])).duplicate(true)
+				break
+	return result
+
+static func character_stage_by_id(id: String) -> Dictionary:
+	for track_id in CHARACTER_TRACK_ORDER:
+		var track := Dictionary(CHARACTER_TRACKS[track_id])
+		for rank in range(Array(track.get("stages", [])).size()):
+			var stage := character_stage(String(track_id), rank)
+			if String(stage.get("id", "")) == id: return stage
+	return {}
+
+static func loadout_ids() -> Array[String]:
+	return ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"]
+
+static func track_order_for_loadout(id: String) -> Array[String]:
+	var profile := Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"]))
+	var result: Array[String] = []
+	for value in Array(profile.get("track_order", LOADOUT_PROFILES["warrior"]["track_order"])):
+		result.append(String(value))
+	return result
+
+static func loadout_name(id: String) -> String:
+	return String(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"])).get("name", "Warrior · Vanguard"))
+
+static func loadout_profile(id: String) -> Dictionary:
+	return _profile_with_defaults(Dictionary(LOADOUT_PROFILES.get(id, LOADOUT_PROFILES["warrior"])))
+
+# Role is a property of the kind, not of the encounter slot: a Hound is always a
+# flanker. Recipes compose in terms of roles rather than authoring one per entry,
+# so a recipe and a kind can no longer disagree about what an enemy does.
+static func role(id: String) -> String:
+	if not ARCHETYPES.has(id):
+		push_error("Unknown enemy archetype '%s'." % id)
+		return ""
+	return String(Dictionary(ARCHETYPES[id])["role"])
+
+# Every enemy kind the catalog knows, for the custom room's picker. Sorted so the
+# grid is stable between sessions rather than following dictionary insertion order.
+static func enemy_kinds() -> Array[String]:
+	var kinds: Array[String] = []
+	for id in ARCHETYPES: kinds.append(String(id))
+	kinds.sort()
+	return kinds
+
+static func archetype(id: String) -> Dictionary:
+	if not ARCHETYPES.has(id):
+		push_error("Unknown enemy archetype '%s'." % id)
+		return {}
+	return _profile_with_defaults(Dictionary(ARCHETYPES[id]))
+
+static func has_archetype(id: String) -> bool:
+	return ARCHETYPES.has(id)
+
+static func enemy_fact(id: String, key: String) -> Variant:
+	var profile := archetype(id)
+	if profile.is_empty(): return null
+	if not profile.has(key):
+		push_error("Enemy archetype '%s' is missing required fact '%s'." % [id, key])
+		return null
+	return profile[key]
+
+static func presentation(id: String) -> Dictionary:
+	var value: Variant = enemy_fact(id, "presentation")
+	return Dictionary(value) if value is Dictionary else {}
+
+static func validate_catalog() -> Array[String]:
+	var errors: Array[String] = []
+	var required := ["role", "ai_id", "base_hp", "radius", "posture_base", "move_speed", "survey_cost", "xp", "hit_reaction", "weapon_frame", "weapon_arts", "equipped_weapon_art", "defense_id", "attributes", "properties", "presentation"]
+	var presentation_required := ["name", "color", "speed", "reach", "trait", "signature_technique"]
+	for kind_value in ARCHETYPES:
+		var kind := String(kind_value)
+		var profile := Dictionary(ARCHETYPES[kind])
+		for key in required:
+			if not profile.has(key): errors.append("%s is missing %s" % [kind, key])
+		var attributes := Dictionary(profile.get("attributes", {}))
+		for key in ATTRIBUTE_KEYS:
+			if not attributes.has(key) and not ATTRIBUTE_DEFAULTS.has(key): errors.append("%s attributes are missing %s" % [kind, key])
+		var frame_id := String(profile.get("weapon_frame", ""))
+		if not WEAPON_FRAMES.has(frame_id): errors.append("%s names unknown weapon frame %s" % [kind, frame_id])
+		var presentation_data := Dictionary(profile.get("presentation", {}))
+		for key in presentation_required:
+			if not presentation_data.has(key): errors.append("%s presentation is missing %s" % [kind, key])
+		var signature := String(presentation_data.get("signature_technique", ""))
+		if signature != "" and not AttackGeometryScript.TECHNIQUES.has(signature): errors.append("%s names unknown signature technique %s" % [kind, signature])
+		var properties := Dictionary(PROPERTY_DEFAULTS).duplicate(true)
+		properties.merge(Dictionary(profile.get("properties", {})), true)
+		var ally_collision := String(properties.get("charge_ally_collision", "block"))
+		if ally_collision not in ["block", "vault", "shove_lighter", "gore"]:
+			errors.append("%s names unknown charge ally collision %s" % [kind, ally_collision])
+		if ally_collision == "shove_lighter" and float(properties.get("charge_ally_mass_limit", 0.0)) <= 0.0:
+			errors.append("%s must author a positive charge ally mass limit" % kind)
+		if bool(properties.get("charge_airborne", false)) and ally_collision != "vault":
+			errors.append("%s is airborne without a vault charge profile" % kind)
+		if String(properties.get("hit_reaction_policy", "ordinary")) not in ["ordinary", "posture_only"]:
+			errors.append("%s names unknown hit reaction policy %s" % [kind, String(properties.get("hit_reaction_policy", ""))])
+	for kind_value in MELEE_ATTACK_PLANS:
+		var kind := String(kind_value)
+		if not ARCHETYPES.has(kind): errors.append("melee plan names unknown archetype %s" % kind)
+		for option_value in Array(MELEE_ATTACK_PLANS[kind]):
+			var technique_id := String(Dictionary(option_value).get("technique", ""))
+			if not AttackGeometryScript.TECHNIQUES.has(technique_id): errors.append("%s melee plan names unknown technique %s" % [kind, technique_id])
+	return errors
+
+static func _profile_with_defaults(source: Dictionary) -> Dictionary:
+	var result := source.duplicate(true)
+	var attributes := ATTRIBUTE_DEFAULTS.duplicate(true)
+	attributes.merge(Dictionary(result.get("attributes", {})), true)
+	var properties := PROPERTY_DEFAULTS.duplicate(true)
+	properties.merge(Dictionary(result.get("properties", {})), true)
+	result["attributes"] = attributes
+	result["properties"] = properties
+	if not result.has("weapon_arts"): result["weapon_arts"] = []
+	if not result.has("equipped_weapon_art"): result["equipped_weapon_art"] = ""
+	if not result.has("defense_id"): result["defense_id"] = ""
+	return result

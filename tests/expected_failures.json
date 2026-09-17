@@ -1,0 +1,7 @@
+{
+  "run_state_test": {
+    "match": "test_clean_opening_hit_preserves_a_defensive_choice",
+    "owner": "attack_capture_test.gd",
+    "reason": "The Bandit strafes out of the arc; this is a pursuit question, not a post-hit contract. Every distinct failure in this file must name this test."
+  }
+}

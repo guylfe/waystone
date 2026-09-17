@@ -1,0 +1,330 @@
+extends SceneTree
+
+const RunStateScript = preload("res://scripts/core/run_state.gd")
+const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
+
+func _init() -> void:
+	test_large_seven_part_forest_expedition()
+	test_expedition_macro_structure_contract()
+	test_semantic_world_grammar_batch()
+	test_early_forest_readability_contract()
+	test_streamed_terrain_index_restores_visible_boundaries()
+	test_secret_generation_does_not_shift_shared_rng()
+	test_boss_marker_uses_actual_spawn()
+	test_organic_route_reachability()
+	test_mandatory_paths_keep_generous_clearance()
+	test_layered_campaign_loop()
+	test_shortcuts_are_binding_topology()
+	test_legacy_shortcut_state_is_not_imported()
+	test_layer_discovery_is_independent()
+	print("Friendly Forest grammar, large-world expedition, and layered campaign tests passed.")
+	quit(0)
+
+func test_early_forest_readability_contract() -> void:
+	var layout: Dictionary = FloorGeneratorScript.generate(424242, false)
+	var areas: Array = layout["areas"]
+	for index in range(3):
+		var profile: Dictionary = areas[index]["profile"]
+		assert(Color(profile["main_surface_color"]) != Color(profile["clearing_color"]))
+		assert(Color(profile["side_surface_color"]) != Color(profile["main_surface_color"]))
+		var boundary_count := 0
+		for feature in Array(layout["terrain_features"]):
+			if int(feature.get("part_id", -1)) == index and bool(feature.get("boundary", false)):
+				boundary_count += 1
+		assert(boundary_count >= 8)
+	var brook: Dictionary = Dictionary(Array(areas[1]["landmarks"])[0])
+	assert(String(brook["kind"]) == "brook")
+	assert(float(brook["width"]) >= 140.0)
+	assert(Array(brook["fords"]).size() >= 2)
+	var road: Dictionary = Dictionary(Array(areas[2]["landmarks"])[0])
+	assert(String(road["kind"]) == "old_road")
+	assert(float(road["width"]) >= 200.0)
+
+func test_streamed_terrain_index_restores_visible_boundaries() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("warrior", "expedition", 424242)
+	state.current_area_id = 0
+	state.player_pos = Vector2(state.areas[0]["center"])
+	state._apply_shortcut_world_state()
+	assert(not state.loaded_terrain_features.is_empty())
+	var boundary: Dictionary = {}
+	for feature_value in state.loaded_terrain_features:
+		var feature := Dictionary(feature_value)
+		if int(feature.get("part_id", -1)) == 0 and bool(feature.get("boundary", false)):
+			boundary = feature
+			break
+	assert(not boundary.is_empty())
+	var nearby := state.nearby_terrain_features(Vector2(boundary["pos"]), 8.0)
+	assert(nearby.any(func(value: Dictionary) -> bool: return bool(value.get("boundary", false)) and Vector2(value.get("pos", Vector2.ZERO)).is_equal_approx(Vector2(boundary["pos"]))))
+	assert(int(state.performance_metrics["loaded_regions"]) == state.loaded_region_ids.size())
+
+func test_secret_generation_does_not_shift_shared_rng() -> void:
+	for seed in [11, 424242, 1784339476686]:
+		var ordinary: Dictionary = FloorGeneratorScript._generate_expedition(seed, false)
+		var secret: Dictionary = FloorGeneratorScript._generate_expedition(seed, true)
+		assert(Array(ordinary["secret_passages"]).is_empty())
+		assert(Array(secret["secret_passages"]).size() == 1)
+		for area_index in range(Array(ordinary["areas"]).size()):
+			assert(Vector2(Array(ordinary["areas"])[area_index]["center"]).is_equal_approx(Vector2(Array(secret["areas"])[area_index]["center"])))
+			assert(Array(Dictionary(ordinary["encounters"])[area_index]) == Array(Dictionary(secret["encounters"])[area_index]))
+		for feature_value in Array(ordinary["terrain_features"]):
+			var feature := Dictionary(feature_value)
+			if int(feature.get("part_id", -1)) < 3:
+				continue
+			assert(Array(secret["terrain_features"]).has(feature))
+		for shape_value in Array(ordinary["floor_shapes"]):
+			var shape := Dictionary(shape_value)
+			if int(shape.get("part_id", -1)) < 3:
+				continue
+			assert(Array(secret["floor_shapes"]).has(shape))
+
+func test_large_seven_part_forest_expedition() -> void:
+	for seed in [11, 1784339476686, 739391]:
+		var layout: Dictionary = FloorGeneratorScript.generate(seed, false)
+		var areas: Array = layout["areas"]
+		assert(areas.size() == 7)
+		assert(Array(layout["connections"]).size() == 6)
+		assert(Array(layout["waystones"]).is_empty())
+		assert(Array(layout["shortcuts"]).is_empty())
+		assert(String(layout["geometry_style"]) == "organic")
+		assert(Array(layout["route_recipe"]).size() == 7)
+		assert(Dictionary(layout["locale_catalog"]).has("friendly_forest"))
+		var previous_enemy_count := 0
+		var total_enemies := 0
+		var palette_ids: Dictionary = {}
+		for index in range(7):
+			var area: Dictionary = areas[index]
+			assert(int(area["progression_part"]) == index + 1)
+			assert(Rect2(area["rect"]).size.x > 1500.0)
+			assert(Rect2(area["rect"]).size.y > 1400.0)
+			assert(String(area["locale_id"]) == "friendly_forest")
+			palette_ids[String(Dictionary(area["profile"])["palette"])] = true
+			var count := Array(Dictionary(layout["encounters"])[index]).size()
+			# Part 4 is an all-caster encounter, so its ranged and area-control
+			# pressure deliberately replaces raw population growth.
+			if index == 3: assert(count == 7)
+			else: assert(count >= previous_enemy_count)
+			previous_enemy_count = count
+			total_enemies += count
+		assert(total_enemies >= 70)
+		assert(palette_ids.size() == 7)
+		assert(Array(layout["floor_shapes"]).size() >= 49)
+		for enemy in Array(Dictionary(layout["encounters"])[0]): assert(String(enemy["kind"]) == "boar")
+		for enemy in Array(Dictionary(layout["encounters"])[1]): assert(String(enemy["kind"]) in ["boar", "hound"])
+		for enemy in Array(Dictionary(layout["encounters"])[2]): assert(String(enemy["kind"]) in ["bandit", "hound"])
+
+func test_expedition_macro_structure_contract() -> void:
+	for seed in [11, 717, 424242, 1784339476686]:
+		var layout: Dictionary = FloorGeneratorScript.generate(seed, false)
+		var recipe: Array = layout["route_recipe"]
+		var run_graph: Dictionary = layout["run_graph"]
+		var catalog: Dictionary = layout["locale_catalog"]
+		var validation: Dictionary = layout["validation"]
+		assert(recipe.size() == 7)
+		assert(int(run_graph["start"]) == 0 and int(run_graph["goal"]) == 6)
+		assert(Array(run_graph["nodes"]).size() == 7)
+		assert(Array(run_graph["edges"]).size() == 6)
+		assert(Array(Dictionary(catalog["friendly_forest"])["socket_contract"]) == ["encounter", "reward", "respite", "continuation"])
+		assert(int(validation["local_branch_count"]) >= 7)
+		assert(int(validation["local_reconnection_count"]) >= 7)
+		assert(int(validation["optional_pocket_count"]) >= 7)
+		assert(int(validation["reward_socket_count"]) >= 7)
+		var pacing_phases: Dictionary = {}
+		var reward_socket_ids: Dictionary = {}
+		for area_value in Array(layout["areas"]):
+			var area: Dictionary = area_value
+			var local_graph: Dictionary = area["route_graph"]
+			assert(int(local_graph["branch_count"]) >= 1)
+			assert(int(local_graph["reconnection_count"]) >= 1)
+			assert(int(local_graph["optional_pocket_count"]) >= 1)
+			assert(not Array(area["encounter_sockets"]).is_empty())
+			assert(not Array(area["reward_sockets"]).is_empty())
+			assert(not Array(area["respite_sockets"]).is_empty())
+			assert(not String(area["arrival_text"]).is_empty())
+			pacing_phases[String(Dictionary(area["pacing"])["phase"])] = true
+			for socket_value in Array(area["reward_sockets"]):
+				reward_socket_ids[String(Dictionary(socket_value)["id"])] = true
+			for encounter_value in Array(Dictionary(layout["encounters"])[int(area["id"])]):
+				var encounter: Dictionary = encounter_value
+				if String(encounter.get("role", "")) == "boss": continue
+				assert(encounter.has("formation"))
+				assert(encounter.has("pacing_pressure"))
+		assert(pacing_phases.size() == 7)
+		for pickup_value in Array(layout["pickups"]):
+			var pickup: Dictionary = pickup_value
+			assert(reward_socket_ids.has(String(pickup.get("socket_id", ""))))
+
+func test_semantic_world_grammar_batch() -> void:
+	for seed in range(1, 101):
+		var expedition: Dictionary = FloorGeneratorScript.generate(seed * 104729, false)
+		var validation: Dictionary = expedition["validation"]
+		assert(bool(validation["valid"]), "invalid expedition seed %d: %s" % [seed, validation["errors"]])
+		assert(int(validation["semantic_role_count"]) >= 10)
+		var grammars: Dictionary = {}
+		var landmarks: Dictionary = {}
+		for area_value in Array(expedition["areas"]):
+			var area: Dictionary = area_value
+			var profile: Dictionary = area["profile"]
+			grammars[String(profile["grammar"])] = true
+			landmarks[String(profile["landmark"])] = true
+			assert(Array(area["zones"]).size() >= 3)
+			assert(Array(area["landmarks"]).size() >= 1)
+		assert(grammars.size() == 7 and landmarks.size() == 7)
+		var campaign: Dictionary = FloorGeneratorScript.generate(seed * 65537, true)
+		var campaign_validation: Dictionary = campaign["validation"]
+		assert(bool(campaign_validation["valid"]), "invalid campaign seed %d: %s" % [seed, campaign_validation["errors"]])
+		assert(Array(campaign["waystones"]).size() == 3)
+		assert(Array(campaign["areas"]).size() == 10)
+		assert(Array(campaign["connections"]).size() == 9)
+		assert(Array(campaign["shortcuts"]).size() == 2)
+
+func test_boss_marker_uses_actual_spawn() -> void:
+	for campaign in [false, true]:
+		var layout: Dictionary = FloorGeneratorScript.generate(424242, campaign)
+		var boss_area: Dictionary = {}
+		for area in Array(layout["areas"]):
+			if String(area.get("kind", "")) == "boss": boss_area = area
+		assert(not boss_area.is_empty() and boss_area.has("boss_pos"))
+		var matching_bosses := 0
+		var expected_kind := "warden" if campaign else "werewolf"
+		for template in Array(Dictionary(layout["encounters"])[int(boss_area["id"])]):
+			if String(template["kind"]) == expected_kind:
+				matching_bosses += 1
+				assert(Vector2(template["pos"]).distance_to(Vector2(boss_area["boss_pos"])) < 0.01)
+		assert(matching_bosses == 1)
+
+func test_organic_route_reachability() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "expedition", 717)
+	assert(state.world_size.x > 15000.0)
+	for area_index in range(state.areas.size() - 1):
+		state.current_area_id = area_index
+		state.player_pos = Vector2(state.areas[area_index]["center"])
+		state._apply_shortcut_world_state()
+		var previous_cell := state._nearest_open_cell(state._world_to_nav(state.player_pos))
+		var destination := state._nearest_open_cell(state._world_to_nav(Vector2(state.areas[area_index + 1]["center"])))
+		var path := state.navigation.get_id_path(previous_cell, destination, true)
+		assert(not path.is_empty() and Vector2i(path[path.size() - 1]) == destination)
+	# A bounding-box corner is not automatically floor; the footprint is the
+	# union of clearings and broad paths, not a hidden rectangular room.
+	var first_rect := Rect2(state.areas[0]["rect"])
+	assert(not state._point_on_floor(first_rect.position + Vector2(10, 10)))
+	assert(state._timeline_enemies().size() < state.enemies.size())
+
+func test_mandatory_paths_keep_generous_clearance() -> void:
+	const CLEARANCE := 74.0
+	for seed in range(1, 21):
+		for campaign in [false, true]:
+			var layout: Dictionary = FloorGeneratorScript.generate(seed * 7919, campaign)
+			for connection in Array(layout["connections"]):
+				if bool(connection["shortcut"]): continue
+				var path: Array = connection["path"]
+				var walls: Array = Dictionary(layout["layer_walls"]).get(String(connection["layer"]), [])
+				for segment_index in range(path.size() - 1):
+					var start := Vector2(path[segment_index])
+					var finish := Vector2(path[segment_index + 1])
+					for step in range(maxi(1, int(ceil(start.distance_to(finish) / 24.0))) + 1):
+						var point := start.lerp(finish, float(step) / float(maxi(1, int(ceil(start.distance_to(finish) / 24.0)))))
+						for wall in walls:
+							assert(not _circle_intersects_rect(point, CLEARANCE, Rect2(wall)), "clearance seed=%d campaign=%s connection=%d point=%s wall=%s" % [seed, campaign, int(connection["id"]), point, wall])
+
+func _circle_intersects_rect(center: Vector2, radius: float, rect: Rect2) -> bool:
+	var nearest := Vector2(clampf(center.x, rect.position.x, rect.end.x), clampf(center.y, rect.position.y, rect.end.y))
+	return center.distance_squared_to(nearest) < radius * radius
+
+func test_layered_campaign_loop() -> void:
+	var layout: Dictionary = FloorGeneratorScript.generate(99117, true)
+	assert(Dictionary(layout["layers"]).size() == 2)
+	assert(Array(layout["waystones"]).size() == 3)
+	assert(Array(layout["shortcuts"]).size() == 2)
+	assert(Array(layout["transitions"]).size() == 2)
+	for transition in Array(layout["transitions"]):
+		assert(Vector2(transition["from_pos"]).distance_to(Vector2(transition["to_pos"])) < 0.01)
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "campaign_lab", 99117)
+	var stairs: Dictionary = state.transitions[0]
+	state.player_pos = Vector2(stairs["from_pos"])
+	assert(state.use_transition())
+	assert(state.current_layer == String(stairs["to_layer"]))
+	assert(state.player_pos.distance_to(Vector2(stairs["to_pos"])) < 0.01)
+	var lift: Dictionary = state.transitions[1]
+	state.player_pos = Vector2(lift["from_pos"])
+	assert(state.use_transition())
+	assert(state.current_layer == String(lift["to_layer"]))
+	assert(state.player_pos.distance_to(Vector2(lift["to_pos"])) < 0.01)
+	state.player_pos = Vector2(state.shortcuts[1]["unlock_pos"])
+	assert(state.unlock_shortcut())
+	assert(bool(state.shortcuts[1]["unlocked"]))
+
+func test_shortcuts_are_binding_topology() -> void:
+	for seed in [99117, 1784339476686, 424242]:
+		for shortcut_index in range(2):
+			var state: RunState = RunStateScript.new(false)
+			state.start_run("wayfarer", "campaign_lab", seed)
+			var shortcut: Dictionary = state.shortcuts[shortcut_index]
+			state.current_layer = String(shortcut.get("layer", state.current_layer))
+			state.current_area_id = state._area_id_at_position(Vector2(shortcut["far_pos"]), state.current_layer)
+			state.player_pos = Vector2(shortcut["far_pos"])
+			state._apply_shortcut_world_state()
+			var gate := Rect2(shortcut["gate"])
+			assert(state.walls.has(gate))
+			assert(maxf(gate.size.x, gate.size.y) >= 380.0)
+			assert(minf(gate.size.x, gate.size.y) >= 100.0)
+			var locked_length := _navigation_path_length(state, Vector2(shortcut["far_pos"]), Vector2(shortcut["near_pos"]))
+			state.player_pos = Vector2(shortcut["unlock_pos"])
+			assert(state.unlock_shortcut())
+			assert(not state.walls.has(gate))
+			var unlocked_length := _navigation_path_length(state, Vector2(shortcut["far_pos"]), Vector2(shortcut["near_pos"]))
+			assert(is_finite(unlocked_length))
+			if shortcut_index == 0:
+				# The locked local gate still has the long outward route as an
+				# alternative; opening it must produce a material distance saving.
+				assert(is_finite(locked_length))
+				assert(locked_length > unlocked_length + 1400.0)
+			else:
+				# Forgotten Grove is a distinct surface pocket until its far-side
+				# root gate is deliberately opened.
+				assert(not is_finite(locked_length), "return shortcut remained traversable while locked: locked=%s unlocked=%s gate=%s" % [locked_length, unlocked_length, gate])
+
+func _navigation_path_length(state: RunState, start: Vector2, finish: Vector2) -> float:
+	var start_cell := state._nearest_open_cell(state._world_to_nav(start))
+	var finish_cell := state._nearest_open_cell(state._world_to_nav(finish))
+	var path := state.navigation.get_id_path(start_cell, finish_cell, true)
+	if path.is_empty() or Vector2i(path[path.size() - 1]) != finish_cell: return INF
+	var length := 0.0
+	for index in range(path.size() - 1):
+		length += state.navigation.get_point_position(path[index]).distance_to(state.navigation.get_point_position(path[index + 1]))
+	return length
+
+func test_legacy_shortcut_state_is_not_imported() -> void:
+	var path := "user://legacy-shortcut-migration-test.save"
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "campaign_lab", 99117)
+	state.shortcuts[0]["unlocked"] = true
+	state.shortcut_unlocked = true
+	assert(state.save_run(path))
+	var read_file := FileAccess.open(path, FileAccess.READ)
+	var payload: Dictionary = read_file.get_var(true)
+	read_file.close()
+	payload["save_version"] = 10
+	var write_file := FileAccess.open(path, FileAccess.WRITE)
+	write_file.store_var(payload, true)
+	write_file.close()
+	var migrated: RunState = RunStateScript.new(false)
+	assert(not migrated.load_run(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func test_layer_discovery_is_independent() -> void:
+	var state: RunState = RunStateScript.new(false)
+	state.start_run("wayfarer", "campaign_lab", 8080)
+	var shared_position := Vector2(state.transitions[0]["from_pos"])
+	state.player_pos = shared_position
+	state._update_exploration(true)
+	var surface_count := state.discovered_cells.size()
+	assert(surface_count > 0)
+	assert(state.use_transition())
+	# Identical total coordinates on another layer begin with their own memory.
+	assert(state.discovered_cells.size() < surface_count)
+	state.player_pos = Vector2(state.transitions[0]["to_pos"])
+	assert(state.use_transition())
+	assert(state.discovered_cells.size() == surface_count)
