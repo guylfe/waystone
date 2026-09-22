@@ -1,10 +1,12 @@
 # Waystone combat and character framework
 
-**Status:** Design checkpoint
+**Status:** living design checkpoint. Implemented portions are reconciled to `0.2.95`;
+future classes and deferred systems remain targets rather than current code.
 
 **Recorded:** 2026-07-31
 
-**Updated:** 2026-09-05 with the implemented Intelligence soft caps and revised Mage progression
+**Updated:** 2026-09-22; reviewed against `0.2.95` after the implemented Intelligence,
+Mage, Warrior, and Vanguard revisions
 
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
@@ -366,7 +368,7 @@ Dodge combines quick directional movement with a brief true i-frame window.
 - Physical displacement should be fast enough to escape attack geometry without relying exclusively on i-frames.
 - I-frames permit committed close-range evasions through attacks rather than forcing every Dodge away from contact.
 - A clean evade occurs only when hostile attack geometry actually crosses the actor during the i-frame window.
-- Recovery rules use the established Dodge cooldown. Stamina rules instead pay a Dodge Stamina cost and express the commitment through a brief vulnerable recovery.
+- Recovery rules use the established Dodge cooldown. Energy rules instead pay a Dodge Energy cost and express the commitment through a brief vulnerable recovery.
 - Weapon encumbrance may alter recovery and exceptional travel properties, but does not normally alter i-frame proportion.
 
 Potential authored forms include a shorter, quicker Sidestep and a longer Roll with greater recovery. Both must be improvements over an intentionally modest default Dodge.
@@ -865,15 +867,15 @@ Ceaseless Cuts is the culmination rather than a routine Art refinement. Single K
 
 ### 14.5 Dodge
 
-Rogue · Acrobat begins with the already authored three-purchase Dodge track. Acrobat does not replace or rewrite it. Recovery and Stamina profiles deliberately retain distinct timing economies for A/B testing.
+Rogue · Acrobat begins with the already authored three-purchase Dodge track. Acrobat does not replace or rewrite it. Recovery and Energy profiles deliberately retain distinct timing economies for A/B testing.
 
 | Purchase | Minimum level | Upgrade |
 |---:|---:|---|
-| I | 2 | **Practised Footwork:** improves the baseline Dodge. Under Recovery rules, recovery falls from 0.66 to 0.60 authored seconds and cooldown from 4.0 to 3.6 personal-time seconds. Under Stamina rules, travel increases from 150 to 168 units, i-frames from 0.24 to 0.30 seconds, and vulnerable recovery falls from 0.24 to 0.20 seconds. |
+| I | 2 | **Practised Footwork:** improves the baseline Dodge. Under Recovery rules, recovery falls from 0.66 to 0.60 authored seconds and cooldown from 4.0 to 3.6 personal-time seconds. Under Energy rules, travel increases from 150 to 168 units, i-frames from 0.24 to 0.30 seconds, and vulnerable recovery falls from 0.24 to 0.20 seconds. |
 | II | 5 | **Evasive Form:** permanently choose Sidestep or Long Roll. |
 | III | 9 | **Perfect Form:** clean Sidestep primes Counterstep; clean Long Roll restores 2 seconds of Dodge cooldown. |
 
-Under Recovery rules, Sidestep covers the basic 168-unit distance more quickly with a 2.8-second cooldown, while Long Roll covers approximately 231 units with a 3.6-second cooldown. Under Stamina rules, both cost 18 Stamina: Sidestep retains 168-unit travel and a 0.30-second i-frame window while reducing vulnerable recovery to 0.12 seconds; Long Roll travels 231 units with 0.35 seconds of i-frames and 0.20 seconds of vulnerable recovery. Perfect Form responds only to the corresponding Dodge action; it does not trigger from ordinary movement or Vault.
+Under Recovery rules, Sidestep covers the basic 168-unit distance more quickly with a 2.8-second cooldown, while Long Roll covers approximately 231 units with a 3.6-second cooldown. Under Energy rules, both cost 18 Energy: Sidestep retains 168-unit travel and a 0.30-second i-frame window while reducing vulnerable recovery to 0.12 seconds; Long Roll travels 231 units with 0.35 seconds of i-frames and 0.20 seconds of vulnerable recovery. Perfect Form responds only to the corresponding Dodge action; it does not trigger from ordinary movement or Vault.
 
 ### 14.6 Finesse Temperament
 
@@ -1191,22 +1193,17 @@ Dead to Rights applies its multipliers once to the prepared contact. Fan Shot, T
 
 The character's active controls are Defense, Bow Art, Stealth, Take Aim, and the late Adopted ability. Regular shots use the world field and universal gesture classifier rather than an additional ability button.
 
-## 16. Planned design and implementation order
+## 16. Current implementation boundary and future order
 
-The planned design order after Sharpshooter is:
+The old post-Sharpshooter order was superseded when Mage · Elementalist became the
+architecture stress test and shipped. Warrior · Vanguard, Rogue · Acrobat, Rogue ·
+Sharpshooter, and Mage · Elementalist are now playable; the shared actor/stat, posture,
+track, migration, and dual-platform foundations in the former staged list are implemented.
 
-1. Rogue · Cutthroat;
-2. Warrior · Guardian;
-3. Warrior · Berserker;
-4. full Warrior/Rogue roster audit;
-5. third main class, likely Mage.
+Rogue · Cutthroat, Warrior · Guardian, and Warrior · Berserker remain design concepts,
+not an approved implementation queue. Current work is enemy/boss validation, beginning
+with Warden after the implemented Werewolf slice; see `docs/current-state.md`.
 
-Implementation should follow staged playable updates:
-
-1. health/damage scaling and actor-stat foundation;
-2. revised defensive and posture framework;
-3. five-track architecture and migration;
-4. Knife, Bow, Rogue, Acrobat, and Sharpshooter content;
-5. Android and PC build verification.
-
-The framework should be amended when concrete play exposes a bad assumption. Changes should be explicit rather than silently allowing implementation behavior to become the new design.
+Amend this framework whenever concrete play or implementation changes an owned rule.
+Changes must be explicit and land with the code rather than silently allowing behavior or
+an obsolete roadmap to become the de facto design.

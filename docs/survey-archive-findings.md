@@ -1,5 +1,11 @@
 # What 297 rated rooms say about composition
 
+**Status:** historical evidence set, reviewed 2026-09-22. Its principal G1 response —
+role-aware encounter grammar, guaranteed non-melee presence, and deliberate pure-melee
+experiments — shipped in `0.2.35`. Later exact-roster teaching encounters shipped in
+`0.2.93`. Keep the findings as evidence; do not read their recommendations as unfinished
+current tasks.
+
 Analysis of the full Combat Survey archive, pulled from the Pixel Fold on 2026-08-26.
 It exists because a proposed encounter-grammar design was about to be built on ten
 rooms of retrofitted evidence; this is what happened when the whole archive was checked

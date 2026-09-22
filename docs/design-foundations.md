@@ -2,9 +2,12 @@
 
 **Purpose:** the enduring context for Waystone — what it is, how big it intends to be, what it borrows and refuses from other games, what has been settled, and what is still planned. This is the *why and what* document. `docs/combat-character-framework.md` specifies combat and character rules in detail; `WAYSTONE_MIGRATION_HANDOFF.md` carries operational priorities and procedure; `README.md` carries implemented-version history.
 
-**Provenance and status:** reconstructed from the full design conversation that produced the project, cross-checked against the `0.2.10` source. Where this document and the code disagree, the code is the fact and this document is the intent — investigate the gap rather than silently picking one. Sections marked *(designed, not built)* have no implementation and have not been revisited since they were settled.
+**Provenance and status:** reconstructed from the full design conversation that produced the project and reviewed against `0.2.95` on 2026-09-22. Its historical examples retain the version that produced them. Where this document and the code disagree, the code is the implementation fact and this document is the intent — investigate the gap rather than silently picking one. `docs/current-state.md` owns the current boundary and work order.
 
-**Relationship to `docs/design-brief.md`:** that file predates this one and overlaps it. Its Promise, Achievement philosophy and Non-goals sections remain accurate. Its "One gesture, one turn" pillar describes a superseded input model — the current grammar is tap/hold/drag with committed actions, not one swipe per turn — and its "Current world-foundation slice" and "Current geometry track" sections describe a specific slice rather than enduring intent. Prefer this document where they conflict.
+**Relationship to `docs/design-brief.md`:** that file predates this one and overlaps it.
+Its Promise, Achievement philosophy, Non-goals, and corrected simple-input pillar remain
+accurate; its world/geometry sections are explicitly future slice targets. Prefer this
+document for enduring rationale and `docs/current-state.md` for current implementation.
 
 ---
 
@@ -42,7 +45,7 @@ Android-first, developed in tandem with Windows from early on — specifically s
 
 | Mode | Target | Status |
 |---|---|---|
-| **Expedition** | Seven substantial regions, roughly 25–30 consequential encounters, one boss. Each region is a locale with several internal encounter spaces and side routes, not a single arena — explicitly "CQ2-scale per part." | Built, being rebuilt after the combat gate |
+| **Expedition** | Seven substantial regions, roughly 25–30 consequential encounters, one boss. Each region is a locale with several internal encounter spaces and side routes, not a single arena — explicitly "CQ2-scale per part." | Seven-part scaffold exists; mature journey/encounter rebuild is deferred until the combat and boss gate |
 | **Regional Campaign** | 60–120 minutes. 2–4 Waystones, 1–2 layered regions, several bidirectional shortcuts, one major boss. A proof of concept, not a product. | Proposed, not started |
 | **Short Campaign** | 3–6 hours to first completion. One interconnected procedural world per playthrough. The crucial validation step before any full campaign. | Not started |
 | **Full Campaign** | Dark Souls / Hollow Knight-scale exploration: curated macro-geography with procedural local variation, NPCs, knowledge-based gates, possible multiple endings. | Long-term |
@@ -50,7 +53,7 @@ Android-first, developed in tandem with Windows from early on — specifically s
 
 ### Content ambition
 
-Eight initial weapon frames — Sword, Hand Axe, Zweihander, Spear, Twin Knives, Bow, Impact, Staff — with Gauntlets, Flail, Whip and Scythe deferred. Three characters exist (Warrior · Vanguard, Rogue · Acrobat, Rogue · Sharpshooter) against a much larger designed roster; see §13.
+Eight initial weapon frames — Sword, Hand Axe, Zweihander, Spear, Twin Knives, Bow, Impact, Staff — with Gauntlets, Flail, Whip and Scythe deferred. Four playable profiles exist (Warrior · Vanguard, Rogue · Acrobat, Rogue · Sharpshooter, Mage · Elementalist) against a much larger designed roster; see §13.
 
 ### Hard budgets
 
@@ -344,25 +347,25 @@ This is where §5's non-negotiable accessibility rule does its real work: even t
 
 ---
 
-## 13. Content still designed but unbuilt
+## 13. Implemented roster and future content
 
 ### Class roster
 
-Built: **Warrior · Vanguard** (Sword, Rally, Advance), **Rogue · Acrobat** (Knife, Stealth, Vault), **Rogue · Sharpshooter** (Bow, Stealth, Take Aim).
+Built: **Warrior · Vanguard** (Sword, Rally, Advance), **Rogue · Acrobat** (Knife, Stealth, Vault), **Rogue · Sharpshooter** (Bow, Stealth, Take Aim), and **Mage · Elementalist** (Staff, Circle, Grimoire, and the elemental spellbook).
 
-Designed, in intended build order:
+Designed, but with no currently approved build order:
 
 - **Rogue · Cutthroat** — extended twin-knife sequences, a Laceration-versus-Poison build fork, heavy interaction with Stealth and unaware-attack damage.
 - **Warrior · Guardian** — large one-handed sword and shield, held directional Block, posture-based guard-breaking, high Resolve and hyperarmor.
 - **Warrior · Berserker** — dual axes, Endure-based defense, low-health aggression incentives, and a Blood drop-healing economy scaling with proximity to death.
 
-After a full six-build audit, a **third main class**, with Mage suggested specifically because its Grimoire ability-palette is the hardest stress test of the shared architecture. Further concepts exist at sketch level only: Artificer (Apothecary / Tinkerer), Martial Artist, Phalanx, and the Wanderer draft class.
+The earlier plan placed Mage after a six-build audit. That plan was superseded: Mage · Elementalist shipped first because Grimoire and elemental effects were the stronger architecture test. Further concepts remain at sketch level only: Artificer (Apothecary / Tinkerer), Martial Artist, Phalanx, and the Wanderer draft class.
 
 **Held for a future Mage · Illusionist:** *Anchor* — place a mark, and later return to it instantly. Considered and set aside as the Mage's main-class ability in favour of Circle, but worth keeping. What makes it good is that it is **premeditated** where every other movement tool in the game is reactive: Dodge and Windstep answer something happening now, while Anchor is a decision made before you knew you would need it, and the skill is in choosing the spot. That is an Illusionist's kind of thinking rather than a generic caster's. One caution to resolve before building it: "return to a marked place" sits close to the game's central noun, and a personal waystone must not muddy what a Waystone is.
 
 ### Enemy roles to fill
 
-Only after survey data demonstrates the gap: a coordinator or support enemy that changes target priority, a trapper or terrain-controller, a stealth-using ambusher, a low-threat screening unit, and at least one more forest-native non-human. Deliberately *not* a generic swarm — existing groups already collapse into multi-target cleanup.
+Only after survey data demonstrates the gap. Chanter now fills the coordinator/support role, Earth Caster supplies terrain control, Shield supplies a screen, and the non-human roster includes Hound, Boar, Ox, Werewolf, and Warden. Remaining plausible gaps are an information/stealth ambusher and any role a future journey test can demonstrate; they are not a content queue. Deliberately *not* a generic swarm — existing groups already collapse into multi-target cleanup.
 
 Among current enemies, the Fire Caster is the standing positive reference — distinctive pressure with readable counterplay — and the Ice Caster the standing problem, its cone able to begin and connect inside an already-committed player action.
 
@@ -375,7 +378,7 @@ Campaign reuses these same regional identities arranged in an interconnected Way
 ### Systems still to build
 
 - **Reward and discovery grammar.** Items should often be visible promises in the environment rather than incidental drops: guarded caches, teachers and skill-teaching sites, shops, secrets, rare events.
-- **Pack generation** replacing independent enemy-list generation. A pack definition should carry tactical purpose, roles, aggro relationships, starting awareness, formation, terrain fit, reinforcement and retreat behaviour, reward relationship, entry directions and failure constraints.
+- **Mature pack generation.** Role-aware recipes, formations, exact-roster experiments, and non-melee guarantees exist, but final Expedition packs still need tactical purpose, aggro relationships, terrain fit, reinforcement/retreat behaviour, reward relationships, entry directions, and journey-aware failure constraints.
 - **Information as a resource** — a unifying system across stealth, Awareness, noise, vision, hidden passages and partial map knowledge. Flagged as the strongest candidate to become one of Waystone's defining systems, because it serves Rogue, Sharpshooter, exploration, secrets, traps and Campaign memory simultaneously, and because it is a renewable source of the uncertainty §4.5 says a deterministic game needs.
 - **Exceptional consumables** beyond healing: escape and return, area denial, concealment, enemy displacement, sleep and frenzy, anti-status, terrain manipulation, and a one-use time reversal that prevents an Expedition death.
 - **Campaign systems:** Waystone anchoring, death memory, shortcut validation, finite level cap, the Adopted track, secondary loadout, delayed fast travel unlocked by a fragment rather than available from the start, and a Homeward-Bone-style return consumable that sacrifices unanchored gains.
@@ -383,7 +386,7 @@ Campaign reuses these same regional identities arranged in an interconnected Way
 
 ### Deferred mechanics
 
-Parry (designed, unimplemented). Movesets for every weapon beyond Sword and Knife. Intelligence, Faith and the magic school that depends on them. The full loot and equipment system. Single-player asynchronous "echoes" — bloodstain and ghost-message analogues, possibly derived from survey death data.
+Parry (designed, unimplemented). Player movesets beyond Sword, Knife, Bow, and Staff. Faith and the magic school that depends on it. The full loot and equipment system. Single-player asynchronous "echoes" — bloodstain and ghost-message analogues, possibly derived from survey death data. Intelligence and elemental magic are implemented and no longer belong on this list.
 
 ---
 
@@ -424,8 +427,8 @@ Kept because these were argued out once and should not be re-argued without new 
 - Campaign level cap, Adopted-track catch-up size, secondary-loadout progression.
 - Why the player carries a fragment; deliberately deferred until the campaign's characters and ending exist.
 - The degree of probabilistic enemy action selection that keeps a deterministic system from being solved (§4.5).
-- Final stamina costs, regeneration tuning and exhaustion threshold. `0.2.18` sets a candidate — costs at 0.65 of authored, continuous 28/s regeneration, a 1.2s exhaustion that slows walking to 45%, and Sweeping Cut exempt from the scale at a flat 56. `0.2.17` tried 0.5 and surveyed as far too generous; 0.65 is recalibrated against that survey but not yet surveyed itself. Dodge costs stamina and, while exhausted, costs debt instead; whether the desperate Dodge should also cost health is unanswered.
-- Which melee roles need redesign before any new enemy is added.
+- Whether Recovery or Energy is the better long-term combat economy. Current costs are implemented and survey-tuned; the unresolved question is a matched boss-pressure comparison, not the obsolete `0.2.18` Stamina candidate.
+- Which remaining enemy role, if any, has a demonstrated decision gap after the current boss work.
 - Whether the narrative layer in §12 survives contact with implementation. It has not been revisited since it was designed and nothing depends on it yet.
 
 ---

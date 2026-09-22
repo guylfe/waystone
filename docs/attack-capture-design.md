@@ -2,7 +2,9 @@
 
 **Baseline:** source at `0.2.10`.
 **Companion documents:** `docs/combat-loop-diagnosis.md` (why), `docs/attack-capture-implementation.md` (how, at code level).
-**Status:** proposal. Nothing here is implemented, and none of it should be until reviewed.
+**Status:** historical approved design record. The attack-capture framework and its
+supporting combat milestones shipped after this `0.2.10` proposal and were in the game by
+`0.2.33`. Exact current attack values belong to the catalogs and tests, not this plan.
 
 ---
 

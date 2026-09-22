@@ -1,5 +1,10 @@
 # Waystone — Expedition design principles
 
+**Status:** enduring design target, reviewed 2026-09-22. The combat kernel, survey
+instrument, initial encounter grammar, formations, and exact-roster experiments exist;
+the mature seven-region Expedition described here does not. Its rebuild remains deferred
+until boss and narrow journey validation. See `docs/current-state.md`.
+
 ## Purpose
 
 This is the single reference for the principles behind an effective Waystone Expedition. It consolidates the accepted reasoning currently spread across `design-foundations.md`, `design-brief.md`, `combat-character-framework.md`, and `expedition-encounter-redesign.md`.
@@ -16,7 +21,7 @@ The player should feel that they are:
 
 - discovering a dangerous route rather than advancing through a visible list of rooms;
 - assembling a particular temporary character whose loss would matter;
-- deciding how much health, healing, stamina, consumables, and unbanked opportunity to risk before the run ends;
+- deciding how much health, healing, Energy/recovery capacity, consumables, and unbanked opportunity to risk before the run ends;
 - learning a changing tactical language made from enemies, terrain, formations, rewards, and incomplete information;
 - passing through a journey with pressure, relief, disruption, abundance, scarcity, and climax rather than a smooth rise in numbers.
 
@@ -155,7 +160,7 @@ Threats must be readable; the correct route need not be. Expedition should not d
 
 Expedition has no Waystones. Permadeath ends the run, progression lasts for the run, and healing begins as a fixed supply with generator-controlled resupply that must be found.
 
-Health, healing, stamina, consumables, positioning, and future opportunities should produce cumulative decisions across the route. A resource meter is not meaningful merely because it is frequently spent; it matters only if preserving, spending, or recovering it changes risk.
+Health, healing, Energy/recovery capacity, consumables, positioning, and future opportunities should produce cumulative decisions across the route. A resource meter is not meaningful merely because it is frequently spent; it matters only if preserving, spending, or recovering it changes risk.
 
 Attrition should create difficult choices without reducing the expedition to an inevitable downward spiral. Relief and resupply are part of the waveform, while checkpoints would erase the mode's defining tension.
 

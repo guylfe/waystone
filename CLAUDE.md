@@ -6,18 +6,19 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 ## Read in this order
 
-1. **`docs/design-foundations.md`** — why the design is what it is. Lineage from Cardinal Quest 2, Dark Souls and Hades, what is deliberately *refused* from each, the frozen-time and determinism commitments, and a record of rejected directions. Read before making design decisions, not before making code changes.
-2. **`docs/battle-design-bible.md`** — the consolidated enemy, attack, encounter and boss design standard. Every claim is marked by credence and decision status; use it to distinguish settled rules from working defaults and proposals, and read its explicit disagreements before importing genre conventions.
-3. **`WAYSTONE_MIGRATION_HANDOFF.md`** — operational context: implementation baseline, file map, survey format, build and install procedure. Written originally as a partial brief between conversations, so treat it as operational rather than as a complete design record. It has been reconciled against the documents below, but assume it is thinner than it looks.
-4. **`docs/combat-loop-diagnosis.md`**, **`docs/attack-capture-design.md`**, **`docs/attack-capture-implementation.md`** — the current work. Authoritative on combat-loop matters where they overlap the handoff.
-5. **`docs/combat-character-framework.md`** — detailed combat and character rules.
-6. **`docs/design-brief.md`**, **`docs/expedition-encounter-redesign.md`** — slice promise and the deferred encounter plan.
-7. **`docs/survey-archive-findings.md`** — what 297 rated rooms across 30 runs actually say about composition, and two designs the evidence killed. Read before proposing anything about encounter generation.
-8. **`docs/elemental-casters.md`** — the agreed, unimplemented design for the four elemental casters, the Elementalist subclass, and the shared systems they need. Read before touching any caster, projectile elevation, burn or frost.
+1. **`docs/current-state.md`** — the current implementation boundary, next work, document-status map, and documentation-maintenance contract. Read first after any gap.
+2. **`docs/design-foundations.md`** — why the design is what it is. Lineage from Cardinal Quest 2, Dark Souls and Hades, what is deliberately *refused* from each, the frozen-time and determinism commitments, and a record of rejected directions. Read before making design decisions, not before making code changes.
+3. **`docs/battle-design-bible.md`** — the consolidated enemy, attack, encounter and boss design standard. Every claim is marked by credence and decision status; use it to distinguish settled rules from working defaults and proposals, and read its explicit disagreements before importing genre conventions.
+4. **`WAYSTONE_MIGRATION_HANDOFF.md`** — operational context: implementation baseline, file map, survey format, build and install procedure. Written originally as a partial brief between conversations, so treat it as operational rather than as a complete design record.
+5. **`docs/combat-loop-diagnosis.md`**, **`docs/attack-capture-design.md`**, **`docs/attack-capture-implementation.md`** — historical diagnosis and the design/implementation record for the shipped attack-capture work. Do not treat their `0.2.10` baseline or pre-implementation instructions as current behaviour.
+6. **`docs/combat-character-framework.md`** — detailed combat and character rules.
+7. **`docs/design-brief.md`**, **`docs/expedition-encounter-redesign.md`** — slice promise and the deferred encounter plan.
+8. **`docs/survey-archive-findings.md`** — historical analysis of 297 rated rooms and the shipped G1 response. Read before proposing anything about encounter generation.
+9. **`docs/elemental-casters.md`** — the implemented four-caster and Elementalist design record. Read before touching any caster, projectile elevation, burn, frost, barriers, or elemental spell.
 
-9. **`docs/code-structure-audit.md`** — how the source is organised and why. Read before adding a field, a kind, an ability, a counter, or a rule about who may affect whom. The modules it produced are where authored facts live: `combat_catalog.gd` (kinds), `ability_catalog.gd` (spells and enemy abilities), `state_field_schema.gd` (fields and their audiences), `survey_counter_catalog.gd` (measurements), `save_migrations.gd`, `runtime_schema.gd` and `determinism_snapshot.gd`.
+10. **`docs/code-structure-audit.md`** — how the source is organised and why. Read before adding a field, a kind, an ability, a counter, or a rule about who may affect whom. The modules it produced are where authored facts live: `combat_catalog.gd` (kinds), `ability_catalog.gd` (spells and enemy abilities), `state_field_schema.gd` (fields and their audiences), `survey_counter_catalog.gd` (measurements), `save_migrations.gd`, `runtime_schema.gd` and `determinism_snapshot.gd`.
 
-10. **`docs/warrior-vanguard-redesign.md`** — the implemented `0.2.85` redesign of the Warrior and Vanguard tracks, with the verified diagnosis behind it and a record of the directions that were rejected. Read before touching Rally, Battle Flow, Advance, poise, or either track.
+11. **`docs/warrior-vanguard-redesign.md`** — the implemented Warrior/Vanguard redesign and its later Battle Flow revisions. Read before touching Rally, Battle Flow, Advance, poise, or either track.
 
 `README.md` carries implemented-version history and the current version number. It is long; read it last.
 
@@ -27,7 +28,9 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 ## Current priority
 
-The combat loop, and nothing else. More enemies, classes, biomes, campaign content or encounter density all wait until moving, attacking, defending and surviving pressure are satisfying in a small room.
+Combat and boss validation remain the gate. New classes, biomes, mature Campaign work,
+and broad encounter-density expansion wait until moving, attacking, defending, surviving
+pressure, and reading a sustained boss are satisfying in the shared kernel.
 
 ### What is already built
 
@@ -39,11 +42,10 @@ Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0
 
 ### What is left, in order
 
-1. **Survey the rebuilt Warrior · Vanguard and revised Ox on `0.2.91`.** Use the standard survey profile and play to survive rather than manufacturing feature coverage. Read Rally uptime and cancellations, Energy paid and saved, bonus output, poise holds, Power Through and Unbreakable beside Battle Flow gain, refresh, peak and loss causes, Advance use, defensive reserve, exhaustion context, Ox Gore commitments and launches, enemy control causes, and subjective notes. The questions are whether Rally creates a real stop/continue decision, whether the 15-second Battle Flow window creates a readable reason to maintain contact without making retreat or Dodge irrational, and whether the Ox now completes enough committed Gores to function as a breaker without becoming immune to deliberate posture play.
-2. **Tune only what that survey isolates.** Rally drain belongs to Rally, Battle Flow decay and per-pip output belong to Vanguard, Resolve conversion belongs to universal action poise, Advance's targeting/impact belongs to Advance, and the Ox's flinch and commitment rules belong to its catalogued control policy. Do not compensate through regeneration, universal movement, enemy attack capture, weapon geometry, or global physical price scaling without new evidence.
-3. **Werewolf and Warden as real bosses.** Both are generated and have live but provisional, unsurveyed AI; neither appears in a Combat Survey recipe. The work is to evaluate and replace provisional behavior, not to invent behavior for empty kinds. **This step must specify its own evaluation before any replacement is built.** The Combat Survey is a room-coverage instrument and a boss is not a room; deciding how a boss gets judged is part of the work, not a follow-up.
-4. **Survey the boss instrument.** Its first run is a falsification test of the instrument as much as of the bosses.
-5. **The Recovery-versus-Energy comparison.** The last open question about the kernel, and a matched-seed *pair* of surveys rather than one. It sits last deliberately: a boss is the situation that separates the two resource models most sharply — sustained single-target pressure rather than triage across several enemies.
+1. **Warden solo redesign.** Boss Lab, support/encounter introductions, Knife differentiation, and the Werewolf solo redesign shipped in `0.2.92`–`0.2.95`. Implement the Warden's three-move spatial vocabulary, phase sequence, and explicit posture policy as Update 5 of `docs/enemy-encounter-boss-revised-design.md`.
+2. **Survey the boss instrument and both bosses.** Treat the first play as a falsification test of the lab and its reporting, not merely of balance. Tune only the owner isolated by evidence.
+3. **Comparison and narrow journey integration.** Compare the Werewolf solo remix with its separately enabled pack condition, then embed only validated definitions into a small Expedition/Campaign slice with explicit arrival resources.
+4. **The Recovery-versus-Energy comparison.** Run a matched-seed pair after the boss pressure test is credible; do not reopen the resource model from unrelated room results.
 
 ### Standing design decisions
 
@@ -52,7 +54,7 @@ Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0
 
 ### On the milestone letters, which have stopped tracking the work
 
-A through G were built to answer the combat loop and nothing else, and **G1 was the last of them.** G2 was written as "the smallest number of new enemies the surveys have shown to be missing", and **E4 already spent most of it** — the Javelineer, Earth Caster, Chanter and Duellist were G2 content pulled forward on a demonstrated ranged-pressure gap. What remained of G2 is the two bosses, now step 3 above.
+A through G were built to answer the combat loop and nothing else, and **G1 was the last of them.** G2 was written as "the smallest number of new enemies the surveys have shown to be missing", and **E4 already spent most of it** — the Javelineer, Earth Caster, Chanter and Duellist were G2 content pulled forward on a demonstrated ranged-pressure gap. Boss work is now tracked by the six-update plan rather than the obsolete milestone letters.
 
 The caster programme was therefore **not** G2, and labelling it so would have been convenient rather than true: it was one new enemy kind, two rewrites, eight abilities, three shared systems and a player subclass. Calling that "the smallest number of new enemies" would have quietly blurred the gate the *No content-first escape* trap exists to hold. It is recorded as its own programme, with the gate crossed as a decision: the `0.2.33` measurement demonstrated the gap, and Fire and Ice were repairs to existing content rather than additions.
 
@@ -65,11 +67,12 @@ The slicing lives in `WAYSTONE_MIGRATION_HANDOFF.md`; the caster design lives in
 Unless the approved task explicitly narrows the release boundary, finishing a release includes:
 
 1. run the relevant tests in `tests/` covering the changed system;
-2. keep version metadata in sync across `README.md` and `export_presets.cfg`, including Android `versionCode`;
-3. build **both** platforms — `build-all.ps1`, not a single target, so Windows and Android never drift;
-4. commit every approved numbered version and push that release commit to GitHub; approval of the
+2. update the owning design/operational documentation in the same change; a task is not complete while the docs describe the previous behaviour, status, or priority;
+3. keep version metadata in sync across `README.md`, `docs/current-state.md`, `WAYSTONE_MIGRATION_HANDOFF.md`, and `export_presets.cfg`, including Android `versionCode`;
+4. build **both** platforms — `build-all.ps1`, not a single target, so Windows and Android never drift;
+5. commit every approved numbered version and push that release commit to GitHub; approval of the
    numbered version is also authorization for its normal release push;
-5. install every approved numbered version to the Pixel Fold, and verify the installed package
+6. install every approved numbered version to the Pixel Fold, and verify the installed package
    version on-device rather than trusting a successful export.
 
 If the Fold is unavailable, still build, commit and push, but report the release as awaiting device
@@ -186,6 +189,6 @@ Use the narrowest test that can fail for the changed contract, then widen verifi
 6. Pixel Fold checks in both orientations when controls, safe areas, rendering or Android behavior changes;
 7. a real Combat Survey or playthrough when the claim is about feel, readability, tactics or balance.
 
-Headless tests establish simulation behaviour, not visual truth. A green 19-file suite does **not** justify saying “nothing broke”; state exactly which layers were verified and which were not. Validate contact, recovery animation, safe areas and readability in a real Windows renderer and on the Pixel Fold, which needs both orientations and its reported safe display area.
+Headless tests establish simulation behaviour, not visual truth. A green full suite does **not** justify saying “nothing broke”; state exactly which layers were verified and which were not. Validate contact, recovery animation, safe areas and readability in a real Windows renderer and on the Pixel Fold, which needs both orientations and its reported safe display area.
 
 Use the next survey as a falsification test for a change, not as a demonstration that it must have worked.

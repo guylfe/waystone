@@ -2,7 +2,11 @@
 
 **Author:** Codex — independent design proposal. **Date:** 2026-09-14. **Inspected baseline:** 0.2.91, commit `af40685`.
 
-**Status: design proposal for review, not approved implementation.** The user requested the design work. This document does not authorize a release, replace established combat rules, or claim that its tuning has been tested. Existing uncommitted documentation was treated as context and left unchanged.
+**Status:** broad design source and review record. Its narrower implementation revision was
+approved and partly shipped: Boss Lab (`0.2.92`), support relationships and four lean
+encounters (`0.2.93`), Knife differentiation (`0.2.94`), and Werewolf solo (`0.2.95`).
+Warden remains proposed/next; pack comparison and journey integration wait for evidence.
+Unshipped alternatives and exact values in this broad package remain proposals.
 
 This package covers regular-enemy differentiation, encounter experiments, Werewolf and Warden redesigns, and the Boss Lab needed to evaluate them. It also specifies how successful encounters could later enter Campaign and Expedition. It does not redesign player classes, elementalist spells, the complete expedition generator, or the ultimate campaign boss.
 

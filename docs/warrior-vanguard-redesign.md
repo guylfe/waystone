@@ -8,7 +8,7 @@
 
 **How to read this.** The diagnosis comes first, because the case for changing anything rests on it and several of the findings are surprising. The two tracks follow. The rejected ideas are kept at the end with the reasons they were rejected — that section exists so the same proposals do not come back around, and several of them are ideas a reasonable person would suggest.
 
-**Implementation resolution (`0.2.85`).** Rally drains `8` Energy per second, or `6` with Enduring Rally; Battle Flow decays after `3.5` seconds; natural action poise is `floor(Resolve / 2)` with no separate character, weapon, or action base; the L7/L9 Vanguard nodes are **Steady Momentum** and **Full Momentum**. Battle Flow pips, decay, and action-poise capacity are visible. Survey format `30` records the requested attribution. Claude's principal breakpoint objection was resolved by carrying the already-authored melee posture values through action construction and by authoring posture on hostile projectiles and damaging hazards, rather than reverting to damage-derived values at the shared hit boundary. The Mage comment identified in O4 was corrected without changing Mage gameplay.
+**Launch implementation resolution (`0.2.85`).** Rally drains `8` Energy per second, or `6` with Enduring Rally; Battle Flow initially decayed after `3.5` seconds; natural action poise is `floor(Resolve / 2)` with no separate character, weapon, or action base; the L7/L9 Vanguard nodes are **Steady Momentum** and **Full Momentum**. Battle Flow pips, decay, and action-poise capacity are visible. Survey format `30` records the requested attribution. Claude's principal breakpoint objection was resolved by carrying the already-authored melee posture values through action construction and by authoring posture on hostile projectiles and damaging hazards, rather than reverting to damage-derived values at the shared hit boundary. The Mage comment identified in O4 was corrected without changing Mage gameplay.
 
 **Playtest follow-up (`0.2.87` and `0.2.91`).** `0.2.87` changed a pip from one connecting
 phase to one completed weapon sequence and therefore raised decay from `3.5` to `10`
@@ -283,7 +283,11 @@ Kept because several are reasonable ideas that will otherwise be re-proposed.
 
 ## 6. First-survey values, resolved for implementation
 
-1. **Battle Flow decay:** `3.5` seconds, refreshed by a weapon contact or Advance.
+The following were the approved `0.2.85` launch values, retained for history. Battle Flow
+was later changed to sequence completion and its decay window is now `15` seconds; use the
+playtest-follow-up block at the top and current source for live behaviour.
+
+1. **Battle Flow decay at launch:** `3.5` seconds, refreshed by a weapon contact or Advance.
 2. **Resolve-to-poise conversion:** `floor(resolve / 2)`, with Resolve as the sole natural source.
 3. **Poise visibility:** capacity and remaining poise are drawn during every committed physical action.
 4. **Vanguard names:** **Steady Momentum** at L7 and **Full Momentum** at L9.
@@ -297,7 +301,10 @@ This touches Battle Flow (new, Vanguard), Rally (Warrior), Advance (baseline), n
 
 **It is its own version, and it must not ship with unrelated gameplay changes**, so the survey that follows can attribute what it finds. That is rule 8 of the ownership contract and the lesson of `0.2.82`, which bundled seven gameplay changes and left the next survey unable to say which one moved the numbers.
 
-The current priority in `CLAUDE.md` is the `0.2.85` Warrior · Vanguard survey. The Elementalist survey and follow-up are complete; the Vanguard survey remains the gate before moving on to bosses.
+This isolated release and its survey/follow-up gate are complete. Subsequent surveys drove
+the sequence-based pip rule, the `15`-second window, larger HUD feedback, and additional
+attribution through `0.2.91`. Further changes require new evidence and must remain local to
+the owning Rally, Battle Flow, Advance, Resolve/poise, or Ox rule.
 
 ---
 

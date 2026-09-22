@@ -14,9 +14,10 @@ An element earns its identity by taxing a **different currency**, not by tinting
 same effect. In frozen time the currencies that exist are space, time, commitment and
 position — health is the shallowest of them.
 
-The failure this replaces is measurable in the current source. Fire and Ice today have
-one close AoE and one ranged AoE each: four abilities, two verbs, *hurt near me* and
-*hurt over there*. The element is paint.
+The historical failure this replaced was measurable before the elemental programme:
+Fire and Ice had one close AoE and one ranged AoE each — four abilities, two verbs,
+*hurt near me* and *hurt over there*. That pre-`0.2.62` baseline is design evidence, not
+the current spellbook.
 
 | element | commonality — what it always does | the decision it poses |
 |---|---|---|
@@ -68,18 +69,12 @@ Everything below depends on these, and they are cheap to get wrong.
 - **Frost** — buildup that slows the **whole action** (wind-up, active window and
   recovery) *and* amplifies incoming damage. The amplified hit **consumes the frost**,
   which is the release valve that stops a death spiral.
-  - Implement the slow through `_player_personal_tempo()`. One number, already plumbed,
-    and the three phases cannot drift apart.
-  - **Owed, and scheduled for the Elementalist update: carry the proportional slow across
-    to enemies.** `0.2.54` made the player's frost slow proportional to the meter
+  - The slow is implemented through the shared personal-tempo boundary so wind-up,
+    active window, and recovery cannot drift apart.
+  - **Implemented symmetry:** `0.2.54` made the player's frost slow proportional to the meter
     (`1.0 - FROST_MAX_SLOW * player_frost_fraction()`) precisely so a draining bar would be
-    legible. `_enemy_personal_tempo()` still applies the *old binary* `0.85 while any frost
-    stands`, so the two sides of a system whose whole premise is symmetry now compute the
-    same condition by different rules. Enemies can be frosted -- there is a frost
-    vulnerability branch for them already -- so this is live, not hypothetical. It ships
-    with the Elementalist because that is the first build in which the player is throwing
-    frost at enemies rather than only receiving it, which is when the asymmetry starts to
-    matter in play as well as in principle.
+    legible. The Elementalist implementation carried the same proportional calculation to
+    enemy personal tempo, so both sides now express one condition through one curve.
   - Thresholds need tuning so frost actually accumulates within a fight.
 - **Both need visible meters.** Frost especially: an invisible tempo modifier is the
   Captain's `×1.14` aura repeated, which was deleted in `0.2.33` for being imperceptible.
@@ -182,7 +177,7 @@ around your own frost.
 
 ---
 
-## 6. Air — *new enemy kind; nothing exists*
+## 6. Air — implemented caster and spell pair
 
 Commonality: air decides where things go — bodies, and the things bodies throw. Decision:
 **control the fight or survive it**.

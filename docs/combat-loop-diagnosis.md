@@ -1,7 +1,11 @@
 # Waystone — combat loop diagnosis
 
 **Analysed against:** source at `0.2.10`, `run_state.gd`, `combat_catalog.gd`, `attack_geometry.gd`, and `WAYSTONE_MIGRATION_HANDOFF.md` (2026-08-14).
-**Status of this document:** analysis and proposals only. Nothing here has been implemented.
+**Status of this document:** historical diagnosis. Its `0.2.10` measurements explain why
+the later combat programme existed; they do not describe `0.2.95`. Combo input, post-hit
+protection, attack capture, Wait, weapon/resource tuning, enemy differentiation, and their
+telemetry subsequently shipped. Preserve this file as evidence, and use current source,
+`docs/current-state.md`, and the owning design record for present behaviour.
 
 ---
 

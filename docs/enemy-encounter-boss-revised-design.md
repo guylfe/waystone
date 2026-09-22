@@ -3,7 +3,9 @@
 **Author:** Sol 5.6 independent revision
 **Date:** 2026-09-14
 **Inspected baseline:** 0.2.91, commit `af40685`
-**Status:** Design proposal. This is not implementation approval and does not assign release numbers.
+**Status:** approved staged plan, partly implemented. Updates 1–4 shipped as `0.2.92`–
+`0.2.95`; Update 5 (Warden solo) is next; Update 6 waits for play evidence. Unshipped
+values remain starting proposals, not validated rules.
 
 ## Purpose
 
@@ -260,6 +262,15 @@ Start in an open arena. Test peripheral pillars only as a second condition after
 ## Implementation segments
 
 The design can be approved as a whole while implementation remains divided into six attributable updates.
+
+| Segment | Current status |
+|---|---|
+| Update 1 — Testing foundation | Shipped in `0.2.92` |
+| Update 2 — Support relationships and introductions | Shipped in `0.2.93` |
+| Update 3 — Knife differentiation | Shipped in `0.2.94` |
+| Update 4 — Werewolf solo | Shipped in `0.2.95`; pack disabled |
+| Update 5 — Warden solo | Next implementation target |
+| Update 6 — Comparison and journey integration | Deferred until play evidence |
 
 ### Update 1 — Testing foundation
 

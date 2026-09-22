@@ -1,12 +1,18 @@
 # Waystone — vertical-slice design brief
 
+**Status:** high-level promise and world target, reviewed 2026-09-22 against `0.2.95`.
+The combat/survey slice is implemented; the Campaign and mature Expedition geometry
+below remain design targets. `docs/current-state.md` owns the current work order.
+
 ## Promise
 
 An Android-first, PC-compatible tactical fantasy roguelike that is immediately understandable, rewards mastery, and creates surprising builds from a small reusable ruleset. The initial experience is “a compact run, but more”; the longer-term campaign uses the same controls and combat inside an interconnected procedural world. Simulation and content remain shared across platforms, while touch and desktop input prompts adapt at presentation time.
 
 ## Design pillars
 
-1. **One gesture, one turn.** Swipes move or attack; taps select adjacent actions and abilities. The default interaction remains elegant enough for one-handed play.
+1. **One simple input, one legible commitment.** The current grammar is tap/hold/drag
+   across movement, attacks, defense, abilities, and items. It must remain elegant enough
+   for one-handed play without pretending every action is one swipe or one discrete turn.
 2. **Depth through reuse.** Classes share verbs, statuses, equipment properties, enemy rules, and resources. Their identity comes from combining and transforming those pieces.
 3. **Power grows mainly within a run.** External progression unlocks classes, options, challenges, cosmetics, and world possibilities—not an obligatory stat grind.
 4. **The world folds back on itself.** Shortcuts create relief, recognition, and “I know where I am” moments. The campaign repeatedly reconnects dangerous outward routes to safe anchors.
@@ -19,7 +25,7 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 - **Campaign:** long procedural interconnected world; checkpoint recovery by default, optional permadeath.
 - **Custom:** lower-priority rule modifiers and seed controls.
 
-## Current world-foundation slice
+## Designed world-foundation slice
 
 - Expedition remains a forward-directed, permadeath run without Waystones or campaign return loops.
 - Campaign begins in a large Friendly Forest containing several Waystones and naturally reconnecting routes.
@@ -30,7 +36,7 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 - Area presentation is data-driven, beginning with light-green forest ground and a darker ruin-depths palette.
 - Swipe and tap input, keyboard fallback, and responsive portrait/landscape layout remain shared by every mode.
 
-## Current geometry track
+## Designed geometry track
 
 - Expedition is a seven-slot route recipe. Every slot carries a global difficulty position while its locale profile controls organic geography, landmarks, enemy roles, and presentation.
 - A single-biome expedition uses all seven progression profiles of that biome; a mixed expedition may use different locale profiles at each slot while preserving the same global escalation.

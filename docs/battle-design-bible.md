@@ -5,11 +5,12 @@ and bosses in Waystone.
 
 **Recorded:** 2026-09-12
 
-**Current code baseline:** `0.2.91`
+**Current code baseline:** reviewed against `0.2.95` on 2026-09-22
 
 **Status:** mixed. This document deliberately contains settled rules, strong defaults,
 and unproven proposals. Every prescriptive claim carries both a **credence** and a
 **decision status** so that an attractive hypothesis cannot quietly become doctrine.
+For the current implementation boundary and work order, read `docs/current-state.md`.
 
 This bible consolidates the relevant parts of:
 
@@ -423,7 +424,7 @@ design named centerpiece enemies individually.
 
 ### B31 — A boss is an extended learning problem, not a large regular enemy
 
-**Credence: 93% — Strong. Status: Working direction; bosses provisional.**
+**Credence: 93% — Strong. Status: Working direction; Werewolf implemented, Warden provisional.**
 
 A boss should reuse a small set of frequent anchor actions so the player can learn
 relationships during the fight. Complexity should come from state, position,
@@ -455,7 +456,11 @@ phase, but it is not a production target.
 
 ### B34 — The first boss implementation should be a vertical slice with its own instrument
 
-**Credence: 86% — Strong. Status: Proposal in the current roadmap.**
+**Credence: 86% — Strong. Status: Implemented instrument; validation in progress.**
+
+Boss Lab and the Werewolf solo vertical slice shipped in `0.2.92`–`0.2.95`.
+The instrument and its first boss still require play validation; Warden is the next
+proposed boss slice.
 
 The ordinary Combat Survey grades rooms; it cannot automatically validate a
 multi-phase learning arc. A Boss Lab should record at least:
@@ -715,7 +720,7 @@ being treated more confidently than the evidence warrants.
 | B32 | Boss vulnerability is state-driven | 90% | Proposal |
 | B33 | Phases remix learned grammar | 89% | Working default |
 | B33a | 60–75% retention percentage | 48% | Exploratory only |
-| B34 | Boss vertical slice needs Boss Lab | 86% | Proposal |
+| B34 | Boss vertical slice needs Boss Lab | 86% | Implemented instrument; validation in progress |
 | B35 | Difficulty through techniques/relationships | 97% | Settled |
 | B36 | Encounters have varied journey functions | 96% | Settled |
 | B37 | Familiar enemies remain legitimate | 94% | Settled correction |
@@ -727,7 +732,12 @@ being treated more confidently than the evidence warrants.
 
 ---
 
-## 12. Open questions for the online reviewer
+## 12. Historical review questions and remaining questions
+
+These questions drove the later review. Question 6 now has a concrete answer in
+`docs/enemy-encounter-boss-revised-design.md` and the Werewolf half is implemented;
+Question 7 remains a live playtest question for Boss Lab. The others remain useful only
+where their cited principle is still open.
 
 1. Which credence ratings seem too high or too low, and what Waystone-specific
    evidence—not genre convention—would change them?
@@ -758,7 +768,7 @@ reasoning and evidence behind each group can be inspected.
 | B11–B20 | `docs/design-foundations.md` §§4.3–4.6; supplied Enemy Combat Design Specification; current enemy behavior and control policies |
 | B21–B25 | `docs/survey-archive-findings.md`; `docs/expedition-encounter-redesign.md`; `0.2.89`–`0.2.91` survey observations and collision work |
 | B26–B29 | `docs/elemental-casters.md`; survey findings on non-melee pressure; canonical projectile/effect rules |
-| B30–B34 | supplied Enemy Combat Design Specification; current provisional Werewolf/Warden code; Boss Lab proposal |
+| B30–B34 | supplied Enemy Combat Design Specification; implemented Boss Lab and Werewolf redesign; provisional Warden design |
 | B35–B38 | `docs/design-foundations.md`; `docs/journey-design-principles.md`; `docs/expedition-encounter-redesign.md` |
 | B39–B42 | `CLAUDE.md` verification rules; `docs/survey-archive-findings.md`; combat survey and telemetry contracts |
 | D01–D12 | Comparison of the supplied specification against the sources above and the `0.2.91` implementation baseline |

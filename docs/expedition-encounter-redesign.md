@@ -2,9 +2,13 @@
 
 ## Status and timing
 
-This is a deferred redesign brief, not an instruction to immediately replace the current Expedition generator.
+This is a deferred redesign brief, not an instruction to immediately replace the current Expedition generator. Reviewed 2026-09-22 against `0.2.95`.
 
-The Combat Survey / Endless review process should happen first. Its room-by-room ratings, tags, notes, seeds, room numbers, enemy compositions, geometry, and outcomes should be analyzed before final encounter archetypes and weights are authored. The generator should amplify encounter structures that playtesting demonstrates are enjoyable, tense, legible, and varied; it should not efficiently mass-produce unvalidated encounter ideas.
+The first evidence gate is complete: `docs/survey-archive-findings.md` analysed 297 rooms,
+G1 shipped role-aware recipes and non-melee guarantees in `0.2.35`, and `0.2.93`
+added four lean exact-roster teaching encounters. These are foundations, not the final
+Expedition rebuild. Boss validation and narrow journey integration now come before final
+pack tables, progression weights, or content quotas.
 
 Work that can happen before the survey is complete is limited to data capture, technical scaffolding, and documenting candidate roles. Do not prematurely lock final pack tables, progression weights, or content quotas.
 
@@ -138,14 +142,14 @@ In short: Expedition uses the grammar to compose a paced run; Campaign uses it t
 
 ## Recommended implementation order
 
-1. Accumulate and analyze a meaningful first tranche of Endless room reviews.
-2. Extract successful encounter archetypes, geometry relationships, and failure constraints.
-3. Decide whether the Forest needs a small number of role-filling enemies and test those enemies in the survey mode.
-4. Implement the data-driven encounter-archetype and composition system.
-5. Rebuild Friendly Forest around independently rolled local encounters, discoveries, and a non-monotonic pacing plan.
-6. Re-test complete Expeditions and tune repetition limits, weights, density, and route length.
-7. Reuse the validated encounter kernel in Campaign with Campaign-specific topology, persistence, and repopulation rules.
-8. Build later biomes on the validated grammar rather than duplicating the current flat-roster approach.
+1. **Complete:** analyse the survey archive and extract initial archetypes and failure constraints.
+2. **Complete foundation:** implement role-aware recipes, composition constraints, formations, and exact-roster experiments.
+3. Validate the Boss Lab, Werewolf, Warden, and the lean teaching encounters in play.
+4. Compare only the variants exposed by that evidence, including arrival-resource context.
+5. Extend the data-driven encounter kernel where the current recipe system lacks journey needs.
+6. Rebuild Friendly Forest around independently rolled local encounters, discoveries, and a non-monotonic pacing plan.
+7. Re-test complete Expeditions and tune repetition limits, weights, density, and route length.
+8. Reuse the validated encounter kernel in Campaign with Campaign-specific topology, persistence, and repopulation rules; build later biomes from the same grammar.
 
 ## Success criteria
 

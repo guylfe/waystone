@@ -1,6 +1,10 @@
 # Code structure audit
 
-**Status:** Implemented in `0.2.75`. The two live defects remain recorded as the `0.2.74` prelude; all accepted structural work below is now in source and covered by focused contracts.
+**Status:** first accepted restructuring programme implemented beginning in `0.2.75`,
+with the measurement/presentation follow-through shipped through `0.2.81`. Reviewed
+against `0.2.95` on 2026-09-22. Later independent/third-audit architecture proposals in
+this file remain proposals unless an implementation record explicitly marks them shipped;
+do not read the whole discussion as one approved backlog.
 
 **Recorded:** 2026-08-31 after `0.2.73`. Second audit and decisions added 2026-09-01.
 
@@ -16,12 +20,11 @@
 
 - **Do not write code until the change is approved.** Present a plan and wait. This is a project rule and it exists because it was violated before at real cost.
 - **Gameplay must not change.** Every item here is about how rules are expressed, never what they are. If a change makes something play differently, it is out of scope and needs raising as a design question instead.
-- **Two test failures are documented and expected**, and must not be "fixed" by weakening them:
+- **One test failure is currently documented and expected**, and must not be "fixed" by weakening it:
   - `run_state_test.gd` — `test_clean_opening_hit_preserves_a_defensive_choice`. The bandit strafes out of the arc; a pursuit question, not a post-hit one.
-  - `capture_telemetry_test.gd` — `a late sidestep at mid range must fail`. The Boar misses by 9.6 of a 72-unit contact width; an open tuning question.
-  - These live in `tests/expected_failures.json`. A green `run-tests.ps1` run reports both as `EXPECTED FAIL`; an extra failure in either file is a regression, and an unexpected pass is surfaced as `XPASS` for contract review.
+  - This lives in `tests/expected_failures.json`. A green `run-tests.ps1` run reports it as `EXPECTED FAIL`; an extra failure is a regression, and an unexpected pass is surfaced as `XPASS` for contract review.
   - The ledger matches on **reason, not count**. A file may fail for exactly the one documented cause; every distinct failure it reports must name that cause, however many times the engine prints it. The original `problemCount` field compared an inflated match tally against an authored number, never agreed, and left the mechanism inert from the day it landed — verified fixed by injecting a second failure and confirming the run goes red.
-- **Beware the already-red file.** Three times in one session a stale or broken assertion hid inside a file that was already failing for one of the two reasons above, and reported nothing new. When touching a system, run its test file alone and read the assertion line numbers, not the summary.
+- **Beware the already-red file.** Three times in one session a stale or broken assertion hid inside a file that was already failing for the documented reason above, and reported nothing new. When touching a system, run its test file alone and read the assertion line numbers, not the summary.
 
 ## Already fixed — do not redo
 

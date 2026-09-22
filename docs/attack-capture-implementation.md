@@ -2,7 +2,9 @@
 
 **Target baseline:** `0.2.10`
 **Design source:** `docs/attack-capture-design.md` (framework and derived values), `docs/combat-loop-diagnosis.md` (why)
-**Status:** specification. Review before implementing; do not treat as approved code.
+**Status:** historical implementation specification. This work was reviewed, implemented,
+and in the game by `0.2.33`. Its prerequisites and imperative language describe the old
+execution plan; current contracts and values live in source and tests.
 
 ---
 

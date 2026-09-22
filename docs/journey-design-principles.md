@@ -1,5 +1,9 @@
 # Waystone — Journey design principles
 
+**Status:** enduring pacing guidance, reviewed 2026-09-22. It is a design standard for
+future Expedition and Campaign sequencing, not a claim that the current generator already
+implements the complete waveform. See `docs/current-state.md` for the present boundary.
+
 ## Purpose
 
 This document describes how Waystone should turn good individual situations into a satisfying journey. It applies to both Expedition and Campaign, while recognising that the two modes create pacing in different ways:
@@ -76,7 +80,7 @@ Difficulty is only one component of intensity. A situation can demand more or le
 - **Attention:** how many actors, areas, timings, or warnings must be monitored.
 - **Novelty:** how much is not yet understood.
 - **Commitment:** how costly it is to reverse a route, action, build, or resource decision.
-- **Attrition:** how much health, healing, stamina, consumables, or future flexibility is at stake.
+- **Attrition:** how much health, healing, Energy/recovery capacity, consumables, or future flexibility is at stake.
 - **Navigation:** how uncertain the route or spatial relationship is.
 - **Information:** how much scouting, inference, memory, or incomplete knowledge matters.
 - **Anticipation:** how strongly the game implies that something important is approaching.
@@ -110,7 +114,7 @@ Respite is not simply the absence of enemies. It has a job.
 A good respite beat may:
 
 - finish the previous crisis mechanically and emotionally;
-- let the player inspect health, healing, stamina, consumables, and build state;
+- let the player inspect health, healing, Energy/recovery capacity, consumables, and build state;
 - present an equipment, upgrade, or route choice;
 - reveal how landmarks and paths relate;
 - preview the next enemy or environmental language at low risk;
@@ -348,7 +352,7 @@ Useful measures include:
 - meaningful replans or commitments per encounter;
 - peak duration before genuine resolution;
 - number of consequential decisions between peaks;
-- health, potion, stamina, and consumable changes across a local arc;
+- health, potion, Energy/recovery, and consumable changes across a local arc;
 - travel distance or world time without a decision, discovery, or meaningful anticipation;
 - situations since the last lasting reward, route discovery, or build change;
 - how often optional danger is accepted or declined, and why;

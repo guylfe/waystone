@@ -1,13 +1,14 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-11
-**Current source baseline:** `0.2.91` (`versionCode 291`, save schema `37`, presentation version `13`, Combat Survey format `32`)
+**Updated:** 2026-09-22
+**Current source baseline:** `0.2.95` (`versionCode 295`, save schema `37`, generator `3`, presentation version `16`, Combat Survey format `35`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
 This is an operational handoff, not a replacement for the detailed design documents. It records the current priorities and the latest decisions that supersede older prototype behavior. When this file, an older changelog entry, and the current code disagree, treat the disagreement as something to investigate rather than silently choosing whichever is easiest to implement.
 
-> **Current-state addendum:** Much of the implementation narrative below deliberately preserves the
+> **Current-state addendum:** Read `docs/current-state.md` for the concise current boundary and
+> documentation-maintenance contract. Much of the implementation narrative below deliberately preserves the
 > `0.2.10` combat-loop diagnosis that motivated later work; it is historical evidence, not a current
 > code inventory. For current implementation ownership read `CLAUDE.md`, then the implementation
 > closeout at the end of `docs/code-structure-audit.md`, and finally `README.md` for release history.
@@ -15,7 +16,7 @@ This is an operational handoff, not a replacement for the detailed design docume
 > perception correction and symmetric projectile-misdirection rule. Their full 19-file headless
 > suite passed with one documented expected failure. The 2026-09-03 follow-up repeated that suite,
 > inspected 19 real-renderer audit frames, built and verified both packages, and installed/read back
-> `0.2.81` (`versionCode 281`) on the Pixel Fold over wireless ADB. The Fold check found existing
+> `0.2.81` (`versionCode 281`) on the Pixel Fold over wireless ADB. That earlier Fold check found existing
 > portrait and full-width landscape layout defects; its inner/unfolded display was not exercised.
 > Two standard Elementalist runs were completed on `0.2.81`. They showed that the cheap, broad
 > staff was carrying the opening game while Lightning Bolt was too weak and exposed, revealed a
@@ -25,8 +26,11 @@ This is an operational handoff, not a replacement for the detailed design docume
 > compounding Intelligence discounts above baseline 5, a faster 13-damage Lightning Bolt, a
 > 56-Energy staff sequence, simultaneous level-3 Main Class/Subclass access, strict collision with a
 > narrow deterministic depenetration exception, and corrected presentation/awareness/telemetry
-> ownership. Its next standard survey should test those changes rather than reopen the universal
-> movement, regeneration or attack-capture rules.
+> ownership. Subsequent releases completed Mage/Warrior tuning and the first four boss-plan stages.
+> `0.2.92` added Boss Lab, `0.2.93` added stable support relationships and lean exact-roster
+> encounters, `0.2.94` differentiated Knife approach, and `0.2.95` rebuilt the solo Werewolf.
+> Warden solo is now the next implementation target; pack comparison and journey integration wait
+> for evidence.
 
 ## Executive migration brief
 
@@ -520,7 +524,21 @@ To install a completed version:
 
 Installation is a deployment step after implementation and verification, not evidence that the design change works.
 
-### Latest verified package boundary (`0.2.91`, 2026-09-11)
+### Latest verified package boundary (`0.2.95`, 2026-09-20)
+
+- The full 23-file headless suite passed with the single documented expected failure in
+  `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
+- Boss Lab is an isolated, repeatable mode (`0.2.92`); Shield/Chanter relationships and four
+  lean exact-roster introductions shipped in `0.2.93`; Knife's stable flank promise shipped in
+  `0.2.94`; the solo Werewolf's Hunting Leap, Double Rake, Bounding Rake, phase transition,
+  collision, and deferred posture-break rules shipped in `0.2.95`.
+- The renderer audit was regenerated and inspected, both Windows and Android packages were built,
+  and Android package metadata and the installed Pixel Fold package read back as
+  `com.waystone.prototype`, version name `0.2.95`, version code `295`.
+- Save schema remains `37`; generator is `3`; presentation version is `16`; Combat Survey format
+  is `35`.
+
+### Previous verified package boundary (`0.2.91`, 2026-09-11)
 
 - All 21 default test files pass, with the single documented expected failure in
   `run_state_test/test_clean_opening_hit_preserves_a_defensive_choice`.
@@ -611,7 +629,7 @@ Installation is a deployment step after implementation and verification, not evi
   and device deployment remain separate claims; this approved release is not operationally closed
   until installation and installed-version read-back succeed.
 
-### Latest verified Fold installation (`0.2.81`, 2026-09-03)
+### Earlier verified Fold installation (`0.2.81`, 2026-09-03)
 
 - The caster and milestone renderer audits produced and received visual inspection of 19 frames;
   the new burn, frost, chant and misdirection cues were present in frozen and streamed state.
@@ -676,13 +694,11 @@ Installation is a deployment step after implementation and verification, not evi
 
 The following remain intentionally unresolved:
 
-- final player combat movement speeds and out-of-combat travel rule;
-- exact pursuit, attack tracking, and forward-travel values for each melee role;
-- exact post-control duration and feedback for post-hit hyperarmor;
-- whether the literal physical costs established in `0.2.82`, especially the 56-Energy staff
-  sequence and its arts, create the intended competition with casting;
-- whether an already committed combo continuation may overdraw Stamina under every profile edge case;
-- final Energy costs, regeneration tuning, exhaustion threshold, and possible future Dodge cost;
+- Warden's final action timing, posture openings, phase sequence, and presentation;
+- whether Boss Lab reports and ratings are sufficient to distinguish design difficulty from instrument defects;
+- whether Werewolf is better as the validated solo remix or with the separately enabled Hound pack;
+- whether the literal physical and spell costs create the intended competition across a sustained boss fight;
+- the matched Recovery-versus-Energy result under the same boss setup;
 - experienced-player difficulty structure and degree of probabilistic enemy action selection;
 - which melee roles need redesign before adding any new enemy;
 - Campaign level cap, extra Temperament purchases, Adopted Track catch-up, and secondary-loadout progression;
@@ -696,8 +712,9 @@ Resolve these through focused prototypes and surveys. Do not fill them in from g
 2. Read this file, then the relevant detailed design/code files from the source-of-truth map.
 3. Inspect `git status` and preserve all user changes.
 4. Confirm the current version before describing implemented behavior.
-5. Keep the immediate task within the combat-loop milestones unless the user explicitly reprioritizes.
-6. For implementation, update code, focused regressions, survey telemetry, README/version metadata, and exports together when applicable.
+5. Follow the current work order in `docs/current-state.md` unless the user explicitly reprioritizes.
+6. For implementation, update code, focused regressions, survey telemetry, owning design docs,
+   `docs/current-state.md`, README/version metadata, and exports together when applicable.
 7. Validate simulation headlessly and presentation on a real renderer.
 8. For every approved numbered version, build both platforms, create and push the release commit,
    install it to the Fold, and verify the installed package/version on the actual device. Treat
