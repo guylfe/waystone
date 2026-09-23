@@ -232,7 +232,7 @@ Three consequences follow, and they are constraints rather than preferences:
 
 Note the rule protects the *absence* of input, not its presence. Holding an input is an active, ongoing choice to advance time, and carries whatever risk that entails — which is why held movement and held Wait have no protective guardrails.
 
-**Ordinary movement is a first-class defensive tool, not a loophole.** It is free, continuously steerable, and regenerates stamina. The design problem is never to take that away but to make its effectiveness depend on *when* it is used. See `docs/attack-capture-design.md`.
+**Ordinary movement is a first-class defensive tool, not a loophole.** It has no Energy price and chains short fixed-distance steps. A held or dragged direction steers the *next* step; the current step completes rather than curving mid-commitment. This is the accepted small-step control model, not a proposal for long Dodge-like strides. The design problem is to make its effectiveness depend on *when* it is used. See `docs/combat-character-framework.md` §1.3 and `docs/attack-capture-design.md`.
 
 ---
 
@@ -367,7 +367,7 @@ The earlier plan placed Mage after a six-build audit. That plan was superseded: 
 
 Only after survey data demonstrates the gap. Chanter now fills the coordinator/support role, Earth Caster supplies terrain control, Shield supplies a screen, and the non-human roster includes Hound, Boar, Ox, Werewolf, and Warden. Remaining plausible gaps are an information/stealth ambusher and any role a future journey test can demonstrate; they are not a content queue. Deliberately *not* a generic swarm — existing groups already collapse into multi-target cleanup.
 
-Among current enemies, the Fire Caster is the standing positive reference — distinctive pressure with readable counterplay — and the Ice Caster the standing problem, its cone able to begin and connect inside an already-committed player action.
+**Historical pre-`0.2.57` comparison:** The Fire Caster had been a positive reference for distinctive, readable pressure, while the Ice Caster's old cone could begin and connect inside an already-committed player action. That cone was replaced by Frost Lance and Cold Front in `0.2.57`; the old complaint is not a live verdict on the current Ice Caster. Judge the replacement abilities by current Combat Survey/play evidence rather than inheriting either caster's earlier reputation.
 
 ### Friendly Forest — the reference expedition
 

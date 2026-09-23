@@ -140,7 +140,8 @@ problem owned by another.
 
 **Credence: 97% — Foundation. Status: Settled and implemented.**
 
-Walking is free, continuously steerable, and a first-class tactical tool. Enemy
+Walking has no Energy price, chains short fixed-distance steps, and is a first-class
+tactical tool. Steering changes the next step, not the one already committed. Enemy
 capture comes from authored attack travel and commitment distance, not from making
 walking unusably slow. Early movement should often work; late movement should
 often fail.
@@ -433,13 +434,14 @@ attacks.
 
 ### B32 — Boss vulnerability is state-driven, not universally absent
 
-**Credence: 90% — Strong. Status: Proposal.**
+**Credence: 90% — Strong. Status: Implemented for Werewolf; proposed for Warden.**
 
-Routine attacks need not flinch a boss, but “bosses do not stagger” is too blunt.
-The Warden may be a posture-centric anchor; the Werewolf may resist control during
-a committed pursuit yet be interruptible or vulnerable after overextension.
-Humanoid, beast, armored, exposed, and stance-broken states should behave according
-to their readable fiction and tactical purpose.
+Routine attacks damage the Werewolf without a routine flinch, while posture break
+creates a real opening; a break during an airborne or active move is deferred until
+that move resolves. This is an implemented state policy, not a universal immunity.
+The Warden still needs its own explicit posture and vulnerability rules. Humanoid,
+beast, armored, exposed, and stance-broken states should behave according to their
+readable fiction and tactical purpose, rather than inherit one boss-wide exception.
 
 ### B33 — Boss phases should remix learned grammar
 
@@ -463,21 +465,18 @@ The instrument and its first boss still require play validation; Warden is the n
 proposed boss slice.
 
 The ordinary Combat Survey grades rooms; it cannot automatically validate a
-multi-phase learning arc. A Boss Lab should record at least:
+multi-phase learning arc. The shipped Boss Lab records each attempt's setup identity
+and combat time, boss actions and visibility when committed, damage sources and death,
+posture/control events, phase changes, resources, and difficulty/fun/fairness/retry
+ratings with an optional note. Its first play should test the instrument as well as
+the boss.
 
-- attempts and time survived;
-- actions encountered and repeated;
-- cause and state of damage/death;
-- punish opportunities created, used, and overextended;
-- posture/control events;
-- phase transitions and which prior knowledge transferred;
-- resource state through the fight;
-- subjective readability, fairness, learning, and desire to retry.
-
-The instrument’s first run should try to falsify the instrument as well as the
-boss. A Werewolf-first slice is promising because pursuit, commitment, routing,
-and exposed recovery directly test the core combat loop; this ordering remains a
-proposal, not a law.
+**Optional measurement proposals, not shipped requirements:** explicit counts of
+punish opportunities created/used/overextended, which earlier knowledge transferred
+between phases, and separate readability/learning ratings. Add any of these only if
+real Boss Lab play shows that the existing events and note cannot answer a specific
+design question. Do not enlarge the form merely because a speculative checklist
+listed them.
 
 ---
 
@@ -717,7 +716,7 @@ being treated more confidently than the evidence warrants.
 | B29 | Share systems, not effects | 91% | Settled direction |
 | B30 | Define elite before tiering it | 95% | Open |
 | B31 | Boss as extended learning problem | 93% | Working direction |
-| B32 | Boss vulnerability is state-driven | 90% | Proposal |
+| B32 | Boss vulnerability is state-driven | 90% | Werewolf implemented; Warden proposed |
 | B33 | Phases remix learned grammar | 89% | Working default |
 | B33a | 60–75% retention percentage | 48% | Exploratory only |
 | B34 | Boss vertical slice needs Boss Lab | 86% | Implemented instrument; validation in progress |

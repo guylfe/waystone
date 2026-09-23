@@ -1,6 +1,6 @@
 # Waystone current state
 
-**Reviewed:** 2026-09-22  
+**Reviewed:** 2026-09-23
 **Source baseline:** `0.2.95` (`versionCode 295`, save schema `37`, generator `3`, presentation `16`, Combat Survey format `35`)  
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history and the other design documents retain rationale, evidence, rejected alternatives, and future targets.
 
@@ -12,6 +12,7 @@
 - Fire, Ice, Earth, and Air casters and all eight elemental abilities are implemented. The Elementalist can inherit one spell from each element; Intelligence reduces spell cost through the implemented soft-cap curve without increasing spell damage.
 - The Warrior/Vanguard redesign is live: sustained Rally, Battle Flow, Advance, Resolve-derived action poise, Power Through, and Unbreakable. Battle Flow is sequence-based and currently decays after 15 seconds.
 - The encounter layer has role-aware recipes, deliberate formations, guaranteed non-melee pressure in ordinary mixed generation, exact-roster experiments, and Combat Survey `Encounter` and `Attrition` profiles. This is a testing/encounter grammar, not yet the final Expedition journey generator.
+- Ordinary walking is a chain of short committed steps: a hold repeats them and steering affects the next step. It remains a free tactical defense, but is not steerable within a step. The Ice Caster's old cone complaint predates Frost Lance and Cold Front and is not a standing verdict on current Ice.
 - Boss Lab is implemented as a repeatable, isolated evaluation mode. The current Werewolf solo redesign is live with Hunting Leap, Double Rake, and Bounding Rake; its pack form remains disabled for comparison. Warden still uses provisional behaviour and is the next boss-design implementation target.
 
 ## Current work order

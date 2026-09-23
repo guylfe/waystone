@@ -1,6 +1,6 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-22
+**Updated:** 2026-09-23
 **Current source baseline:** `0.2.95` (`versionCode 295`, save schema `37`, generator `3`, presentation version `16`, Combat Survey format `35`)
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
@@ -36,14 +36,14 @@ This is an operational handoff, not a replacement for the detailed design docume
 
 Waystone is an Android-first, PC-compatible tactical fantasy roguelike. Its defining rhythm is **deliberation followed by commitment**: time is frozen while the player is ready, then the player and world advance together while a chosen movement, attack, defense, skill, or item action resolves. Combat should be immediately readable and physically deterministic, yet generate difficult spatial and resource decisions from a reusable set of actors, weapons, conditions, terrain, and encounter rules.
 
-The project already has most of the ingredients for good combat, but the current combat loop is not acceptable. The latest `0.2.10` Warrior · Vanguard survey was overwhelmingly described as easy, repetitive, and unfun. Four related failures dominate:
+At the `0.2.10` baseline, the combat loop was judged unacceptable. The Warrior · Vanguard survey was described as easy, repetitive, and unfun. Four failures then dominated:
 
 1. ordinary movement still lets the player escape and herd melee enemies, so Dodge is usually optional;
 2. Sweeping Cut is a universal, low-risk answer to grouped enemies;
 3. the new held-combo implementation sometimes produces phantom continuation strikes without new player intent;
 4. overlapping enemy attacks can repeatedly interrupt the player without leaving a usable response opportunity.
 
-Combat-loop repair is the immediate project priority. More enemies, classes, biomes, campaign content, progression breadth, and encounter density should wait until moving, attacking, defending, and surviving pressure are satisfying in a small room.
+That diagnosis motivated the shipped input, capture, Energy, enemy, and encounter work; it is **not** a verdict on `0.2.95`. The current gate is the Warden solo redesign followed by Boss Lab play and narrow integration. See `docs/current-state.md` for the live order.
 
 ## 1. Overarching goal
 
@@ -216,16 +216,16 @@ This is not blanket invulnerability, enemy freezing, or permanent crowd immunity
 
 The report can show misses that felt visually incorrect and occasional strike records with `none nearby` plus zeroed player/enemy/weapon coordinates. These may include target death/removal or probe-finalization edge cases, but they are not trustworthy evidence of correct contact. Fix report integrity alongside any actual collision defect so physical contact can be evaluated from reliable data.
 
-## 6. Settled direction for the next combat revision
+## 6. Combat rules retained from the repair programme
 
-These rules apply across Recovery and Stamina modes unless explicitly stated otherwise:
+These are the enduring rules or shipped outcomes, not a new implementation queue. The current profiles are Recovery and Energy; old Stamina-profile numbers in the historical diagnosis above are not live values.
 
 1. **Physical attack commitment is shared.** Startup, contact, combo links, and terminal recovery do not change just because the resource profile changes.
 2. **Non-attack abilities retain cooldown control where authored.** Removing an attack cooldown does not imply removing Rally, Advance, Stealth, Take Aim, or other non-attack cooldowns.
-3. **Stamina remains the Stamina profile's resource.** It pays for physical attacks and exhaustion. Recovery mode retains its non-Stamina budgeting rules. Since `0.2.17` the model is: authored costs scaled by `STAMINA_COST_SCALE` (0.65 as of `0.2.18`, recalibrated after the first survey found exhaustion 5x too rare), continuous regeneration at 28/s with no delay on spending, and a 0.5s suppression only when hit. **Sweeping Cut is exempt from the scale** and costs its authored 56 outright; price parity with the sword combo could not restrain it, because an action that refills faster than its time advantage decays wins at any parity price. Emptying the bar exhausts you for 1.2s — attacks lock and walking drops to 45% (117 u/s), which is below the capture escape threshold of the fast enemies and above the slow ones. **Dodge is the one physical action exhaustion does not remove**, per rule 9's agency floor: it degrades to 90 units and 0.16s of i-frames, and pays in debt — the bar empties and the exhaustion clock restarts flat, never escalating.
-4. **Walking's effectiveness must depend on when it is used.** Reacting to a telegraph early should usually succeed; reacting late should usually fail, leaving Dodge and the other defensive techniques as the answer. This supersedes the earlier framing of this rule, which asked for a player/pursuit speed relationship instead. `docs/combat-loop-diagnosis.md` establishes from the source that ordinary enemy melee cannot hit a moving player at any plausible speed, because attacks trigger at roughly their own maximum reach and then stand still through startup — so no player speed produces the required behavior. The mechanism is authored forward travel on enemy attacks; see `docs/attack-capture-design.md`.
+3. **Energy is the active resource profile.** Physical costs use their authored values with `ENERGY_COST_SCALE = 1.0`; spell costs are owned separately by spell rules and Intelligence. Recovery is the comparison profile. The old `STAMINA_COST_SCALE = 0.65` and Sweeping Cut exemption were `0.2.18` tuning, not current instructions. Exhaustion preserves a degraded defensive option rather than removing all agency.
+4. **Walking's effectiveness depends on when it is used.** Early movement should often escape; late movement should often fail, leaving Dodge and other defenses meaningful. The old stationary-startup melee diagnosis was answered by authored attack travel and commitment distance. See `docs/attack-capture-implementation.md` for that shipped work.
 5. **Travel and combat pace may differ.** Faster out-of-combat traversal is preferable to preserving excessive combat speed for convenience. Note this is now a secondary lever, not the primary fix.
-6. **No committed-stride replacement.** Do not turn ordinary movement into a sequence of quasi-Dodges, engagement slow fields, or turn restrictions unless the simpler model later proves insufficient. Ordinary movement stays free, continuously steerable, and stamina-regenerating.
+6. **Short chained walking steps, not long committed strides.** A tap commits one short fixed step; a hold chains steps, and steering changes the next step rather than curving the current one. Walking has no Energy price and remains a first-class positioning/defensive tool. Do not turn those small steps into long quasi-Dodges, engagement slow fields, or extra turn restrictions without new evidence.
 7. **No ordinary-movement perfect-dodge reward.** Clean-evasion benefits belong to authored defensive techniques such as Dodge or Vault.
 8. **Sweeping Cut is rebuilt, not cosmetically nerfed.** It becomes the expensive immediate finisher described above.
 9. **Continuation is sampled at the link, never banked.** A genuinely live input continues a sequence for as long as it is held; an input that has ended, or was never held at all, must not continue it. Held state may complete a sequence — that is the intended grammar — but only while the player is actually still holding.
@@ -233,11 +233,13 @@ These rules apply across Recovery and Stamina modes unless explicitly stated oth
 
 The Warrior · Vanguard has Dodge in its Defense slot. `Blocks: 0` and `Endures: 0` in its survey reports are generic-schema fields, not evidence that the player ignored available defensive buttons.
 
-## 7. Implementation strategy
+## 7. Historical implementation strategy and retained regression criteria
+
+The original repair sequence below is preserved to explain causality and keep useful regression scenarios. It does not supersede the current Warden/Boss Lab work order.
 
 ### 7.1 Repair dependencies in the right order
 
-Fix input integrity and post-hit agency before interpreting balance. Then change the movement/Dodge relationship before tuning encounter density. Rebuild Sweeping Cut against the corrected movement baseline. Differentiate melee enemies only after the player has a functioning defensive loop.
+The repair sequence fixed input integrity and post-hit agency before interpreting balance, then changed the movement/Dodge relationship before tuning encounter density. Sweeping Cut and melee differentiation followed the corrected movement baseline.
 
 Otherwise one broken system hides another: an overpowered sweep masks movement danger, excessive movement masks stamina exposure, and phantom attacks corrupt action-usage and exhaustion data.
 
@@ -285,115 +287,43 @@ Every combat change should have small deterministic tests before a long survey:
 - Sweeping Cut matches intended finisher geometry and pays the intended commitment/cost;
 - strike diagnostics never serialize missing geometry as a believable combat sample.
 
-Tests that instantiate `RunState` without setup may default to Recovery. Always choose Recovery or Stamina explicitly in combat tests so a passing test means what its name claims.
+Tests that instantiate `RunState` without setup may default to Recovery. Always choose Recovery or Energy explicitly in combat tests so a passing test means what its name claims; `stamina` is a legacy alias.
 
 ### 7.6 Validate on real presentation targets
 
 Headless tests establish simulation behavior, not visual truth. Validate contact, recovery animation, safe areas, controls, and readability in a real Windows renderer and on the connected Android device. The Pixel Fold requires both orientations and its reported safe display area.
 
-## 8. Planned roadmap
+## 8. Historical combat-repair roadmap
 
-This is the current dependency order, not a promise of release numbers or dates.
+The early A–G roadmap has been closed or superseded. It is retained here as a
+status record, **not** the current dependency order. Its detailed proposals and
+reasons remain in the dated release history, `docs/combat-loop-diagnosis.md`,
+`docs/attack-capture-implementation.md`, and
+`docs/survey-archive-findings.md`. Follow `docs/current-state.md` for current work.
 
-### Milestone A — Restore trustworthy player input
+| Earlier milestone | Disposition at 0.2.95 |
+|---|---|
+| A — trustworthy input | Shipped: combo continuation follows live input. |
+| B — post-hit agency | Shipped: protected response opportunity after a hit. |
+| C — attack capture | Shipped: authored enemy attack travel and commitment distance; ordinary movement remains useful but timing-sensitive. |
+| D — Sweeping Cut | Rebuilt and subsequently tuned under the Energy economy. |
+| E — melee differentiation | Role/behaviour work and later enemy-specific revisions shipped; current kind contracts live in the catalogs and encounter design documents. |
+| F — combat comparison | Old Recovery-versus-Stamina sequencing superseded. The agreed matched **Recovery versus Energy** comparison waits until boss pressure and a narrow journey slice are credible. |
+| G — encounter grammar | Role-aware recipes, formations, exact-roster experiments, and lean encounters shipped. The mature journey generator and integration slice remain future work. |
 
-Make combo continuation faithfully reflect live input. The link-point sampling in `_update_player_combo` is already the intended grammar and should be preserved; the work is removing the unconditional seeding in `request_combo()` that grants continuation to every sequence regardless of input, ensuring every input path clears the state on release, and adding touch plus keyboard regression coverage.
+Two early G proposals must **not** be revived as rules. First, a room does not
+have to contain two conflicting demands, and a composition need not be barred
+from recurring while its answer feels familiar. The user found a two-Archer,
+low-melee-pressure room fun, and a familiar room is not a solved room. Pacing,
+geometry, arrival state, and specific play evidence should decide repetition.
+Second, the old Earth Caster/Duellist/Chanter candidate list and the claim that
+the Ox had never been surveyed are historical; those kinds have shipped and the
+Ox has since been surveyed and tuned.
 
-**Exit criteria:** A quick tap produces exactly one strike; a sustained hold produces as many strikes as its live window covers links, and stops within one strike of release; no continuation ever occurs without a live input behind it; combo links still feel generous rather than timing-sensitive.
-
-### Milestone B — Guarantee post-hit agency
-
-Implement non-refreshing post-hit hyperarmor through reaction and briefly beyond control return. Add visible/diagnostic state and crowd timing tests.
-
-**Exit criteria:** A player who survives a hit always receives at least one executable response choice; subsequent pressure remains damaging but cannot chain unavoidable interruptions.
-
-### Milestone C — Attack capture
-
-Give enemy melee attacks authored forward travel during startup, derived per attack from a stated walk-safe fraction of the telegraph, and control the distance at which enemies commit so that fraction is a real quantity rather than a side effect of the steering interval. Remove the ordinary-movement clean-evasion reward. See `docs/attack-capture-implementation.md`.
-
-Player movement speed, decision granularity and arena geometry are held back as later levers, to be reconsidered only once capture is working and measured. They are not part of this milestone.
-
-**Exit criteria:** Reacting early to a telegraph usually escapes by walking; reacting late usually does not, and Dodge does; different attacks demand different spatial answers rather than one universal retreat; walking remains free, smooth and useful for positioning; combat does not become sticky, jittery, or input-limited.
-
-### Milestone D — Rebuild Sweeping Cut
-
-Replace the oversized universal sweep with an expensive immediate turning-slash finisher, including full terminal recovery and shared physical timing. Remove its attack cooldown; preserve cooldowns for non-attack abilities.
-
-**Exit criteria:** Sweeping Cut is a meaningful commitment that can answer a well-read crowd but cannot be cycled as the dominant basic attack; the normal combo remains worthwhile because it earns the finisher more efficiently.
-
-### Milestone E — Differentiate melee enemy decisions
-
-Give each enemy kind a distinct **question** rather than distinct statistics. Speed and damage variations on the same chase produce one problem repeated; see `docs/design-foundations.md` section 4.6. E is split into slices because bundling a behaviour change with a tuning change has repeatedly shipped numbers sized against the wrong quantity.
-
-**Exit criteria:** A player can name the required response to each role; changing a melee composition changes priorities and positioning; enemies do not collapse into a single herd for broad damage.
-
-#### E1 — Roles drive behaviour
-
-`role` is currently assigned by every recipe, printed in every survey, and never read by the simulation. Behaviour is keyed on `kind` through hardcoded lists such as `kind in ["bandit", "knife", "hound"]`, so "flanker" is three kind names rather than a concept, and a Boar tagged `frontline` behaves like any other Boar.
-
-Role becomes **intrinsic to kind** — a Hound is always a flanker — and drives the decision loop. Recipes stop authoring `role` per entry and derive it, which removes the possibility of a recipe and a kind disagreeing.
-
-| Role | Kinds | Question |
-|---|---|---|
-| Frontline | Boar, Blade, Brute, Knight | Am I in range? **Holds the front** so flankers have something to flank around |
-| Flanker | Hound, Bandit, Knife | Am I watching the right direction? |
-| Reach | Polearm, later spear/halberd kinds | Can I get past the front to the thing hitting me? Keeps distance, strikes **over** allies |
-| Screen | Shield | Can I reach what actually matters? Bodies the player off protected allies; its own strike has a long recovery, so breaking it is an opening you earn |
-| Ranged pressure | Archer | Can I afford to stay out here? |
-| Area denial | Fire Caster, Ice Caster | Where am I allowed to stand? |
-| Movement denial | Earth Caster (E5) | Which way am I allowed to **go**? |
-| Breaker | Ox | Am I on its line? |
-| Boss | Werewolf, Warden | Bespoke |
-
-Frontline holding position is the load-bearing change: today everything converges on the player, so "flanker" is only a different route to the same pile-up. Hexer leaves rotation; the revamped Shield returns.
-
-#### E2 — Charge tuning
-
-Walk-only escape measured **48%** across the `0.2.25` survey once Boar and Hound charges entered the sample: attack capture holds for melee and does not hold for charges, which are the most common attacks in the game. The Boar also lost real reach in `0.2.26` when its invisible collar was replaced by a true body (91 down to 70). Must follow E1, because role-driven approach changes charge launch distances.
-
-### Milestone F — Re-survey and tune the combat kernel
-
-Run short seeded A/B surveys across both combat profiles after the preceding systems are stable. Compare equivalent recipes and geometry before changing generator weights.
-
-This is where the **Recovery versus Stamina** comparison belongs, and it waits until Stamina is at its best — testing cooldowns against a Stamina build that was misconfigured would retire the question on bad evidence. Note the measured noise floor when reading any comparison: `0.2.19` and `0.2.20` changed no gameplay whatsoever and fun still moved 2.64 to 2.18 between surveys, so a single-run difference below roughly half a point is variance.
-
-Also outstanding here: Sweeping Cut is still reported as too strong when used twice in succession, even after the resulting exhaustion. That is Milestone D's remainder rather than new work, and it needs a decision on whether the price moves a third time or what the sweep delivers is cut.
-
-**Exit criteria:** Dodge is used because situations demand it; Stamina/exhaustion create real decisions; fun and tactical-interest ratings improve without a corresponding rise in unfair/unclear-contact reports; no dominant universal tactic replaces strafe-and-sweep.
-
-### Milestone G — Validate encounter grammar
-
-Only after the combat kernel passes, use survey evidence to author and weight encounter archetypes, exclusions, formation rules, pacing, and role gaps. Add the smallest number of enemies needed to fill demonstrated language gaps.
-
-**Exit criteria:** Two seeds create meaningfully different tactical stories from the same biome and roster; pressure and relief are deliberate; geometry and composition both matter.
-
-#### G1 — Compose by conflict
-
-Recipes express intent in role terms. Every room must contain **at least two conflicting demands** — two enemies demanding the same response produce one problem twice, see `docs/design-foundations.md` section 4.6 — and a composition must not recur while its answer is still fresh. The `0.2.18` survey rated the same Boar/Hound/Knife room 3/5 on first appearance and 1/5 across every axis on its second and third, in different arenas under different recipe labels. Rooms failing either check are rerolled rather than relabelled.
-
-#### G2 — New kinds, one per build, each surveyed
-
-Gated on the gap being **demonstrated** by survey rather than anticipated. Ordered by how much each multiplies the existing roster rather than adds to it.
-
-1. **Earth Caster** — movement denial. Cuts directions rather than areas, which makes the Ox's line lethal, the Boar's charge non-walkable, and the Shield's screen a real wall.
-2. **Duellist** — the only enemy that makes *attacking* a decision. Two attacks with **different openings**: a poke with a long wind-up and fast recovery, answered by intercepting it before it commits; a swing with little wind-up and slow recovery, answered afterwards. Every attack stays answerable — an attack with no opening is a lock, not a difficulty. Its riposte is `sword_riposte` seen from the other side, so building it specifies the player's parry as well.
-3. **Chanter** — buff mage. Several buffs from one kind, distinguished the way any multi-attack enemy is: colour-coded wind-up bar and a long telegraph. Hangs back and never closes, so it is also the reason to travel.
-4. **Captain revamp** — enabler whose death visibly slackens what surrounds it.
-
-**The Ox jumped this gate.** It shipped in `0.2.25` before the kernel passed, as a knowing exception on the grounds that it is a mechanic — lateral commitment — that the roster structurally could not test. It has still never appeared in a survey, because its recipe is tier 5 and no run has reached it. Treat that as a debt against G rather than as precedent.
-
-### Later product roadmap
-
-After the combat gate:
-
-- expand and audit the Warrior/Rogue roster, then design the next main class;
-- mature equipment, consumables, rewards, discoveries, achievements, and unlocks so identity is not concentrated in skill buttons;
-- rebuild the Friendly Forest Expedition around validated nested encounters and pacing;
-- apply the shared encounter kernel to Campaign-specific persistent topology and return routes;
-- complete Campaign Waystone, death-memory, shortcut, finite-level, Adopted Track, and secondary-loadout systems;
-- extend locales/biomes only on the validated world and encounter grammar;
-- tune Endless as its own escalation and long-tail system;
-- perform Android/Windows performance, accessibility, save migration, and release packaging work at every stable milestone.
+The later boss/encounter programme superseded A–G's ordering. Its Updates 1–4
+shipped through 0.2.95. Next: Warden solo redesign, then Boss Lab play,
+Werewolf pack comparison, narrow journey integration, and only then the
+Recovery-versus-Energy comparison. No next version number or date is implied.
 
 ## 9. How Combat Survey reports work
 
@@ -409,11 +339,11 @@ Combat Survey generates deterministic rooms from:
 - room number;
 - selected character;
 - resource profile (`Encounter` or `Attrition`);
-- combat rules (`Recovery` or `Stamina`).
+- combat rules (`Recovery` or `Energy`).
 
 The generator is intended to give different characters and combat-rule profiles the same seeded room definitions so mechanics can be compared without silently changing the encounter. Preserve the entire header when sharing a report.
 
-`Encounter` refreshes health, stamina, potions, conditions, and readiness between rooms. `Attrition` carries health, potions, and build progression through the run and permits survey level-ups when enough XP is held. Both are endless until death or manual end.
+`Encounter` refreshes health, Energy, potions, conditions, and readiness between rooms. `Attrition` carries health, potions, and build progression through the run and permits survey level-ups when enough XP is held. Both are endless until death or manual end.
 
 ### 9.2 Per-room flow
 
@@ -428,17 +358,19 @@ After a victory, death, or manual final room, the game freezes and creates the o
 
 If a room was too brief or otherwise impossible to judge, subjective feedback can be skipped while retaining objective telemetry. This is preferable to inventing ratings.
 
-### 9.3 What format 10 records
+### 9.3 What current format 35 records
 
 The run header records identity and compatibility data: versions, seeds, profile, combat rules, character, timestamps, end reason, and room count.
 
 Each room records five broad groups:
 
 1. **Encounter definition:** room seed, outcome, threat tier/band, pacing phase, recipe/family, cost, ranged pressure, arena, formation, enemies, roles, and current build.
-2. **Attrition and performance:** entry/exit health, stamina, potions, combat time, damage dealt/received, hits, potion use, and death source.
-3. **Resource/commitment behavior:** stamina spend/depletion/overdraw/regeneration, regeneration delay/active time, exhaustion lockouts and exposure, damage taken while exhausted and slowed, desperate Dodge count and longest chain, actions refused for Stamina and time spent unable to afford a basic attack, threat context (alerted count, nearest, committed attacks pending) at both ends of every lockout, blocked combo continuations, terminal combo recoveries and recovery exposure, direct attack-control uses, Dodge form/recovery exposure, and action counts.
+2. **Attrition and performance:** entry/exit health, Energy, potions, combat time, damage dealt/received, hits, potion use, and death source.
+3. **Resource/commitment behavior:** Energy spending, regeneration and overdraw, exhaustion and affordability exposure, combo/recovery timing, Dodge forms, action usage, and threat context.
 4. **Presentation/contact evidence:** active view, view switches, empty melee contacts, and per-strike diagnostics including technique phase, result, targets, authored footprint, nearest enemy position, clearance, overlap, occlusion, enemy action, actor coordinates, facing, and weapon endpoints.
 5. **Subjective response:** ratings, tags, and notes.
+
+Boss Lab uses the same report authority but adds boss/setup identity, action and phase counts, visibility-at-commit, damage sources, posture/control evidence, and its own difficulty/fun/fairness/retry ratings. The current exporter in `scripts/core/survey_report.gd` is authoritative for exact fields; this summary is not a frozen schema.
 
 The `Blocks` and `Endures` counters exist because the report schema supports characters that equip those defenses. Interpret them against the build line. Do not infer that a Warrior · Vanguard failed to use unavailable skills.
 
@@ -688,7 +620,7 @@ Installation is a deployment step after implementation and verification, not evi
   full spell action. It does not return readiness during recovery, pause world time, retarget the
   committed spell, or express itself by applying the unrelated Exhausted condition.
 - **No mode-topology conflation:** Expedition is a forward run; Campaign is a persistent interconnected graph around Waystones and shortcuts.
-- **No false roadmap certainty:** Milestones above are an order of operations. Assign version numbers and dates only when explicitly decided.
+- **No false roadmap certainty:** Section 8 is a historical record, not the current order. Follow `docs/current-state.md`; assign version numbers and dates only when explicitly decided.
 
 ## 13. Open design and tuning questions
 
