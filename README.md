@@ -1,6 +1,24 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.0` (Android version code `300`).
+Current prototype version: `0.3.1` (Android version code `301`).
+
+## v0.3.1 — native PC gamepad controls
+
+Xbox-style controllers now drive movement, aim and combat directly, without a virtual
+mouse or touch gesture. Left stick moves in screen space; right stick aims without
+advancing time. RT holds an attack / draws the Bow and releases it; B defends, RB
+uses the weapon art, Y uses the selected subclass/adopted ability, X heals and A
+interacts. LB opens the ability selector. D-pad up toggles the main class ability;
+left/right select utility items and down uses one. View opens the map; Menu opens
+character/upgrades, view settings, save-and-quit and confirmed abandonment.
+
+Menus have focus navigation, including shops and rating forms. Deadzones, trigger
+hysteresis, a bounded action buffer and neutral-after-menu guards prevent drift and
+stale input. Disconnect releases held actions and opens the controller menu. A
+commitment already underway finishes normally; menus do not cancel combat recovery.
+Touch and keyboard remain available. Combat tuning, generators and save schema are
+unchanged. See [controller controls](docs/controller-controls.md) for full bindings
+and verification limits.
 
 ## v0.3.0 — a three-biome mountain expedition
 

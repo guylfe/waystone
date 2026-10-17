@@ -1,13 +1,14 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-17 (three-biome prototype closeout)
-**Release baseline:** `0.3.0` (`versionCode 300`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `17`, Combat Survey format `36`). Mechanically verified; human play acceptance remains open.
+**Reviewed:** 2026-10-18 (native PC controller controls)
+**Release baseline:** `0.3.1` (`versionCode 301`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `18`, Combat Survey format `36`). Mechanically verified; human play acceptance remains open.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history and the other design documents retain rationale, evidence, rejected alternatives, and future targets.
 
 ## What exists now
 
 - Four playable profiles: **Warrior · Vanguard**, **Rogue · Acrobat**, **Rogue · Sharpshooter**, and **Mage · Elementalist**.
 - Four working weapon frames in player use: Sword, Knife, Bow, and Staff.
+- Native Xbox-style PC controls now provide direct movement/aim/actions, ability and utility selection, focused menu navigation and disconnect/focus safeguards. Combat balance and save/generation identities are unchanged. See [controller controls](controller-controls.md) for bindings and verification limits.
 - The shared combat kernel includes committed actions, attack capture, Energy and Recovery rule profiles, exhaustion, Dodge, posture, Resolve-derived action poise, conditions, projectile elevation and misdirection, barriers, deterministic save/snapshot support, and survey attribution.
 - Fire, Ice, Earth, and Air casters and all eight elemental abilities are implemented. The Elementalist can inherit one spell from each element; Intelligence reduces spell cost through the implemented soft-cap curve without increasing spell damage.
 - The Warrior/Vanguard redesign is live: sustained Rally, Battle Flow, Advance, Resolve-derived action poise, Power Through, and Unbreakable. Battle Flow is sequence-based and currently decays after 15 seconds.
@@ -15,7 +16,7 @@
 - Ordinary walking is a chain of short committed steps: a hold repeats them and steering affects the next step. It remains a free tactical defense, but is not steerable within a step. The Ice Caster's old cone complaint predates Frost Lance and Cold Front and is not a standing verdict on current Ice.
 - Boss Lab is implemented as a repeatable, isolated evaluation mode. The Werewolf solo redesign is live with Hunting Leap, Double Rake, and Bounding Rake; its pack form remains disabled for comparison. Warden remains provisional. Both legacy bosses are excluded from the new expedition.
 - The implemented expedition is a continuous mountain ascent through Briarwild Foothills, the above-ground Cinderworks and Stormglass Summit, with irreversible biome departures, three new solo bosses, one-use restoration, finite healing/economy, equipment and the midpoint adopted-track Exchange. See the implementation ledger for verification limits.
-- Verification covers 100 seeds / 300 maps, legal full-run victories for all four characters, both disciplines, and 26 passing regression files plus one documented pre-existing Bandit failure. Both builds are complete. The final APK is installed and version-verified on the Fold; portrait input, frozen time and cold save/resume passed. Inner-display play and sustained combat performance remain unverified.
+- The 0.3.0 expedition verification covered 100 seeds / 300 maps, legal full-run victories for all four characters and both disciplines. Its APK passed Fold portrait input, frozen time and cold save/resume checks. The 0.3.1 regression suite has 27 passing files plus the documented pre-existing Bandit failure; controller render checks and XInput hardware detection pass. See the controller ledger for build/install status. Physical-controller play feel, Fold inner-display play and sustained combat performance remain unverified.
 
 ## Current work order
 
@@ -39,6 +40,7 @@ The October 17 approval supersedes the Warden-first content gate for this experi
 | `docs/design-foundations.md` | Enduring design intent, constraints, refusals, and long-term scope. |
 | `docs/battle-design-bible.md` | Credence-rated enemy, encounter, and boss principles. |
 | `docs/combat-character-framework.md` | Shared actor, combat, character, and progression design. Implemented facts must still be checked against source. |
+| `docs/controller-controls.md` | Implemented native PC bindings, input-safety contracts and verification ledger. |
 | `docs/elemental-casters.md`, `docs/warrior-vanguard-redesign.md` | Implemented programme records plus retained design history. |
 | `docs/enemy-encounter-boss-revised-design.md` | Earlier six-update plan: Updates 1–4 shipped; Updates 5–6 deferred by the approved new expedition. |
 | `docs/expedition-0.3.0-implementation.md` | Approved three-biome contract, ownership, implementation and verification ledger. |

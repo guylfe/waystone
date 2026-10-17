@@ -1,7 +1,13 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-10-17
-**Release baseline:** `0.3.0` (`versionCode 300`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `17`, Survey format `36`). Read `docs/current-state.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+**Updated:** 2026-10-18
+**Release baseline:** `0.3.1` (`versionCode 301`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `18`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+
+0.3.1 adds a presentation-owned native PC gamepad adapter; it does not retune combat.
+Its executable contract is `tests/controller_input_test.gd`; the real-renderer
+dialog/input/layout check is `tests/controller_visual_smoke.gd` (not headless).
+The latter checks native-window confirmation exactly once, not just direct method
+calls. Do not remove the dialog's input relay: it has its own Viewport.
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 

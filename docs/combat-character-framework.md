@@ -121,6 +121,26 @@ The classification delay is an input-accessibility rule, not world time. Movemen
 
 Contextual attackability remains weapon-dependent. A melee tap on a target that is clearly beyond any plausible contact is movement; an equipped ranged weapon may legitimately attack the same distant target.
 
+#### PC controller adapter (implemented in 0.3.1)
+
+Xbox-style gamepads issue semantic actions directly, not touch gestures or virtual
+mouse events. Left-stick movement chains the same short commitments; right-stick
+aiming alone spends no simulation time. RT is a live weapon hold (release ends
+continuations or fires the Bow), B is directional defense and RB is weapon art.
+Defense prefers the movement direction; other aimed actions use right-stick aim,
+an explicitly selected visible target, or facing. Aim never silently locks a target.
+RS click cycles visible targets; manually aiming clears that selection. Ground
+target distance follows stick deflection and remains subject to spell targeting rules.
+
+The adapter owns only input/presentation state. Combat costs, cooldowns, geometry,
+commitment and legality remain in RunState. It supplies a 0.22-second fresh-button
+buffer at action boundaries, not cancellation or a durable queued command. UI
+navigation never advances simulation. Opening a menu releases holds and lets an
+already committed action finish before save/quit becomes available. Closing a menu,
+focus loss or disconnection cannot replay a held movement/attack: neutral controls
+are required before further combat. Keyboard and touch remain independent adapters.
+Full bindings and test evidence: [controller-controls.md](controller-controls.md).
+
 Fast and slow actors use identical controls and move the same distance per step. A fast actor completes that distance in less world time, allowing fewer enemy actions during the movement.
 
 Heavy weapons do not reduce ordinary movement by default. Their encumbrance is expressed through mobile defensive techniques and guard handling.

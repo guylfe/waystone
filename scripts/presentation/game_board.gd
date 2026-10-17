@@ -1,5 +1,8 @@
 extends Control
 
+const ControllerInputScript = preload("res://scripts/presentation/controller_input.gd")
+var controller = ControllerInputScript.new()
+
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const AbilityCatalogScript = preload("res://scripts/core/ability_catalog.gd")
@@ -278,6 +281,8 @@ var survey_export_status := ""
 var survey_export_status_label: Label
 
 func _ready() -> void:
+	Input.joy_connection_changed.connect(func(device_id: int, connected: bool):
+		if not connected: controller.disconnected(self, device_id))
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
 		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR)
 	if desktop_controls and DisplayServer.get_name() != "headless":
@@ -1094,6 +1099,7 @@ func _update_projection() -> void:
 	iso_origin = Vector2.ZERO
 
 func _process(delta: float) -> void:
+	controller.update(self, delta)
 	frame_metric_elapsed += delta
 	frame_metric_worst_ms = maxf(frame_metric_worst_ms, delta * 1000.0)
 	if frame_metric_elapsed >= 2.0:
@@ -1128,7 +1134,7 @@ func _process(delta: float) -> void:
 		# simulation time is already advancing, and releasing them simply stops the walk.
 		if state.mobile_cast_is_active() and desktop_controls:
 			state.set_mobile_cast_direction(_desktop_held_direction())
-		if String(state.player_action.get("kind", "")) == "advance" and desktop_controls and not advance_pointer_held:
+		if String(state.player_action.get("kind", "")) == "advance" and desktop_controls and not advance_pointer_held and not controller.active:
 			var held_advance_direction := _desktop_held_direction()
 			var advance_direction := Vector2(state.player_action.get("direction", state.player_facing))
 			state.set_advance_hold(not held_advance_direction.is_zero_approx() and held_advance_direction.dot(advance_direction) > 0.80)
@@ -1171,7 +1177,10 @@ func _process(delta: float) -> void:
 			visual = _interpolate_playback_snapshot(playback_accumulator / state.FRAME_DT)
 			needs_redraw = true
 	if not playing and _can_repeat_primary_action():
-		if wait_pointer_held and pointer_down:
+		if controller.active and controller.consume_buffer(self): pass
+		elif controller.active and controller.attack_held:
+			_begin_streamed_action(state.request_direct_attack(controller.direction(self), false, true), finished_streamed_movement)
+		elif wait_pointer_held and pointer_down:
 			# Holding chains one movement step at a time, each a discrete commitment,
 			# exactly as held movement does. Deliberately unassisted: Wait is movement
 			# without the repositioning and carries movement's risks too, so there is no
@@ -1220,7 +1229,7 @@ func _process(delta: float) -> void:
 				if not held_direction.is_zero_approx(): _begin_streamed_move(held_direction)
 	if _update_temporal_tint(delta): needs_redraw = true
 	if _update_area_title(delta): needs_redraw = true
-	if needs_redraw:
+	if needs_redraw or controller.active:
 		queue_redraw()
 
 func _update_temporal_tint(delta: float) -> bool:
@@ -1313,6 +1322,24 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 				if item.has(key) and next_item.has(key): item[key] = lerpf(float(item[key]), float(next_item[key]), weight)
 		result.append(item)
 	return result
+
+func _input(event: InputEvent) -> void:
+	if _controller_event(event): return
+	if controller.active and ((event is InputEventKey and event.pressed) or (event is InputEventMouseButton and event.pressed) or event is InputEventScreenTouch):
+		controller.release_actions(self)
+		controller.active = false
+		controller.device = -1
+		controller.axes.clear()
+		controller.held.clear()
+		controller.paused = false
+		controller.palette_open = false
+		queue_redraw()
+
+func _controller_event(event: InputEvent) -> bool:
+	if state == null or not controller.handle(self, event): return false
+	get_viewport().set_input_as_handled()
+	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: expedition_dialog.set_input_as_handled()
+	return true
 
 func _gui_input(event: InputEvent) -> void:
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
@@ -1915,6 +1942,7 @@ func _set_desktop_movement_key(keycode: Key, pressed: bool) -> void:
 	else: desktop_movement_keys.erase(keycode)
 
 func _desktop_held_direction() -> Vector2:
+	if controller.active: return controller.move_direction(self)
 	var up := desktop_movement_keys.has(KEY_W) or desktop_movement_keys.has(KEY_UP)
 	var down := desktop_movement_keys.has(KEY_S) or desktop_movement_keys.has(KEY_DOWN)
 	var left := desktop_movement_keys.has(KEY_A) or desktop_movement_keys.has(KEY_LEFT)
@@ -1923,6 +1951,9 @@ func _desktop_held_direction() -> Vector2:
 	return _screen_delta_to_world_direction(screen_direction) if not screen_direction.is_zero_approx() else Vector2.ZERO
 
 func _can_repeat_primary_action() -> bool:
+	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return false
+	if is_instance_valid(survey_overlay) and survey_overlay.visible: return false
+	if controller.active and controller.modal(self): return false
 	if not state.run_active or not state.is_player_ready() or state.trial_complete or state.survey_feedback_pending: return false
 	if waystone_menu_open or state.death_pending or character_sheet_open: return false
 	return not (map_open and state.map_presentation == "full")
@@ -1981,6 +2012,11 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
+		if controller != null and controller.active:
+			controller.release_actions(self)
+			controller.axes.clear()
+			controller.held.clear()
+			controller.paused = state != null and state.run_active
 		desktop_movement_keys.clear()
 		attack_key_held = false
 		attack_pointer_held = false
@@ -2339,6 +2375,10 @@ func _start_run() -> void:
 	_finish_run_start()
 
 func _finish_run_start() -> void:
+	controller.release_actions(self)
+	controller.quick_action = "subclass"
+	controller.aim = Vector2.ZERO
+	controller.target_id = -1
 	expedition_outcome_shown = ""
 	if is_instance_valid(expedition_dialog): expedition_dialog.hide()
 	state.record_survey_view_mode(view_mode, false)
@@ -2428,6 +2468,9 @@ func _expedition_panel(title_text: String) -> VBoxContainer:
 	held_movement = false
 	held_movement_tracks_pointer = false
 	expedition_dialog = AcceptDialog.new()
+	var controller_relay := ControllerInputScript.WindowRelay.new()
+	controller_relay.board = self
+	expedition_dialog.add_child(controller_relay)
 	expedition_dialog.title = title_text
 	expedition_dialog.exclusive = true
 	add_child(expedition_dialog)
@@ -2597,6 +2640,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), BG)
 	if not state.run_active:
 		_draw_setup()
+		controller.draw_overlay(self)
 		state.performance_metrics["draw_cpu_ms"] = float(Time.get_ticks_usec() - draw_start) / 1000.0
 		return
 	_draw_world()
@@ -2611,6 +2655,7 @@ func _draw() -> void:
 	if map_open: _draw_map()
 	if character_sheet_open: _draw_character_sheet()
 	if state.death_pending: _draw_death_overlay()
+	controller.draw_overlay(self)
 	state.performance_metrics["draw_cpu_ms"] = float(Time.get_ticks_usec() - draw_start) / 1000.0
 
 func _draw_world() -> void:
@@ -4672,6 +4717,7 @@ func _phase(action: Dictionary) -> String:
 
 func _draw_hud() -> void:
 	if waystone_menu_open: _draw_waystone_menu()
+	elif controller.active: controller.draw_hud(self)
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
@@ -4705,6 +4751,7 @@ func _draw_hud() -> void:
 		draw_circle(touch_current, 8.0, DODGE_COLOR)
 	if state.has_pending_pickup():
 		var prompt := "BELT FULL — TAP A SLOT TO REPLACE  •  CONTEXT TO LEAVE"
+		if controller.active: prompt = "BELT FULL — D-PAD LEFT/RIGHT: SLOT · DOWN: REPLACE · A: LEAVE"
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.position.y + font * 2.7), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("f0c66b"))
 
 func _draw_attack_button() -> void:
@@ -4748,6 +4795,7 @@ func _draw_reset_button() -> void:
 	draw_rect(reset_rect, Color("718087"), false, 1.5)
 	var font := maxi(9, int(reset_rect.size.y * 0.30))
 	var label := "RESET [R]" if desktop_controls else "RESET"
+	if controller.active: label = "MENU"
 	draw_string(ThemeDB.fallback_font, reset_rect.position + Vector2(0.0, reset_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, reset_rect.size.x, font, Color("b7c0c2"))
 
 func _draw_map_button() -> void:
@@ -4755,6 +4803,7 @@ func _draw_map_button() -> void:
 	draw_rect(map_rect, Color("d7aa58") if map_open else Color("718087"), false, 1.5)
 	var font := maxi(8, int(map_rect.size.y * 0.27))
 	var label := "MAP [M]" if desktop_controls else "MAP"
+	if controller.active: label = "MAP [VIEW]"
 	draw_string(ThemeDB.fallback_font, map_rect.position + Vector2(0.0, map_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, map_rect.size.x, font, Color("d7dddd"))
 
 func _draw_sheet_button() -> void:
@@ -4763,6 +4812,7 @@ func _draw_sheet_button() -> void:
 	draw_rect(sheet_button_rect, Color("d7aa58") if level_ready else DODGE_COLOR if character_sheet_open else Color("718087"), false, 2.0 if level_ready else 1.5)
 	var font := maxi(8, int(sheet_button_rect.size.y * 0.27))
 	var label := "LEVEL UP [C]" if level_ready and desktop_controls else "LEVEL UP" if level_ready else "SHEET [C]" if desktop_controls else "SHEET"
+	if controller.active: label = "LEVEL UP [MENU]" if level_ready else "SHEET [MENU]"
 	draw_string(ThemeDB.fallback_font, sheet_button_rect.position + Vector2(0.0, sheet_button_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, sheet_button_rect.size.x, font, Color("d7dddd"))
 
 func _open_character_sheet() -> void:

@@ -68,6 +68,7 @@ $HeadlessSuite = @(
     'wait_granularity_test',
     'sweeping_cut_test',
     'defense_input_test',
+    'controller_input_test',
     'capture_telemetry_test',
     'charge_ally_collision_test',
     'knife_identity_test',
