@@ -1,12 +1,12 @@
 # Waystone combat and character framework
 
-**Status:** living design checkpoint. Implemented portions are reconciled to `0.2.95`;
+**Status:** living design checkpoint. Implemented portions include the approved `0.3.0` expedition prototype;
 future classes and deferred systems remain targets rather than current code.
 
 **Recorded:** 2026-07-31
 
-**Updated:** 2026-09-22; reviewed against `0.2.95` after the implemented Intelligence,
-Mage, Warrior, and Vanguard revisions
+**Updated:** 2026-10-17; expedition additions below build on the existing Intelligence,
+Mage, Warrior, and Vanguard identities. Release verification is tracked in `current-state.md`.
 
 **Scope:** Shared actor, combat, weapon, defense, perception, condition, and character-progression rules
 
@@ -26,6 +26,45 @@ Exact balance values remain provisional unless this document labels a rule as st
 - The same foundation should support Expedition, Endless, and Campaign without making their world topology or progression cadence identical.
 
 ## 1. Time, actions, and movement
+
+### 0.3.0 timing clarification
+
+Commitment measurements count the remainder of the action actually committed now.
+A held combo does not promise its later phases until continuation is accepted.
+Voluntary actions retain personal tempo; imposed hit reactions, posture-break
+openings and post-hit protection own world time. Faster actors must not silently
+lose their defensive opportunity because a forced reaction consumed it faster.
+
+Capture records freeze their response classification when contact/evasion resolves
+or the damaging window ends. The reaction caused by a failed walk is not a second
+voluntary defense and must not remove that failed attempt from the walk-only
+denominator. A later recovery punish cannot rewrite the earlier response. Startup
+fractions use measured world-time startup, not an unscaled personal-time duration.
+Delayed projectiles/hazards are not called misses merely because their caster recovered.
+
+### Expedition equipment and adopted tracks
+
+Three functional slots (Body, Boots, Gloves) modify the existing attributes and
+shared displacement/projectile rules. `expedition_catalog.gd` owns the nine initial
+items. Equipping requires safety/readiness, displays the replacement comparison,
+leaves displaced gear on the ground and clamps current resources without healing.
+Fletcher Gloves extend physical projectiles only; Surefoot Boots reduce displacement
+distance, including impulse travel, rather than becoming damage reduction.
+
+The midpoint Cinderworks Exchange consumes boss one's writ, not money, for a permanent
+Trapper or Sapper choice at rank two. Rank three uses an ordinary upgrade from level
+nine. Trapper: 24/20 Energy, 0.7-second action, ten-second cooldown, visible snare
+lasting twelve simulation seconds; 40% movement slow for two seconds and three
+posture damage; rank three permits two active snares. Sapper: 30/26 Energy,
+0.9-second action, ten-second cooldown, radius 140; eight damage, three posture and
+mass-sensitive displacement; rank three gives four posture and 50% more displacement.
+These use the existing adopted slot, not an Elementalist-exclusive spell.
+
+The original five-charge Rejuvenation pouch retains its 25-health timed use.
+Single-use Trail Rations heal fifteen, stack to two in one of three utility slots,
+reject full health and never replenish at a Waystone. Repulsion Pots use the same
+mass-sensitive displacement boundary without damage. Healing discoveries and stock
+are finite; there is no Salve, Field Medic, pouch-capacity upgrade or refill merchant.
 
 ### 1.1 Action phases
 
@@ -536,6 +575,12 @@ Examples:
 
 Repeated actions create repeated risk. RNG state must be saved so seeds and bug reports remain reproducible.
 
+In the 0.3.0 expedition, suspend first finishes the player's existing commitment,
+then publishes one atomic snapshot. Loading does not cancel enemy tells or recovery,
+clear exhaustion or reset the Energy regeneration delay. Boss phase, pending hazards,
+stable IDs, stock, equipment and consumable counts survive; resuming is not restoration.
+Legacy save migrations retain their historical compatibility rules.
+
 ### 9.3 Line of sight
 
 Valid line of sight creates Engaged and exact current knowledge. Hearing alone does not.
@@ -745,7 +790,7 @@ The current leaning is forced construction in both Expedition and Campaign, with
 
 ## 12. Mode-specific boundaries
 
-- Expedition is forward-directed, permadeath, and has no Waystones or campaign-style shortcut loops.
+- Expedition is forward-directed and permadeath. The approved 0.3.0 prototype has three standalone biomes and a single-use restorative Waystone after each boss; these neither respawn enemies nor create death checkpoints. Departed biomes cannot be revisited. This supersedes the previous no-Waystone rule.
 - Campaign can use Waystones, persistent trainers, layered regions, death recovery, and anchored knowledge.
 - Leveling remains available outside active combat in Expedition.
 - Campaign leveling and major retraining occur at Waystones or appropriate safe sites.

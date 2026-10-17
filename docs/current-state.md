@@ -1,7 +1,7 @@
 # Waystone current state
 
-**Reviewed:** 2026-09-23
-**Source baseline:** `0.2.95` (`versionCode 295`, save schema `37`, generator `3`, presentation `16`, Combat Survey format `35`)  
+**Reviewed:** 2026-10-17 (three-biome prototype closeout)
+**Release baseline:** `0.3.0` (`versionCode 300`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `17`, Combat Survey format `36`). Mechanically verified; human play acceptance remains open.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history and the other design documents retain rationale, evidence, rejected alternatives, and future targets.
 
 ## What exists now
@@ -11,20 +11,25 @@
 - The shared combat kernel includes committed actions, attack capture, Energy and Recovery rule profiles, exhaustion, Dodge, posture, Resolve-derived action poise, conditions, projectile elevation and misdirection, barriers, deterministic save/snapshot support, and survey attribution.
 - Fire, Ice, Earth, and Air casters and all eight elemental abilities are implemented. The Elementalist can inherit one spell from each element; Intelligence reduces spell cost through the implemented soft-cap curve without increasing spell damage.
 - The Warrior/Vanguard redesign is live: sustained Rally, Battle Flow, Advance, Resolve-derived action poise, Power Through, and Unbreakable. Battle Flow is sequence-based and currently decays after 15 seconds.
-- The encounter layer has role-aware recipes, deliberate formations, guaranteed non-melee pressure in ordinary mixed generation, exact-roster experiments, and Combat Survey `Encounter` and `Attrition` profiles. This is a testing/encounter grammar, not yet the final Expedition journey generator.
+- The Combat Survey layer has role-aware recipes, deliberate formations, guaranteed non-melee pressure in ordinary mixed generation, exact-roster experiments, and `Encounter` and `Attrition` profiles. Its generator remains separate from the three-biome Expedition generator.
 - Ordinary walking is a chain of short committed steps: a hold repeats them and steering affects the next step. It remains a free tactical defense, but is not steerable within a step. The Ice Caster's old cone complaint predates Frost Lance and Cold Front and is not a standing verdict on current Ice.
-- Boss Lab is implemented as a repeatable, isolated evaluation mode. The current Werewolf solo redesign is live with Hunting Leap, Double Rake, and Bounding Rake; its pack form remains disabled for comparison. Warden still uses provisional behaviour and is the next boss-design implementation target.
+- Boss Lab is implemented as a repeatable, isolated evaluation mode. The Werewolf solo redesign is live with Hunting Leap, Double Rake, and Bounding Rake; its pack form remains disabled for comparison. Warden remains provisional. Both legacy bosses are excluded from the new expedition.
+- The implemented expedition is a continuous mountain ascent through Briarwild Foothills, the above-ground Cinderworks and Stormglass Summit, with irreversible biome departures, three new solo bosses, one-use restoration, finite healing/economy, equipment and the midpoint adopted-track Exchange. See the implementation ledger for verification limits.
+- Verification covers 100 seeds / 300 maps, legal full-run victories for all four characters, both disciplines, and 26 passing regression files plus one documented pre-existing Bandit failure. Both builds are complete. The final APK is installed and version-verified on the Fold; portrait input, frozen time and cold save/resume passed. Inner-display play and sustained combat performance remain unverified.
 
 ## Current work order
 
-1. Implement and verify the **Warden solo redesign**: Gate Cleave, Driving Thrust, Ground Slam, Gate Sequence, phase presentation, and its explicit posture policy.
-2. Play and survey the Boss Lab as an instrument as well as the bosses. Tune only the owner isolated by evidence.
-3. Compare the Werewolf solo remix with its optional pack condition, then choose what belongs in production encounters.
-4. Integrate only validated boss and encounter definitions into a small Expedition/Campaign slice with explicit arrival resources.
-5. Run the matched **Recovery versus Energy** comparison after the boss pressure test is credible.
-6. Return to the mature Expedition journey rebuild and Campaign topology only after the combat/boss gate provides usable evidence.
+The approved expedition includes only the necessary actual-commitment timing,
+imposed-reaction clock ownership and defensive-response measurement repairs.
+Other foundation-audit proposals, including Strength, broader condition rules and
+Recovery Rally, remain proposals rather than implied authorization for a rewrite.
 
-No future item has a release number or date until it is explicitly approved.
+The October 17 approval supersedes the Warden-first content gate for this experiment:
+
+1. Play the [0.3.0 expedition prototype](expedition-0.3.0-implementation.md) and collect human journey/boss feedback. Automated feasibility does not establish fun, fairness or readable teaching.
+2. Check the Fold's inner display and sustained combat performance; report these separately from the already-passed portrait/suspension smoke tests.
+3. Propose narrow tuning or repairs from that evidence before expanding the content programme. Roster counts, rewards and boss statistics remain test values.
+4. Revisit Warden, the Werewolf pack comparison, Campaign integration and Recovery versus Energy only as subsequent agreed work; none was implemented by adding the new expedition bosses.
 
 ## Document authority and status
 
@@ -35,8 +40,9 @@ No future item has a release number or date until it is explicitly approved.
 | `docs/battle-design-bible.md` | Credence-rated enemy, encounter, and boss principles. |
 | `docs/combat-character-framework.md` | Shared actor, combat, character, and progression design. Implemented facts must still be checked against source. |
 | `docs/elemental-casters.md`, `docs/warrior-vanguard-redesign.md` | Implemented programme records plus retained design history. |
-| `docs/enemy-encounter-boss-revised-design.md` | Active six-update boss/encounter plan: Updates 1–4 shipped; Update 5 is next; Update 6 waits for evidence. |
-| `docs/expedition-design-principles.md`, `docs/journey-design-principles.md`, `docs/expedition-encounter-redesign.md` | Future-mode design targets. They do not describe the current generator as complete. |
+| `docs/enemy-encounter-boss-revised-design.md` | Earlier six-update plan: Updates 1–4 shipped; Updates 5–6 deferred by the approved new expedition. |
+| `docs/expedition-0.3.0-implementation.md` | Approved three-biome contract, ownership, implementation and verification ledger. |
+| `docs/expedition-design-principles.md`, `docs/journey-design-principles.md`, `docs/expedition-encounter-redesign.md` | Enduring pacing principles and historical design rationale; obsolete seven-region/no-Waystone counts are not current requirements. |
 | `docs/combat-loop-diagnosis.md`, `docs/attack-capture-design.md`, `docs/attack-capture-implementation.md`, `docs/survey-archive-findings.md` | Historical evidence and shipped design records. Their old baselines are intentional, not current instructions. |
 | `docs/code-structure-audit.md` | Architecture record. The accepted first restructuring programme shipped; deeper proposals remain proposals until separately approved. |
 | `WAYSTONE_MIGRATION_HANDOFF.md` | Detailed operational history, testing, building, and device handoff. |

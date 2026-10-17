@@ -1,21 +1,21 @@
 # Waystone — Expedition design principles
 
-**Status:** enduring design target, reviewed 2026-09-22. The combat kernel, survey
-instrument, initial encounter grammar, formations, and exact-roster experiments exist;
-the mature seven-region Expedition described here does not. Its rebuild remains deferred
-until boss and narrow journey validation. See `docs/current-state.md`.
+**Status:** enduring principles, reconciled 2026-10-17 with the explicitly approved
+three-biome prototype. The older seven-region/one-boss/no-Waystone contract is superseded.
+Implementation and verification status: `expedition-0.3.0-implementation.md` and
+`current-state.md`. Prototype counts and tuning remain hypotheses, not permanent rules.
 
 ## Purpose
 
 This is the single reference for the principles behind an effective Waystone Expedition. It consolidates the accepted reasoning currently spread across `design-foundations.md`, `design-brief.md`, `combat-character-framework.md`, and `expedition-encounter-redesign.md`.
 
-It describes the intended experience and the rules by which future Expedition content should be judged. It is not a fixed content table, a generator specification, or permission to implement the deferred Expedition rebuild before the combat and encounter grammar have been validated.
+It describes the intended experience and the rules by which Expedition content should be judged. It is not a fixed content table. The separate approved 0.3.0 contract supplies the current generator specification and release criteria.
 
 ---
 
 ## 1. The expedition fantasy
 
-An Expedition is a short, forward-directed, default-permadeath journey through seven substantial regions and roughly 25–30 consequential tactical situations, ending in a boss. It has branches and discoveries, but no Campaign Waystones, checkpoint loop, or campaign-style return topology.
+An Expedition is a forward-directed, permadeath journey through three standalone biomes of one mountain ascent. Each has six main and two optional encounter sites, quiet exploration, preparation and a solo boss. Each boss unlocks one single-use restorative Waystone; this is not a checkpoint and does not respawn enemies. Crossing into the next biome permanently leaves unclaimed rewards and unused restoration behind.
 
 The player should feel that they are:
 
@@ -52,7 +52,7 @@ Waystone does not take CQ2's hit rolls or combat mathematics. The run grammar tr
 
 Waystone takes committed actions, spacing, distinctive movesets, resource tension, and the emotional value of a dangerous journey. For Expedition, the important transfer is consequence: a decision spends time, space, initiative, information, resources, or future options and cannot simply be taken back.
 
-Dark Souls' interconnected checkpoint world belongs primarily to Campaign. Expedition deliberately omits Waystones and campaign return loops so that attrition and permadeath retain their point.
+Dark Souls' interconnected checkpoint world belongs primarily to Campaign. Expedition omits checkpoint respawns and campaign return loops. Its three approved post-boss Waystones are single-use restorations, not checkpoints; attrition remains cumulative within each biome and death still ends the run.
 
 Waystone does not take reflex-dependent combat, tight input windows, animation-cancel technique, or continuous 3D topology.
 
@@ -158,7 +158,7 @@ Threats must be readable; the correct route need not be. Expedition should not d
 
 ### 3.8 Preserve attrition and push-your-luck tension
 
-Expedition has no Waystones. Permadeath ends the run, progression lasts for the run, and healing begins as a fixed supply with generator-controlled resupply that must be found.
+Permadeath ends the run and progression lasts for the run. The original five-charge pouch is replenished only by the three single-use post-boss Waystones. Finite weaker Rations must be found or bought and never replenish. These planned restoration beats separate biome-length attrition arcs without erasing consequences inside a biome.
 
 Health, healing, Energy/recovery capacity, consumables, positioning, and future opportunities should produce cumulative decisions across the route. A resource meter is not meaningful merely because it is frequently spent; it matters only if preserving, spending, or recovering it changes risk.
 
@@ -197,18 +197,18 @@ The player should learn tendencies and make judgments, not solve exact arithmeti
 
 ## 4. Scale and structure
 
-The current mature target is:
+The current bounded prototype is:
 
-- seven substantial locales;
-- roughly 25–30 consequential tactical situations across the full route;
-- one boss;
+- three substantial, independently explored biomes;
+- eighteen main and six optional encounter sites across the full route;
+- three new solo bosses;
 - several internal encounter spaces and side routes per locale;
 - one distinct spatial grammar and progression role for each locale;
 - bounded repetition, with enough recurrence for recognition but enough recombination for different tactical stories.
 
-The route is a seven-slot progression recipe. Each slot has a global difficulty and pacing position, while the locale occupying it supplies geography, landmarks, enemy roles, and presentation. A single-biome Expedition can use all seven progression profiles of that biome; a mixed Expedition can combine Forest, Bridge, Town, Castle, Dungeon, and later locale sets while preserving the same global escalation. The sequence of locales can therefore tell a geographic story without hardwiring difficulty to one biome order.
+The route follows wooded foothills, an above-ground industrial mountainside and an exposed summit. Within each biome, introduce signature enemies before combining them, alternate pressure with genuine safe space, and keep optional guarded discoveries outside the main route. Eight authored enemy types yield seven placed types per seed; larger rosters do not imply larger packs or inflated health.
 
-The Friendly Forest is the reference structure: seven authored regional identities progressing from Sunlit Verge through Brookwood, Old Forest Road, Elder Grove, Rootbound Woods, Forest Ruins, and Heartwood Approach. Their exact content can evolve, but the principle remains that each stage has recognisable geography, encounter language, and enemy introductions rather than functioning as a cosmetic skin over the same room generator.
+The older seven-part Friendly Forest remains legacy-save geography. The durable principle survives: each locale has recognizable geography, encounter language and enemy introductions rather than a cosmetic skin over the same room generator.
 
 ---
 
@@ -277,16 +277,15 @@ The expedition design is working when:
 
 ## 8. Current dependency
 
-The Expedition rebuild remains downstream of the combat kernel and encounter validation. The intended order is:
+The October 17 approval deliberately superseded the Warden-first dependency for this experiment. The implementation order is:
 
-1. make movement, attacks, defenses, enemy pressure, and survival satisfying in a small room;
-2. use the Combat Survey to establish a reliable body of encounter evidence;
-3. extract a reusable grammar and the smallest demonstrated roster additions;
-4. rebuild the Friendly Forest as a continuous expedition using that grammar;
-5. tune pacing, density, repetition, rewards, and route length in complete runs;
-6. build later biomes from the validated system.
+1. lifecycle, three maps and persistence;
+2. regional geography, declarative encounters, coverage and pacing;
+3. finite economy, equipment and two adopted disciplines;
+4. new enemies and solo bosses, verified biome by biome;
+5. complete-run verification, tuning, documentation and release.
 
-This dependency is part of the design principle: multiplying unproven content makes the underlying problem larger, not better.
+Only the necessary commitment, imposed-reaction and response-measurement repairs belong in this implementation. The larger foundation audit is not wholesale approval for a rewrite. Automated victories establish feasibility, not fun or human fairness.
 
 ---
 

@@ -1,7 +1,7 @@
 class_name SaveMigrations
 extends RefCounted
 
-const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
 
 static func normalize(source: Dictionary, current_version: int) -> Dictionary:
 	var payload := source.duplicate(true)
@@ -32,6 +32,12 @@ static func _migrate_one(payload: Dictionary, from_version: int) -> Dictionary:
 		34: return _v34_to_v35(payload)
 		35: return _v35_to_v36(payload)
 		36: return _v36_to_v37(payload)
+		37:
+			var result := _copy(payload)
+			if not result.get("cooldowns") is Dictionary: return {}
+			result["expedition"] = {} # Retain the legacy geography and ending.
+			result["cooldowns"]["adopted"] = {"remaining":0.0,"maximum":10.0}
+			return result
 		_: return {}
 
 # Historical semantic migrations still run during hydration because they need the
@@ -111,4 +117,7 @@ static func validate_current(payload: Dictionary, current_version: int) -> Packe
 	for key in ["enemies", "projectiles", "hazards", "barriers", "effects"]:
 		if payload.has(key) and not payload[key] is Array: errors.append("Save field %s must be an Array" % key)
 	if payload.has("cooldowns") and not payload["cooldowns"] is Dictionary: errors.append("Save cooldowns must be a Dictionary")
+	if current_version >= 38:
+		if not payload.get("expedition") is Dictionary: errors.append("Save expedition must be a Dictionary")
+		else: errors.append_array(preload("res://scripts/core/expedition_coordinator.gd").validate(payload["expedition"]))
 	return errors

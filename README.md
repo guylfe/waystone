@@ -1,6 +1,39 @@
 # Waystone Prototype
 
-Current prototype version: `0.2.95` (Android version code `295`).
+Current prototype version: `0.3.0` (Android version code `300`).
+
+## v0.3.0 — a three-biome mountain expedition
+
+Implemented and mechanically verified: 100 seeds across three biomes, legal full-run
+victories for all four characters, and 26 passing regression files with one documented
+pre-existing expected failure. Windows and Android builds are complete; 0.3.0 is
+installed and version-verified on the Pixel Fold. See `docs/expedition-0.3.0-implementation.md`
+for evidence and device-test limits. Automated completion is not human approval of
+balance, fairness or fun.
+
+Explore **Briarwild Foothills → Cinderworks → Stormglass Summit** as three standalone
+maps. Each has six main encounters, two optional guarded discoveries, quiet and
+preparation space, and a new solo boss: Thornhart, Kilnmaster or Bell Regent. The
+foundry is above ground on the mountainside, not a detour into an underground realm.
+Thirty-six authored encounter templates select seven of eight regional enemy types
+per seed, including six new signatures. Encounters have no ordinary room-clear locks.
+
+Every boss unlocks one single-use Waystone restoring readiness, health, Energy and
+the original five-charge Rejuvenation pouch. It is not a checkpoint and respawns
+nothing. Departure explicitly abandons the previous biome; the final victory exit
+is separate from its Waystone. Permadeath and suspend/resume remain intact.
+
+Finite Trail Rations, Repulsion Pots, crowns, merchants and nine equipment items
+support the journey without a healing farm. Boss one's writ grants a free permanent
+Trapper or Sapper sixth track at the midpoint Cinderworks Exchange. The existing
+XP curve reaches main-route levels 4/7/10 before bosses, level 6 at the Exchange,
+and level 11 with all optional discoveries. No Salve, Field Medic or refill merchant.
+
+Only the approved foundation repairs accompany this content: actual current-action
+commitment measurement, world-clock imposed reactions and accurate defensive-response
+classification. Legacy bosses, Recovery tests and pre-expedition saves remain separate.
+New expedition generator `1` does not perturb Combat Survey generator `3` seeds.
+Save schema is `38`, presentation version `17`, and Combat Survey format `36`.
 
 ## v0.2.95 — the Werewolf commits to the hunt
 

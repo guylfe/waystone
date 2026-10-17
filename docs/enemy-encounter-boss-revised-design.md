@@ -4,8 +4,10 @@
 **Date:** 2026-09-14
 **Inspected baseline:** 0.2.91, commit `af40685`
 **Status:** approved staged plan, partly implemented. Updates 1–4 shipped as `0.2.92`–
-`0.2.95`; Update 5 (Warden solo) is next; Update 6 waits for play evidence. Unshipped
-values remain starting proposals, not validated rules.
+`0.2.95`. On October 17 the user approved a separate three-biome expedition with
+new solo bosses; Update 5 (Warden) and Update 6 are deferred, not prerequisites or
+silently completed. See `expedition-0.3.0-implementation.md`. Unshipped values
+remain starting proposals, not validated rules.
 
 ## Purpose
 
@@ -269,7 +271,7 @@ The design can be approved as a whole while implementation remains divided into 
 | Update 2 — Support relationships and introductions | Shipped in `0.2.93` |
 | Update 3 — Knife differentiation | Shipped in `0.2.94` |
 | Update 4 — Werewolf solo | Shipped in `0.2.95`; pack disabled |
-| Update 5 — Warden solo | Next implementation target |
+| Update 5 — Warden solo | Deferred by the October 17 expedition approval |
 | Update 6 — Comparison and journey integration | Deferred until play evidence |
 
 ### Update 1 — Testing foundation

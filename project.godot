@@ -1,5 +1,6 @@
 [application]
 config/name="Waystone Prototype"
+config/icon="res://assets/waystone-icon.svg"
 run/main_scene="res://scenes/main.tscn"
 
 [display]

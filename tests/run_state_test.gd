@@ -132,7 +132,7 @@ func test_rejuvenation_belt_rules() -> void:
 
 func test_full_belt_swap_drops_displaced_stack() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("wayfarer", "expedition", 717)
+	state.start_run("wayfarer", "expedition", 717, "encounter", "energy", true) # Legacy pickup fixture.
 	var target: Dictionary = {}
 	for pickup_value in state.world_pickups:
 		var pickup: Dictionary = pickup_value
@@ -172,7 +172,7 @@ func test_continuous_movement() -> void:
 
 func test_attacks_are_long_commitments() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "expedition", 739391, "encounter", "recovery")
+	state.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
 	state.enemies.clear()
 	assert(state.request_attack(state.player_pos + Vector2.RIGHT * 100.0))
 	assert(state.simulation_time >= 0.96)
@@ -180,7 +180,7 @@ func test_attacks_are_long_commitments() -> void:
 
 func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("warrior", "expedition", 739391, "encounter", "recovery")
+	state.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
 	state.enemies.clear()
 	# Held throughout so all three phases are actually reached and their authored
 	# geometry can be compared.
@@ -213,7 +213,7 @@ func test_combo_hold_commits_each_strike() -> void:
 	# Continuation is sampled at each authored link, so the number of strikes a
 	# sequence commits is decided by how long the input stays live.
 	var single: RunState = RunStateScript.new(false)
-	single.start_run("warrior", "expedition", 739391, "encounter", "recovery")
+	single.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
 	single.enemies.clear()
 	assert(single.request_combo(Vector2.UP, false))
 	single.set_attack_hold(false)
@@ -224,7 +224,7 @@ func test_combo_hold_commits_each_strike() -> void:
 	assert(single.is_player_ready() and single.simulation_time >= 0.97 and single.simulation_time < 1.05)
 
 	var double: RunState = RunStateScript.new(false)
-	double.start_run("warrior", "expedition", 739391, "encounter", "recovery")
+	double.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
 	double.enemies.clear()
 	assert(double.request_combo(Vector2.UP, false, true))
 	assert(advance_until_elapsed(double, 0.90))
@@ -234,7 +234,7 @@ func test_combo_hold_commits_each_strike() -> void:
 	assert(double.is_player_ready() and double.simulation_time >= 1.68 and double.simulation_time < 1.74)
 
 	var full: RunState = RunStateScript.new(false)
-	full.start_run("warrior", "expedition", 739391, "encounter", "recovery")
+	full.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
 	full.enemies.clear()
 	assert(full.request_combo(Vector2.UP, false, true))
 	while full.advance_streamed_action_tick(): pass
@@ -364,6 +364,7 @@ func test_firebolt_tracking_is_limited() -> void:
 
 func test_dodge_world_time() -> void:
 	var state: RunState = RunStateScript.new()
+	state.start_run("warrior","expedition",42,"encounter","recovery",true)
 	state.enemies.clear()
 	assert(state.request_dodge(Vector2.RIGHT))
 	var frozen := state.dodge_cooldown
@@ -446,7 +447,7 @@ func test_loadout_identities() -> void:
 
 func test_shared_actor_and_weapon_foundation() -> void:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 717, "encounter", "recovery")
+	state.start_run("warrior", "expedition", 717, "encounter", "recovery", true)
 	var player := state.player_actor()
 	for attribute in CombatCatalogScript.ATTRIBUTE_KEYS:
 		assert(Dictionary(player["attributes"]).has(attribute))
@@ -469,7 +470,7 @@ func test_shared_actor_and_weapon_foundation() -> void:
 
 func test_warrior_weapon_arts() -> void:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 717, "encounter", "recovery")
+	state.start_run("warrior", "expedition", 717, "encounter", "recovery", true)
 	state.walls.clear()
 	state._build_navigation()
 	var left := state._make_enemy("knife", state.player_pos + Vector2(-24, -84), 80)
@@ -606,7 +607,7 @@ func test_fast_enemy_posture_break() -> void:
 	assert(String(Dictionary(knife["action"])["kind"]) == "stagger")
 	assert(float(knife["posture"]) == 0.0)
 	var player_recovery_world := (0.98 - 0.40) / state._player_personal_tempo()
-	var enemy_stagger_world := float(Dictionary(knife["action"])["duration"]) / state._enemy_personal_tempo(knife)
+	var enemy_stagger_world := float(Dictionary(knife["action"])["duration"]) # Imposed reactions own the world clock.
 	assert(enemy_stagger_world >= player_recovery_world + state.POSTURE_BREAK_OPENING_SECONDS - 0.0001)
 
 func test_enemy_stagger_cannot_be_refreshed() -> void:
@@ -1042,7 +1043,7 @@ func test_energy_direct_attack_button() -> void:
 
 	var recovery_board = GameBoardScript.new()
 	recovery_board.state = RunStateScript.new(false)
-	recovery_board.state.start_run("warrior", "expedition", 919191, "encounter", "recovery")
+	recovery_board.state.start_run("warrior", "expedition", 919191, "encounter", "recovery", true)
 	recovery_board.state.enemies.clear()
 	recovery_board.visual = recovery_board.state.snapshot(true)
 	recovery_board.size = Vector2(1280, 800)
@@ -1258,7 +1259,7 @@ func test_area_entry_title_uses_pacing_metadata() -> void:
 func test_long_landmarks_are_ground_materials() -> void:
 	var board = GameBoardScript.new()
 	board.state = RunStateScript.new(false)
-	board.state.start_run("wayfarer", "expedition", 739391)
+	board.state.start_run("wayfarer", "expedition", 739391, "encounter", "energy", true) # Legacy brook landmarks.
 	board._refresh_ground_surface_landmarks()
 	var brook: Dictionary = {}
 	var road: Dictionary = {}
@@ -1803,7 +1804,7 @@ func test_overlay_map_passes_input_through() -> void:
 
 func test_region_streaming_limits_active_world() -> void:
 	var expedition: RunState = RunStateScript.new(false)
-	expedition.start_run("wayfarer", "expedition", 717)
+	expedition.start_run("wayfarer", "expedition", 717, "encounter", "energy", true) # Legacy numbered-region streaming.
 	expedition._build_enemy_spatial_index()
 	assert(expedition.loaded_region_ids.size() <= 3)
 	assert(expedition._loaded_floor_shapes.size() < expedition.floor_shapes.size())
@@ -1834,7 +1835,7 @@ func test_region_streaming_limits_active_world() -> void:
 
 func test_expedition_streaming_follows_route_graph() -> void:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run("wayfarer", "expedition", 717)
+	state.start_run("wayfarer", "expedition", 717, "encounter", "energy", true) # Preserve old save geography.
 	state.current_area_id = 2
 	state.player_pos = Vector2(state.areas[2]["center"])
 	state.run_graph = {
@@ -1932,7 +1933,7 @@ func test_room_reward_progression() -> void:
 
 func test_mode_policies_and_death() -> void:
 	var expedition: RunState = RunStateScript.new(false)
-	expedition.start_run("wayfarer", "expedition", 201)
+	expedition.start_run("wayfarer", "expedition", 201, "encounter", "energy", true)
 	assert(expedition.mode_id == "expedition")
 	assert(String(expedition.mode_rules()["death_policy"]) == "end_run")
 	assert(not bool(expedition.mode_rules()["waystone_available"]))
@@ -2216,5 +2217,6 @@ func test_restart_restores_expedition() -> void:
 	assert(is_zero_approx(state.endure_cooldown))
 	assert(state.projectiles.is_empty())
 	assert(not state.enemies.is_empty())
-	assert(String(state.enemies[0]["kind"]) == "boar")
+	assert(state.enemies.any(func(enemy: Dictionary) -> bool: return String(enemy["kind"]) == "boar"))
+	assert(not state.expedition.is_empty() and int(state.expedition["biome"]) == 0)
 	assert(state.upgrades.is_empty())

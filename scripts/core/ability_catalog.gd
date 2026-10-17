@@ -7,9 +7,13 @@ extends RefCounted
 # cast commits, and how the corresponding enemy cast is presented.
 
 const PLACE_RANGE := 420.0
+const ADOPTED_DISCIPLINES := {
+	"trapper":{"label":"Trapper", "energy":[24.0,20.0,20.0], "duration":0.7, "cooldown":10.0, "lifetime":12.0, "slow_duration":2.0, "slow_scale":0.6, "posture":3.0, "radius":48.0, "description":"Place a visible 12-second snare. Contact slows movement by 40% for two seconds and deals 3 posture damage. Rank III allows two snares."},
+	"sapper":{"label":"Sapper", "energy":[30.0,26.0,26.0], "duration":0.9, "cooldown":10.0, "radius":140.0, "damage":8, "posture":[3.0,3.0,4.0], "push":[100.0,100.0,150.0], "range":320.0, "description":"Throw a concussion flask: 8 damage, 3 posture and mass-sensitive displacement in radius 140. Rank III gives 4 posture and 50% more displacement."},
+}
 
 const PLAYER_ATTACK_ACTION_KINDS := ["attack", "sweep", "combo", "art_combo", "twin_fang"]
-const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "hurl", "slam", "sunder", "fire_breath", "earth_wall", "cold_front", "frost_lance", "gale"]
+const ENEMY_ATTACK_ACTION_KINDS := ["melee", "dodge_strike", "charge", "claw_combo", "pounce_combo", "shoot", "hurl", "slam", "sunder", "fire_breath", "earth_wall", "cold_front", "frost_lance", "gale", "expedition_attack"]
 const ENERGY_REGEN_ACTION_KINDS := ["move", "wait", "rally", "take_aim", "potion", "consumable", "vault", "block", "endure"]
 
 const ELEMENT_STAGE_SPELLS := {
@@ -38,6 +42,22 @@ const SPELLS := {
 # whichever generic action carrier happens to deliver it. Fireball uses `shoot`
 # in the simulator, for example, but it is not an Archer shot in presentation.
 const ENEMY_ABILITIES := {
+	"briar_hook": {"action_kind":"expedition_attack","startup":0.62,"duration":1.85,"reach":175,"damage":10,"posture":3,"shape":"hook","phase_before":"BRIAR HOOK","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","advance":90,"arc":1.2,"pull":85},
+	"quill_fan": {"action_kind":"expedition_attack","startup":0.85,"duration":2.05,"reach":550,"damage":9,"posture":3,"shape":"fan","phase_before":"QUILL FAN","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","count":3,"spread":0.3,"speed":430},
+	"kiln_hammer": {"action_kind":"expedition_attack","startup":0.8,"duration":2.35,"reach":185,"damage":14,"posture":3,"shape":"sweep","phase_before":"KILN HAMMER","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","advance":100,"arc":1.1,"protected":true},
+	"slag_lob": {"action_kind":"expedition_attack","startup":0.9,"duration":2.1,"reach":580,"damage":12,"posture":3,"shape":"zone","phase_before":"SLAG LOB","phase_after":"EXPOSED RECOVERY","color":"ed9767","executor":"expedition","radius":105,"delay":0.8,"lifetime":2.6},
+	"glass_flight": {"action_kind":"expedition_attack","startup":0.65,"duration":2.3,"reach":440,"damage":12,"posture":3,"shape":"flight","phase_before":"GLASS FLIGHT","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","travel":330,"speed":680,"arc":0.5},
+	"ring_gong": {"action_kind":"expedition_attack","startup":1.3,"duration":2.1,"reach":80,"damage":0,"posture":3,"shape":"gong","phase_before":"RING GONG","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition"},
+	"antler_drive": {"action_kind":"expedition_attack","startup":0.62,"duration":2.3,"reach":340,"damage":14,"posture":3,"shape":"drive","phase_before":"ANTLER DRIVE","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","travel":300,"speed":690,"arc":0.7,"track_until":0.42},
+	"hooking_sweep": {"action_kind":"expedition_attack","startup":0.65,"duration":2.05,"reach":240,"damage":14,"posture":3,"shape":"sweep","phase_before":"HOOKING SWEEP","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","advance":240,"arc":2.1,"track_until":0.42},
+	"rootwake": {"action_kind":"expedition_attack","startup":0.85,"duration":2.2,"reach":650,"damage":14,"posture":3,"shape":"zone","phase_before":"ROOTWAKE","phase_after":"EXPOSED RECOVERY","color":"ed9767","executor":"expedition","radius":105,"delay":0.8,"lifetime":2.7,"count":3},
+	"hammer_press": {"action_kind":"expedition_attack","startup":0.7,"duration":2.35,"reach":260,"damage":18,"posture":3,"shape":"sweep","phase_before":"HAMMER PRESS","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","advance":195,"arc":1.7,"track_until":0.46,"protected":true},
+	"furnace_breath": {"action_kind":"expedition_attack","startup":0.8,"duration":2.2,"reach":460,"damage":18,"posture":3,"shape":"cone","phase_before":"FURNACE BREATH","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","arc":0.65},
+	"slag_cast": {"action_kind":"expedition_attack","startup":0.8,"duration":2.15,"reach":700,"damage":18,"posture":3,"shape":"zone","phase_before":"SLAG CAST","phase_after":"EXPOSED RECOVERY","color":"ed9767","executor":"expedition","radius":110,"delay":0.85,"lifetime":2.6,"count":2},
+	"chiming_lunge": {"action_kind":"expedition_attack","startup":0.55,"duration":1.95,"reach":360,"damage":22,"posture":3,"shape":"drive","phase_before":"CHIMING LUNGE","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","travel":330,"speed":800,"arc":0.65,"track_until":0.37},
+	"bell_sweep": {"action_kind":"expedition_attack","startup":0.65,"duration":2.05,"reach":275,"damage":22,"posture":3,"shape":"sweep","phase_before":"BELL SWEEP","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","advance":210,"arc":2.2,"track_until":0.43},
+	"crosswind": {"action_kind":"expedition_attack","startup":0.8,"duration":1.7,"reach":580,"damage":0,"posture":3,"shape":"wind","phase_before":"CROSSWIND","phase_after":"EXPOSED RECOVERY","color":"a9dfe3","executor":"expedition"},
+	"resonant_volley": {"action_kind":"expedition_attack","startup":0.75,"duration":2,"reach":720,"damage":22,"posture":3,"shape":"fan","phase_before":"RESONANT VOLLEY","phase_after":"EXPOSED RECOVERY","color":"ebd492","executor":"expedition","count":5,"spread":0.17,"speed":470},
 	# Werewolf timings are authored in reference-world seconds. RunState converts them
 	# once through the boss's native tempo; a later condition such as Frost still slows
 	# the action instead of being cancelled out at action creation.
@@ -70,6 +90,7 @@ const CHANTS := {
 }
 
 const ACTION_EXECUTORS := {
+	"expedition_attack":"expedition",
 	"idle": "none", "move": "locomotion", "evade": "locomotion", "dodge_strike": "melee",
 	"claw_combo": "melee", "pounce_combo": "melee", "melee": "melee", "charge": "melee",
 	"slam": "area", "shoot": "projectile", "hurl": "projectile", "sunder": "hazard",
@@ -82,9 +103,12 @@ const ACTION_EXECUTORS := {
 	"bow_draw": "player", "dodge": "player", "vault": "player", "advance": "player",
 	"block": "player", "endure": "player", "rally": "player", "potion": "player",
 	"consumable": "player", "take_aim": "player", "execution": "player",
+	"adopted":"player",
 }
 
 const HAZARD_EXECUTORS := {
+	"expedition_zone":"temporary_zone",
+	"snare":"contact_trap",
 	"player_fire": "friendly_burst", "gale": "impulse", "cold_front": "repeating_zone",
 	"fire_breath": "cone", "sundered_ground": "slow_zone",
 }
@@ -93,6 +117,8 @@ const HAZARD_EXECUTORS := {
 # definitions need a producer and a consumer; future reserved/legacy entries must
 # carry their reason or migration rather than masquerading as live content.
 const HAZARD_LIFECYCLE := {
+	"expedition_zone":{"status":"active", "producer":"expedition_attack", "consumer":"temporary_zone"},
+	"snare":{"status":"active", "producer":"trapper", "consumer":"contact_trap"},
 	"player_fire": {"status":"active", "producer":"consumable", "consumer":"friendly_burst"},
 	"gale": {"status":"active", "producer":"spellbook_and_air_caster", "consumer":"impulse"},
 	"cold_front": {"status":"active", "producer":"spellbook_and_ice_caster", "consumer":"repeating_zone"},

@@ -14,6 +14,8 @@ const IMPLEMENTED_ENEMY_AI := [
 	"duellist", "earth_caster", "fire_caster", "hound", "ice_caster",
 	"javelineer", "knife", "knight", "ox", "polearm", "shield", "warden",
 	"werewolf",
+	"briarhook", "thornspitter", "kiln_guard", "slagthrower", "glasswing", "bellrunner",
+	"thornhart", "kilnmaster", "bell_regent",
 ]
 
 var failures: Array[String] = []

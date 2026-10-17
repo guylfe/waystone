@@ -24,7 +24,9 @@ func _measure(mode: String, seed: int) -> void:
 			completed += 1
 	assert(completed == 12)
 	assert(int(state.performance_metrics["active_enemies"]) < int(state.performance_metrics["resident_enemies"]))
-	assert(state.loaded_region_ids.size() <= 3 if mode == "expedition" else state.loaded_region_ids.size() < state.areas.size())
+	# Standalone ascent maps stream intersecting geographic bounds, not a
+	# three-node legacy room graph. Both modes must still exclude distant areas.
+	assert(state.loaded_region_ids.size() < state.areas.size())
 	print("PERF %s generation=%.2fms average_action=%.2fms active=%d resident=%d regions=%d/%d shapes=%d/%d nav=%s" % [mode, generation_ms, action_total / float(completed), int(state.performance_metrics["active_enemies"]), int(state.performance_metrics["resident_enemies"]), state.loaded_region_ids.size(), state.areas.size(), state._loaded_floor_shapes.size(), state.floor_shapes.size(), state.navigation.region.size])
 
 func _measure_crowds() -> void:

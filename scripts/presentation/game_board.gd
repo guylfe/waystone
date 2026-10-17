@@ -4,6 +4,9 @@ const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const AbilityCatalogScript = preload("res://scripts/core/ability_catalog.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
+const ExpeditionEconomyScript = preload("res://scripts/core/expedition_economy.gd")
+const ExpeditionCatalogScript = preload("res://scripts/core/expedition_catalog.gd")
+var expedition_dialog: AcceptDialog
 const PresentationFrameScript = preload("res://scripts/presentation/presentation_frame.gd")
 const IsometricPoseScript = preload("res://scripts/presentation/isometric_pose.gd")
 const BG := Color("0d151b")
@@ -111,6 +114,25 @@ var sheet_skill_choice_rects: Dictionary = {}
 var sheet_detail: Dictionary = {}
 var map_mode_rect := Rect2()
 var seed_copy_rect := Rect2()
+var expedition_outcome_shown := ""
+
+func _show_expedition_report() -> void:
+	var content := _expedition_panel("Expedition journal")
+	var report := state.ExpeditionCoordinatorScript.report(state)
+	_panel_text(content,report)
+	var copy := Button.new()
+	copy.text = "Copy report"
+	copy.custom_minimum_size.y = 48
+	copy.pressed.connect(func(): DisplayServer.clipboard_set(report))
+	content.add_child(copy)
+	var export_button := Button.new()
+	export_button.text = "Save / share report"
+	export_button.custom_minimum_size.y = 48
+	export_button.pressed.connect(func():
+		_save_report_text("Waystone_Expedition_%d.txt" % state.run_seed,report)
+		if OS.has_feature("android"): _share_report_text("Waystone_Expedition_%d.txt" % state.run_seed,report)
+	)
+	content.add_child(export_button)
 var start_rect := Rect2()
 var progression_rects: Dictionary = {}
 var survey_profile_rects: Dictionary = {}
@@ -1293,6 +1315,7 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 	return result
 
 func _gui_input(event: InputEvent) -> void:
+	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
 	autosave_quiet_elapsed = 0.0
 	if survey_overlay != null and survey_overlay.visible: return
 	if event is InputEventScreenTouch:
@@ -1468,6 +1491,7 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			DisplayServer.clipboard_set(str(state.run_seed))
 			state.message = "Seed %d copied." % state.run_seed
 			queue_redraw()
+		elif not state.expedition.is_empty() and _map_action_rect(3).has_point(position): _show_expedition_report()
 		return
 	if reset_rect.has_point(position):
 		_restart()
@@ -1736,6 +1760,7 @@ func _pointer_released(position: Vector2) -> void:
 	pointer_intent = ""
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
 	if survey_overlay != null and survey_overlay.visible: return
 	if desktop_controls and event.keycode == KEY_F:
 		if event.pressed:
@@ -1970,6 +1995,7 @@ func _notification(what: int) -> void:
 		held_movement = false
 		held_movement_tracks_pointer = false
 		if streaming_action and state != null:
+			if String(state.player_action["kind"]) == "bow_draw": state.release_bow_attack()
 			var guard := 0
 			while String(state.player_action["kind"]) != "idle" and state.player_hp > 0 and guard < 1000:
 				state.advance_streamed_action_tick()
@@ -2004,6 +2030,10 @@ func _handle_gesture(end_position: Vector2) -> void:
 		_advance_or_wait()
 		return
 	if not board_rect.has_point(end_position): return
+	if selected_action == "adopted":
+		selected_action = ""
+		_begin_streamed_action(state.request_adopted(_screen_to_world(end_position),false))
+		return
 	if _try_pickup_press(end_position): return
 	if _try_waystone_press(end_position): return
 	if _try_transition_press(end_position): return
@@ -2105,7 +2135,8 @@ func _handle_button(name: String) -> void:
 			if remaining <= 0.0001 and not energy_locked:
 				selected_action = "" if selected_action == "advance" else "advance"
 		"adopted":
-			selected_action = ""
+			if not state.expedition.is_empty() and state.expedition["discipline"]!="" and state.cooldown_remaining("adopted")<=0.0:
+				selected_action = "" if selected_action=="adopted" else "adopted"
 	queue_redraw()
 
 func _handle_consumable(slot_id: String) -> void:
@@ -2308,6 +2339,8 @@ func _start_run() -> void:
 	_finish_run_start()
 
 func _finish_run_start() -> void:
+	expedition_outcome_shown = ""
+	if is_instance_valid(expedition_dialog): expedition_dialog.hide()
 	state.record_survey_view_mode(view_mode, false)
 	state.prewarm_expedition_navigation()
 	playing = false
@@ -2342,6 +2375,10 @@ func _select_loadout(choice: String) -> void:
 
 func _advance_or_wait() -> void:
 	var interaction := state.interaction_label()
+	if interaction == "TRADE":
+		_show_expedition_shop()
+		return
+	if interaction == "TAKE" and _offer_equipment(state.nearby_pickup()): return
 	if interaction == "WAIT": _begin_streamed_action(state.request_wait(-1.0, false))
 	else:
 		state.request_context_action()
@@ -2351,7 +2388,7 @@ func _advance_or_wait() -> void:
 		queue_redraw()
 
 func _try_waystone_press(position: Vector2) -> bool:
-	if not bool(state.mode_config["waystone_available"]): return false
+	if not bool(state.mode_config["waystone_available"]) and state.expedition.is_empty(): return false
 	var selected: Dictionary = {}
 	for stone in state.waystones:
 		if String(stone.get("layer", state.current_layer)) == state.current_layer and _world_to_screen(Vector2(stone["pos"])).distance_to(position) <= maxf(38.0, 42.0 * world_scale): selected = stone
@@ -2381,8 +2418,88 @@ func _try_pickup_press(position: Vector2) -> bool:
 		visual = _presentation_snapshot()
 		queue_redraw()
 		return true
+	if _offer_equipment(selected): return true
 	_begin_streamed_action(state.request_collect_nearby_pickup(false))
 	return true
+
+func _expedition_panel(title_text: String) -> VBoxContainer:
+	if is_instance_valid(expedition_dialog): expedition_dialog.queue_free()
+	pointer_down = false
+	held_movement = false
+	held_movement_tracks_pointer = false
+	expedition_dialog = AcceptDialog.new()
+	expedition_dialog.title = title_text
+	expedition_dialog.exclusive = true
+	add_child(expedition_dialog)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(minf(560.0,size.x*0.82),minf(490.0,size.y*0.65))
+	expedition_dialog.add_child(scroll)
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation",12)
+	scroll.add_child(content)
+	expedition_dialog.popup_centered()
+	return content
+
+func _panel_text(content: VBoxContainer, text_value: String) -> void:
+	var label := Label.new()
+	label.text = text_value
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size.x = minf(520.0,size.x*0.76)
+	content.add_child(label)
+
+func _offer_equipment(pickup: Dictionary) -> bool:
+	var item_id := String(pickup.get("item_id",""))
+	if not ExpeditionCatalogScript.EQUIPMENT.has(item_id): return false
+	var content := _expedition_panel("Equipment comparison")
+	_panel_text(content,ExpeditionEconomyScript.comparison(state,item_id))
+	var button := Button.new()
+	button.text = "Equip" if ExpeditionEconomyScript.safe(state) else "Cannot equip while threatened"
+	button.custom_minimum_size.y = 48
+	button.disabled = not ExpeditionEconomyScript.safe(state)
+	content.add_child(button)
+	button.pressed.connect(func():
+		if ExpeditionEconomyScript.equip(state,String(pickup["id"])):
+			visual = _presentation_snapshot()
+			_mark_autosave(true)
+			expedition_dialog.hide()
+			queue_redraw())
+	return true
+
+func _show_expedition_shop() -> void:
+	var content := _expedition_panel("Wayfarer's Exchange" if int(state.expedition["biome"])==1 else "Mountain outfitter")
+	_panel_text(content,"%d crowns · finite stock · purchases are placed beside you\nNo selling, refills or restocking." % int(state.expedition["crowns"]))
+	if not ExpeditionEconomyScript.at_merchant(state):
+		_panel_text(content,"Approach the merchant in a safe, ready state.")
+		return
+	if int(state.expedition["biome"])==1 and bool(state.expedition["writ"]):
+		_panel_text(content,"Your training writ grants TWO ranks in one permanent sixth discipline. No crowns required.")
+		for discipline in ["trapper","sapper"]:
+			var train := Button.new()
+			train.text = "Choose %s I + II" % String(discipline).capitalize()
+			train.custom_minimum_size.y = 48
+			content.add_child(train)
+			_panel_text(content,String(AbilityCatalogScript.ADOPTED_DISCIPLINES[discipline]["description"]))
+			train.pressed.connect(func():
+				if ExpeditionEconomyScript.adopt(state,discipline):
+					_mark_autosave(true)
+					visual = _presentation_snapshot()
+					_show_expedition_shop())
+	for row in ExpeditionEconomyScript.stock(state):
+		var item_id := String(row["id"])
+		var equipment: Dictionary = ExpeditionCatalogScript.EQUIPMENT.get(item_id,{})
+		var label := String(equipment.get("label",state.consumable_definition(item_id).get("label",item_id)))
+		var buy := Button.new()
+		buy.text = "%s · %d crowns · %d left" % [label,int(row["price"]),int(row["quantity"])]
+		buy.custom_minimum_size.y = 48
+		buy.disabled = int(row["quantity"])<=0 or int(state.expedition["crowns"])<int(row["price"])
+		content.add_child(buy)
+		if not equipment.is_empty(): _panel_text(content,ExpeditionEconomyScript.comparison(state,item_id))
+		buy.pressed.connect(func():
+			if ExpeditionEconomyScript.purchase(state,item_id):
+				_mark_autosave(true)
+				visual = _presentation_snapshot()
+				_show_expedition_shop())
 
 func _try_transition_press(position: Vector2) -> bool:
 	for transition in state.transitions:
@@ -2426,6 +2543,11 @@ func _defense_cooldown() -> float:
 func _on_state_changed() -> void:
 	_mark_autosave()
 	_sync_setup_controls()
+	if not state.expedition.is_empty() and (state.death_pending or state.trial_complete):
+		var outcome := "%d:%s" % [state.run_seed,"death" if state.death_pending else "victory"]
+		if expedition_outcome_shown!=outcome:
+			expedition_outcome_shown=outcome
+			_show_expedition_report.call_deferred()
 	# Buying an element changes what the drawer holds, and the drawer's rects are built in
 	# _layout(). Without this the row kept the geometry it had at run start, so a spell
 	# learned mid-run had no rect to be drawn or tapped in and its locked slot stayed on
@@ -2493,6 +2615,7 @@ func _draw() -> void:
 
 func _draw_world() -> void:
 	draw_rect(board_rect, Color("05080a"))
+	_draw_expedition_vista()
 	_draw_discovered_floor()
 	_draw_grid()
 	var discovered := _render_discovered_cells()
@@ -2638,9 +2761,44 @@ func _draw_world() -> void:
 		area_text = "%s  •  TIMELINE SECURE" % state.current_area_name().to_upper() if risk_xp == 0 else "%s  •  %d XP AT RISK" % [state.current_area_name().to_upper(), risk_xp]
 	var area_width := minf(board_rect.size.x * 0.50, 360.0)
 	var area_x := board_rect.position.x + (board_rect.size.x - area_width) * 0.5
-	draw_string(ThemeDB.fallback_font, Vector2(area_x, board_rect.position.y + font + 10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
+	# Narrow/Fold layouts use the full-width footer for location. Their header
+	# is already occupied by navigation and the prominent resource cluster.
+	if desktop_controls and state.expedition.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(area_x,board_rect.position.y+font+10), area_text, HORIZONTAL_ALIGNMENT_CENTER, area_width, font, Color("9fb2b7"))
 	_draw_player_health_bar(font)
 	_draw_player_progress_bar(font)
+
+func _draw_expedition_vista() -> void:
+	if state.expedition.is_empty() or view_mode != "isometric": return
+	var position := Vector2(visual.get("player_pos", state.player_pos))
+	var near_landmark := position.distance_to(Vector2(state.expedition_markers["landmark"])) < 500.0
+	var near_preparation := position.distance_to(Vector2(state.expedition_markers["preparation"])) < 450.0
+	if not near_landmark and not near_preparation: return
+	# Distant scenery is behind discovered ground, never a fake traversable route
+	# or an overlay obscuring a tell. Fixed silhouettes respect frozen thinking time.
+	var biome := int(state.expedition["biome"])
+	var origin := board_rect.position
+	var extent := Vector2(board_rect.size.x, minf(230.0, board_rect.size.y * 0.36))
+	var palette := [Color("243c36"), Color("514b43"), Color("3b5266")]
+	draw_rect(Rect2(origin, extent), palette[biome].darkened(0.35))
+	var ridge := PackedVector2Array([origin+Vector2(0,extent.y), origin+extent*Vector2(0,0.83), origin+extent*Vector2(0.12,0.50), origin+extent*Vector2(0.33,0.70), origin+extent*Vector2(0.67,0.27), origin+extent*Vector2(0.85,0.62), origin+extent*Vector2(1,0.46), origin+extent])
+	draw_colored_polygon(ridge, palette[biome])
+	var citadel := origin + extent * Vector2(0.12, 0.50)
+	var tower := 23.0 + biome * 7.0
+	draw_rect(Rect2(citadel-Vector2(13,tower),Vector2(26,tower+5)),Color("a4b3b5").darkened(0.25))
+	for index in range(3): draw_rect(Rect2(citadel+Vector2(-13+index*10,-tower-7),Vector2(6,8)),Color("a4b3b5").darkened(0.25))
+	draw_arc(citadel-Vector2(0,tower*0.47),5,PI,TAU,10,Color("d5c291"),2.0)
+	# The lower forest stays visible from the industrial terraces. At the summit,
+	# the same forest and furnace chimneys sit beneath a pale smoke bank.
+	for index in range(18):
+		var base := origin+Vector2((index+0.5)*extent.x/18.0,extent.y*(0.69+0.04*sin(index*1.7)))
+		var height := 17.0 if biome==0 else 11.0
+		draw_colored_polygon(PackedVector2Array([base+Vector2(-10,0),base-Vector2(0,height),base+Vector2(10,0)]),Color("233c32"))
+	if biome>0:
+		for index in range(3):
+			var chimney := origin+extent*Vector2(0.12+index*0.12,0.84)
+			draw_rect(Rect2(chimney-Vector2(3,18),Vector2(6,18)),Color("51483f"))
+			for puff in range(4): draw_circle(chimney+Vector2(puff*9,-24-puff*8),6+puff*2,Color(0.65,0.66,0.63,0.22))
 
 func _draw_temporal_tint() -> void:
 	if temporal_tint_strength <= 0.001: return
@@ -2826,18 +2984,18 @@ func _draw_area_title() -> void:
 	var alpha := minf(clampf(elapsed / 0.24, 0.0, 1.0), clampf(area_title_remaining / 0.48, 0.0, 1.0))
 	if alpha <= 0.001: return
 	var panel_width := minf(board_rect.size.x * 0.72, 560.0)
-	var panel_height := 76.0
+	var panel_height := 100.0
 	var panel := Rect2(
-		board_rect.position + Vector2((board_rect.size.x - panel_width) * 0.5, board_rect.size.y * 0.18),
+		board_rect.position + Vector2((board_rect.size.x - panel_width) * 0.5, maxf(180.0,board_rect.size.y * 0.18)),
 		Vector2(panel_width, panel_height)
 	)
 	draw_rect(panel, Color(0.025, 0.045, 0.045, 0.58 * alpha))
 	draw_line(panel.position + Vector2(panel_width * 0.14, panel_height - 5.0), panel.position + Vector2(panel_width * 0.86, panel_height - 5.0), Color(0.45, 0.72, 0.58, 0.64 * alpha), 1.5)
-	var title_font := maxi(20, int(minf(size.x, size.y) * 0.036))
+	var title_font := _sheet_fit_font_size(area_title_name.to_upper(),panel_width-16,maxi(20,int(minf(size.x,size.y)*0.036)),14)
 	draw_string(ThemeDB.fallback_font, panel.position + Vector2(0.0, 32.0), area_title_name.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, panel_width, title_font, Color(0.88, 0.95, 0.86, alpha))
 	if not area_title_subtitle.is_empty():
 		var subtitle_font := maxi(12, int(minf(size.x, size.y) * 0.020))
-		draw_string(ThemeDB.fallback_font, panel.position + Vector2(0.0, 58.0), area_title_subtitle.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, panel_width, subtitle_font, Color(0.64, 0.77, 0.68, 0.92 * alpha))
+		_draw_sheet_wrapped_text(Rect2(panel.position+Vector2(12,44),Vector2(panel_width-24,48)),area_title_subtitle,subtitle_font,11,Color(0.64,0.77,0.68,0.92*alpha))
 
 func _draw_isometric_solids(visible: Dictionary, discovered: Dictionary) -> void:
 	var entries: Array[Dictionary] = []
@@ -3198,6 +3356,20 @@ func _draw_terrain_feature(feature: Dictionary, alpha: float = 1.0) -> void:
 	var foot := _world_to_screen(world_pos)
 	var radius := float(feature.get("radius", 44.0)) * world_scale
 	var kind := String(feature.get("kind", "tree"))
+	if kind in ["boulder","foundry_block","windbreak_stone","charcoal_kiln","ore_lift","bell_spire"]:
+		var material := Color("747d69") if kind=="boulder" else Color("a18465") if kind in ["foundry_block","charcoal_kiln","ore_lift"] else Color("9bb2be")
+		var base := _world_ring(world_pos,float(feature.get("radius",44))*0.58,6)
+		draw_colored_polygon(base,Color(material.darkened(0.35),alpha))
+		var height := radius*(1.6 if kind in ["bell_spire","ore_lift"] else 0.6)
+		var top := foot-Vector2(0,height)
+		draw_line(foot,top,Color(material,alpha),maxf(5.0,radius*0.65))
+		if kind in ["charcoal_kiln","foundry_block"]:
+			draw_rect(Rect2(top-Vector2(radius*0.2,0),Vector2(radius*0.4,radius*0.25)),Color("c55c36") if kind=="charcoal_kiln" else Color("49453e"))
+		elif kind=="ore_lift":
+			draw_line(top-Vector2(radius*0.8,0),top+Vector2(radius*0.8,0),material,4.0)
+			draw_line(top+Vector2(radius*0.6,0),foot+Vector2(radius*0.6,0),Color("d5c6a3"),2.0)
+		elif kind=="bell_spire": draw_arc(top+Vector2(0,radius*0.2),radius*0.35,PI,TAU,12,Color("e5cc87"),4.0)
+		return
 	if kind in ["brook", "old_road"]:
 		# Long landmarks are baked into discovered floor cells so they remain
 		# clipped to playable terrain and underneath every solid in either view.
@@ -3419,6 +3591,7 @@ func _draw_twin_fang(world_pos: Vector2, action: Dictionary) -> void:
 		_draw_weapon(world_pos, blade_action, true, state.PLAYER_RADIUS)
 
 func _draw_enemy(enemy: Dictionary) -> void:
+	if bool(enemy.get("reserve",false)): return
 	var world_pos := Vector2(enemy["pos"])
 	var world_radius := float(enemy["radius"])
 	var action: Dictionary = enemy["action"]
@@ -3520,6 +3693,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		if action.has("target"): draw_circle(_world_to_screen(Vector2(action["target"])), 14.0, Color(0.53, 0.67, 0.49, 0.75))
 	elif String(action["kind"]) == "frost_lance": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("frost_lance")["color"])))
 	elif String(action["kind"]) == "fire_breath": _draw_spell_cast(pos, facing, radius, action, Color(String(AbilityCatalogScript.enemy_ability("fire_breath")["color"])))
+	elif String(action["kind"]) == "expedition_attack": _draw_expedition_attack(enemy,action)
 	elif String(action["kind"]) == "chant": _draw_chant_preparation(pos, facing, radius, action)
 	elif String(action["kind"]) == "cold_front": draw_circle(_world_to_screen(Vector2(action.get("target", enemy["pos"]))), 20.0, Color("8edcff"))
 	var awareness := String(enemy.get("awareness", "idle"))
@@ -3537,6 +3711,29 @@ func _draw_enemy(enemy: Dictionary) -> void:
 
 # The hurl promises both a lane and a landing point at commitment. Its projectile will
 # follow this exact line; neither marker chases the player during the wind-up.
+func _draw_expedition_attack(enemy: Dictionary, action: Dictionary) -> void:
+	var elapsed := float(action["elapsed"])
+	if elapsed>float(action["active_end"]): return
+	var active := elapsed>=float(action["startup"])
+	var color := Color("ef7858") if active else Color("f1d58a")
+	var origin := Vector2(enemy["pos"])
+	var direction := Vector2(action["direction"])
+	var shape := String(action["shape"])
+	var points: PackedVector2Array
+	if shape in ["drive","flight"]:
+		var end := origin+direction*float(action["travel"])
+		var normal := direction.orthogonal()*(float(enemy["radius"])+10.0)
+		points = PackedVector2Array([_world_to_screen(origin-normal),_world_to_screen(end-normal),_world_to_screen(end+normal),_world_to_screen(origin+normal)])
+	elif shape in ["hook","sweep","cone","fan"]:
+		var arc := float(action.get("arc",float(action.get("count",3))*float(action.get("spread",0.3))))
+		points = _project_world_sector(origin,float(action["reach"]),direction.angle()-arc*0.5,arc,24)
+	elif shape in ["zone","wind"]:
+		points = _world_ring(Vector2(action["target"]),float(action.get("radius",180.0)),32)
+	elif shape=="gong": points = _world_ring(Vector2(enemy.get("gong_pos",origin)),70.0,28)
+	if points.size()>=3:
+		draw_colored_polygon(points,Color(color,0.14 if active else 0.055))
+		draw_polyline(_closed_points(points),Color(color,0.85),2.0)
+
 func _draw_javelin_telegraph(action: Dictionary) -> void:
 	if not action.has("launch") or not action.has("target"): return
 	var startup := maxf(0.001, float(action.get("startup", 0.86)))
@@ -3627,7 +3824,29 @@ func _draw_reaction_motion(pos: Vector2, facing: Vector2, radius: float, action:
 
 func _draw_enemy_identity(kind: String, pos: Vector2, facing: Vector2, radius: float, color: Color, action: Dictionary = {}) -> void:
 	var side := facing.rotated(PI * 0.5)
-	if kind == "boar":
+	if kind in ["briarhook","thornhart"]:
+		for sign_value in [-1,1]:
+			var horn: Vector2 = pos+side*radius*0.7*sign_value
+			draw_polyline(PackedVector2Array([horn-facing*radius*0.2,horn+facing*radius*1.3,horn+facing*radius*1.3-side*radius*0.4*sign_value]),Color("e5ce91"),maxf(3.0,radius*0.12))
+			if kind=="thornhart": draw_line(horn+facing*radius*0.65,horn+side*radius*0.65*sign_value+facing*radius,Color("e5ce91"),3.0)
+	elif kind=="thornspitter":
+		for angle in [-0.65,0.0,0.65]: draw_line(pos,pos+facing.rotated(angle)*radius*1.6,Color("bfd18b"),3.0)
+	elif kind in ["kiln_guard","kilnmaster"]:
+		var hammer := pos+side*radius*1.1+facing*radius*0.7
+		draw_line(pos-side*radius*0.5,hammer,Color("c7c3b5"),4.0)
+		draw_line(hammer-facing*radius*0.45,hammer+facing*radius*0.45,Color("e9b681"),maxf(7.0,radius*0.35))
+		draw_line(pos-side*radius*0.5,pos+side*radius*0.5,Color("f28442"),4.0)
+	elif kind=="slagthrower":
+		draw_arc(pos+side*radius*0.6,radius*0.6,0,TAU,12,Color("ef9a59"),4.0)
+	elif kind=="glasswing":
+		for sign_value in [-1,1]:
+			draw_colored_polygon(PackedVector2Array([pos,pos+side*radius*1.9*sign_value-facing*radius*0.6,pos+side*radius*0.7*sign_value+facing*radius]),Color("9ad4df"))
+	elif kind in ["bellrunner","bell_regent"]:
+		draw_arc(pos-facing*radius*0.25,radius*0.8,PI,TAU,14,Color("e3c67e"),4.0)
+		draw_line(pos-side*radius*0.85,pos+side*radius*0.85,Color("e3c67e"),4.0)
+		if kind=="bell_regent":
+			for i in range(3): draw_line(pos+side*(i-1)*radius*0.6-facing*radius,pos+side*(i-1)*radius*0.6-facing*radius*1.5,Color("b7e4e9"),3.0)
+	elif kind == "boar":
 		draw_line(pos - side * radius * 0.70 + facing * radius * 0.55, pos - side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
 		draw_line(pos + side * radius * 0.70 + facing * radius * 0.55, pos + side * radius * 0.95 + facing * radius * 1.05, Color("f0dfb0"), maxf(2.0, radius * 0.10))
 	elif kind in ["knife", "bandit"]:
@@ -4094,8 +4313,20 @@ func _draw_hazard(hazard: Dictionary) -> void:
 	var world_center := Vector2(hazard["pos"])
 	var elapsed := float(hazard["elapsed"])
 	var trigger_at := float(hazard["trigger_at"])
-	var progress := clampf(elapsed / trigger_at, 0.0, 1.0)
+	var progress := clampf(elapsed / maxf(0.001,trigger_at), 0.0, 1.0)
 	var kind := String(hazard.get("kind", ""))
+	if kind in ["snare","expedition_zone"]:
+		var ring := _world_ring(world_center,float(hazard["radius"]),32)
+		if hazard.has("lane_start"): ring = _project_world_capsule(hazard["lane_start"],hazard["lane_end"],float(hazard["radius"]))
+		var color := Color("79c8a0") if kind=="snare" else Color("ef8b53") if elapsed>=trigger_at else Color("e4d5a4")
+		draw_colored_polygon(ring,Color(color,0.12 if elapsed>=trigger_at else 0.04))
+		draw_polyline(_closed_points(ring),color,2.5)
+		if kind=="expedition_zone" and elapsed<trigger_at:
+			var start := _world_to_screen(Vector2(hazard.get("origin",world_center)))
+			var finish := _world_to_screen(world_center)
+			var orb := start.lerp(finish,progress)-Vector2(0,sin(progress*PI)*100.0*world_scale)
+			draw_circle(orb,6.0,color)
+		return
 	# Cone rendering is geometry-driven so every active cone shares one projection path.
 	if hazard.has("half_angle"):
 		var direction := Vector2(hazard.get("direction", Vector2.UP)).normalized()
@@ -4342,6 +4573,8 @@ func _draw_posture(pos: Vector2, radius: float, posture: float, maximum: float) 
 func _phase(action: Dictionary) -> String:
 	var kind := String(action.get("kind", "idle"))
 	var elapsed := float(action.get("elapsed", 0.0))
+	if kind=="expedition_attack":
+		return String(action["phase_before"]) if elapsed<float(action["startup"]) else "STRIKING" if elapsed<float(action["active_end"]) else String(action["phase_after"])
 	if kind == "move" and String(action.get("intent", "")) == "knife_flank": return "SEEKING FLANK"
 	var ability := AbilityCatalogScript.enemy_ability_for_action(action)
 	if not ability.is_empty():
@@ -4447,6 +4680,7 @@ func _draw_hud() -> void:
 		if state.uses_energy_rules(): _draw_attack_button()
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
+	if not state.expedition.is_empty(): hp_text = "XP %d/%d  •  %s" % [state.carried_xp,state.next_upgrade_cost(),state.current_area_name().to_upper()]
 	if state.mode_id == "combat_survey":
 		hp_text = "ROOM %d" % state.survey_room_number
 	elif state.mode_id == "boss_lab":
@@ -4459,12 +4693,12 @@ func _draw_hud() -> void:
 		hp_text += "  STR ACTIVE"
 	var text := String(visual.get("message", state.message))
 	var y := board_rect.end.y - font * 0.7
-	if size.y >= size.x:
+	if size.y >= size.x and desktop_controls:
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + 10, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.25, font, Color("f0ddd7"))
 		_draw_log_line(text, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), board_rect.size.x * 0.7, font)
 	else:
 		var left := board_rect.position.x + 10.0
-		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 1.75), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, font, Color("f0ddd7"))
+		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 3.0), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, font, Color("f0ddd7"))
 		_draw_log_line(text, Vector2(left, board_rect.end.y - font * 0.40), board_rect.size.x - 20.0, maxi(10, font - 2))
 	if held_movement and pointer_down:
 		draw_line(touch_start, touch_current, Color(DODGE_COLOR, 0.55), 4.0)
@@ -4962,12 +5196,34 @@ func _draw_sheet_heading(position: Vector2, width: float, label: String, font: i
 	draw_line(position + Vector2(0.0, font * 1.32), position + Vector2(width, font * 1.32), Color("45545a"), 1.0)
 
 func _draw_landmarks(visible: Dictionary, discovered: Dictionary) -> void:
-	if bool(state.mode_config["waystone_available"]):
+	if not state.expedition.is_empty():
+		for key in ["merchant","exit"]:
+			var point := Vector2(state.expedition_markers[key])
+			if not state.is_discovered(point,discovered) or not _world_point_on_camera(point,100.0): continue
+			var screen := _world_to_screen(point)
+			draw_circle(screen,18.0,Color("d3ba73"))
+			var label := "OUTFITTER" if key=="merchant" else "ONE-WAY DEPARTURE"
+			if key=="merchant" and int(state.expedition["biome"])==1: label = "WAYFARER'S EXCHANGE"
+			if key=="exit" and int(state.expedition["biome"])==2: label = "VICTORY EXIT"
+			draw_string(ThemeDB.fallback_font,screen+Vector2(-100,-30),label,HORIZONTAL_ALIGNMENT_CENTER,200,12,Color("f1deb4"))
+		for enemy in Array(visual.get("enemies",[])):
+			if String(enemy.get("kind",""))!="bellrunner": continue
+			var point := Vector2(enemy.get("gong_pos",enemy["pos"]))
+			if state.is_visible(point,visible):
+				var screen := _world_to_screen(point)
+				draw_circle(screen,16.0,Color("d8ae58"))
+				draw_string(ThemeDB.fallback_font,screen+Vector2(-75,-25),"GONG · USED" if bool(enemy.get("gong_used",false)) else "GONG · 1 RESERVE",HORIZONTAL_ALIGNMENT_CENTER,150,11,Color("f1deb4"))
+	if bool(state.mode_config["waystone_available"]) or not state.expedition.is_empty():
 		for stone in state.waystones:
 			if String(stone.get("layer", state.current_layer)) != state.current_layer or not state.is_discovered(Vector2(stone["pos"]), discovered): continue
 			if not _world_point_on_camera(Vector2(stone["pos"]), 70.0): continue
 			var bonfire := _world_to_screen(Vector2(stone["pos"]))
 			var bright := state.is_visible(Vector2(stone["pos"]), visible)
+			if not state.expedition.is_empty():
+				var biome := int(state.expedition["biome"])
+				var status := "SPENT" if state.expedition["used_waystones"].has(biome) else "SINGLE USE" if state.expedition["completed"].has(biome) else "BOSS-SEALED"
+				draw_string(ThemeDB.fallback_font,bonfire+Vector2(-75,30),status,HORIZONTAL_ALIGNMENT_CENTER,150,12,Color("ead6a0"))
+				bright = bright and status=="SINGLE USE"
 			draw_circle(bonfire, 25.0 * world_scale, Color("e89145") if bright else Color("62452f"))
 			draw_circle(bonfire + Vector2(0, -12.0 * world_scale), 13.0 * world_scale, Color("f4d36b") if bright else Color("695b3c"))
 			if state.player_pos.distance_to(Vector2(stone["pos"])) <= state.WAYSTONE_RANGE:
@@ -5040,7 +5296,7 @@ func _draw_setup() -> void:
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
 		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN" if String(mode) == "campaign_lab" else "BOSS LAB" if String(mode) == "boss_lab" else "DEV"
-		var subtitle := "PERMADEATH • EXIT LEVELS" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "REPEATABLE BOSS TESTS" if String(mode) == "boss_lab" else "TESTING INSTRUMENTS"
+		var subtitle := "THREE BIOMES • PERMADEATH" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "REPEATABLE BOSS TESTS" if String(mode) == "boss_lab" else "TESTING INSTRUMENTS"
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	if setup_mode == "combat_survey":
@@ -5193,6 +5449,7 @@ func _draw_map() -> void:
 	if not overlay:
 		_draw_map_action(map_mode_rect, "OVERLAY")
 		_draw_map_action(seed_copy_rect, "COPY SEED")
+		if not state.expedition.is_empty(): _draw_map_action(_map_action_rect(3), "RUN JOURNAL")
 		_draw_map_layer_controls()
 
 func _map_panel_rect() -> Rect2:
@@ -5440,6 +5697,10 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		title = "UNDISCOVERED"
 		available = false
 		subtitle = "LATE DISCIPLINE"
+		if not state.expedition.is_empty() and state.expedition["discipline"]!="":
+			title = String(state.expedition["discipline"]).to_upper()
+			available = state.cooldown_remaining("adopted")<=0.0 and not state.energy_actions_locked()
+			subtitle = "AIM ON GROUND" if available else "COOLING / EXHAUSTED"
 	elif name == "wait":
 		title = state.interaction_label()
 		subtitle = "REST AT WAYSTONE" if title == "REST" else "OPEN SHORTCUT" if title == "UNLOCK" else "USE PASSAGE" if title == "TRAVERSE" else "+0.5s"

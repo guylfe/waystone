@@ -22,7 +22,9 @@ func _init() -> void:
 
 func fresh_state(loadout: String = "warrior", rules: String = "energy") -> RunState:
 	var state: RunState = RunStateScript.new(false)
-	state.start_run(loadout, "expedition", 230203, "encounter", rules)
+	# Comparison fixture retains the legacy Recovery-capable map. The new
+	# expedition deliberately supports Energy only, not both rule profiles.
+	state.start_run(loadout, "expedition", 230203, "encounter", rules, true)
 	state.enemies.clear()
 	state.walls.clear()
 	return state

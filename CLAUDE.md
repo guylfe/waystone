@@ -28,11 +28,22 @@ Standing context for any coding session in this repo. Keep it short; the detail 
 
 ## Current priority
 
-Combat and boss validation remain the gate. New classes, biomes, mature Campaign work,
-and broad encounter-density expansion wait until moving, attacking, defending, surviving
-pressure, and reading a sustained boss are satisfying in the shared kernel.
+The explicitly approved three-biome expedition is implemented as `0.3.0`; its four
+legal character runs, builds and Fold installation are verified in
+`docs/expedition-0.3.0-implementation.md`. Next obtain human journey/boss feedback,
+inner-display checks and sustained device performance evidence, then propose bounded
+changes from those results. Automated wins are not human balance acceptance.
+The October 17 approval supersedes the earlier Warden-first content gate for this
+experiment, not the requirement for trustworthy combat or honest test reporting.
+Other foundation-audit proposals and mature Campaign work remain outside this scope.
 
 ### What is already built
+
+`0.3.0` adds the three-biome mountain ascent, six ordinary enemy kinds, three solo
+bosses, finite healing/economy, equipment and the midpoint Trapper/Sapper adoption.
+It also repairs current-commitment measurement, imposed-reaction clock ownership and
+defensive-response attribution. The implementation ledger owns the content and test
+closeout; older milestone and boss-plan sequences below remain historical/deferred.
 
 The milestone letters **A** (combo continuation follows live input) through **E** (melee enemy differentiation) shipped by `0.2.33`, and **G1** — encounter grammar, guaranteeing non-melee presence and composing deliberate pure-melee experiment rooms — shipped in `0.2.35`. The Hexer was retired in the same pass. Surveys through `0.2.44` were G1's follow-through.
 
@@ -40,7 +51,10 @@ The **elemental caster programme** then ran to completion: friendly fire and pro
 
 Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0.2.44`), and the Chanter and the Ox have both now been seen in play — the Ox in the `0.2.77` renderer pass, which was itself the first look at milestones A through D outside a headless test.
 
-### What is left, in order
+### Earlier work order — deferred, not completed
+
+The following sequence is retained for later work. It does not override the approved
+0.3.0 contract or make the existing Werewolf/Warden part of its three new bosses.
 
 1. **Warden solo redesign.** Boss Lab, support/encounter introductions, Knife differentiation, and the Werewolf solo redesign shipped in `0.2.92`–`0.2.95`. Implement the Warden's three-move spatial vocabulary, phase sequence, and explicit posture policy as Update 5 of `docs/enemy-encounter-boss-revised-design.md`.
 2. **Survey the boss instrument and both bosses.** Treat the first play as a falsification test of the lab and its reporting, not merely of balance. Tune only the owner isolated by evidence.
@@ -50,7 +64,7 @@ Two long-owed items are also closed: the Acrobat has been surveyed (`0.2.38`, `0
 ### Standing design decisions
 
 - **A late read is punished.** Reading an attack too late must fail; *how* late is a tuning question to be answered by measurement, not by argument. Recorded 2026-09-01. The Boar's late-sidestep case is the first place this bites.
-- **New enemy kinds remain gated on a demonstrated gap** rather than an anticipated one. The Ox jumped that gate in `0.2.25`; the Duellist was approved as a deliberate exception.
+- **New enemy kinds remain gated on a demonstrated gap or explicit content approval.** The Ox jumped that gate in `0.2.25`; the Duellist was approved as a deliberate exception. The six ordinary kinds and three bosses in the approved `0.3.0` expedition are a bounded content programme, not permission for unrelated roster expansion.
 
 ### On the milestone letters, which have stopped tracking the work
 

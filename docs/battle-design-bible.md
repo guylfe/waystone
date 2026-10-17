@@ -5,7 +5,7 @@ and bosses in Waystone.
 
 **Recorded:** 2026-09-12
 
-**Current code baseline:** reviewed against `0.2.95` on 2026-09-22
+**Current code baseline:** `0.2.95` principles plus the approved `0.3.0` expedition implementation, reviewed 2026-10-17. Verification status belongs to `current-state.md`.
 
 **Status:** mixed. This document deliberately contains settled rules, strong defaults,
 and unproven proposals. Every prescriptive claim carries both a **credence** and a
@@ -48,7 +48,7 @@ statistical probability and not proof that it is implemented.
 Decision status is separate:
 
 - **Settled:** explicitly established as a Waystone rule.
-- **Implemented:** present in the `0.2.91` code baseline; this alone does not make
+- **Implemented:** present in the current code baseline noted above; this alone does not make
   it good design.
 - **Working default:** the best current rule, but revisable.
 - **Proposal:** not approved merely because it appears here.
@@ -425,7 +425,7 @@ design named centerpiece enemies individually.
 
 ### B31 — A boss is an extended learning problem, not a large regular enemy
 
-**Credence: 93% — Strong. Status: Working direction; Werewolf implemented, Warden provisional.**
+**Credence: 93% — Strong. Status: Working direction; Werewolf and the three new expedition bosses implemented; human validation pending; Warden provisional.**
 
 A boss should reuse a small set of frequent anchor actions so the player can learn
 relationships during the fight. Complexity should come from state, position,
@@ -434,7 +434,7 @@ attacks.
 
 ### B32 — Boss vulnerability is state-driven, not universally absent
 
-**Credence: 90% — Strong. Status: Implemented for Werewolf; proposed for Warden.**
+**Credence: 90% — Strong. Status: Implemented for Werewolf and the expedition bosses; proposed for Warden.**
 
 Routine attacks damage the Werewolf without a routine flinch, while posture break
 creates a real opening; a break during an airborne or active move is deferred until
@@ -442,6 +442,14 @@ that move resolves. This is an implemented state policy, not a universal immunit
 The Warden still needs its own explicit posture and vulnerability rules. Humanoid,
 beast, armored, exposed, and stance-broken states should behave according to their
 readable fiction and tactical purpose, rather than inherit one boss-wide exception.
+
+Thornhart, Kilnmaster and Bell Regent take ordinary damage without ordinary flinches;
+accumulated posture can interrupt them and produces a non-refreshable opening.
+Their authored recoveries also provide reachable punish opportunities without first
+requiring a posture break. Their 260/360/460 health and 14/18/22 representative hit
+values are approved prototype starting points, not settled balance rules. Tests of
+early walking, sustained retreat/orbit, Dodge timing and recovery reachability are
+mechanical evidence only, not increased credence in human fun or fairness.
 
 ### B33 — Boss phases should remix learned grammar
 
@@ -461,8 +469,11 @@ phase, but it is not a production target.
 **Credence: 86% — Strong. Status: Implemented instrument; validation in progress.**
 
 Boss Lab and the Werewolf solo vertical slice shipped in `0.2.92`–`0.2.95`.
-The instrument and its first boss still require play validation; Warden is the next
-proposed boss slice.
+The instrument and its first boss still require play validation. The user subsequently
+approved a separate three-biome expedition with three new solo bosses; Warden and
+Werewolf pack work are deferred, not completed or prerequisites to that experiment.
+The expedition has its own persistent run journal including biome, encounter rewards,
+healing, purchases, boss actions/phases/outcomes and defensive outcomes.
 
 The ordinary Combat Survey grades rooms; it cannot automatically validate a
 multi-phase learning arc. The shipped Boss Lab records each attempt's setup identity
@@ -716,7 +727,7 @@ being treated more confidently than the evidence warrants.
 | B29 | Share systems, not effects | 91% | Settled direction |
 | B30 | Define elite before tiering it | 95% | Open |
 | B31 | Boss as extended learning problem | 93% | Working direction |
-| B32 | Boss vulnerability is state-driven | 90% | Werewolf implemented; Warden proposed |
+| B32 | Boss vulnerability is state-driven | 90% | Werewolf and expedition bosses implemented; Warden proposed |
 | B33 | Phases remix learned grammar | 89% | Working default |
 | B33a | 60–75% retention percentage | 48% | Exploratory only |
 | B34 | Boss vertical slice needs Boss Lab | 86% | Implemented instrument; validation in progress |

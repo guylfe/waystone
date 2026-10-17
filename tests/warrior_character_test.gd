@@ -26,7 +26,7 @@ func _init() -> void:
 
 func fresh_state() -> RunState:
 	var state: RunState = RunStateScript.new()
-	state.start_run("warrior", "expedition", 630063, "encounter", "recovery")
+	state.start_run("warrior", "expedition", 630063, "encounter", "recovery", true)
 	state.enemies.clear()
 	state.walls.clear()
 	state.carried_xp = 999
@@ -286,6 +286,7 @@ func test_fixed_damage_speed_and_resolve() -> void:
 
 func test_bandit_awareness_and_secret_passage() -> void:
 	var state := fresh_state()
+	state.start_run("warrior", "expedition", 630063, "encounter", "recovery", true) # Legacy secret passage, retained for old saves.
 	var bandit := state._make_enemy("bandit", state.player_pos + Vector2.RIGHT * 360.0, 5)
 	assert(not state.enemy_visible_to_player(bandit))
 	bandit["awareness"] = "alerted"

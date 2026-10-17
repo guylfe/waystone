@@ -106,7 +106,7 @@ func _init() -> void:
 	assert("Want a room like this again: 4/5" in report)
 	assert("Health:" in report and "Energy:" in report and "Exhaustion lockouts:" in report and "Action usage:" in report)
 	assert("Energy depleted:" in report and "Energy overdraw:" in report and "Strike diagnostics:" in report)
-	assert("Report format: 35" in report and "Presentation version: 16" in report and "Combat rules: Recovery" in report)
+	assert("Report format: %d" % RunStateScript.SurveyReportScript.FORMAT_VERSION in report and "Presentation version: %d" % RunStateScript.PRESENTATION_VERSION in report and "Combat rules: Recovery" in report)
 	assert("Interruptions prevented:" in report and "damage taken under post-hit protection:" in report)
 	assert("Clean evades:" in report and "Turnabout primed" in report)
 	assert("Fairness:" not in report and "Energy regeneration delay:" in report)

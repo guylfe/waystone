@@ -1,7 +1,7 @@
 # Waystone migration and development handoff
 
-**Updated:** 2026-09-23
-**Current source baseline:** `0.2.95` (`versionCode 295`, save schema `37`, generator `3`, presentation version `16`, Combat Survey format `35`)
+**Updated:** 2026-10-17
+**Release baseline:** `0.3.0` (`versionCode 300`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `17`, Survey format `36`). Read `docs/current-state.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
 **Authoritative checkout for current work:** `C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`  
 **Purpose:** Give a new conversation, developer, or coding agent enough design, implementation, testing, and playtest context to continue Waystone without reconstructing the project from chat history.
 
@@ -29,8 +29,23 @@ This is an operational handoff, not a replacement for the detailed design docume
 > ownership. Subsequent releases completed Mage/Warrior tuning and the first four boss-plan stages.
 > `0.2.92` added Boss Lab, `0.2.93` added stable support relationships and lean exact-roster
 > encounters, `0.2.94` differentiated Knife approach, and `0.2.95` rebuilt the solo Werewolf.
-> Warden solo is now the next implementation target; pack comparison and journey integration wait
-> for evidence.
+> That was the 0.2.95 work order. The October 17 approval supersedes it with a new,
+> standalone three-biome expedition. Warden and Werewolf pack comparison are deferred.
+
+### 0.3.0 closeout — October 17, 2026
+
+The approved ascent is implemented and both platforms are built. All four characters
+completed legal seed-42 journeys through three bosses and three one-use Waystones,
+using earned resources and both adopted disciplines across the runs. The 100-seed
+validator checks 300 maps. The default suite has 26 passing files and one documented
+pre-existing Bandit failure, with no new accepted regression. Perfect-information test
+players establish mechanical feasibility, not human fairness.
+
+The final APK is installed and reads back as `0.3.0` / `300` on the Pixel Fold.
+Physical portrait touch, map, frozen time, suspension and cold save/resume were checked;
+the prior inactive save was restored exactly. Inner-display play, sustained combat
+performance and human acceptance remain open. Artifact hashes, run evidence and repeat
+commands are in `docs/expedition-0.3.0-implementation.md`.
 
 ## Executive migration brief
 
@@ -43,7 +58,7 @@ At the `0.2.10` baseline, the combat loop was judged unacceptable. The Warrior �
 3. the new held-combo implementation sometimes produces phantom continuation strikes without new player intent;
 4. overlapping enemy attacks can repeatedly interrupt the player without leaving a usable response opportunity.
 
-That diagnosis motivated the shipped input, capture, Energy, enemy, and encounter work; it is **not** a verdict on `0.2.95`. The current gate is the Warden solo redesign followed by Boss Lab play and narrow integration. See `docs/current-state.md` for the live order.
+That diagnosis motivated the shipped input, capture, Energy, enemy, and encounter work; it is **not** a verdict on the current build. The current next step is human play of the implemented three-biome expedition. See `docs/current-state.md` for the live order.
 
 ## 1. Overarching goal
 
@@ -107,7 +122,15 @@ Waystone should feel deliberate without feeling inert, readable without being sh
 
 ### Expedition
 
-A short, forward-directed, default-permadeath run. It does not use Campaign Waystones or Campaign-style return loops. Its mature form should be a seven-part mini-adventure with several independently varied encounters, discoveries, rewards, optional dangers, and deliberate pressure/relief pacing inside each locale.
+A forward-directed, permadeath run. The approved 0.3.0 prototype is one mountain ascent
+through Briarwild Foothills, the above-ground Cinderworks and Stormglass Summit. Each
+standalone map has six main and two optional encounters, genuine quiet/preparation
+space and its own new solo boss. Ordinary exploration has no room-clear locks.
+Departing explicitly abandons the old map and its unused rewards forever. A defeated
+boss unlocks one single-use restoration Waystone; it refills the original five-charge
+pouch but not finite Rations, respawns nothing and is not a checkpoint. The final
+Waystone and victory exit are separate. Seven-region/no-Waystone proposals are history,
+not additional requirements for this prototype.
 
 ### Endless
 
@@ -321,9 +344,10 @@ the Ox had never been surveyed are historical; those kinds have shipped and the
 Ox has since been surveyed and tuned.
 
 The later boss/encounter programme superseded A–G's ordering. Its Updates 1–4
-shipped through 0.2.95. Next: Warden solo redesign, then Boss Lab play,
-Werewolf pack comparison, narrow journey integration, and only then the
-Recovery-versus-Energy comparison. No next version number or date is implied.
+shipped through 0.2.95. The October 17 approval now places the three-biome 0.3.0
+expedition ahead of Warden, Werewolf pack comparison and Recovery-versus-Energy.
+Those legacy investigations remain deferred. Energy is the new expedition profile;
+Recovery stays in comparison modes and legacy saves.
 
 ## 9. How Combat Survey reports work
 

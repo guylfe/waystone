@@ -45,7 +45,7 @@ Android-first, developed in tandem with Windows from early on — specifically s
 
 | Mode | Target | Status |
 |---|---|---|
-| **Expedition** | Seven substantial regions, roughly 25–30 consequential encounters, one boss. Each region is a locale with several internal encounter spaces and side routes, not a single arena — explicitly "CQ2-scale per part." | Seven-part scaffold exists; mature journey/encounter rebuild is deferred until the combat and boss gate |
+| **Expedition** | Three standalone biomes forming one mountain ascent, six main and two optional encounters per biome, three solo bosses and single-use post-boss restoration. | Implemented 0.3.0 prototype; mechanical checks passed, human validation pending. See `expedition-0.3.0-implementation.md`. Supersedes the seven-region, one-boss target. |
 | **Regional Campaign** | 60–120 minutes. 2–4 Waystones, 1–2 layered regions, several bidirectional shortcuts, one major boss. A proof of concept, not a product. | Proposed, not started |
 | **Short Campaign** | 3–6 hours to first completion. One interconnected procedural world per playthrough. The crucial validation step before any full campaign. | Not started |
 | **Full Campaign** | Dark Souls / Hollow Knight-scale exploration: curated macro-geography with procedural local variation, NPCs, knowledge-based gates, possible multiple endings. | Long-term |
@@ -88,7 +88,7 @@ The most important borrowing is a diagnosis rather than a mechanic. CQ2 runs bec
 - **Class identity is legible from the first encounter**, before any choice has been made.
 - **Limited capacity forces genuine tradeoffs.** Few slots, few consumables, no inventory screen — every acquisition displaces something. Waystone's belt exists for this reason, and it is why a full inventory system keeps being refused.
 - **XP, loot and consumables have distinct roles** and are not interchangeable currencies. When one starts substituting for another, decisions collapse.
-- **Push your luck.** Continue and risk what you are carrying, or bank it. Expedition having no Waystones is what preserves that tension; adding checkpoints to it would quietly remove the mode's point.
+- **Push your luck.** Risk finite supplies within each biome. The approved expedition now has one-use post-boss restoration, but no resurrection checkpoint or return to departed biomes. Campaign banking remains a different persistence rule.
 
 ### 3.2 Dark Souls — commitment and place
 
@@ -256,10 +256,10 @@ One simulation, one content set, three journeys. Enemies, weapons, classes, trac
 |---|---|---|---|
 | Topology | forward-only, branches rejoin, no return loops | interconnected graph around Waystones | chained escalating segments |
 | Death | permadeath ends the run | return to last Waystone | ends the run |
-| Healing | fixed starting supply, resupply must be found | full restock at each Waystone | periodic, at rising cost |
+| Healing | five-charge pouch, finite weaker rations, one-use post-boss refill | full restock at each Waystone | periodic, at rising cost |
 | Progression | lasts the run only | persists, anchored at Waystones | long-tail growth |
 
-Expedition's healing model is Bloodborne-shaped and Campaign's is Dark Souls-shaped, but they are **one implementation**: "a Waystone restores your anchored pouch to capacity." Expedition simply has no Waystones. That is the pattern to reach for generally — express a mode difference as an absent feature rather than a parallel system.
+Both modes share restoration and the original pouch. The October 17 expedition decision adds single-use post-boss Waystones: restore health, Energy, readiness and five pouch charges, without respawning enemies, reviving the player or creating a checkpoint. Rations never refill. Campaign anchoring and death recovery are separate mode policy, not implied by the shared word Waystone.
 
 ### Combat Survey — the instrument
 
@@ -369,11 +369,11 @@ Only after survey data demonstrates the gap. Chanter now fills the coordinator/s
 
 **Historical pre-`0.2.57` comparison:** The Fire Caster had been a positive reference for distinctive, readable pressure, while the Ice Caster's old cone could begin and connect inside an already-committed player action. That cone was replaced by Frost Lance and Cold Front in `0.2.57`; the old complaint is not a live verdict on the current Ice Caster. Judge the replacement abilities by current Combat Survey/play evidence rather than inheriting either caster's earlier reputation.
 
-### Friendly Forest — the reference expedition
+### Friendly Forest — historical reference expedition
 
 Seven authored stages, each with its own spatial grammar and enemy introduction: Sunlit Verge (open meadow, Boars), Brookwood (brook and fords, Hounds), Old Forest Road (road spine versus overgrown detour, Bandits), Elder Grove (radial stone circle, casters), Rootbound Woods (braided root routes, Bandits with Archers), Forest Ruins (courts and cloisters, Two-Handed Knights), Heartwood Approach (ceremonial final approach, Werewolf boss with two Hounds).
 
-Campaign reuses these same regional identities arranged in an interconnected Waystone topology rather than a linear seven.
+This remains the legacy-save geography and a possible Campaign reference, not the current expedition content plan. The approved replacement is Briarwild Foothills → above-ground Cinderworks → Stormglass Summit. Its bounded rosters, rewards, bosses and verification contract live in `expedition-0.3.0-implementation.md`; those starting counts and statistics are not permanent design laws.
 
 ### Systems still to build
 

@@ -5,6 +5,11 @@ const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
 const AbilityCatalogScript = preload("res://scripts/core/ability_catalog.gd")
 const CombatCatalogScript = preload("res://scripts/core/combat_catalog.gd")
 const FloorGeneratorScript = preload("res://scripts/core/floor_generator.gd")
+const ExpeditionCatalogScript = preload("res://scripts/core/expedition_catalog.gd")
+const ExpeditionGeneratorScript = preload("res://scripts/core/expedition_generator.gd")
+const ExpeditionCoordinatorScript = preload("res://scripts/core/expedition_coordinator.gd")
+const ExpeditionEconomyScript = preload("res://scripts/core/expedition_economy.gd")
+const ExpeditionCombatScript = preload("res://scripts/core/expedition_combat.gd")
 const ModeRulesScript = preload("res://scripts/core/mode_rules.gd")
 const SurveyReportScript = preload("res://scripts/core/survey_report.gd")
 const SurveyCounterCatalogScript = preload("res://scripts/core/survey_counter_catalog.gd")
@@ -444,10 +449,10 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
-const SAVE_VERSION := 37
-const GAME_VERSION := "0.2.95"
+const SAVE_VERSION := 38
+const GAME_VERSION := "0.3.0"
 const SURVEY_GENERATOR_VERSION := 3
-const PRESENTATION_VERSION := 16
+const PRESENTATION_VERSION := 17
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
 const HEALING_CAPACITY := 5
 const CONSUMABLE_SLOT_COUNT := 3
@@ -474,14 +479,21 @@ const COOLDOWN_SLOT_DEFAULTS := {
 	COOLDOWN_SKILL: 6.5, COOLDOWN_RALLY: 12.0, COOLDOWN_ADVANCE: 6.0,
 	COOLDOWN_MAIN: 12.0, COOLDOWN_SUBCLASS: 8.0,
 	COOLDOWN_WEAPON_SEQUENCE: 0.0001, COOLDOWN_SPELL: 8.0,
+	"adopted":10.0,
 }
 const CONSUMABLES := {
+	"trail_ration": {"label":"Trail Ration", "short":"RATION", "targeted":false, "max_stack":2, "color":"9ac778"},
+	"repulsion_pot": {"label":"Repulsion Pot", "short":"PUSH", "targeted":false, "max_stack":2, "color":"a9dfe3"},
 	"throwing_knife": {"label": "Throwing Knife", "short": "KNIFE", "targeted": true, "max_stack": 2, "color": "d7dddd"},
 	"firebomb": {"label": "Firebomb", "short": "FIRE", "targeted": true, "max_stack": 2, "color": "f28b4b"},
 	"smoke_vial": {"label": "Smoke Vial", "short": "SMOKE", "targeted": false, "max_stack": 1, "color": "9ca9bd"},
 }
 
 var player_pos := Vector2(800.0, 1900.0)
+var expedition: Dictionary = {}
+var expedition_sites: Array = []
+var expedition_markers: Dictionary = {}
+var expedition_departure_pending := false
 var player_facing := Vector2.UP
 var player_hp := PLAYER_MAX_HP
 var player_max_hp := PLAYER_MAX_HP
@@ -945,13 +957,15 @@ func build_laboratory() -> void:
 func build_expedition_room() -> void:
 	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
-func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy") -> void:
+func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy", legacy_expedition: bool = false) -> void:
 	loadout_id = chosen_loadout if CombatCatalogScript.loadout_ids().has(chosen_loadout) else "warrior"
 	mode_id = ModeRulesScript.normalize(chosen_mode)
 	mode_config = ModeRulesScript.definition(mode_id)
 	progression_mode = String(mode_config["upgrade_policy"])
 	survey_profile = survey_profile_override if survey_profile_override in ["encounter", "attrition"] else "encounter"
-	combat_rules = normalize_combat_rules(combat_rules_override)
+	expedition = ExpeditionCoordinatorScript.fresh() if mode_id == ModeRulesScript.EXPEDITION and not legacy_expedition else {}
+	expedition_departure_pending = false
+	combat_rules = "energy" if not expedition.is_empty() else normalize_combat_rules(combat_rules_override)
 	if seed_override >= 0: run_seed = seed_override
 	else: run_seed = int(Time.get_unix_time_from_system() * 1000.0) ^ Time.get_ticks_msec()
 	_apply_loadout()
@@ -1178,46 +1192,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	shortcut_unlocked = false
 	_boss_defeated = false
 	rng.seed = run_seed
-	var layout: Dictionary = _generate_survey_layout(survey_room_number) if is_measurement_mode() else FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
-	world_size = Vector2(layout.get("world_size", WORLD_SIZE))
-	geometry_style = String(layout.get("geometry_style", "rooms"))
-	areas.assign(Array(layout["areas"]).duplicate(true))
-	connections.assign(Array(layout["connections"]).duplicate(true))
-	route_recipe.assign(Array(layout.get("route_recipe", [])).duplicate(true))
-	run_graph = Dictionary(layout.get("run_graph", {})).duplicate(true)
-	locale_catalog = Dictionary(layout.get("locale_catalog", {})).duplicate(true)
-	floor_shapes.assign(Array(layout.get("floor_shapes", [])).duplicate(true))
-	terrain_features.assign(Array(layout.get("terrain_features", [])).duplicate(true))
-	world_pickups.assign(Array(layout.get("pickups", [])).duplicate(true))
-	waystones.assign(Array(layout.get("waystones", [])).duplicate(true))
-	shortcuts.assign(Array(layout.get("shortcuts", [])).duplicate(true))
-	transitions.assign(Array(layout.get("transitions", [])).duplicate(true))
-	secret_passages.assign(Array(layout.get("secret_passages", [])).duplicate(true))
-	world_layers = Dictionary(layout.get("layers", {})).duplicate(true)
-	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
-	base_walls_by_layer = Dictionary(layout.get("layer_walls", {})).duplicate(true)
-	bonfire_pos = Vector2(layout["bonfire_pos"])
-	active_waystone_id = String(waystones[0]["id"]) if not waystones.is_empty() else ""
-	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "survey_arena" if is_measurement_mode() else "expedition_surface"
-	if base_walls_by_layer.is_empty(): base_walls_by_layer[current_layer] = Array(layout["base_walls"]).duplicate()
-	_player_start = Vector2(layout["player_start"])
-	player_pos = _player_start
-	shortcut_gate = Rect2(layout["shortcut_gate"])
-	shortcut_unlock_pos = Vector2(layout["shortcut_unlock_pos"])
-	shortcut_start_pos = Vector2(layout["shortcut_start_pos"])
-	discovered_cells.clear()
-	discovered_cells_by_layer.clear()
-	discovery_revision += 1
-	discovery_epoch += 1
-	discovery_log.clear()
-	world_render_revision += 1
-	for layer_id in world_layers: discovered_cells_by_layer[String(layer_id)] = {}
-	discovered_cells_by_layer[current_layer] = discovered_cells
-	visible_cells.clear()
-	_visibility_anchor = Vector2.INF
-	_visibility_anchor_cell = Vector2i(-999999, -999999)
-	_build_shape_spatial_index()
-	current_area_id = _area_id_at_position(player_pos, current_layer)
+	var layout: Dictionary = _generate_survey_layout(survey_room_number) if is_measurement_mode() else ExpeditionGeneratorScript.generate(run_seed, 0) if not expedition.is_empty() else FloorGeneratorScript.generate(run_seed, bool(mode_config["waystone_available"]))
+	_install_layout(layout)
 	_respawn_enemies()
 	_apply_shortcut_world_state()
 	run_active = true
@@ -1536,6 +1512,7 @@ func _custom_selectable_kinds() -> Array[String]:
 	var kinds: Array[String] = []
 	for kind in CombatCatalogScript.enemy_kinds():
 		if String(kind) in ["warden", "werewolf"]: continue
+		if CombatCatalogScript.EXPEDITION_KITS.has(kind): continue
 		kinds.append(String(kind))
 	kinds.sort()
 	return kinds
@@ -2686,6 +2663,129 @@ func _make_enemy(kind: String, position: Vector2, hp: int, area_id: int = 0) -> 
 	_next_enemy_id += 1
 	return enemy
 
+func _install_layout(layout: Dictionary) -> void:
+	_navigation_cache.clear()
+	expedition_sites = Array(layout.get("expedition_sites", [])).duplicate(true)
+	expedition_markers = Dictionary(layout.get("expedition_markers", {})).duplicate(true)
+	world_size = Vector2(layout.get("world_size", WORLD_SIZE))
+	geometry_style = String(layout.get("geometry_style", "rooms"))
+	areas.assign(Array(layout["areas"]).duplicate(true))
+	connections.assign(Array(layout["connections"]).duplicate(true))
+	route_recipe.assign(Array(layout.get("route_recipe", [])).duplicate(true))
+	run_graph = Dictionary(layout.get("run_graph", {})).duplicate(true)
+	locale_catalog = Dictionary(layout.get("locale_catalog", {})).duplicate(true)
+	floor_shapes.assign(Array(layout.get("floor_shapes", [])).duplicate(true))
+	terrain_features.assign(Array(layout.get("terrain_features", [])).duplicate(true))
+	world_pickups.assign(Array(layout.get("pickups", [])).duplicate(true))
+	waystones.assign(Array(layout.get("waystones", [])).duplicate(true))
+	shortcuts.assign(Array(layout.get("shortcuts", [])).duplicate(true))
+	transitions.assign(Array(layout.get("transitions", [])).duplicate(true))
+	secret_passages.assign(Array(layout.get("secret_passages", [])).duplicate(true))
+	world_layers = Dictionary(layout.get("layers", {})).duplicate(true)
+	encounter_templates = Dictionary(layout["encounters"]).duplicate(true)
+	base_walls_by_layer = Dictionary(layout.get("layer_walls", {})).duplicate(true)
+	bonfire_pos = Vector2(layout["bonfire_pos"])
+	active_waystone_id = String(waystones[0]["id"]) if not waystones.is_empty() else ""
+	current_layer = String(waystones[0]["layer"]) if not waystones.is_empty() else "survey_arena" if is_measurement_mode() else "expedition_surface"
+	if base_walls_by_layer.is_empty(): base_walls_by_layer[current_layer] = Array(layout["base_walls"]).duplicate()
+	_player_start = Vector2(layout["player_start"])
+	player_pos = _player_start
+	shortcut_gate = Rect2(layout["shortcut_gate"])
+	shortcut_unlock_pos = Vector2(layout["shortcut_unlock_pos"])
+	shortcut_start_pos = Vector2(layout["shortcut_start_pos"])
+	discovered_cells.clear()
+	discovered_cells_by_layer.clear()
+	discovery_revision += 1
+	discovery_epoch += 1
+	discovery_log.clear()
+	world_render_revision += 1
+	for layer_id in world_layers: discovered_cells_by_layer[String(layer_id)] = {}
+	discovered_cells_by_layer[current_layer] = discovered_cells
+	visible_cells.clear()
+	_visibility_anchor = Vector2.INF
+	_visibility_anchor_cell = Vector2i(-999999, -999999)
+	_build_shape_spatial_index()
+	current_area_id = _area_id_at_position(player_pos, current_layer)
+	_apply_shortcut_world_state()
+
+func request_expedition_departure(confirmed: bool = false) -> bool:
+	if expedition.is_empty() or death_pending or not is_player_ready(): return false
+	if player_pos.distance_to(Vector2(expedition_markers["exit"])) > 150: return false
+	if not expedition["completed"].has(int(expedition["biome"])):
+		_set_message("The biome guardian still bars the onward route.")
+		return false
+	if not confirmed or not expedition_departure_pending:
+		expedition_departure_pending = true
+		_set_message("Leave permanently? Unclaimed rewards and the unused Waystone remain behind. Press CONFIRM EXIT to depart; move away to cancel.")
+		changed.emit()
+		return true
+	expedition_departure_pending = false
+	if not ExpeditionCoordinatorScript.depart(expedition): return false
+	if bool(expedition["victory"]):
+		trial_complete = true
+		_set_message("The bell citadel is behind you. The three-biome ascent is complete.")
+	else:
+		projectiles.clear()
+		hazards.clear()
+		barriers.clear()
+		effects.clear()
+		_install_layout(ExpeditionGeneratorScript.generate(run_seed, int(expedition["biome"])))
+		_respawn_enemies()
+		_update_exploration(true)
+		_set_message("%s — the route back is closed." % ExpeditionCatalogScript.BIOMES[int(expedition["biome"])]["name"])
+	changed.emit()
+	return true
+
+func request_adopted(target: Vector2, simulate_immediately: bool = true) -> bool:
+	if expedition.is_empty() or String(expedition["discipline"]).is_empty() or not is_player_ready() or trial_complete: return false
+	if cooldown_remaining("adopted")>0.0001: return false
+	var id := String(expedition["discipline"])
+	var spec: Dictionary = AbilityCatalogScript.ADOPTED_DISCIPLINES[id]
+	var rank := clampi(track_total("adopted"),1,3)-1
+	var aim := player_pos.direction_to(target) if target.distance_to(player_pos)>1.0 else player_facing
+	var position := player_pos+aim*65.0 if id=="trapper" else player_pos+(target-player_pos).limit_length(float(spec["range"]))
+	if not _can_occupy(position,10.0,0,id=="sapper"): return false
+	if not _spend_energy(float(spec["energy"][rank])): return false
+	_break_player_combo()
+	_break_stealth_for_hostile_action()
+	player_action = _action("adopted",float(spec["duration"]),player_pos.direction_to(position))
+	player_action["startup"] = float(player_action["duration"])*0.6
+	player_action["ability_id"] = id
+	player_action["target"] = position
+	player_action["rank"] = rank
+	begin_cooldown("adopted",float(spec["cooldown"]))
+	_annotate_player_action(id)
+	if simulate_immediately: _simulate_until_ready()
+	else: _streamed_action_cpu_usec = 0
+	return true
+
+func _resolve_adopted_action() -> void:
+	var id := String(player_action["ability_id"])
+	var spec: Dictionary = AbilityCatalogScript.ADOPTED_DISCIPLINES[id]
+	var rank := int(player_action["rank"])
+	var target := Vector2(player_action["target"])
+	if id=="trapper":
+		var active: Array = []
+		for hazard in hazards:
+			if hazard["kind"]=="snare": active.append(hazard)
+		var maximum := 2 if rank==2 else 1
+		while active.size()>=maximum: hazards.erase(active.pop_front())
+		_add_hazard({"kind":"snare","pos":target,"radius":spec["radius"],"elapsed":0.0,"duration":spec["lifetime"],"source_id":0,"layer":current_layer,"triggered":false,"trigger_at":0.0,"damage":0,"posture":spec["posture"]})
+	else:
+		_concussion_burst(target,float(spec["radius"]),int(spec["damage"]),float(spec["posture"][rank]),float(spec["push"][rank]))
+
+func _concussion_burst(center: Vector2, radius: float, damage: int, posture: float, displacement: float) -> void:
+	_add_effect("strain",center)
+	for enemy in _nearby_enemies(center,radius+80):
+		if not _enemy_on_current_layer(enemy) or bool(enemy.get("reserve",false)): continue
+		if Vector2(enemy["pos"]).distance_to(center)>radius+float(enemy["radius"]): continue
+		if not _has_line_of_sight(center,Vector2(enemy["pos"])): continue
+		if damage>0 or posture>0: _damage_enemy_from_consumable(enemy,damage,posture,center)
+		var direction := center.direction_to(Vector2(enemy["pos"]))
+		if direction.is_zero_approx(): direction = player_facing
+		_set_actor_impulse(enemy,direction*_gale_launch_speed(displacement/maxf(0.5,_enemy_mass(String(enemy["kind"])))))
+		_broadcast_enemy_alarm(enemy,player_pos)
+
 func _respawn_enemies() -> void:
 	_replace_enemy_actors([])
 	projectiles.clear()
@@ -2697,6 +2797,9 @@ func _respawn_enemies() -> void:
 			var kind := String(template["kind"])
 			if kind in ["warden", "werewolf"] and _boss_defeated: continue
 			var enemy := _make_enemy(kind, Vector2(template["pos"]), _enemy_base_hp(kind), area_id)
+			for key in ["id", "expedition_site", "expedition_xp", "reserve", "gong_pos"]:
+				if template.has(key): enemy[key] = template[key]
+			_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)
 			enemy["layer"] = String(template.get("layer", "expedition_surface"))
 			enemy["survey_role"] = CombatCatalogScript.role(String(template.get("kind", enemy.get("kind", ""))))
 			if template.has("facing"):
@@ -3781,7 +3884,7 @@ func _apply_actor_posture_damage(actor: Variant, amount: float, contact: Vector2
 	return _apply_posture_damage(_actor_storage(actor), amount, contact, interrupter, tool)
 
 func _set_actor_impulse(actor: Variant, velocity: Vector2) -> void:
-	if _actor_id(actor) == 0: player_gale_velocity = velocity
+	if _actor_id(actor) == 0: player_gale_velocity = velocity * sqrt(ExpeditionEconomyScript.modifier(self,"displacement_scale"))
 	else:
 		var storage := _actor_storage(actor)
 		if not storage.is_empty(): storage["gale_velocity"] = velocity
@@ -4356,6 +4459,7 @@ func request_potion(simulate_immediately: bool = true) -> bool:
 	_break_player_combo()
 	if not has_infinite_potions(): potions -= 1
 	potions_used_total += 1
+	if not expedition.is_empty(): ExpeditionCoordinatorScript.record(expedition,"pouch_use_committed",{"hp_before":player_hp,"charges_left":potions,"at":simulation_time})
 	player_action = _action("potion", maxf(0.48, 0.72 - 0.06 * float(track_property_ranks.get("fieldcraft_recovery", 0))), Vector2.ZERO)
 	_annotate_player_action("rejuvenation_potion")
 	_emit_sound(player_pos, 90.0)
@@ -4368,6 +4472,7 @@ func has_infinite_potions() -> bool:
 	return bool(mode_config.get("infinite_potions_for_testing", false))
 
 func healing_capacity() -> int:
+	if not expedition.is_empty(): return HEALING_CAPACITY
 	return HEALING_CAPACITY + int(track_property_ranks.get("fieldcraft_capacity", 0))
 
 func _empty_consumable_slots() -> Array[Dictionary]:
@@ -4390,6 +4495,7 @@ func request_consumable(slot: int, direction: Vector2 = Vector2.ZERO, simulate_i
 	var stored := consumable_slot(slot)
 	var item_id := String(stored.get("id", ""))
 	if item_id.is_empty() or int(stored.get("count", 0)) <= 0: return false
+	if item_id == "trail_ration" and player_hp >= player_max_hp: return false
 	var definition := consumable_definition(item_id)
 	if bool(definition.get("targeted", false)) and direction.length_squared() < 0.01: return false
 	_break_player_combo()
@@ -4425,6 +4531,7 @@ func request_repack(first_slot: int, second_slot: int, simulate_immediately: boo
 func nearby_pickup() -> Dictionary:
 	for pickup_value in world_pickups:
 		var pickup: Dictionary = pickup_value
+		if int(pickup.get("guard_site",-1)) >= 0 and not _area_is_clear(int(pickup["guard_site"])): continue
 		if String(pickup.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(pickup["pos"])) <= 112.0: return pickup
 	return {}
 
@@ -4436,6 +4543,7 @@ func request_collect_nearby_pickup(simulate_immediately: bool = true) -> bool:
 	var pickup := nearby_pickup()
 	if pickup.is_empty(): return false
 	var item_id := String(pickup.get("item_id", ""))
+	if ExpeditionCatalogScript.EQUIPMENT.has(item_id): return false # Explicit comparison in the UI.
 	if item_id == "rejuvenation":
 		if potions >= healing_capacity():
 			_set_message("The rejuvenation pouch is already full.")
@@ -4450,14 +4558,18 @@ func request_collect_nearby_pickup(simulate_immediately: bool = true) -> bool:
 		if String(stored.get("id", "")) != item_id: continue
 		var maximum := int(consumable_definition(item_id).get("max_stack", 1))
 		if int(stored.get("count", 0)) >= maximum: continue
-		stored["count"] = mini(maximum, int(stored["count"]) + amount)
+		var transferred := mini(maximum-int(stored["count"]),amount)
+		stored["count"] = int(stored["count"])+transferred
 		consumable_slots[slot_index] = stored
-		_remove_pickup(String(pickup["id"]))
+		if transferred == amount: _remove_pickup(String(pickup["id"]))
+		else: pickup["count"] = amount-transferred
 		return _begin_repack_action("You stow the %s." % String(consumable_definition(item_id).get("label", item_id)).to_lower(), simulate_immediately)
 	for slot_index in range(consumable_slots.size()):
 		if not String(consumable_slot(slot_index).get("id", "")).is_empty(): continue
-		consumable_slots[slot_index] = {"id": item_id, "count": mini(amount, int(consumable_definition(item_id).get("max_stack", 1)))}
-		_remove_pickup(String(pickup["id"]))
+		var transferred := mini(amount,int(consumable_definition(item_id).get("max_stack",1)))
+		consumable_slots[slot_index] = {"id":item_id,"count":transferred}
+		if transferred==amount: _remove_pickup(String(pickup["id"]))
+		else: pickup["count"] = amount-transferred
 		return _begin_repack_action("You stow the %s." % String(consumable_definition(item_id).get("label", item_id)).to_lower(), simulate_immediately)
 	pending_pickup = pickup.duplicate(true)
 	_set_message("Belt full. Tap a belt slot to replace it, or wait to leave it.")
@@ -4470,7 +4582,11 @@ func replace_pending_pickup(slot: int, simulate_immediately: bool = true) -> boo
 	if item_id.is_empty(): return false
 	var displaced := consumable_slot(slot)
 	consumable_slots[slot] = {"id": item_id, "count": mini(int(pending_pickup.get("count", 1)), int(consumable_definition(item_id).get("max_stack", 1)))}
-	_remove_pickup(String(pending_pickup["id"]))
+	var remainder := int(pending_pickup.get("count",1))-int(consumable_slots[slot]["count"])
+	if remainder<=0: _remove_pickup(String(pending_pickup["id"]))
+	else:
+		for pickup in world_pickups:
+			if pickup["id"]==pending_pickup["id"]: pickup["count"] = remainder
 	pending_pickup.clear()
 	if not String(displaced.get("id", "")).is_empty() and int(displaced.get("count", 0)) > 0:
 		_drop_belt_item(displaced)
@@ -4540,6 +4656,12 @@ func request_wait(duration: float = -1.0, simulate_immediately: bool = true) -> 
 
 func interaction_label() -> String:
 	if not run_active or death_pending: return "WAIT"
+	if not expedition.is_empty():
+		if player_pos.distance_to(Vector2(expedition_markers["exit"])) <= 150:
+			return "CONFIRM EXIT" if expedition_departure_pending else "LEAVE BIOME"
+		expedition_departure_pending = false
+		if not nearby_waystone().is_empty(): return "REST"
+		if ExpeditionEconomyScript.at_merchant(self): return "TRADE"
 	if bool(mode_config["waystone_available"]) and not nearby_waystone().is_empty(): return "REST"
 	if not nearby_pickup().is_empty(): return "TAKE"
 	var shortcut := _nearby_locked_shortcut()
@@ -4550,6 +4672,9 @@ func interaction_label() -> String:
 func request_context_action() -> bool:
 	if not is_player_ready(): return false
 	match interaction_label():
+		"LEAVE BIOME": return request_expedition_departure(false)
+		"CONFIRM EXIT": return request_expedition_departure(true)
+		"TRADE": return false # The board opens the finite-stock transaction panel.
 		"REST": return activate_waystone()
 		"TAKE": return request_collect_nearby_pickup()
 		"UNLOCK", "CLEAR": return unlock_shortcut()
@@ -4574,6 +4699,13 @@ func can_open_level_sheet() -> bool:
 
 func activate_waystone() -> bool:
 	var stone := nearby_waystone()
+	if not expedition.is_empty():
+		if stone.is_empty() or not is_player_ready() or death_pending or not ExpeditionCoordinatorScript.use_waystone(expedition): return false
+		_restore_at_waystone()
+		potions = HEALING_CAPACITY
+		_set_message("Waystone spent: health and readiness restored; pouch refilled to five. Trail Rations are not replenished.")
+		changed.emit()
+		return true
 	if not bool(mode_config["waystone_available"]) or stone.is_empty() or not is_player_ready(): return false
 	active_waystone_id = String(stone["id"])
 	bonfire_pos = Vector2(stone["pos"])
@@ -4734,7 +4866,12 @@ func _apply_shortcut_world_state() -> void:
 
 func _refresh_loaded_region_content() -> void:
 	var desired: Dictionary = {}
-	if mode_id == ModeRulesScript.EXPEDITION:
+	if not expedition.is_empty():
+		# New ascent maps use sparse stable site IDs (including quiet pockets).
+		# Loading numeric neighbours silently made side paths physically impassable.
+		for shape in floor_shapes:
+			if _shape_bounds(shape).grow(1500.0).has_point(player_pos): desired[int(shape.get("part_id",-1))] = true
+	elif mode_id == ModeRulesScript.EXPEDITION:
 		if current_area_id >= 0: desired[current_area_id] = true
 		for edge_value in Array(run_graph.get("edges", [])):
 			var edge := Dictionary(edge_value)
@@ -5012,6 +5149,7 @@ func _load_current_layer_discovery() -> void:
 	_visibility_anchor_cell = Vector2i(-999999, -999999)
 
 func _restore_at_waystone() -> void:
+	for slot in cooldowns: _set_cooldown_remaining(String(slot),0.0)
 	player_hp = player_max_hp
 	player_energy = player_max_energy
 	player_overexertion_pending = false
@@ -5157,7 +5295,7 @@ func available_level_up_options(context: String = "") -> Array[String]:
 	var target_level := character_level() + 1
 	for track_value in character_track_order():
 		var track_id := String(track_value)
-		if track_id == "adopted": continue
+		if track_id == "adopted" and (expedition.is_empty() or String(expedition["discipline"]).is_empty()): continue
 		var stage := next_track_stage(track_id)
 		if not stage.is_empty() and int(stage.get("gate", 999)) <= target_level: pool.append(track_id)
 	return pool
@@ -5166,6 +5304,10 @@ func track_total(track_id: String) -> int:
 	return int(track_ranks.get(track_id, 0))
 
 func next_track_stage(track_id: String) -> Dictionary:
+	if track_id=="adopted":
+		if not expedition.is_empty() and track_total("adopted")==2:
+			return {"id":"adopted_mastery", "label":"%s III" % String(expedition["discipline"]).capitalize(), "gate":9, "description":String(AbilityCatalogScript.ADOPTED_DISCIPLINES[expedition["discipline"]]["description"])}
+		return {}
 	return CombatCatalogScript.character_stage(track_id, int(track_ranks.get(track_id, 0)))
 
 func _apply_character_stage(stage_id: String, choice_id: String) -> void:
@@ -5491,9 +5633,9 @@ func _tick(dt: float) -> void:
 		battle_flow_remaining = maxf(0.0, battle_flow_remaining - dt)
 		if battle_flow_remaining <= 0.0: _break_battle_flow(false, "decay")
 	if player_posture_recovery_delay > 0.0:
-		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - player_dt)
+		player_posture_recovery_delay = maxf(0.0, player_posture_recovery_delay - dt)
 	if player_posture < player_posture_max and player_posture_recovery_delay <= 0.0 and String(player_action.get("kind", "")) not in ["hit_reaction", "stagger"]:
-		player_posture = minf(player_posture_max, player_posture + player_dt * float(player_properties.get("posture_recovery", 1.8)))
+		player_posture = minf(player_posture_max, player_posture + dt * float(player_properties.get("posture_recovery", 1.8)))
 	strength_remaining = maxf(0.0, strength_remaining - dt)
 	var player_action_kind := String(player_action.get("kind", "idle"))
 	if uses_energy_rules() and player_action_kind in ENERGY_REGEN_ACTIONS:
@@ -5524,7 +5666,8 @@ func _tick(dt: float) -> void:
 	_build_enemy_spatial_index()
 	_update_effects(dt)
 	_update_conditions(dt)
-	_update_player(player_dt)
+	# Imposed reactions are world-clock durations, not faster/slower voluntary acts.
+	_update_player(dt if String(player_action["kind"]) in ["hit_reaction","stagger"] else player_dt)
 	_update_exploration()
 	_try_recover_xp()
 	_update_enemies(dt, _simulation_tick_index % 2 == 0)
@@ -5715,6 +5858,10 @@ func _update_player(dt: float) -> void:
 			if elapsed >= float(player_action.get("startup", 0.24)) and not bool(player_action["effect_done"]):
 				player_action["effect_done"] = true
 				_apply_consumable_effect(String(player_action.get("item_id", "")), Vector2(player_action.get("direction", player_facing)))
+		"adopted":
+			if elapsed >= float(player_action["startup"]) and not bool(player_action["effect_done"]):
+				player_action["effect_done"] = true
+				_resolve_adopted_action()
 		"bow_draw":
 			_update_bow_soft_aim(dt)
 			var previous_draw := float(player_action.get("draw_ratio", 0.0))
@@ -5858,6 +6005,12 @@ func _push_enemy(enemy: Dictionary, direction: Vector2, distance: float) -> Vect
 
 func _apply_consumable_effect(item_id: String, direction: Vector2) -> void:
 	match item_id:
+		"trail_ration":
+			player_hp = mini(player_max_hp,player_hp+15)
+			if not expedition.is_empty(): ExpeditionCoordinatorScript.record(expedition,"ration_used",{"hp":player_hp})
+			_add_effect("heal",player_pos)
+		"repulsion_pot":
+			_concussion_burst(player_pos,180.0,0,0.0,130.0)
 		"throwing_knife":
 			_break_stealth_for_hostile_action()
 			_spawn_player_projectile("throwing_knife", direction)
@@ -6612,15 +6765,14 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 	# A posture break is meant to create an actionable opening. Its timer runs
 	# while the player's breaking strike is still recovering, so a short fixed
 	# duration could expire before time froze again. Guarantee 0.72 seconds of
-	# world time after the current player commitment ends, adjusted into the
-	# enemy's personal action clock so fast enemies receive the same opportunity.
+	# world time after the current player commitment ends. Imposed stagger itself
+	# is world-clocked, independent of either actor's Speed.
 	var player_recovery_world_seconds := 0.0
 	if String(player_action.get("kind", "idle")) != "idle":
-		var player_action_remaining := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0)))
-		player_recovery_world_seconds = player_action_remaining / maxf(0.01, _player_personal_tempo())
+		player_recovery_world_seconds = player_commitment_world_remaining()
 	var guaranteed_world_seconds := player_recovery_world_seconds + POSTURE_BREAK_OPENING_SECONDS + break_bonus_seconds
-	stagger_duration = maxf(stagger_duration, guaranteed_world_seconds * _enemy_personal_tempo(enemy))
-	_record_enemy_control(enemy, "posture_break", action, stagger_duration / maxf(0.01, _enemy_personal_tempo(enemy)))
+	stagger_duration = maxf(stagger_duration, guaranteed_world_seconds)
+	_record_enemy_control(enemy, "posture_break", action, stagger_duration)
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
@@ -6663,6 +6815,7 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	if action_kind == "hit_reaction" and not forced: return false
 	var elapsed := float(action_before.get("elapsed", 0.0))
 	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
+	if bool(action_before.get("protected",false)) and elapsed <= float(action_before.get("active_end",0.0)): return false
 	var high_impact := impact >= 3.5
 	# A committed charge may explicitly own its whole promise, including wind-up.
 	# Damage and posture have already resolved; only death or the charge's own solid-
@@ -6711,14 +6864,14 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# instant the player is. Heavies are excluded because they answer with armour
 	# instead, and giving them this as well would make a committed heavy unpunishable.
 	if _enemy_mass(enemy_kind) < HEAVY_TELEGRAPH_MASS:
-		duration = maxf(duration, _player_commitment_remaining() * _enemy_personal_tempo(enemy))
+		duration = maxf(duration, _player_commitment_remaining())
 	var contact_point := Vector2(enemy["pos"]) if not contact.is_finite() else contact
 	var reaction_direction := (Vector2(enemy["pos"]) - contact_point).normalized()
 	if reaction_direction.length_squared() < 0.001: reaction_direction = -Vector2(enemy.get("facing", Vector2.DOWN)).normalized()
 	var reaction_strength := 1.18 if high_impact else 1.0
 	if action_kind == "charge": reaction_strength += 0.16
 	var source_tool := String(source_action.get("ability_id", source_action.get("technique_id", source_action.get("kind", "melee"))))
-	_record_enemy_control(enemy, "hit_reaction", action_before, duration / maxf(0.01, _enemy_personal_tempo(enemy)))
+	_record_enemy_control(enemy, "hit_reaction", action_before, duration)
 	_interrupt_enemy_action(enemy, "player", source_tool)
 	enemy["action"] = _action("hit_reaction", duration, Vector2.ZERO)
 	_clear_melee_intent(enemy)
@@ -7182,6 +7335,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 	for index in _streamed_enemy_indices:
 		if index < 0 or index >= enemies.size(): continue
 		var enemy := enemies[index]
+		if bool(enemy.get("reserve", false)): continue
 		# Large expedition parts may contain several encounter groups. Distant,
 		# unaware groups remain frozen until the player approaches, keeping action
 		# simulation proportional to the active locale rather than the whole run.
@@ -7216,12 +7370,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 		if shot_cooldown > 0.0: enemy["shot_cooldown"] = maxf(0.0, shot_cooldown - enemy_dt)
 		var recovery_delay := float(enemy.get("posture_recovery_delay", 0.0))
 		if recovery_delay > 0.0:
-			recovery_delay = maxf(0.0, recovery_delay - enemy_dt)
+			recovery_delay = maxf(0.0, recovery_delay - dt)
 			enemy["posture_recovery_delay"] = recovery_delay
 		var posture := float(enemy["posture"])
 		var posture_max := float(enemy["posture_max"])
 		if posture < posture_max and recovery_delay <= 0.0 and String(Dictionary(enemy["action"])["kind"]) not in ["hit_reaction", "stagger"]:
-			enemy["posture"] = minf(posture_max, posture + enemy_dt * float(enemy.get("posture_recovery_rate", 1.8)))
+			enemy["posture"] = minf(posture_max, posture + dt * float(enemy.get("posture_recovery_rate", 1.8)))
 		var action: Dictionary = enemy["action"]
 		if is_measurement_mode() and String(enemy.get("awareness", "idle")) == "alerted" and String(action.get("kind", "idle")) in ["hit_reaction", "stagger"]:
 			var control_kind := String(enemy.get("kind", "unknown"))
@@ -7276,10 +7430,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 				action["ability_id"] = String(action.get("label", action.get("technique_id", action["kind"])))
 			enemy["action"] = action
 		var previous_elapsed := float(action["elapsed"])
-		action["elapsed"] = previous_elapsed + enemy_dt
+		action["elapsed"] = previous_elapsed + (dt if String(action["kind"]) in ["hit_reaction","stagger"] else enemy_dt)
+		action["world_elapsed"] = float(action.get("world_elapsed",0.0)) + dt
 		var kind := String(action["kind"])
 		var elapsed := float(action["elapsed"])
 		if kind in ENEMY_ATTACK_ACTION_KINDS and action.has("startup") and previous_elapsed < float(action["startup"]) and elapsed >= float(action["startup"]):
+			action["world_startup"] = float(action["world_elapsed"]) - dt + dt * (float(action["startup"])-previous_elapsed)/maxf(0.00001,elapsed-previous_elapsed)
 			_record_enemy_action_event(enemy, "launched", action)
 		if kind not in ["move", "evade"]:
 			enemy["is_moving"] = false
@@ -7303,7 +7459,9 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			if leap_aim.length_squared() > 0.01:
 				action["direction"] = leap_aim.normalized()
 				enemy["facing"] = Vector2(action["direction"])
-		if kind in ["move", "evade"]:
+		if kind == "expedition_attack":
+			ExpeditionCombatScript.tick(self, enemy, action, previous_elapsed, enemy_dt)
+		elif kind in ["move", "evade"]:
 			if String(enemy.get("kind", "")) == "knife" and kind == "move" and String(action.get("intent", "")) == "knife_flank":
 				# A flank is an approach choice, not an indefinite permission to orbit.
 				# Count ordinary world time so Quickening cannot secretly make the
@@ -7469,7 +7627,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			action["effect_done"] = true
 			_spawn_fire_breath(enemy, Vector2(action.get("direction", enemy.get("facing", Vector2.DOWN))))
 		if elapsed + 0.00001 >= float(action["duration"]):
-			if kind in ["melee", "charge", "pounce_combo"]: _finalise_capture_record(enemy, action)
+			if kind in ["melee", "charge", "pounce_combo", "expedition_attack"]: _finalise_capture_record(enemy, action)
 			if String(enemy.get("kind", "")) == "werewolf" and kind == "claw_combo" and not bool(action.get("hit_one", false)) and not bool(action.get("hit_two", false)):
 				_record_enemy_action_event(enemy, "missed", action)
 			if kind in ENEMY_ATTACK_ACTION_KINDS: _record_enemy_action_event(enemy, "completed", action)
@@ -7510,6 +7668,7 @@ func _update_bandit_concealment(enemy: Dictionary, world_dt: float) -> void:
 		_set_message("Movement in the brush resolves into a bandit.")
 
 func _choose_enemy_action(enemy: Dictionary) -> void:
+	if ExpeditionCombatScript.choose(self,enemy): return
 	var offset := player_pos - Vector2(enemy["pos"])
 	var distance := offset.length()
 	var direction := offset.normalized() if distance > 0.01 else Vector2.DOWN
@@ -7993,15 +8152,18 @@ func _melee_intent(enemy: Dictionary, gap: float) -> Dictionary:
 	enemy["intended_strike_distance"] = float(chosen["distance"])
 	return chosen
 
-# Records what actually happened to one hostile attack. Gated on Combat Survey:
-# these are report instruments, and sampling attack geometry every active frame
-# is not worth the cost in ordinary play.
+# Contact telemetry serves Survey/Boss Lab and the new expedition journal. Legacy
+# play keeps its historical sampling cost and behaviour.
 func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> void:
-	if not is_measurement_mode(): return
+	if not is_measurement_mode() and expedition.is_empty(): return
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
+	# Stop judging the answer once contact resolved or the damaging window ended.
+	# In particular, a hit's own forced reaction must not erase a failed walking
+	# attempt from the denominator, and a recovery punish is not a defense.
+	if not String(record.get("resolution","")).is_empty() or elapsed>float(action.get("active_end",INF)): return
 	var player_kind := String(player_action.get("kind", "idle"))
-	# "Walk only" is a whole-attack property, not the first response label. Once
+	# "Walk only" covers preparation and unresolved contact, not recovery. Once
 	# the player attacks, casts, dodges, blocks, endures, or is forced into a
 	# reaction, this attack can no longer support a claim about walking alone.
 	if player_kind not in ["idle", "move"]: record["walk_only"] = false
@@ -8019,6 +8181,7 @@ func _observe_capture(enemy: Dictionary, action: Dictionary, elapsed: float) -> 
 			record["response"] = player_kind
 	# How near the attack came during its damaging window. This is what tunes `f`:
 	# a miss by two units and a miss by ninety are different design problems.
+	if String(action.get("kind","")) == "expedition_attack": return # Executor samples its authored shape.
 	if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 		if String(action.get("kind", "")) == "charge":
 			# A charge has no swept footprint. Its contact test is proximity against
@@ -8073,14 +8236,14 @@ func _interrupt_enemy_action(enemy: Dictionary, interrupter: String = "system", 
 			"tool": tool,
 			"at": simulation_time,
 		})
-	if String(action.get("kind", "")) in ["melee", "charge", "pounce_combo"]:
+	if String(action.get("kind", "")) in ["melee", "charge", "pounce_combo", "expedition_attack"]:
 		_finalise_capture_record(enemy, action, true)
 
 func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted: bool = false) -> void:
 	var record: Dictionary = action.get("capture_record", {})
 	if record.is_empty(): return
 	action.erase("capture_record")
-	if not is_measurement_mode(): return
+	if not is_measurement_mode() and expedition.is_empty(): return
 	if interrupted and String(record.get("resolution", "")).is_empty():
 		record["resolution"] = "interrupted"
 		# Where in the wind-up the answer landed. Below 1.0 means the attack was
@@ -8093,11 +8256,14 @@ func _finalise_capture_record(enemy: Dictionary, action: Dictionary, interrupted
 	# this every frosted room would quietly lie about capture timing.
 	record["player_frost"] = player_frost_fraction()
 	record["arena"] = String(survey_room_definition.get("arena", "unknown"))
-	var startup := maxf(0.001, float(action.get("startup", 0.30)))
+	var startup := maxf(0.001,float(action.get("world_startup",float(action.get("startup",0.30))/_enemy_personal_tempo(enemy))))
+	record["startup_world_seconds"] = startup
+	record["startup_measured"] = action.has("world_startup")
 	# -1 means the player never committed anything while the attack ran.
 	record["f_observed"] = (float(record["response_at"]) / startup) if float(record["response_at"]) >= 0.0 else -1.0
 	if is_inf(float(record["closest"])): record["closest"] = 9999.0
-	survey_attack_records.append(record)
+	if is_measurement_mode(): survey_attack_records.append(record)
+	elif not expedition.is_empty(): ExpeditionCoordinatorScript.record(expedition,"attack_outcome",record)
 
 # Collapses this room's attack records into the numbers that answer whether
 # capture is working: how often walking alone was enough, and how the achieved
@@ -8365,6 +8531,7 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 func _enemy_move_speed(enemy: Dictionary) -> float:
 	var kind := String(enemy["kind"])
 	var speed := float(CombatCatalogScript.enemy_fact(kind, "move_speed"))
+	if float(Dictionary(enemy.get("conditions",{})).get("snared",0.0))>0.0: speed *= float(AbilityCatalogScript.ADOPTED_DISCIPLINES["trapper"]["slow_scale"])
 	# The Captain's invisible x1.14 aura is gone. What replaces it is the Chanter's
 	# Quickening -- same idea, but you can see which enemies have it and you can end it
 	# by killing the caster.
@@ -8448,14 +8615,24 @@ func _update_shield_patience(enemy: Dictionary, dt: float) -> void:
 		enemy["patience"] = maxf(0.0, patience - dt)
 
 # How long the player is still locked into what they are doing, in world seconds.
-# Movement and idle are not commitments: they are short and interruptible, which is
-# precisely why a gate built on proximity could be baited by stepping in and out.
-# Wait is a commitment, so spending time is the honest way to draw a screen.
+# For the Shield's opportunity heuristic, idle and short walking steps do not
+# count as punishable commitments. Walking still completes its paid step; the
+# public clock below measures that actual lock. Wait deliberately draws a screen.
 func _player_commitment_remaining() -> float:
 	var kind := String(player_action.get("kind", "idle"))
 	if kind in ["idle", "move"]: return 0.0
-	var remaining := maxf(0.0, float(player_action.get("duration", 0.0)) - float(player_action.get("elapsed", 0.0)))
-	return remaining / maxf(0.01, _player_personal_tempo())
+	return player_commitment_world_remaining()
+
+# Only the paid, committed combo phase is irrevocable. The catalogue's full
+# sequence duration includes optional future choices and is not an answer budget.
+func player_commitment_world_remaining() -> float:
+	var action := player_action
+	if String(action["kind"])=="idle": return 0.0
+	var end := float(action["duration"])
+	var phases: Array = action.get("phases",[])
+	if not phases.is_empty(): end = float(phases[clampi(int(action.get("committed_phase",0)),0,phases.size()-1)]["end"])
+	var tempo := 1.0 if String(action["kind"]) in ["hit_reaction","stagger"] else _player_personal_tempo()
+	return maxf(0.0,end-float(action["elapsed"]))/maxf(0.01,tempo)
 
 # A screen strikes because the player is LATE, not because the player is near.
 #
@@ -9132,7 +9309,7 @@ func _spawn_player_projectile(kind: String, direction: Vector2) -> void:
 		"friendly": true,
 		"source_id": 0,
 		"travelled": 0.0,
-		"max_range": (400.0 if kind == "firebomb" else 560.0) * _aimed_projectile_range_multiplier(),
+		"max_range": (400.0 if kind == "firebomb" else 560.0) * _aimed_projectile_range_multiplier() * (ExpeditionEconomyScript.modifier(self,"projectile_range_scale") if kind=="throwing_knife" else 1.0),
 		"layer": current_layer,
 	})
 
@@ -9149,7 +9326,7 @@ func _spawn_bow_projectile(action: Dictionary) -> void:
 		"aimed_projectile": true,
 		"source_id": 0,
 		"travelled": 0.0,
-		"max_range": float(action.get("projectile_range", 250.0)),
+		"max_range": float(action.get("projectile_range", 250.0)) * ExpeditionEconomyScript.modifier(self,"projectile_range_scale"),
 		"piercing": false,
 		"hit_ids": [],
 		"draw_ratio": float(action.get("draw_ratio", 0.0)),
@@ -9373,6 +9550,24 @@ func _update_hazards(dt: float) -> void:
 			continue
 		hazard["elapsed"] = float(hazard["elapsed"]) + dt
 		var kind := String(hazard.get("kind", ""))
+		if kind == "expedition_zone":
+			var nearest := Geometry2D.get_closest_point_to_segment(player_pos,hazard["lane_start"],hazard["lane_end"]) if hazard.has("lane_start") else Vector2(hazard["pos"])
+			if float(hazard["elapsed"]) >= float(hazard["trigger_at"]) and not bool(hazard["triggered"]) and player_pos.distance_to(nearest) <= float(hazard["radius"])+PLAYER_RADIUS:
+				hazard["triggered"] = true
+				_resolve_incoming_hit(int(hazard["source_id"]),int(hazard["damage"]),String(hazard["ability_id"]),Vector2(hazard["pos"])-player_pos,Vector2.INF,float(hazard["posture"]),"",false)
+			if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
+			continue
+		if kind=="snare":
+			for enemy in _nearby_enemies(Vector2(hazard["pos"]),100.0):
+				if bool(enemy.get("reserve",false)) or not _enemy_on_current_layer(enemy): continue
+				if Vector2(enemy["pos"]).distance_to(hazard["pos"]) > float(hazard["radius"])+float(enemy["radius"]): continue
+				enemy["conditions"]["snared"] = float(AbilityCatalogScript.ADOPTED_DISCIPLINES["trapper"]["slow_duration"])
+				_apply_posture_damage(enemy,float(hazard["posture"]),hazard["pos"],"player","snare")
+				_broadcast_enemy_alarm(enemy,player_pos)
+				hazard["triggered"] = true
+				break
+			if not bool(hazard["triggered"]) and float(hazard["elapsed"])<float(hazard["duration"]): survivors.append(hazard)
+			continue
 		if bool(hazard.get("friendly", false)):
 			if not bool(hazard["triggered"]) and float(hazard["elapsed"]) >= float(hazard["trigger_at"]):
 				hazard["triggered"] = true
@@ -9594,6 +9789,8 @@ func _aggregate_damage_effect(key: String, impact: Vector2, amount: int) -> bool
 	return false
 
 func _record_survey_damage_source(source_name: String, amount: int) -> void:
+	if not expedition.is_empty() and amount>0:
+		ExpeditionCoordinatorScript.record(expedition,"damage_received",{"source":source_name,"amount":amount,"at":simulation_time})
 	if not is_measurement_mode() or amount <= 0: return
 	var key := source_name if not source_name.is_empty() else "unknown"
 	survey_damage_sources[key] = int(survey_damage_sources.get(key, 0)) + amount
@@ -9747,10 +9944,9 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 	var reaction_duration := 0.78 if posture_broken else minf(0.60, 0.20 + 0.08 * float(damage))
 	# Reaching this line means no protection was active -- the guard above returns
 	# otherwise -- so arming unconditionally is non-refreshing by construction.
-	# Action time advances on personal tempo, so convert to world seconds before
-	# adding the tail; otherwise a fast character's reaction would end sooner in
-	# world time and silently earn a longer guarantee than a slow one.
-	player_hit_protection_remaining = reaction_duration / maxf(0.01, _player_personal_tempo()) + POST_HIT_PROTECTION_TAIL
+	# Imposed reactions and their protection tail both own world seconds;
+	# personal tempo must not lengthen or shorten this guarantee.
+	player_hit_protection_remaining = reaction_duration + POST_HIT_PROTECTION_TAIL
 	player_action = _action("stagger" if posture_broken else "hit_reaction", reaction_duration, Vector2.ZERO)
 	player_action.merge({
 		"reaction_contact": impact,
@@ -9831,6 +10027,7 @@ func _begin_death() -> void:
 		"previous_shadow_erased": previous_shadow_erased,
 	}
 	death_pending = true
+	if not expedition.is_empty(): ExpeditionCoordinatorScript.record(expedition,"death",{"source":survey_last_damage_source,"at":simulation_time})
 	player_action = _idle_action()
 	projectiles.clear()
 	hazards.clear()
@@ -9921,16 +10118,41 @@ func _remove_dead_enemies() -> void:
 				if witnesses == 0: survey_isolated_kills += 1
 				else: survey_engaged_kills += 1
 			var kind := String(enemy["kind"])
-			carried_xp += _xp_for_enemy(kind)
+			carried_xp += int(enemy["expedition_xp"]) if enemy.has("expedition_xp") else _xp_for_enemy(kind)
 			defeated_areas[int(enemy.get("area_id", 0))] = true
-			if kind in ["warden", "werewolf"]:
+			if not expedition.is_empty() and kind == String(ExpeditionCatalogScript.BIOMES[int(expedition["biome"])]["boss"]):
+				ExpeditionCoordinatorScript.defeat_boss(expedition)
+				_set_message("The guardian falls. A single-use Waystone and the onward exit are unlocked.")
+			elif kind in ["warden", "werewolf"]:
 				_boss_defeated = true
 				if mode_id == ModeRulesScript.EXPEDITION:
 					trial_complete = true
 					_set_message("The %s falls. The expedition is complete." % ("Werewolf" if kind == "werewolf" else "Warden"))
 				else: _set_message("The Warden falls. The path beyond remains anchored.")
 			else: _set_message("The %s falls. XP gained." % kind)
+	# A defeated, un-rung Bellrunner disperses its waiting reserve. This is an
+	# avoided reinforcement, not a kill; its allocated encounter XP is still earned.
+	if not expedition.is_empty():
+		var retained: Array[Dictionary] = []
+		for enemy in living:
+			var site_id := int(enemy.get("expedition_site",-1))
+			var caller_alive := living.any(func(other: Dictionary) -> bool: return String(other["kind"])=="bellrunner" and int(other.get("expedition_site",-2))==site_id)
+			if bool(enemy.get("reserve",false)) and not caller_alive:
+				carried_xp += int(enemy.get("expedition_xp",0))
+				defeated_areas[site_id] = true
+				ExpeditionCoordinatorScript.record(expedition,"reserve_dispersed",{"site":site_id,"id":enemy["id"]})
+			else: retained.append(enemy)
+		living = retained
 	_replace_enemy_actors(living)
+	if not expedition.is_empty():
+		for area_id in defeated_areas:
+			var reward_id := "%d:%d" % [int(expedition["biome"]), int(area_id)]
+			if int(area_id) == 9 or expedition["rewarded_encounters"].has(reward_id) or not _area_is_clear(int(area_id)): continue
+			for site in expedition_sites:
+				if int(site["site"]) != int(area_id): continue
+				expedition["rewarded_encounters"].append(reward_id)
+				expedition["crowns"] += int(site["crowns"])
+				ExpeditionCoordinatorScript.record(expedition, "encounter_cleared", {"template":site["id"], "crowns":site["crowns"], "hp":player_hp, "pouch":potions})
 	if is_measurement_mode() and enemies.is_empty():
 		# Hold the handover only while the blow that won the room is still resolving.
 		# With nothing in flight there is nothing to wait for, so the room completes at
@@ -10035,6 +10257,10 @@ func _navigation_direction(enemy: Dictionary, target: Vector2) -> Vector2:
 	if navigation.region.size == Vector2i.ZERO: return direct
 	var from_cell := _nearest_open_cell(_world_to_nav(origin))
 	var target_cell := _nearest_open_cell(_world_to_nav(target))
+	# A streamed cliff edge can have no open cell in the bounded search. Zero
+	# is a sentinel, not a valid path endpoint in every standalone map region.
+	if not navigation.is_in_boundsv(from_cell) or not navigation.is_in_boundsv(target_cell):
+		return _local_avoidance_direction(enemy,direct)
 	if target.distance_to(player_pos) <= NAV_CELL * 0.75:
 		_ensure_player_flow_field(target_cell)
 		if _flow_next_cell.has(from_cell):
@@ -10382,7 +10608,7 @@ func _area_is_clear(area_id: int) -> bool:
 	return true
 
 func _enemy_on_current_layer(enemy: Dictionary) -> bool:
-	return String(enemy.get("layer", current_layer)) == current_layer
+	return not bool(enemy.get("reserve",false)) and String(enemy.get("layer", current_layer)) == current_layer
 
 func _visibility_cell(position: Vector2) -> Vector2i:
 	return Vector2i(int(floor(position.x / VISIBILITY_CELL)), int(floor(position.y / VISIBILITY_CELL)))
@@ -10731,16 +10957,24 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 	return result
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
+	# The app finishes the existing player commitment before suspending. Refuse
+	# a premature new-expedition save rather than silently deleting that action.
+	if not expedition.is_empty() and not death_pending and String(player_action["kind"])!="idle": return false
 	var profile_start := Time.get_ticks_usec()
 	var payload_start := profile_start
 	var payload := _build_save_payload()
 	performance_metrics["last_save_payload_ms"] = float(Time.get_ticks_usec() - payload_start) / 1000.0
 	var write_start := Time.get_ticks_usec()
-	var file := FileAccess.open(path, FileAccess.WRITE)
+	var temporary_path := path + ".pending"
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null: return false
 	file.store_var(payload, true)
 	file.flush()
 	performance_metrics["last_save_bytes"] = file.get_position()
+	file.close()
+	# Publish a complete snapshot only after flush. An interrupted write leaves
+	# the previous save intact, including crowns, stock and one-use interactions.
+	if DirAccess.rename_absolute(temporary_path, path) != OK: return false
 	performance_metrics["last_save_write_ms"] = float(Time.get_ticks_usec() - write_start) / 1000.0
 	performance_metrics["last_save_ms"] = float(Time.get_ticks_usec() - profile_start) / 1000.0
 	return true
@@ -10973,6 +11207,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	var normalized_payload := SaveMigrationsScript.normalize(payload, SAVE_VERSION)
 	if normalized_payload.is_empty(): return false
 	payload = normalized_payload
+	if not SaveMigrationsScript.validate_current(payload, SAVE_VERSION).is_empty(): return false
 	var migration_notices: Array[String] = []
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
@@ -11018,7 +11253,12 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	custom_room_hp_percent = float(payload.get("custom_room_hp_percent", 1.0))
 	custom_room_xp = int(payload.get("custom_room_xp", 0))
 	custom_room_repeat = bool(payload.get("custom_room_repeat", false))
-	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")))
+	var saved_expedition := Dictionary(payload["expedition"]).duplicate(true)
+	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")), saved_expedition.is_empty())
+	if not saved_expedition.is_empty():
+		expedition = saved_expedition
+		_install_layout(ExpeditionGeneratorScript.generate(run_seed, int(expedition["biome"])))
+		_respawn_enemies()
 	if is_measurement_mode():
 		var saved_survey_room := int(payload.get("survey_room_number", 1))
 		if saved_survey_room > 1:
@@ -11092,6 +11332,12 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_energy_regen_delay = 0.0
+	if not expedition.is_empty():
+		# Resuming is not restorative. Historical migrations may clear debt, but
+		# a current expedition retains its exact exhaustion and regeneration gate.
+		player_overexertion_pending = bool(payload.get("player_overexertion_pending",false))
+		player_exhaustion_remaining = float(payload.get("player_exhaustion_remaining",0.0))
+		player_energy_regen_delay = float(payload.get("player_energy_regen_delay",0.0))
 	# v13 introduced a new semantic world grammar and changed Campaign area IDs.
 	# Older dynamic actors are regenerated so they cannot survive off-floor in the
 	# rewritten geography; learned progression and run statistics remain intact.
@@ -11305,6 +11551,9 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		survey_empty_melee_contacts = int(payload.get("survey_empty_melee_contacts", 0))
 		survey_strike_diagnostics.assign(Array(payload.get("survey_strike_diagnostics", [])))
 	simulation_time = float(payload.get("time", 0.0))
+	# Alternating AI ticks are part of a current expedition's combat clock, not
+	# a disposable render cache. Preserve the phase across suspension.
+	if not expedition.is_empty(): _simulation_tick_index = int(payload.get("simulation_tick_index",roundi(simulation_time/SIM_DT)))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:
 		migration_notices.push_front("The forest shifted. Its old geography fades from memory.")
@@ -11314,10 +11563,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	_next_enemy_id = 1
 	for index in range(enemies.size()):
 		var enemy: Dictionary = _hydrate_enemy_combat_profile(enemies[index])
-		enemy["action"] = _idle_action()
-		enemy["is_moving"] = false
-		enemy["last_motion"] = Vector2.ZERO
-		enemy["stalled_time"] = 0.0
+		if expedition.is_empty():
+			enemy["action"] = _idle_action()
+			enemy["is_moving"] = false
+			enemy["last_motion"] = Vector2.ZERO
+			enemy["stalled_time"] = 0.0
 		enemy.erase("nav_path")
 		enemy.erase("nav_target_cell")
 		_next_enemy_id = maxi(_next_enemy_id, int(enemy["id"]) + 1)

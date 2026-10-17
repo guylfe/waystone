@@ -15,15 +15,30 @@ const ACTION_FIELDS := [
 	"flight_time", "projectile_speed", "projectile_radius", "launch", "arc_span", "max_range",
 	"battle_flow_damage", "battle_flow_posture", "battle_flow_registered", "force_hit_reaction",
 ]
+const EXPEDITION_ACTION_FIELDS := ["ability_id", "shape", "origin", "travel", "arc", "pull", "protected", "track_until", "spent", "world_elapsed", "world_startup"]
 
 static func checkpoint(state: RunState) -> Dictionary:
 	var player := StateFieldSchemaScript.capture(state, StateFieldSchemaScript.DETERMINISM)
+	# An absent expedition must not change historical Survey fingerprints. The
+	# journal observes outcomes but never determines simulation behaviour.
+	if state.expedition.is_empty():
+		player.erase("expedition")
+		player.erase("simulation_tick_index")
+	else:
+		player["expedition"] = state.expedition.duplicate(true)
+		player["expedition"].erase("events")
 	player["player_action"] = _selected(Dictionary(state.player_action), ACTION_FIELDS)
+	if String(state.player_action.get("kind",""))=="adopted":
+		player["player_action"].merge(_selected(state.player_action,["ability_id","rank","effect_done"]))
 	var enemies: Array = []
 	for value in state.enemies:
 		var enemy := Dictionary(value)
 		var projected := StateFieldSchemaScript.project_entity(enemy, "enemy", StateFieldSchemaScript.DETERMINISM)
 		projected["action"] = _selected(Dictionary(enemy.get("action", {})), ACTION_FIELDS)
+		if String(Dictionary(enemy.get("action", {})).get("kind", "")) == "expedition_attack":
+			projected["action"].merge(_selected(enemy["action"], EXPEDITION_ACTION_FIELDS))
+		if not state.expedition.is_empty():
+			projected["action"].merge(_selected(enemy["action"],["speed_multiplier","effect_done","hit_done","advance"]))
 		enemies.append(projected)
 	enemies.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", -1)) < int(b.get("id", -1)))
 	var world := {

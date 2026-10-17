@@ -2,23 +2,23 @@
 
 ## Status and timing
 
-This is a deferred redesign brief, not an instruction to immediately replace the current Expedition generator. Reviewed 2026-09-22 against `0.2.95`.
+This is a historical redesign brief reviewed against `0.2.95`. Its seven-part target and Warden-first dependency were superseded by the user's October 17 approval of `expedition-0.3.0-implementation.md`. Retain its encounter rationale, not its obsolete content counts or work order. The revised three-biome prototype is implemented and mechanically verified; human play acceptance remains open.
 
 The first evidence gate is complete: `docs/survey-archive-findings.md` analysed 297 rooms,
 G1 shipped role-aware recipes and non-melee guarantees in `0.2.35`, and `0.2.93`
-added four lean exact-roster teaching encounters. These are foundations, not the final
-Expedition rebuild. Boss validation and narrow journey integration now come before final
-pack tables, progression weights, or content quotas.
+added four lean exact-roster teaching encounters. These became foundations for later
+Expedition work. At that checkpoint, boss validation and narrow journey integration
+were prerequisites for final pack tables, progression weights, or content quotas.
 
-Work that can happen before the survey is complete is limited to data capture, technical scaffolding, and documenting candidate roles. Do not prematurely lock final pack tables, progression weights, or content quotas.
+The earlier gate below explains the historical sequence; it is not a current prohibition on the approved prototype. Its new pack tables and quantities are initial test values, not validated final quotas.
 
 ## Diagnosis
 
-The present Expedition has seven large progression areas, but each area largely uses one predetermined roster distributed across its sockets. Seeds substantially vary placement and geography, but do not yet produce enough distinct local combat premises.
+The pre-0.3.0 Expedition had seven large progression areas, each largely using one predetermined roster distributed across its sockets. Seeds varied placement and geography more than tactical premises.
 
 Cardinal Quest 2 derives much of its run richness from nested generation. A floor contains several separately generated tactical groups, discoveries, rewards, and exploration decisions. The important target for Waystone is not CQ2's raw enemy count; Waystone combat is slower, more spatial, and more mechanically involved. The target is a comparable density of consequential and independently varied moments.
 
-The current Expedition can therefore feel thin despite containing many enemies because:
+The pre-0.3.0 Expedition could therefore feel thin despite containing many enemies because:
 
 - one broad roster is smeared across a large area instead of becoming several deliberately composed local situations;
 - composition changes little between seeds;

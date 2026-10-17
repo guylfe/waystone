@@ -9,6 +9,9 @@ const DETERMINISM := "determinism"
 # Shared authoritative fields are declared once with explicit consumers. Presentation
 # pooling and save migration remain audience-specific policies around this schema.
 const FIELDS := [
+	# The immutable presentation does not need a growing run event journal every frame.
+	{"key":"expedition", "source":"expedition", "audiences":[SAVE, DETERMINISM], "copy":"dictionary"},
+	{"key":"simulation_tick_index", "source":"_simulation_tick_index", "audiences":[SAVE, DETERMINISM]},
 	{"key":"time", "source":"simulation_time", "audiences":[SNAPSHOT, PRESENTATION, SAVE], "interpolate":"float"},
 	{"key":"player_pos", "source":"player_pos", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"vector"},
 	{"key":"player_facing", "source":"player_facing", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"direction"},
@@ -64,6 +67,13 @@ const FIELDS := [
 # determinism. Optional fields are copied only when present; a descriptor with a
 # `default` is authored into the projection even when an old runtime record lacks it.
 const ENEMY_FIELDS := [
+	{"key":"expedition_site", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
+	{"key":"expedition_xp", "audiences":[SNAPSHOT, SAVE, DETERMINISM]},
+	{"key":"reserve", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
+	{"key":"gong_pos", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
+	{"key":"gong_used", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
+	{"key":"expedition_attack_index", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
+	{"key":"expedition_approaching", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
 	{"key":"id", "audiences":[PRESENTATION, DETERMINISM]},
 	{"key":"presentation_id", "audiences":[PRESENTATION]},
 	{"key":"kind", "audiences":[PRESENTATION, DETERMINISM]},
@@ -110,6 +120,11 @@ const ENEMY_FIELDS := [
 ]
 
 const WORLD_FIELDS := [
+	{"key":"lane_start", "entities":["hazard"], "audiences":[PRESENTATION,DETERMINISM]},
+	{"key":"lane_end", "entities":["hazard"], "audiences":[PRESENTATION,DETERMINISM]},
+	{"key":"ability_id", "entities":["projectile","hazard"], "audiences":[PRESENTATION,DETERMINISM]},
+	{"key":"origin", "entities":["hazard"], "audiences":[PRESENTATION,DETERMINISM]},
+	{"key":"guard_site", "entities":["pickup"], "audiences":[PRESENTATION,DETERMINISM]},
 	{"key":"id", "entities":["projectile", "hazard", "barrier", "effect", "pickup"], "audiences":[PRESENTATION, DETERMINISM]},
 	{"key":"presentation_id", "entities":["projectile", "hazard", "barrier", "effect", "pickup"], "audiences":[PRESENTATION]},
 	{"key":"kind", "entities":["projectile", "hazard", "barrier", "effect", "pickup"], "audiences":[PRESENTATION, DETERMINISM]},

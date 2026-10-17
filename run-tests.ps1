@@ -56,6 +56,10 @@ New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-
 
 # Verified to run clean under --headless. Keep this list in sync when adding tests.
 $HeadlessSuite = @(
+    'expedition_lifecycle_test',
+    'expedition_systems_test',
+    'expedition_edge_cases_test',
+    'expedition_boss_responses_test',
     'run_state_test',
     'combo_continuation_test',
     'post_hit_agency_test',
@@ -82,7 +86,8 @@ $HeadlessSuite = @(
 )
 
 if ($All) {
-    $Selected = Get-ChildItem (Join-Path $ProjectRoot 'tests\*.gd') | ForEach-Object { $_.BaseName } | Sort-Object
+    # RefCounted policy helpers are not executable SceneTree test entrypoints.
+    $Selected = Get-ChildItem (Join-Path $ProjectRoot 'tests\*.gd') | Where-Object { $_.BaseName -ne 'expedition_action_planner' } | ForEach-Object { $_.BaseName } | Sort-Object
 } elseif ($Tests) {
     $Selected = $Tests | ForEach-Object { $_ -replace '\.gd$', '' -replace '^tests[\\/]', '' }
 } else {
@@ -112,12 +117,10 @@ foreach ($name in $Selected) {
     # run can be watched while it hangs. A file that asserts directly in _init()/_initialize()
     # aborts before its own quit(0) and the process then never exits at all -- the failure is
     # printed within a second and the runner used to sit out the whole timeout to see it.
-    $log = [System.IO.Path]::GetTempFileName()
-    $job = Start-Job -ScriptBlock {
-        param($godot, $root, $file, $logPath)
-        & $godot --headless --path $root --script $file *>&1 | Out-File -FilePath $logPath -Encoding utf8
-        $LASTEXITCODE
-    } -ArgumentList $Godot, $ProjectRoot, "tests/$name.gd", $log
+    $resultFolder = Join-Path $ProjectRoot '.runtime\test-results'
+    New-Item -ItemType Directory -Force -Path $resultFolder | Out-Null
+    $log = Join-Path $resultFolder "$name.log"
+    $process = Start-Process -FilePath $Godot -WorkingDirectory $ProjectRoot -ArgumentList @('--headless', '--path', '.', '--script', "tests/$name.gd", '--log-file', "`"$log`"") -WindowStyle Hidden -PassThru
 
     # Killing on the first sign of failure would truncate a file that keeps running other
     # tests after one of them fails, and the ledger needs every distinct failure to judge
@@ -128,7 +131,7 @@ foreach ($name in $Selected) {
     $lastSize = -1
     $idleSince = Get-Date
     $hungAfterFailure = $false
-    while ($job.State -eq 'Running' -and (Get-Date) -lt $deadline) {
+    while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 400
         $size = if (Test-Path $log) { (Get-Item $log).Length } else { 0 }
         if ($size -ne $lastSize) {
@@ -146,19 +149,18 @@ foreach ($name in $Selected) {
     }
 
     $timedOut = $false
-    if ($job.State -eq 'Running') {
-        Stop-Job $job
-        Get-Process Godot_v4.7-stable_win64 -ErrorAction SilentlyContinue | Stop-Process -Force
+    if (-not $process.HasExited) {
+        # Never terminate another test, editor, or live play session.
+        Stop-Process -Id $process.Id -Force
         $timedOut = -not $hungAfterFailure
         $code = -1
     } else {
-        $code = Receive-Job $job | Select-Object -Last 1
-        if ($null -eq $code) { $code = 0 }
+        $process.WaitForExit()
+        $code = $process.ExitCode
     }
     $output = if (Test-Path $log) { (Get-Content -Path $log -Raw -ErrorAction SilentlyContinue) } else { '' }
     if ($null -eq $output) { $output = '' }
-    Remove-Job $job -Force
-    Remove-Item $log -Force -ErrorAction SilentlyContinue
+    $process.Dispose()
 
     # Two reporting conventions exist in tests/. Files that assert() surface
     # "Assertion failed"; files that collect into a failures array surface "FAILED:"
@@ -232,9 +234,10 @@ if ($UnexpectedlyPassing) {
     Write-Host ("UNEXPECTED PASS ({0}): {1}" -f $UnexpectedlyPassing.Count, ($UnexpectedlyPassing -join ', ')) -ForegroundColor Red
     exit 1
 }
+if ($Missing) { exit 1 }
 if ($Failed) {
     Write-Host ("FAILED ({0}): {1}" -f $Failed.Count, ($Failed -join ', ')) -ForegroundColor Red
     exit 1
 }
-Write-Host ("All {0} test files passed ({1} documented expected failures)." -f $Selected.Count, $ExpectedSeen.Count) -ForegroundColor Green
+Write-Host ("Completed {0} test files: {1} passed; {2} documented expected failures; no new failures." -f $Selected.Count, ($Selected.Count - $ExpectedSeen.Count), $ExpectedSeen.Count) -ForegroundColor Green
 exit 0

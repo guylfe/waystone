@@ -25,7 +25,7 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	_capture("res://builds/energy-terminal-recovery.png")
-	board.state.start_run("warrior", "expedition", 270207, "encounter", "recovery")
+	board.state.start_run("warrior", "expedition", 270207, "encounter", "recovery", true)
 	board.state.enemies.clear()
 	board.visual = board.state.snapshot(true)
 	board.queue_redraw()
