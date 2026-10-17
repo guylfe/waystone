@@ -1,6 +1,6 @@
 # PC controller controls
 
-**Baseline:** 0.3.2, presentation 19. **Status:** implemented; physical play acceptance
+**Baseline:** 0.3.3, presentation 20. **Status:** implemented; physical play acceptance
 remains open. This owns the bindings and verification record, not combat mechanics;
 the character framework and RunState remain authoritative for those.
 
@@ -9,19 +9,23 @@ the character framework and RunState remain authoritative for those.
 | Control | Action |
 |---|---|
 | Left stick | Move in screen direction; release finishes the current small step |
-| Right stick | Aim; deflection also selects ground-target distance; no time cost |
+| Right stick | Full analog ranged direction; no distance tied to magnitude. In placement mode, move the ground marker |
 | RT | Attack; hold continues melee sequences, release ends continuation / fires Bow |
 | B | Dodge, Block or Endure; movement direction takes priority over aim; hold for Block |
 | RB | Equipped weapon art |
-| Y | Selected subclass ability, spell or adopted discipline; hold for Advance |
-| LB | Open ability selector; A selects the ability for Y without using it |
+| Y | Subclass ability or selected spell; hold for Advance |
+| LB (hold) | Reveal direct shortcuts on the existing bars; release restores ordinary labels |
+| LB + A / B / X / Y / RB (Mage) | Lightning / Fire / Ice / Earth / Air spell; learned elemental choices keep these fixed positions |
+| LB + D-pad left / down / right | Directly use utility slot 1 / 2 / 3, or replace that slot with a pending pickup |
+| LB + D-pad up | Adopted discipline: Trapper in movement direction; Sapper opens ground placement |
 | X | Rejuvenation pouch |
 | A | Context interaction, or one Wait step when no interaction is available |
 | D-pad up | Rally / Stealth toggle, or Circle |
 | D-pad left / right | Select one of the three utility slots |
 | D-pad down | Use selected utility, or replace that slot when a pickup is pending |
 | Left-stick click | One deliberate Wait step |
-| Right-stick click | Cycle visible targets, ending with no target; manual aiming clears it |
+| Right-stick click | Bow/Mage: cycle visible targets, ending with none; manual aiming clears it |
+| A / B during ground placement | Commit at marker / cancel without a cast or Dodge |
 | View | Map |
 | Menu | Resume, character/upgrades, controller guide, view, save and quit, or confirmed abandonment |
 | D-pad / left stick in menus | Move focus; A confirms, B backs out |
@@ -31,6 +35,17 @@ Take Aim requires an explicitly selected visible enemy. The other characters can
 attack and cast freely without target selection. Invisible, dead and other-layer
 actors are never valid controller target selections. There is no auto-dodge,
 auto-pathfinding, hidden aim correction or controller-specific combat discount.
+
+Melee weapons (including the Mage's staff), defense, Advance, Vault and Windstep
+follow the left-stick movement direction or current facing. Ranged aim cannot
+redirect them. Bow/spells use a live right-stick heading, then movement/facing or
+the retained ranged heading when stationary. Both axes are sampled together when
+retaining that heading, preventing an axis-release event from snapping it sideways.
+Only exact-location abilities use a crosshair: placed spells and Sapper. The marker
+moves while the simulation stays stopped, holds its position on stick release and
+is clamped to authored range. Confirmation uses normal combat legality and cost.
+Thrown items also use ranged direction; a melee character sees that guide while
+holding LB if a directional item is carried. Self-use items do not inherit ranged aim.
 
 All run setup character choices, upgrades, equipment comparisons, merchant stock,
 discipline choices, maps and survey rating buttons are controller-accessible. Optional
@@ -48,6 +63,12 @@ shaped bumpers/triggers, labeled sticks and click indicators, directional D-pads
 View and Menu. Images do not replace the action text. Descriptions distinguish
 hold/release/tap and show actual selected abilities, items, charges and cooldowns.
 Locked arts and empty consumable slots remain explained instead of disappearing.
+The touch ability/item bars and spell drawer remain in their original positions;
+no controller-only replacement rail is used. LB changes slot badges to direct
+buttons and temporarily opens the Mage drawer. Normal badges show LB combinations,
+with Y on the currently selected spell. Actions whose buttons are reassigned while
+LB is held do not advertise their ordinary bindings. Existing quantities, costs and
+cooldown displays stay visible. The old selector modal is removed.
 Menu → Controller guide gives the complete reference, including unused LT and
 system buttons. Shops, equipment dialogs and survey menus share the same images.
 Mandatory survey/outcome panels do not advertise B as a way to skip submission.
@@ -73,6 +94,11 @@ read the combat state/catalogs; they do not author combat costs or availability 
 - Returning from menus requires neutral input, preventing accidental attacks or
   movement from a stick/trigger held while navigating. Only one gamepad owns input
   at a time; disconnect permits another device to claim it.
+- LB stops held movement/attack chaining while shortcuts are displayed. It does
+  not cancel a current commitment; shortcut presses while busy are not queued.
+  Releasing LB requires neutral controls before ordinary movement resumes.
+  Ground placement suppresses movement/attacks; cancellation, disconnect, focus
+  loss or a switch to keyboard/touch discards the uncommitted marker.
 - Abandonment requires a second confirmation. Save-and-quit preserves the run.
 - Existing touch and keyboard controls remain available, including on Android.
   Android does not activate this PC-specific adapter.
@@ -114,3 +140,22 @@ read the combat state/catalogs; they do not author combat costs or availability 
   `0.3.2` / code `302`. The Windows build is launched for physical-controller play.
 - Fold remains unavailable in wireless discovery; new physical-device checks and
   physical controller play acceptance are not claimed.
+
+## 0.3.3 verification — 2026-10-18
+
+- Full regression suite: **27 passing files, one documented expected Bandit
+  failure, no new failures**; deterministic combat goldens unchanged. The final
+  controller, survey UI and structure tests also pass after the final input/UI edits.
+- Adapter tests cover all four weapon frames, continuous analog angles in both
+  views, magnitude-independent heading, axis-release stability, direct LB casting,
+  stable element shortcuts, movement suppression, exact ground placement/range,
+  frozen time/Energy, confirm/cancel, disconnect, both disciplines and direct item
+  consumption without a duplicate or potion collision.
+- Two bounded OpenGL inspection rounds covered desktop/compact bars and the spell
+  drawer, ground marker, guide, native dialog and preserved portrait touch layout.
+  Truncated guidance and small badges were corrected; the hint strip was moved
+  below the resource gauges so it cannot cover Energy/Posture. Native-window A
+  activation occurs exactly once. Connected gamepad detected; subjective physical
+  stick feel remains for the user to assess.
+- Windows and Android exports produced `0.3.3` / Android code `303`. Wireless ADB
+  discovery returned no Fold; installation and new Fold play checks remain pending.

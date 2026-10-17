@@ -1340,6 +1340,8 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 func _input(event: InputEvent) -> void:
 	if _controller_event(event): return
 	if controller.active and ((event is InputEventKey and event.pressed) or (event is InputEventMouseButton and event.pressed) or event is InputEventScreenTouch):
+		if controller.palette_open: controller.set_palette(self, false)
+		controller.targeting_action = ""
 		controller.release_actions(self)
 		controller.active = false
 		controller.device = -1
@@ -2028,6 +2030,8 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
 		if controller != null and controller.active:
+			if controller.palette_open: controller.set_palette(self, false)
+			controller.targeting_action = ""
 			controller.release_actions(self)
 			controller.axes.clear()
 			controller.held.clear()
@@ -2391,7 +2395,8 @@ func _start_run() -> void:
 
 func _finish_run_start() -> void:
 	controller.release_actions(self)
-	controller.quick_action = "subclass"
+	controller.targeting_action = ""
+	controller.palette_open = false
 	controller.aim = Vector2.ZERO
 	controller.target_id = -1
 	controller.help_open = false
@@ -4734,13 +4739,13 @@ func _phase(action: Dictionary) -> String:
 
 func _draw_hud() -> void:
 	if waystone_menu_open: _draw_waystone_menu()
-	elif controller.active: controller.draw_hud(self)
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
 		_draw_spell_row()
 		_draw_button("wait", interaction_rect)
 		if state.uses_energy_rules(): _draw_attack_button()
+		if controller.active: controller.draw_hud(self)
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
 	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
 	if not state.expedition.is_empty(): hp_text = "XP %d/%d  •  %s" % [state.carried_xp,state.next_upgrade_cost(),state.current_area_name().to_upper()]
@@ -4804,7 +4809,10 @@ func _draw_attack_button() -> void:
 	var text_color := Color("f4eee3") if available or attacking else Color("778388")
 	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, -2.0), title, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, title_font, text_color)
 	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.31), subtitle, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.55)), border)
-	if desktop_controls:
+	if controller.active:
+		var badge_size := radius * 0.50
+		ControllerInputScript.Prompts.badge(self, Rect2(center + Vector2(-badge_size * 0.5, radius * 0.40), Vector2.ONE * badge_size), ["rt"] if not controller.palette_open and controller.targeting_action == "" else [])
+	elif desktop_controls:
 		draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.63), "[F]", HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.52)), Color("8d989c"))
 
 func _draw_reset_button() -> void:
@@ -5705,6 +5713,12 @@ func _draw_spell_row() -> void:
 		draw_rect(rect, Color("16222a") if castable else Color("11191d"))
 		draw_rect(rect, colour if castable else Color("465359"), false, 4.0 if chosen else 2.0)
 		var label := state.spell_label(spell_id)
+		if controller.active:
+			var keys := ControllerInputScript.Prompts.spell_keys(self, controller, spell_id)
+			var badge_side := rect.size.y * 0.52
+			var badge_width := badge_side * keys.size()
+			ControllerInputScript.Prompts.badge(self, Rect2(rect.end.x - badge_width - 4, rect.position.y + (rect.size.y - badge_side) * 0.5, badge_width, badge_side), keys)
+			rect.size.x -= badge_width + 8
 		var label_font := maxi(9, int(minf(rect.size.x / maxf(1.0, float(label.length())) * 1.7, rect.size.y * 0.36)))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.5 + float(label_font) * 0.34), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, label_font, colour if castable else Color("5d6a71"))
 		# The cost, because Intelligence and the Circle both move it and a price that
@@ -5800,9 +5814,15 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))
+	if controller.active:
+		var scale := minf(size.x / 1280.0, size.y / 800.0)
+		var badge_side := minf(34 * scale, rect.size.y * 0.7)
+		ControllerInputScript.Prompts.badge(self, Rect2(rect.position + Vector2(4 * scale, (rect.size.y - badge_side) * 0.5), Vector2(70 * scale, badge_side)), ControllerInputScript.Prompts.action_keys(self, controller, name))
+		rect.position.x += 76 * scale
+		rect.size.x -= 76 * scale
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.46), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f0ece0") if available else Color("68777c"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(9, int(title_font * 0.6)), color if available else Color("59666b"))
-	if desktop_controls:
+	if desktop_controls and not controller.active:
 		var shortcuts := {"defense": "[2 / B]", "skill": "[3 / Q]", "rally": "[4]", "advance": "[5 / E]", "adopted": "[6]", "wait": "[SPACE]"}
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.91), String(shortcuts[name]), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(title_font * 0.48)), Color("718087"))
 
@@ -6014,9 +6034,13 @@ func _draw_consumable(slot_id: String, rect: Rect2) -> void:
 	draw_rect(rect, Color("3a3028") if state.has_pending_pickup() and slot_id != "healing" else Color("15232a") if available else Color("11191d"))
 	draw_rect(rect, Color("f0c66b") if state.has_pending_pickup() and slot_id != "healing" else color if available else Color("465359"), false, 4.0 if selected else 2.0)
 	var title_font := maxi(9, int(minf(rect.size.x, rect.size.y) * 0.21))
+	if controller.active:
+		var badge_height := rect.size.y * 0.48
+		ControllerInputScript.Prompts.badge(self, Rect2(rect.position + Vector2(2, rect.size.y - badge_height), Vector2(rect.size.x - 4, badge_height)), ControllerInputScript.Prompts.item_keys(controller, slot_id))
+		rect.size.y -= badge_height
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.43), title, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, title_font, Color("f0ece0") if available else Color("68777c"))
 	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0.0, rect.size.y * 0.72), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(8, int(title_font * 0.72)), color if available else Color("59666b"))
-	if desktop_controls:
+	if desktop_controls and not controller.active:
 		var key_label := "[1 / P]" if slot_id == "healing" else "[%d]" % (7 + int(slot_id.trim_prefix("slot_")))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.91), key_label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(7, int(title_font * 0.55)), Color("718087"))
 

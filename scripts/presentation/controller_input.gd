@@ -21,10 +21,11 @@ var neutral_required := false
 var attack_held := false
 var paused := false
 var palette_open := false
-var quick_action := "subclass"
+var targeting_action := ""
+var target_point := Vector2.ZERO
+var palette_previous_spellbook := true
 var utility_slot := 0
 var aim := Vector2.ZERO
-var aim_distance := 340.0
 var target_id := -1
 var focus_index := 0
 var last_context := ""
@@ -54,17 +55,113 @@ func stick(x: int, y: int) -> Vector2:
 	return value.limit_length() if value.length() > DEADZONE else Vector2.ZERO
 
 func move_direction(board) -> Vector2:
-	if not active or neutral_required or modal(board): return Vector2.ZERO
+	if not active or neutral_required or palette_open or modal(board): return Vector2.ZERO
 	return board._screen_delta_to_world_direction(stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y))
 
 func direction(board, movement_first: bool = false) -> Vector2:
-	var movement := move_direction(board)
-	if movement_first and not movement.is_zero_approx(): return movement
+	# Melee, defense and locomotion never inherit the ranged aiming stick/lock.
+	if not movement_first and board.state.player_weapon_frame == "bow": return ranged_direction(board)
+	var movement: Vector2 = board._screen_delta_to_world_direction(stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y))
+	return movement if not movement.is_zero_approx() else board.state.player_facing
+
+func ranged_direction(board) -> Vector2:
 	var target := locked_target(board)
 	if not target.is_empty(): return board.state.player_pos.direction_to(Vector2(target["pos"]))
-	if not aim.is_zero_approx(): return aim
+	var pointing := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+	if not pointing.is_zero_approx(): return board._screen_delta_to_world_direction(pointing)
+	var movement: Vector2 = board._screen_delta_to_world_direction(stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y))
 	if not movement.is_zero_approx(): return movement
+	if not aim.is_zero_approx(): return aim
 	return board.state.player_facing
+
+func has_ranged_aim(board) -> bool:
+	return board.state.player_weapon_frame == "bow" or board.state.loadout_id == "mage_elementalist"
+
+func show_ranged_guide(board) -> bool:
+	if has_ranged_aim(board): return true
+	# A melee character still needs a directional preview when choosing a throw.
+	if palette_open:
+		for slot in 3:
+			var item: Dictionary = board.state.consumable_slot(slot)
+			if int(item.get("count", 0)) > 0 and board.state.consumable_requires_direction(slot): return true
+	return false
+
+func spell_shortcuts(board) -> Array:
+	# Stable element positions: learning a spell does not rebind the others.
+	var result: Array = []
+	var groups := [["lightning_bolt"]]
+	for stage in ["element_fire", "element_ice", "element_earth", "element_air"]:
+		groups.append(Array(board.state.ELEMENT_STAGE_SPELLS[stage]))
+	var keys := ["a", "b", "x", "y", "rb"]
+	var buttons := [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_RIGHT_SHOULDER]
+	for i in groups.size():
+		for spell in groups[i]:
+			if board.state.knows_spell(spell): result.append({"spell": spell, "key": keys[i], "button": buttons[i]})
+	return result
+
+func set_palette(board, open: bool) -> void:
+	if open == palette_open: return
+	if open: palette_previous_spellbook = board.spellbook_open
+	release_actions(board)
+	palette_open = open
+	board.spellbook_open = true if open else palette_previous_spellbook
+	# The modifier deliberately stays held while a fresh shortcut is pressed.
+	if open: neutral_required = false
+	board._layout()
+
+func palette_button(board, button: int) -> void:
+	if board.playing or not board.state.is_player_ready(): return
+	if board.state.loadout_id == "mage_elementalist":
+		for shortcut in spell_shortcuts(board):
+			if shortcut["button"] == button:
+				board.state.select_spell(shortcut["spell"])
+				use_spell(board, shortcut["spell"])
+				return
+	elif button == JOY_BUTTON_Y: use_quick_action(board)
+	if button == JOY_BUTTON_DPAD_UP: use_adopted(board)
+	var slots := [JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_RIGHT]
+	if button in slots:
+		utility_slot = slots.find(button)
+		use_item(board)
+
+func use_item(board) -> void:
+	if board.state.has_pending_pickup(): board._begin_streamed_action(board.state.replace_pending_pickup(utility_slot, false))
+	else:
+		var targeted: bool = board.state.consumable_requires_direction(utility_slot)
+		board._begin_streamed_action(board.state.request_consumable(utility_slot, ranged_direction(board) if targeted else direction(board, true), false))
+
+func use_spell(board, spell: String) -> void:
+	if board.state.spell_is_placed(spell):
+		begin_targeting(board, spell)
+		return
+	var spec: Dictionary = board.state.AbilityCatalogScript.spell(spell)
+	var facing := direction(board, true) if spec.get("resolver") == "movement" else ranged_direction(board)
+	board._begin_streamed_action(board.state.request_spell(spell, board.state.player_pos + facing * 340.0, false))
+
+func use_adopted(board) -> void:
+	var discipline := String(board.state.expedition.get("discipline", ""))
+	if discipline == "sapper": begin_targeting(board, "adopted")
+	elif discipline == "trapper": board._begin_streamed_action(board.state.request_adopted(board.state.player_pos + direction(board, true) * 65.0, false))
+
+func targeting_range(board) -> float:
+	if targeting_action == "adopted": return float(board.state.AbilityCatalogScript.ADOPTED_DISCIPLINES["sapper"]["range"])
+	return board.state.spell_reach(targeting_action)
+
+func begin_targeting(board, action: String) -> void:
+	if board.playing or not board.state.is_player_ready(): return
+	var facing := ranged_direction(board)
+	if palette_open: set_palette(board, false)
+	release_actions(board)
+	targeting_action = action
+	target_point = board.state.player_pos + facing * minf(180.0, targeting_range(board))
+
+func finish_targeting(board, confirm: bool) -> void:
+	var action := targeting_action
+	targeting_action = ""
+	release_actions(board)
+	if not confirm: return
+	if action == "adopted": board._begin_streamed_action(board.state.request_adopted(target_point, false))
+	else: board._begin_streamed_action(board.state.request_spell(action, board.state.spell_target_for(action, target_point), false))
 
 func locked_target(board) -> Dictionary:
 	if target_id < 0: return {}
@@ -86,7 +183,7 @@ func cycle_target(board) -> void:
 	target_id = int(candidates[index + 1]["id"]) if index + 1 < candidates.size() else -1
 
 func modal(board) -> bool:
-	return help_open or paused or palette_open or not board.state.run_active or board.character_sheet_open or board.waystone_menu_open or board.map_open or board.state.death_pending or board.state.trial_complete or board.state.survey_feedback_pending or native_panel(board) != null
+	return help_open or paused or targeting_action != "" or not board.state.run_active or board.character_sheet_open or board.waystone_menu_open or board.map_open or board.state.death_pending or board.state.trial_complete or board.state.survey_feedback_pending or native_panel(board) != null
 
 func native_panel(board) -> Node:
 	if is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: return board.expedition_dialog
@@ -113,6 +210,8 @@ func release_actions(board) -> void:
 
 func disconnected(board, disconnected_device: int) -> void:
 	if disconnected_device != device: return
+	if palette_open: set_palette(board, false)
+	targeting_action = ""
 	release_actions(board)
 	axes.clear()
 	held.clear()
@@ -142,17 +241,22 @@ func handle(board, event: InputEvent) -> bool:
 			if down != was_down: attack(board, down)
 		elif event.axis in [JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y]:
 			var pointing := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
-			if not pointing.is_zero_approx():
-				aim = board._screen_delta_to_world_direction(pointing)
-				aim_distance = lerpf(90.0, 600.0, clampf((pointing.length() - DEADZONE) / (1.0 - DEADZONE), 0.0, 1.0))
+			if not pointing.is_zero_approx() and targeting_action == "" and not modal(board):
 				target_id = -1
 		board.queue_redraw()
 		return true
 	if event.pressed == bool(held.get(event.button_index, false)): return true
 	held[event.button_index] = event.pressed
 	if not event.pressed:
+		if event.button_index == JOY_BUTTON_LEFT_SHOULDER and palette_open: set_palette(board, false)
 		if event.button_index == JOY_BUTTON_B: board.state.set_block_hold(false)
 		if event.button_index == JOY_BUTTON_Y: board.state.set_advance_hold(false)
+		return true
+	if targeting_action != "":
+		if event.button_index in [JOY_BUTTON_A, JOY_BUTTON_B]: finish_targeting(board, event.button_index == JOY_BUTTON_A)
+		elif event.button_index == JOY_BUTTON_START:
+			finish_targeting(board, false)
+			paused = true
 		return true
 	# Menus accept fresh edges, never the attack trigger. Closing a menu requires
 	# neutral controls before combat can resume, even if the stick stayed tilted.
@@ -161,19 +265,20 @@ func handle(board, event: InputEvent) -> bool:
 		board.queue_redraw()
 		return true
 	if event.button_index == JOY_BUTTON_START:
+		if palette_open: set_palette(board, false)
 		release_actions(board)
 		paused = true
 	elif event.button_index == JOY_BUTTON_BACK:
 		if not board.playing:
+			if palette_open: set_palette(board, false)
 			release_actions(board)
 			board.map_open = true
 			board.state.map_presentation = "full"
 			board.map_view_layer = board.state.current_layer
 	elif event.button_index == JOY_BUTTON_LEFT_SHOULDER:
-		if not board.playing:
-			release_actions(board)
-			palette_open = true
-	elif event.button_index == JOY_BUTTON_RIGHT_STICK: cycle_target(board)
+		if not neutral_required: set_palette(board, true)
+	elif palette_open: palette_button(board, event.button_index)
+	elif event.button_index == JOY_BUTTON_RIGHT_STICK and has_ranged_aim(board): cycle_target(board)
 	elif not neutral_required:
 		if board.playing and event.button_index in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_RIGHT_SHOULDER, JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN]:
 			pending_button = event.button_index
@@ -195,9 +300,7 @@ func perform_button(board, button: int) -> void:
 			JOY_BUTTON_DPAD_UP: board._handle_button("rally")
 			JOY_BUTTON_DPAD_LEFT: utility_slot = posmod(utility_slot - 1, 3)
 			JOY_BUTTON_DPAD_RIGHT: utility_slot = posmod(utility_slot + 1, 3)
-			JOY_BUTTON_DPAD_DOWN:
-				if board.state.has_pending_pickup(): board._begin_streamed_action(board.state.replace_pending_pickup(utility_slot, false))
-				else: board._begin_streamed_action(board.state.request_consumable(utility_slot, facing, false))
+			JOY_BUTTON_DPAD_DOWN: use_item(board)
 			JOY_BUTTON_LEFT_STICK: board._begin_streamed_action(board.state.request_wait(-1.0, false))
 
 func consume_buffer(board) -> bool:
@@ -214,7 +317,7 @@ func attack(board, down: bool) -> void:
 			if String(board.state.player_action.get("kind", "")) == "bow_draw": board.state.release_bow_attack(direction(board))
 		attack_held = false
 		return
-	if neutral_required or modal(board): return
+	if neutral_required or palette_open or modal(board): return
 	if board.playing:
 		attack_held = board.state.resume_combo_hold() or String(board.state.player_action.get("kind", "")) == "move"
 		return
@@ -225,12 +328,8 @@ func attack(board, down: bool) -> void:
 
 func use_quick_action(board) -> void:
 	var facing := direction(board)
-	var point: Vector2 = board.state.player_pos + facing * aim_distance
 	var target := locked_target(board)
-	if not target.is_empty(): point = target["pos"]
-	if quick_action == "adopted": board._begin_streamed_action(board.state.request_adopted(point, false))
-	elif board.state.loadout_id == "mage_elementalist":
-		board._begin_streamed_action(board.state.request_spell(board.state.selected_spell, board.state.spell_target_for(board.state.selected_spell, point), false))
+	if board.state.loadout_id == "mage_elementalist": use_spell(board, board.state.selected_spell)
 	elif board.state.loadout_id == "rogue_sharpshooter":
 		if target.is_empty():
 			board.state.message = "Press RS to select a visible enemy for Take Aim."
@@ -241,6 +340,11 @@ func use_quick_action(board) -> void:
 
 func update(board, delta: float) -> void:
 	if not active: return
+	# Sample both axes together once per frame, rather than retaining the transient
+	# half-updated heading from the two separate axis-release events.
+	var pointing := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+	if not pointing.is_zero_approx() and targeting_action == "" and not modal(board):
+		aim = board._screen_delta_to_world_direction(pointing)
 	pending_seconds = maxf(0.0, pending_seconds - delta)
 	var context := context_id(board)
 	if context != last_context:
@@ -250,6 +354,16 @@ func update(board, delta: float) -> void:
 		navigation_direction = 0
 		navigation_remaining = 0.0
 	if neutral_required and stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y).is_zero_approx() and not held.values().has(true): neutral_required = false
+	if targeting_action != "":
+		if board.state.death_pending or board.state.trial_complete:
+			finish_targeting(board, false)
+			return
+		var stick_input := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+		# Full analog direction, proportional cursor speed; release holds its location.
+		var speed := clampf((stick_input.length() - DEADZONE) / (1.0 - DEADZONE), 0.0, 1.0)
+		target_point += board._screen_delta_to_world_direction(stick_input) * speed * 320.0 * delta
+		target_point = board.state.player_pos + (target_point - board.state.player_pos).limit_length(targeting_range(board))
+		return
 	if modal(board):
 		var entries := menu_entries(board)
 		focus_index = clampi(focus_index, 0, maxi(0, entries.size() - 1))
@@ -266,7 +380,7 @@ func update(board, delta: float) -> void:
 		focus_native(entries)
 		return
 	if String(board.state.player_action.get("kind", "")) == "bow_draw" and attack_held: board.state.set_bow_aim(direction(board))
-	if String(board.state.player_action.get("kind", "")) == "block" and bool(held.get(JOY_BUTTON_B, false)): board.state.set_block_direction(direction(board))
+	if String(board.state.player_action.get("kind", "")) == "block" and bool(held.get(JOY_BUTTON_B, false)): board.state.set_block_direction(direction(board, true))
 	if String(board.state.player_action.get("kind", "")) == "advance": board.state.set_advance_hold(bool(held.get(JOY_BUTTON_Y, false)))
 
 func context_id(board) -> String:
@@ -274,7 +388,7 @@ func context_id(board) -> String:
 	var panel := native_panel(board)
 	if panel != null: return "native:%d" % panel.get_instance_id()
 	if paused: return "pause:%s" % abandon_confirm
-	if palette_open: return "palette"
+	if targeting_action != "": return "targeting"
 	if not board.state.run_active: return "setup:%s:%s:%s" % [board.setup_stage, board.custom_room_open, board.custom_page]
 	if board.character_sheet_open: return "sheet:%s" % String(board.sheet_detail.get("kind", "summary"))
 	if board.map_open: return "map"
@@ -306,7 +420,6 @@ func back(board) -> void:
 		if kind == "archive": board._close_survey_archive()
 		elif kind == "end_confirm": board.survey_overlay.hide()
 		# Ratings and outcomes must be deliberately submitted, not silently skipped.
-	elif palette_open: palette_open = false
 	elif paused:
 		if abandon_confirm: abandon_confirm = false
 		else: paused = false
@@ -341,13 +454,6 @@ func menu_entries(board) -> Array:
 		if board.state.is_measurement_mode(): entries.append({"label": "End test / report", "activate": func(): paused = false; board._build_survey_end_confirmation()})
 		entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
 		entries.append({"label": "Abandon run…", "activate": func(): abandon_confirm = true})
-	elif palette_open:
-		if board.state.loadout_id == "mage_elementalist":
-			for spell in board.state.player_spells:
-				entries.append({"label": "%s · %d Energy" % [board.state.spell_label(spell), roundi(board.state.spell_energy_cost(spell))], "activate": func(): board.state.select_spell(spell); quick_action = "subclass"; palette_open = false})
-		else: entries.append({"label": "Subclass ability", "activate": func(): quick_action = "subclass"; palette_open = false})
-		if not board.state.expedition.is_empty() and board.state.expedition["discipline"] != "":
-			entries.append({"label": String(board.state.expedition["discipline"]).capitalize(), "activate": func(): quick_action = "adopted"; palette_open = false})
 	elif not board.state.run_active:
 		if board.custom_room_open:
 			if board.custom_page == "kind": add_rects(board, entries, board.custom_kind_rects)
@@ -418,7 +524,6 @@ func focus_native(entries: Array) -> void:
 			parent = parent.get_parent()
 
 func quick_label(board) -> String:
-	if quick_action == "adopted": return String(board.state.expedition.get("discipline", "Adopted discipline")).capitalize()
 	if board.state.loadout_id == "mage_elementalist": return board.state.spell_label(board.state.selected_spell)
 	return {"warrior": "Advance", "rogue_acrobat": "Vault", "rogue_sharpshooter": "Take Aim"}.get(board.state.loadout_id, "Subclass")
 
@@ -430,10 +535,24 @@ func draw_overlay(board) -> void:
 	if help_open:
 		Prompts.draw_help(board, self)
 		return
+	if targeting_action != "":
+		var screen: Vector2 = board._world_to_screen(target_point)
+		board.draw_arc(screen, 12, 0, TAU, 24, Color("66e0ff"), 2)
+		board.draw_line(screen - Vector2(17, 0), screen + Vector2(17, 0), Color("66e0ff"), 1)
+		board.draw_line(screen - Vector2(0, 17), screen + Vector2(0, 17), Color("66e0ff"), 1)
+		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
+		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
+		board.draw_rect(bar, Color("101c24"))
+		var label: String = "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
+		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s · TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
+		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rs", "Place marker", scale)
+		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", "Use here", scale)
+		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
+		return
 	if modal(board):
 		var entries := menu_entries(board)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
-		if paused or palette_open:
+		if paused:
 			var box := Rect2(board.size * 0.5 - Vector2(240, 220) * scale, Vector2(480, 440) * scale)
 			board.draw_rect(Rect2(Vector2.ZERO, board.size), Color(0.02, 0.04, 0.06, 0.88))
 			board.draw_rect(box, Color("152831"))
@@ -447,7 +566,6 @@ func draw_overlay(board) -> void:
 			Glyphs.hint(board, box.position + Vector2(22, 380) * scale, "dpad", "Choose", scale)
 			Glyphs.hint(board, box.position + Vector2(170, 380) * scale, "a", "Confirm", scale)
 			Glyphs.hint(board, box.position + Vector2(318, 380) * scale, "b", "Back", scale)
-			if palette_open: Glyphs.hint(board, box.position + Vector2(22, 420) * scale, "y", "Uses chosen ability", scale * 0.8)
 		elif not entries.is_empty() and entries[clampi(focus_index, 0, entries.size()-1)].has("rect"):
 			board.draw_rect(Rect2(entries[clampi(focus_index, 0, entries.size()-1)]["rect"]).grow(3), Color("66e0ff"), false, 3)
 		if native_panel(board) == null:
@@ -455,14 +573,10 @@ func draw_overlay(board) -> void:
 			Glyphs.hint(board, Vector2(16 * scale, board.size.y - 35 * scale), "dpad", "Choose", scale)
 			Glyphs.hint(board, Vector2(174 * scale, board.size.y - 35 * scale), "a", "Confirm", scale)
 			Glyphs.hint(board, Vector2(332 * scale, board.size.y - 35 * scale), "b", "Back", scale)
-	elif board.state.run_active:
+	elif board.state.run_active and show_ranged_guide(board):
 		var origin: Vector2 = board._world_to_screen(board.state.player_pos)
-		board.draw_line(origin, board._world_to_screen(board.state.player_pos + direction(board) * 70), Color(0.4, 0.88, 1.0, 0.7), 2)
-		var point: Vector2 = board.state.player_pos + direction(board) * aim_distance
+		# A fixed-length directional guide, never a distance selected by stick tilt.
+		var tip: Vector2 = board._world_to_screen(board.state.player_pos + ranged_direction(board) * 110)
+		board.draw_line(origin, tip, Color(0.4, 0.88, 1.0, 0.7), 2)
 		var target := locked_target(board)
-		if not target.is_empty(): point = target["pos"]
-		var screen: Vector2 = board._world_to_screen(point)
-		if board.board_rect.has_point(screen):
-			board.draw_arc(screen, 12, 0, TAU, 24, Color("66e0ff"), 2)
-			board.draw_line(screen - Vector2(17, 0), screen + Vector2(17, 0), Color("66e0ff"), 1)
-			board.draw_line(screen - Vector2(0, 17), screen + Vector2(0, 17), Color("66e0ff"), 1)
+		if not target.is_empty(): board.draw_arc(board._world_to_screen(target["pos"]), 14, 0, TAU, 24, Color("66e0ff"), 2)

@@ -16,9 +16,13 @@ func _initialize() -> void:
 	board._layout()
 	board.controller.aim = Vector2.RIGHT
 	await capture("controller-desktop")
-	board.controller.palette_open = true
+	board.state.player_spells.append_array(["fireball", "cold_front", "sunder", "gale"])
+	board.controller.set_palette(board, true)
 	await capture("controller-palette")
-	board.controller.palette_open = false
+	board.controller.set_palette(board, false)
+	board.controller.begin_targeting(board, "sunder")
+	await capture("controller-ground-target")
+	board.controller.finish_targeting(board, false)
 	board.controller.paused = true
 	await capture("controller-menu")
 	board.controller.help_open = true
@@ -54,6 +58,10 @@ func _initialize() -> void:
 	DisplayServer.window_set_size(Vector2i(960, 600))
 	board._layout()
 	await capture("controller-compact")
+	board.state.start_run("warrior", "expedition", 270207, "encounter", "energy")
+	board.visual = board.state.snapshot(true)
+	board._layout()
+	await capture("controller-warrior")
 	board.controller.active = false
 	DisplayServer.window_set_size(Vector2i(720, 1280))
 	board.desktop_controls = false

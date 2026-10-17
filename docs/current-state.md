@@ -1,14 +1,14 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-18 (illustrated PC controller interface)
-**Release baseline:** `0.3.2` (`versionCode 302`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `19`, Combat Survey format `36`). Human play acceptance remains open; see the controller ledger for verification.
+**Reviewed:** 2026-10-18 (controller slot shortcuts and action-specific aiming)
+**Release baseline:** `0.3.3` (`versionCode 303`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `36`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history and the other design documents retain rationale, evidence, rejected alternatives, and future targets.
 
 ## What exists now
 
 - Four playable profiles: **Warrior · Vanguard**, **Rogue · Acrobat**, **Rogue · Sharpshooter**, and **Mage · Elementalist**.
 - Four working weapon frames in player use: Sword, Knife, Bow, and Staff.
-- Native Xbox-style PC controls provide direct movement/aim/actions, ability and utility selection, focused menu navigation and disconnect/focus safeguards. Connecting a controller displays colored button images and contextual action descriptions immediately; Menu includes an illustrated controller guide. Combat balance and save/generation identities are unchanged. See [controller controls](controller-controls.md) for bindings and verification limits.
+- Native Xbox-style PC controls retain the touch ability/item bars with colored button badges. Held LB reveals direct spell/item/adopted shortcuts. Melee follows movement; ranged actions use analog directional aim; placed actions open a frozen-time marker with confirm/cancel. Connection-driven prompts, focused menus and disconnect/focus safeguards remain. Combat balance and save/generation identities are unchanged. See [controller controls](controller-controls.md) for bindings and verification limits.
 - The shared combat kernel includes committed actions, attack capture, Energy and Recovery rule profiles, exhaustion, Dodge, posture, Resolve-derived action poise, conditions, projectile elevation and misdirection, barriers, deterministic save/snapshot support, and survey attribution.
 - Fire, Ice, Earth, and Air casters and all eight elemental abilities are implemented. The Elementalist can inherit one spell from each element; Intelligence reduces spell cost through the implemented soft-cap curve without increasing spell damage.
 - The Warrior/Vanguard redesign is live: sustained Rally, Battle Flow, Advance, Resolve-derived action poise, Power Through, and Unbreakable. Battle Flow is sequence-based and currently decays after 15 seconds.

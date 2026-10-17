@@ -1,7 +1,11 @@
 # Waystone migration and development handoff
 
 **Updated:** 2026-10-18
-**Release baseline:** `0.3.2` (`versionCode 302`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `19`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+**Release baseline:** `0.3.3` (`versionCode 303`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `20`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+
+0.3.3 restores the incumbent ability/item bars with controller badges and held-LB
+direct shortcuts, replacing the 0.3.2 rail/selection modal. Melee follows movement;
+ranged aim is directional; only placed actions open frozen-time ground placement.
 
 0.3.2 adds the illustrated Xbox-style HUD/guide and connection-driven activation.
 `controller_glyphs.gd` owns the original SVG atlas and shared dialog hints;

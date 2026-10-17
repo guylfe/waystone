@@ -121,16 +121,21 @@ The classification delay is an input-accessibility rule, not world time. Movemen
 
 Contextual attackability remains weapon-dependent. A melee tap on a target that is clearly beyond any plausible contact is movement; an equipped ranged weapon may legitimately attack the same distant target.
 
-#### PC controller adapter (0.3.1; illustrated interface in 0.3.2)
+#### PC controller adapter (0.3.3 input/interface revision)
 
 Xbox-style gamepads issue semantic actions directly, not touch gestures or virtual
 mouse events. Left-stick movement chains the same short commitments; right-stick
 aiming alone spends no simulation time. RT is a live weapon hold (release ends
 continuations or fires the Bow), B is directional defense and RB is weapon art.
-Defense prefers the movement direction; other aimed actions use right-stick aim,
-an explicitly selected visible target, or facing. Aim never silently locks a target.
-RS click cycles visible targets; manually aiming clears that selection. Ground
-target distance follows stick deflection and remains subject to spell targeting rules.
+Melee, defense, Advance, Vault and Windstep use movement/facing, never stale ranged
+aim. Bow and directional spells use the full analog right-stick heading; magnitude
+does not set distance. RS click cycles visible ranged targets for Bow/Mage; manual
+aim clears the selection. Placed spells and Sapper open an explicit ground marker:
+RS translates it at proportional speed, release holds it, A uses it and B cancels.
+Choosing a location does not spend simulation time or Energy; authored range and
+placement legality remain authoritative. Trapper remains directional at its fixed reach.
+The touch ability/item layout is retained with illustrated slot badges. Holding LB
+reveals direct shortcuts on those same slots; it is not a select-then-Y menu.
 
 The adapter owns only input/presentation state. Combat costs, cooldowns, geometry,
 commitment and legality remain in RunState. It supplies a 0.22-second fresh-button

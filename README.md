@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.2` (Android version code `302`).
+Current prototype version: `0.3.3` (Android version code `303`).
+
+## v0.3.3 — familiar bars, direct shortcuts and directional aim
+
+Controller play retains the touch ability/item bars, adding colored button images
+inside each slot instead of replacing the HUD. Hold LB to reveal direct spell,
+utility and adopted-discipline shortcuts; release restores the ordinary labels.
+Melee, defense, Advance and Vault follow movement/facing, never a stale ranged aim.
+Bow and directional spells use the full analog right-stick heading, independent of
+tilt distance. Placed spells and the Sapper flask use a frozen-time ground marker:
+right stick moves it, A commits, B cancels without spending resources. Placement
+range comes from the existing ability definitions. Combat rules and touch input are
+unchanged. See [controller controls](docs/controller-controls.md) for verification.
 
 ## v0.3.2 — illustrated controller interface
 
