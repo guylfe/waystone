@@ -282,7 +282,8 @@ var survey_export_status_label: Label
 
 func _ready() -> void:
 	Input.joy_connection_changed.connect(func(device_id: int, connected: bool):
-		if not connected: controller.disconnected(self, device_id))
+		if connected: controller.connected(self, device_id)
+		else: controller.disconnected(self, device_id))
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
 		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR)
 	if desktop_controls and DisplayServer.get_name() != "headless":
@@ -308,6 +309,14 @@ func _ready() -> void:
 	call_deferred("_layout")
 	_sync_setup_controls()
 	state.record_survey_view_mode(view_mode, false)
+	for device_id in Input.get_connected_joypads(): controller.connected(self, device_id)
+
+func _add_controller_hints(content: VBoxContainer, allow_back: bool = true) -> void:
+	var hints := ControllerInputScript.Glyphs.MenuHints.new()
+	hints.controller = controller
+	hints.back_label = "Back" if allow_back else ""
+	hints.visible = controller.active
+	content.add_child(hints)
 
 func _create_seed_input() -> void:
 	seed_input = LineEdit.new()
@@ -387,6 +396,7 @@ func _build_survey_feedback_overlay() -> void:
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 13)
 	scroll.add_child(content)
+	_add_controller_hints(content, false)
 	var title := Label.new()
 	title.text = "%s ATTEMPT COMPLETE" % state.boss_lab_boss_kind.replace("_", " ").to_upper() if state.mode_id == "boss_lab" else "ROOM %d COMPLETE" % state.survey_room_number
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -567,6 +577,7 @@ func _build_survey_report_overlay() -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 12)
 	survey_overlay.add_child(content)
+	_add_controller_hints(content, false)
 	var title := Label.new()
 	title.text = "BOSS LAB ATTEMPT SAVED" if state.mode_id == "boss_lab" else "COMBAT SURVEY SAVED"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -610,6 +621,7 @@ func _build_survey_end_confirmation() -> void:
 	content.custom_minimum_size.x = minf(620.0, maxf(360.0, survey_overlay.size.x - 48.0))
 	content.add_theme_constant_override("separation", 18)
 	center.add_child(content)
+	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "END THIS BOSS ATTEMPT?" if state.mode_id == "boss_lab" else "END THIS SURVEY RUN?"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -655,6 +667,7 @@ func _build_survey_archive_overlay() -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 9)
 	survey_overlay.add_child(content)
+	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "COMBAT SURVEY ARCHIVE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -706,6 +719,7 @@ func _open_archived_survey(index: int) -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 11)
 	survey_overlay.add_child(content)
+	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "ARCHIVED SURVEY — SEED %d" % int(survey_archived_run.get("run_seed", 0))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1333,6 +1347,7 @@ func _input(event: InputEvent) -> void:
 		controller.held.clear()
 		controller.paused = false
 		controller.palette_open = false
+		controller.help_open = false
 		queue_redraw()
 
 func _controller_event(event: InputEvent) -> bool:
@@ -2379,6 +2394,7 @@ func _finish_run_start() -> void:
 	controller.quick_action = "subclass"
 	controller.aim = Vector2.ZERO
 	controller.target_id = -1
+	controller.help_open = false
 	expedition_outcome_shown = ""
 	if is_instance_valid(expedition_dialog): expedition_dialog.hide()
 	state.record_survey_view_mode(view_mode, false)
@@ -2481,6 +2497,7 @@ func _expedition_panel(title_text: String) -> VBoxContainer:
 	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation",12)
 	scroll.add_child(content)
+	_add_controller_hints(content)
 	expedition_dialog.popup_centered()
 	return content
 
@@ -4791,6 +4808,9 @@ func _draw_attack_button() -> void:
 		draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.63), "[F]", HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.52)), Color("8d989c"))
 
 func _draw_reset_button() -> void:
+	if controller.active:
+		ControllerInputScript.Glyphs.toolbar(self, reset_rect, "menu", "Menu")
+		return
 	draw_rect(reset_rect, Color(0.06, 0.09, 0.11, 0.86))
 	draw_rect(reset_rect, Color("718087"), false, 1.5)
 	var font := maxi(9, int(reset_rect.size.y * 0.30))
@@ -4799,6 +4819,9 @@ func _draw_reset_button() -> void:
 	draw_string(ThemeDB.fallback_font, reset_rect.position + Vector2(0.0, reset_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, reset_rect.size.x, font, Color("b7c0c2"))
 
 func _draw_map_button() -> void:
+	if controller.active:
+		ControllerInputScript.Glyphs.toolbar(self, map_rect, "view", "Map")
+		return
 	draw_rect(map_rect, Color(0.06, 0.09, 0.11, 0.86))
 	draw_rect(map_rect, Color("d7aa58") if map_open else Color("718087"), false, 1.5)
 	var font := maxi(8, int(map_rect.size.y * 0.27))
@@ -4807,6 +4830,9 @@ func _draw_map_button() -> void:
 	draw_string(ThemeDB.fallback_font, map_rect.position + Vector2(0.0, map_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, map_rect.size.x, font, Color("d7dddd"))
 
 func _draw_sheet_button() -> void:
+	if controller.active:
+		ControllerInputScript.Glyphs.toolbar(self, sheet_button_rect, "menu", "Level up" if state.can_open_level_sheet() else "Upgrades")
+		return
 	draw_rect(sheet_button_rect, Color(0.06, 0.09, 0.11, 0.86))
 	var level_ready := state.can_open_level_sheet()
 	draw_rect(sheet_button_rect, Color("d7aa58") if level_ready else DODGE_COLOR if character_sheet_open else Color("718087"), false, 2.0 if level_ready else 1.5)
@@ -4824,6 +4850,9 @@ func _open_character_sheet() -> void:
 	queue_redraw()
 
 func _draw_view_button() -> void:
+	if controller.active:
+		ControllerInputScript.Glyphs.toolbar(self, view_rect, "menu", "View")
+		return
 	draw_rect(view_rect, Color(0.06, 0.09, 0.11, 0.86))
 	draw_rect(view_rect, DODGE_COLOR if view_mode == "isometric" else Color("718087"), false, 1.5)
 	var font := maxi(8, int(view_rect.size.y * 0.27))

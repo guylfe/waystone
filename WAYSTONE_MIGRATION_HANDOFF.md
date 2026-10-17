@@ -1,7 +1,11 @@
 # Waystone migration and development handoff
 
 **Updated:** 2026-10-18
-**Release baseline:** `0.3.1` (`versionCode 301`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `18`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+**Release baseline:** `0.3.2` (`versionCode 302`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `19`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+
+0.3.2 adds the illustrated Xbox-style HUD/guide and connection-driven activation.
+`controller_glyphs.gd` owns the original SVG atlas and shared dialog hints;
+`controller_prompts.gd` owns action descriptions and layout, not combat rules.
 
 0.3.1 adds a presentation-owned native PC gamepad adapter; it does not retune combat.
 Its executable contract is `tests/controller_input_test.gd`; the real-renderer

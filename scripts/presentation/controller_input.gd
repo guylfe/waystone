@@ -1,4 +1,6 @@
 extends RefCounted
+const Glyphs = preload("res://scripts/presentation/controller_glyphs.gd")
+const Prompts = preload("res://scripts/presentation/controller_prompts.gd")
 ## Native gamepad intent adapter. Owns no combat rules and never synthesizes mouse
 ## events. Custom-drawn menus share their existing activation handlers; combat goes
 ## directly through the same RunState requests used by the other input adapters.
@@ -31,6 +33,21 @@ var navigation_remaining := 0.0
 var pending_button := -1
 var pending_seconds := 0.0
 var abandon_confirm := false
+var help_open := false
+
+func connected(board, connected_device: int) -> void:
+	if not board.desktop_controls or board.state == null: return
+	if active and device >= 0: return
+	release_actions(board)
+	active = true
+	device = connected_device
+	axes.clear()
+	held.clear()
+	for axis_id in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y, JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, JOY_AXIS_TRIGGER_RIGHT]:
+		axes[axis_id] = Input.get_joy_axis(device, axis_id)
+	for button_id in range(JOY_BUTTON_MAX): held[button_id] = Input.is_joy_button_pressed(device, button_id)
+	held["trigger"] = float(axes[JOY_AXIS_TRIGGER_RIGHT]) > TRIGGER_PRESS
+	board.queue_redraw()
 
 func stick(x: int, y: int) -> Vector2:
 	var value := Vector2(float(axes.get(x, 0.0)), float(axes.get(y, 0.0)))
@@ -69,7 +86,7 @@ func cycle_target(board) -> void:
 	target_id = int(candidates[index + 1]["id"]) if index + 1 < candidates.size() else -1
 
 func modal(board) -> bool:
-	return paused or palette_open or not board.state.run_active or board.character_sheet_open or board.waystone_menu_open or board.map_open or board.state.death_pending or board.state.trial_complete or board.state.survey_feedback_pending or native_panel(board) != null
+	return help_open or paused or palette_open or not board.state.run_active or board.character_sheet_open or board.waystone_menu_open or board.map_open or board.state.death_pending or board.state.trial_complete or board.state.survey_feedback_pending or native_panel(board) != null
 
 func native_panel(board) -> Node:
 	if is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: return board.expedition_dialog
@@ -253,6 +270,7 @@ func update(board, delta: float) -> void:
 	if String(board.state.player_action.get("kind", "")) == "advance": board.state.set_advance_hold(bool(held.get(JOY_BUTTON_Y, false)))
 
 func context_id(board) -> String:
+	if help_open: return "help"
 	var panel := native_panel(board)
 	if panel != null: return "native:%d" % panel.get_instance_id()
 	if paused: return "pause:%s" % abandon_confirm
@@ -268,6 +286,7 @@ func menu_button(board, button: int) -> void:
 	if button in [JOY_BUTTON_B, JOY_BUTTON_START, JOY_BUTTON_BACK]:
 		back(board)
 		return
+	if help_open: return
 	var entries := menu_entries(board)
 	if entries.is_empty(): return
 	focus_index = clampi(focus_index, 0, entries.size() - 1)
@@ -280,7 +299,8 @@ func menu_button(board, button: int) -> void:
 
 func back(board) -> void:
 	release_actions(board)
-	if is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: board.expedition_dialog.hide()
+	if help_open: help_open = false
+	elif is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: board.expedition_dialog.hide()
 	elif is_instance_valid(board.survey_overlay) and board.survey_overlay.visible:
 		var kind: String = board.survey_overlay.get_meta("kind", "")
 		if kind == "archive": board._close_survey_archive()
@@ -316,6 +336,7 @@ func menu_entries(board) -> Array:
 			return entries
 		entries.append({"label": "Resume", "activate": func(): paused = false})
 		entries.append({"label": "Character & upgrades", "activate": func(): paused = false; board._open_character_sheet()})
+		entries.append({"label": "Controller guide", "activate": func(): help_open = true})
 		entries.append({"label": "Change view", "activate": func(): board._toggle_view()})
 		if board.state.is_measurement_mode(): entries.append({"label": "End test / report", "activate": func(): paused = false; board._build_survey_end_confirmation()})
 		entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
@@ -375,6 +396,8 @@ func add_rects(board, entries: Array, rects: Dictionary) -> void:
 
 func add_rect(board, entries: Array, rect: Rect2) -> void:
 	if rect.size.x <= 0.0 or rect.size.y <= 0.0: return
+	for entry in entries:
+		if entry.get("rect") == rect: return
 	entries.append({"rect": rect, "activate": func(): board._pointer_pressed(rect.get_center())})
 
 func collect_buttons(node: Node, entries: Array) -> void:
@@ -395,37 +418,18 @@ func focus_native(entries: Array) -> void:
 			parent = parent.get_parent()
 
 func quick_label(board) -> String:
-	if quick_action == "adopted": return "Adopted discipline"
+	if quick_action == "adopted": return String(board.state.expedition.get("discipline", "Adopted discipline")).capitalize()
 	if board.state.loadout_id == "mage_elementalist": return board.state.spell_label(board.state.selected_spell)
 	return {"warrior": "Advance", "rogue_acrobat": "Vault", "rogue_sharpshooter": "Take Aim"}.get(board.state.loadout_id, "Subclass")
 
 func draw_hud(board) -> void:
-	# Reuse the reserved action rail, not the playfield. Resources retain their
-	# existing independent HUD. Labels change with the active class and item.
-	var area := Rect2(board.interaction_rect)
-	for rect in board.buttons.values(): area = area.merge(rect)
-	for rect in board.consumable_rects.values(): area = area.merge(rect)
-	board.draw_rect(area, Color("101c24"))
-	var labels: Array[String] = ["RT  Attack (hold / release)", "B  %s" % String(board.state.defense_id).capitalize(), "RB  Weapon art", "Y  %s" % quick_label(board), "LB  Choose ability", "X  Rejuvenation · %d" % board.state.potions, "A  %s" % board.state.interaction_label().capitalize(), "D-pad up  Class ability", "D-pad left/right  Item %d" % (utility_slot + 1), "D-pad down  Use / replace", "LS click  Wait · RS click  Target", "View  Map · Menu  Character"]
-	var art: Dictionary = board.CombatCatalogScript.weapon_art(board.state.player_equipped_weapon_art)
-	labels[2] = "RB  %s" % String(art.get("label", "Art locked"))
-	var class_label: String = ("End Rally" if board.state.rally_active else "Rally") if board.state.loadout_id == "warrior" else "Circle" if board.state.loadout_id == "mage_elementalist" else "End Stealth" if board.state.stealth_remaining > 0 else "Stealth"
-	labels[7] = "D-pad up  %s" % class_label
-	if board.state.loadout_id == "mage_elementalist" and quick_action != "adopted": labels[3] += " · %d E" % roundi(board.state.spell_energy_cost(board.state.selected_spell))
-	var quick_cooldown: float = board.state.cooldown_remaining("adopted") if quick_action == "adopted" else board.state.spell_cooldown if board.state.loadout_id == "mage_elementalist" else board.state.advance_cooldown if board.state.loadout_id == "warrior" else board.state.subclass_ability_cooldown
-	var cooldowns := {1: board._defense_cooldown(), 2: board.state.skill_cooldown, 3: quick_cooldown, 7: board.state.main_ability_cooldown}
-	for row in cooldowns:
-		if float(cooldowns[row]) > 0.01: labels[row] += " · %.1fs" % float(cooldowns[row])
-	var slot: Dictionary = board.state.consumable_slot(utility_slot)
-	var item_id := String(slot.get("id", ""))
-	labels[8] = "D-pad left/right: %s x%d" % [item_id.replace("_", " ").capitalize() if item_id != "" else "Empty", int(slot.get("count", 0))]
-	var font := clampi(int(minf(area.size.y / 19.0, area.size.x / 20.0)), 10, 28)
-	for i in labels.size():
-		var fitted := mini(font, int((area.size.x - 16.0) / maxf(1.0, ThemeDB.fallback_font.get_string_size(labels[i], HORIZONTAL_ALIGNMENT_LEFT, -1, font).x) * font))
-		board.draw_string(ThemeDB.fallback_font, area.position + Vector2(8, (i + 1) * area.size.y / 13.0), labels[i], HORIZONTAL_ALIGNMENT_LEFT, area.size.x - 16.0, fitted, Color("d5e4e9"))
+	Prompts.draw_hud(board, self)
 
 func draw_overlay(board) -> void:
 	if not active: return
+	if help_open:
+		Prompts.draw_help(board, self)
+		return
 	if modal(board):
 		var entries := menu_entries(board)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
@@ -433,17 +437,24 @@ func draw_overlay(board) -> void:
 			var box := Rect2(board.size * 0.5 - Vector2(240, 220) * scale, Vector2(480, 440) * scale)
 			board.draw_rect(Rect2(Vector2.ZERO, board.size), Color(0.02, 0.04, 0.06, 0.88))
 			board.draw_rect(box, Color("152831"))
-			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 36) * scale, "FINISHING CURRENT ACTION…" if paused and board.playing else "CONTROLLER MENU" if paused else "CHOOSE Y ABILITY", HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(22 * scale), Color("ffffff"))
+			var heading := "Finishing current action…" if paused and board.playing else "Controller menu" if paused else "Choose ability"
+			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 36) * scale, heading, HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(22 * scale), Color("ffffff"))
 			for i in entries.size():
 				var row := Rect2(box.position + Vector2(16, 56 + i * 42) * scale, Vector2(448, 38) * scale)
 				if i == focus_index: board.draw_rect(row, Color("28515d"))
-				board.draw_string(ThemeDB.fallback_font, row.position + Vector2(10, 26) * scale, entries[i]["label"], HORIZONTAL_ALIGNMENT_LEFT, 428 * scale, int(18 * scale), Color("d5e4e9"))
-			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 390) * scale, "LS move · RS aim · RT attack · B defend", HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(16 * scale), Color("89b8c8"))
+				if i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(6, 3) * scale, Vector2.ONE * 32 * scale))
+				Glyphs.text(board, row.position + Vector2(46, 26) * scale, entries[i]["label"], 394 * scale, int(18 * scale), Color("d5e4e9"))
+			Glyphs.hint(board, box.position + Vector2(22, 380) * scale, "dpad", "Choose", scale)
+			Glyphs.hint(board, box.position + Vector2(170, 380) * scale, "a", "Confirm", scale)
+			Glyphs.hint(board, box.position + Vector2(318, 380) * scale, "b", "Back", scale)
+			if palette_open: Glyphs.hint(board, box.position + Vector2(22, 420) * scale, "y", "Uses chosen ability", scale * 0.8)
 		elif not entries.is_empty() and entries[clampi(focus_index, 0, entries.size()-1)].has("rect"):
 			board.draw_rect(Rect2(entries[clampi(focus_index, 0, entries.size()-1)]["rect"]).grow(3), Color("66e0ff"), false, 3)
 		if native_panel(board) == null:
 			board.draw_rect(Rect2(0, board.size.y - 40 * scale, board.size.x, 40 * scale), Color("101c24"))
-			board.draw_string(ThemeDB.fallback_font, Vector2(16 * scale, board.size.y - 14 * scale), "D-pad / LS: choose    A: confirm    B: back", HORIZONTAL_ALIGNMENT_LEFT, board.size.x - 32, int(16 * scale), Color("a9d8e8"))
+			Glyphs.hint(board, Vector2(16 * scale, board.size.y - 35 * scale), "dpad", "Choose", scale)
+			Glyphs.hint(board, Vector2(174 * scale, board.size.y - 35 * scale), "a", "Confirm", scale)
+			Glyphs.hint(board, Vector2(332 * scale, board.size.y - 35 * scale), "b", "Back", scale)
 	elif board.state.run_active:
 		var origin: Vector2 = board._world_to_screen(board.state.player_pos)
 		board.draw_line(origin, board._world_to_screen(board.state.player_pos + direction(board) * 70), Color(0.4, 0.88, 1.0, 0.7), 2)

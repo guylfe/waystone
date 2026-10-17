@@ -176,6 +176,46 @@ func test_native_menu() -> void:
 	panel.free()
 	board.free()
 
+func test_connected_prompts_and_guide() -> void:
+	var board = fixture()
+	board.controller.active = false
+	board.controller.device = -1
+	var before: float = board.state.simulation_time
+	board.controller.connected(board, 9)
+	check(board.controller.active and board.controller.device == 9, "connection displays controller UI without button input")
+	check(board.controller.neutral_required, "connection requires neutral input before actions")
+	check(board.state.simulation_time == before and not board.playing, "connection does not advance time")
+	board.controller.update(board, 0)
+	board.controller.paused = true
+	var entries: Array = board.controller.menu_entries(board)
+	for entry in entries:
+		if entry.get("label") == "Controller guide": entry["activate"].call()
+	check(board.controller.help_open and board.controller.modal(board), "illustrated guide is reachable from pause menu")
+	board.controller.back(board)
+	check(not board.controller.help_open and board.controller.paused, "guide back returns to menu, not live movement")
+	board.controller.active = false
+	board.controller.device = -1
+	board.desktop_controls = false
+	board.controller.connected(board, 9)
+	check(not board.controller.active, "mobile connection preserves touch interface")
+	board.free()
+	for loadout in ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"]:
+		board = fixture(loadout)
+		var rows: Array = board.controller.Prompts.rows(board, board.controller)
+		check(rows.size() == 10, "all ten primary action prompts are present")
+		for row in rows:
+			check(board.controller.Glyphs.KEYS.has(row["key"]), "each action references an authored button image")
+		check(rows[3]["label"] == board.controller.quick_label(board), "ability prompt names actual class ability")
+		check(rows[5]["detail"].contains("5 / 5"), "healing prompt reports remaining charges")
+		if loadout == "rogue_sharpshooter": check(rows[0]["detail"].contains("release to fire"), "Bow explains release-to-fire")
+		board.free()
+	var glyphs = preload("res://scripts/presentation/controller_glyphs.gd")
+	var regions: Array = []
+	for key in glyphs.KEYS:
+		var rect: Rect2 = glyphs.region(key)
+		check(not regions.has(rect) and Rect2(0, 0, 320, 256).encloses(rect), "button images have unique valid atlas regions")
+		regions.append(rect)
+
 func _init() -> void:
 	call_deferred("run")
 
@@ -186,6 +226,7 @@ func run() -> void:
 	test_palette_and_setup()
 	test_buffer_and_device_isolation()
 	test_native_menu()
+	test_connected_prompts_and_guide()
 	for failure in failures: print("FAILED: ", failure)
 	print("Controller input: %d failures" % failures.size())
 	quit(0 if failures.is_empty() else 1)

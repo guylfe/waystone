@@ -1,6 +1,6 @@
 # PC controller controls
 
-**Baseline:** 0.3.1, presentation 18. **Status:** implemented; physical play acceptance
+**Baseline:** 0.3.2, presentation 19. **Status:** implemented; physical play acceptance
 remains open. This owns the bindings and verification record, not combat mechanics;
 the character framework and RunState remain authoritative for those.
 
@@ -23,8 +23,9 @@ the character framework and RunState remain authoritative for those.
 | Left-stick click | One deliberate Wait step |
 | Right-stick click | Cycle visible targets, ending with no target; manual aiming clears it |
 | View | Map |
-| Menu | Resume, character/upgrades, view, save and quit, or confirmed abandonment |
+| Menu | Resume, character/upgrades, controller guide, view, save and quit, or confirmed abandonment |
 | D-pad / left stick in menus | Move focus; A confirms, B backs out |
+| LT | Unassigned; Xbox and Share are managed by the system |
 
 Take Aim requires an explicitly selected visible enemy. The other characters can
 attack and cast freely without target selection. Invisible, dead and other-layer
@@ -33,10 +34,27 @@ auto-pathfinding, hidden aim correction or controller-specific combat discount.
 
 All run setup character choices, upgrades, equipment comparisons, merchant stock,
 discipline choices, maps and survey rating buttons are controller-accessible. Optional
-free-text survey notes and exact seed entry still use the keyboard. Controller UI
-appears on meaningful gamepad input; a keyboard key, mouse click or touch returns to
-the existing controls. Stick drift below the radial 0.24 deadzone does not move or
-claim input. RT uses 0.55 press / 0.25 release hysteresis.
+free-text survey notes and exact seed entry still use the keyboard. On PC, controller
+UI appears immediately on connection, including a controller already present at
+startup. Connection itself does not spend time; neutral input is required before
+movement or combat. A keyboard key, mouse click or touch returns to the existing
+controls until fresh gamepad input or reconnection. Stick drift below the radial
+0.24 deadzone does not move or reclaim input. RT uses 0.55 press / 0.25 release hysteresis.
+
+## Illustrated interface
+
+The HUD pairs action names with original Xbox-style SVG images: colored A/B/X/Y,
+shaped bumpers/triggers, labeled sticks and click indicators, directional D-pads,
+View and Menu. Images do not replace the action text. Descriptions distinguish
+hold/release/tap and show actual selected abilities, items, charges and cooldowns.
+Locked arts and empty consumable slots remain explained instead of disappearing.
+Menu → Controller guide gives the complete reference, including unused LT and
+system buttons. Shops, equipment dialogs and survey menus share the same images.
+Mandatory survey/outcome panels do not advertise B as a way to skip submission.
+
+`controller_glyphs.gd` owns the atlas and reusable menu hints;
+`controller_prompts.gd` owns display descriptions/layout. Those presentation modules
+read the combat state/catalogs; they do not author combat costs or availability rules.
 
 ## Ownership and safety
 
@@ -59,7 +77,7 @@ claim input. RT uses 0.55 press / 0.25 release hysteresis.
 - Existing touch and keyboard controls remain available, including on Android.
   Android does not activate this PC-specific adapter.
 
-## Verification — 2026-10-18
+## 0.3.1 verification — 2026-10-18 (previous release)
 
 - Full headless suite: **27 passed; one documented expected Bandit failure; no new
   failures**. Golden deterministic combat hashes remain unchanged.
@@ -80,3 +98,19 @@ claim input. RT uses 0.55 press / 0.25 release hysteresis.
 - Fold installation is pending: wireless discovery returned no devices and the
   previous connection address failed. The existing installation was not removed
   or its save data cleared.
+
+## 0.3.2 verification — 2026-10-18
+
+- Focused adapter tests pass, including connection-driven UI, neutral-on-connect,
+  no simulation advance on connection, mobile exclusion, guide/back navigation,
+  all four characters' action descriptions and all 20 unique glyph regions.
+- Two bounded OpenGL inspection passes covered 1280×800 and 960×600 desktop,
+  setup, HUD, ability selector, pause/guide, character sheet, native dialog and
+  retained 720×1280 touch layout. The final dialog confirmation test passes
+  exactly once through the separate Viewport. A connected gamepad is detected.
+- Full regression suite: **27 passed; one documented expected Bandit failure; no
+  new failures**. Golden deterministic combat hashes remain unchanged.
+- Both exports completed. Packaged metadata verifies Windows `0.3.2` and Android
+  `0.3.2` / code `302`. The Windows build is launched for physical-controller play.
+- Fold remains unavailable in wireless discovery; new physical-device checks and
+  physical controller play acceptance are not claimed.

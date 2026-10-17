@@ -7,6 +7,9 @@ func _initialize() -> void:
 	await process_frame
 	await process_frame
 	board.controller.active = true
+	board.state.run_active = false
+	board._layout()
+	await capture("controller-setup")
 	board.state.start_run("mage_elementalist", "expedition", 270207, "encounter", "energy")
 	board.visual = board.state.snapshot(true)
 	board._presented_area_id = -999999
@@ -18,6 +21,9 @@ func _initialize() -> void:
 	board.controller.palette_open = false
 	board.controller.paused = true
 	await capture("controller-menu")
+	board.controller.help_open = true
+	await capture("controller-guide")
+	board.controller.help_open = false
 	board.controller.paused = false
 	board._open_character_sheet()
 	await capture("controller-character")
@@ -45,6 +51,9 @@ func _initialize() -> void:
 		quit(1)
 		return
 	board.expedition_dialog.hide()
+	DisplayServer.window_set_size(Vector2i(960, 600))
+	board._layout()
+	await capture("controller-compact")
 	board.controller.active = false
 	DisplayServer.window_set_size(Vector2i(720, 1280))
 	board.desktop_controls = false

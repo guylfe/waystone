@@ -121,7 +121,7 @@ The classification delay is an input-accessibility rule, not world time. Movemen
 
 Contextual attackability remains weapon-dependent. A melee tap on a target that is clearly beyond any plausible contact is movement; an equipped ranged weapon may legitimately attack the same distant target.
 
-#### PC controller adapter (implemented in 0.3.1)
+#### PC controller adapter (0.3.1; illustrated interface in 0.3.2)
 
 Xbox-style gamepads issue semantic actions directly, not touch gestures or virtual
 mouse events. Left-stick movement chains the same short commitments; right-stick
@@ -139,6 +139,10 @@ navigation never advances simulation. Opening a menu releases holds and lets an
 already committed action finish before save/quit becomes available. Closing a menu,
 focus loss or disconnection cannot replay a held movement/attack: neutral controls
 are required before further combat. Keyboard and touch remain independent adapters.
+Connecting a PC gamepad displays the controller interface without requiring a first
+press; neutral-on-connect prevents accidental movement. Illustrated button prompts
+always retain action text and tap/hold/release distinctions. The complete guide is
+available through Menu; opening it is presentation-only, not a combat action.
 Full bindings and test evidence: [controller-controls.md](controller-controls.md).
 
 Fast and slow actors use identical controls and move the same distance per step. A fast actor completes that distance in less world time, allowing fewer enemy actions during the movement.

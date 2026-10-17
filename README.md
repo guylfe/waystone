@@ -1,6 +1,18 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.1` (Android version code `301`).
+Current prototype version: `0.3.2` (Android version code `302`).
+
+## v0.3.2 — illustrated controller interface
+
+Connecting a PC controller now immediately displays its interface, including on
+startup. Original Xbox-style vector button images replace text-only bindings:
+green A, red B, blue X, yellow Y, shaped triggers/bumpers, sticks, D-pad directions,
+View and Menu. Action names, tap/hold/release instructions, cooldowns, locked arts,
+selected items and healing charges remain beside the icons; color alone is never
+the instruction. Menu → Controller guide explains every used control, unassigned
+LT, and system-managed Xbox/Share buttons. Native shops and survey panels share
+the same illustrated confirmation/navigation prompts. Existing combat and touch
+controls are unchanged. See [controller controls](docs/controller-controls.md).
 
 ## v0.3.1 — native PC gamepad controls
 
