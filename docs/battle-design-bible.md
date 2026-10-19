@@ -773,9 +773,9 @@ reasoning and evidence behind each group can be inspected.
 
 | Bible material | Primary provenance |
 |---|---|
-| B01–B06 | `docs/design-foundations.md` §§4.2–6; `docs/combat-character-framework.md`; `docs/attack-capture-design.md` |
+| B01–B06 | [Design Foundations: time and commitment](design-foundations.md#time-and-commitment) and [physical combat](design-foundations.md#physical-combat-and-information); [Design research: combat resources](design-research.md#commitment-and-combat-resources); `docs/combat-character-framework.md`; `docs/attack-capture-design.md` |
 | B07–B10 | `docs/combat-loop-diagnosis.md`; `docs/attack-capture-design.md`; `docs/warrior-vanguard-redesign.md`; recent Energy/Recovery decisions |
-| B11–B20 | `docs/design-foundations.md` §§4.3–4.6; supplied Enemy Combat Design Specification; current enemy behavior and control policies |
+| B11–B20 | [Design research: attack anatomy](design-research.md#attack-anatomy-and-the-commitment-horizon), [action costs](design-research.md#six-costs-of-an-action), and [composition evidence](design-research.md#composition-evidence); [Design Foundations: encounters](design-foundations.md#encounters-and-difficulty); supplied Enemy Combat Design Specification; current enemy behavior and control policies |
 | B21–B25 | `docs/survey-archive-findings.md`; `docs/expedition-encounter-redesign.md`; `0.2.89`–`0.2.91` survey observations and collision work |
 | B26–B29 | `docs/elemental-casters.md`; survey findings on non-melee pressure; canonical projectile/effect rules |
 | B30–B34 | supplied Enemy Combat Design Specification; implemented Boss Lab and Werewolf redesign; provisional Warden design |

@@ -435,6 +435,35 @@ The practical handoff workflow is to export or copy the complete text and paste 
 - Treat `none nearby`/zero-coordinate probe records as a report-integrity warning until explained.
 - Convert successful patterns into reusable encounter archetypes and failed patterns into exclusions; do not copy one room verbatim.
 
+### 9.6 Sampling and journey validation
+
+The planning guidance relocated from Design Foundations is approximately 30 rooms
+for an initial useful sample, around 100 for a first encounter grammar, and 130–150
+for a stronger evidence base, with 10–15% deliberate near-exact repeats to help
+separate encounter effects from player variability. These are project planning
+heuristics, not statistical confidence guarantees or required quotas for every test.
+
+Combat Survey is an attribution instrument. Its room order, repetition, and resource
+profile are properties of the test setup. Compare rooms within compatible versions
+and preserve the player notes that explain the ratings.
+
+Validate combinations in the Survey, then embed them in a continuous Expedition
+slice. Approach, scouting, accidental escalation, arrival damage, and opportunities
+to explore or retreat need journey play evidence. Historical comparative measurements
+are collected in [Design research](docs/design-research.md#composition-evidence).
+
+### 9.7 Measured actor budgets
+
+The recorded desktop measurements were approximately 8.5 ms average frame time with
+30 active enemies and 22 ms with 50. They supported an initial budget of roughly
+30 simultaneously active nearby actors, with 5–12 visible enemies as an ordinary
+range and 15–25 as an exceptional swarm. A larger regional population depends on
+keeping distant actors dormant.
+
+These measurements were relocated from Design Foundations, not repeated in the
+documentation pass. Profile the current build and target device before treating
+them as a current performance guarantee or expanding active-actor budgets.
+
 ## 10. Validation, build, and installation handoff
 
 ### Relevant checks
@@ -620,9 +649,13 @@ Installation is a deployment step after implementation and verification, not evi
 
 - `WAYSTONE_MIGRATION_HANDOFF.md` — current operational priorities, latest decisions, roadmap, survey interpretation, and handoff procedure.
 - `README.md` — implemented-version history, controls, local run/build instructions, and current version number.
-- `docs/design-foundations.md` — the reasoning behind the design: lineage from Cardinal Quest 2, Dark Souls, and Hades, what is deliberately refused from each, the frozen-time and determinism commitments, mode architecture, world philosophy, the narrative layer, and a record of rejected directions. Read before making design decisions.
+- `docs/design-foundations.md` — the game's identity, intended experience, inspirations, combat, progression, and journeys. Read before making design decisions.
+- `docs/development-scope.md` — production scope, mode scale, future content concepts, and unresolved development questions; current work order remains in `docs/current-state.md`.
+- `docs/campaign-design.md` — detailed topology, shortcuts, progression, and proposed memory/death systems, with unresolved policy choices identified.
+- `docs/narrative-design.md` — unimplemented story and fragment-power proposals.
+- `docs/design-research.md` — comparative research, calibration figures, and historical combat evidence. Survey procedure and measured budgets remain in section 9 of this handoff.
 - `docs/battle-design-bible.md` — consolidated enemy, attack, encounter and boss principles, with an explicit credence and decision-status ledger plus recorded disagreements with the Dark Souls-derived enemy specification. Use it to prevent provisional suggestions from becoming silent rules.
-- `docs/design-brief.md` — concise enduring product promise, modes, world foundation, and design pillars.
+- `docs/design-brief.md` — earlier vertical-slice brief with historical Expedition targets and future world/geometry proposals; Design Foundations owns the standalone game description.
 - `docs/combat-character-framework.md` — detailed shared combat/character architecture and concrete Rogue specifications. It is an authoritative design target where not superseded by later playtesting, but exact balance values are provisional.
 - `docs/expedition-encounter-redesign.md` — deferred data-driven encounter/Expedition plan. It explicitly depends on successful Combat Survey analysis.
 - `docs/combat-loop-diagnosis.md` — source-grounded analysis of why the `0.2.10` combat loop fails. Establishes that ordinary enemy melee cannot hit a moving player at any plausible speed, which supersedes the movement-speed framing in §5.1 and §7.2 above.

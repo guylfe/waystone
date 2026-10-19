@@ -1,8 +1,12 @@
 # Waystone — vertical-slice design brief
 
-**Status:** high-level promise and world target, reviewed 2026-09-22 against `0.2.95`.
-The combat/survey slice is implemented; the Campaign and mature Expedition geometry
-below remain design targets. `docs/current-state.md` owns the current work order.
+**Status:** earlier vertical-slice brief, reviewed 2026-09-22 against `0.2.95`, retained
+for its world/geometry proposals. [Design Foundations](design-foundations.md) owns
+the standalone game description; [Development scope](development-scope.md) owns
+scope and staging; [Current state](current-state.md) owns implementation and work order.
+The seven-slot and no-Waystone Expedition targets below are historical. The current
+three-biome, three-boss structure and single-use restoration are described in
+[Expedition design principles](expedition-design-principles.md).
 
 ## Promise
 
@@ -27,6 +31,9 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 
 ## Designed world-foundation slice
 
+These are the earlier slice targets. Campaign material remains proposed; the first
+Expedition bullet is superseded by the three-biome contract linked above.
+
 - Expedition remains a forward-directed, permadeath run without Waystones or campaign return loops.
 - Campaign begins in a large Friendly Forest containing several Waystones and naturally reconnecting routes.
 - A local shortcut opens back toward the second Waystone after the long Elder Trail. In the Friendly Forest it is a compact path blocked by dense woods, concealed from the near side, and deliberately cleared from the far side; its blocked state must force the longer route. A third Waystone anchors the later forest before the Sunken Ruin.
@@ -37,6 +44,9 @@ An Android-first, PC-compatible tactical fantasy roguelike that is immediately u
 - Swipe and tap input, keyboard fallback, and responsive portrait/landscape layout remain shared by every mode.
 
 ## Designed geometry track
+
+The seven-slot Expedition recipe is historical. Its geography examples remain useful
+reference material; they do not define the current Expedition's scale or sequence.
 
 - Expedition is a seven-slot route recipe. Every slot carries a global difficulty position while its locale profile controls organic geography, landmarks, enemy roles, and presentation.
 - A single-biome expedition uses all seven progression profiles of that biome; a mixed expedition may use different locale profiles at each slot while preserving the same global escalation.

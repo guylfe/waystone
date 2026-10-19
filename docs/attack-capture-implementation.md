@@ -234,7 +234,7 @@ This satisfies the handoff's §7.4 principle that enemy profiles own approach an
 
 ### What this deliberately trades
 
-Approaches are more predictable than the ragged pre-change timing, which removed some incidental variety. That variety was timing noise rather than decision-relevant choice, and the framework requires `f` controlled. Deliberate variety is bought back through the selection weights and, later, the probabilistic action selection that `docs/design-foundations.md` §15 still lists as open.
+Approaches are more predictable than the ragged pre-change timing, which removed some incidental variety. That variety was timing noise rather than decision-relevant choice, and the framework requires `f` controlled. Deliberate variety is bought back through the selection weights and, later, the probabilistic action selection listed among the [open development questions](development-scope.md#open-questions).
 
 Hound, Boar, Werewolf and Warden are untouched: they use `charge` / `pounce_combo` or already choose probabilistically at a single distance. Bandit keeps its concealment, dodge-strike and neutral branches; only its ordinary cut is intent-driven.
 
@@ -333,7 +333,7 @@ Mirror the movement grammar exactly: tap commits one unit; holding chains units,
 Three reasons this is right, recorded because the opposite was proposed and rejected:
 
 - **Symmetry.** Held movement has no auto-break. A guardrail on Wait alone would make standing still *safer* than repositioning, which inverts the risk relationship — standing still is the more dangerous choice, especially once capture lands.
-- **The accessibility rule does not apply.** `docs/design-foundations.md` §3 guarantees that *releasing* input produces a safe thinking state — the player cannot die because they stopped touching the game. Holding is input: an active, ongoing choice to advance time. The rule protects the absence of input, not its presence.
+- **Holding deliberately advances time.** [Time and commitment](design-foundations.md#time-and-commitment) describes the safe thinking state after a commitment finishes. Holding an input actively advances further actions and world time.
 - **A precise option already exists.** Tapping commits exactly one unit and returns to frozen time, with full information and no time pressure. Hold is opt-in coarseness that trades precision for convenience, exactly as it does for movement. A player who wants frame-by-frame control taps; a player who wants bulk time holds and accepts the consequences.
 
 Being hit will end a wait chain through the existing interruption system, since a hit reaction replaces the current action. That is ordinary shared behaviour, not a Wait-specific rule — do not add a special case for it, and do not suppress it either.

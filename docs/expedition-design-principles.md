@@ -4,6 +4,8 @@
 three-biome prototype. The older seven-region/one-boss/no-Waystone contract is superseded.
 Implementation and verification status: `expedition-0.3.0-implementation.md` and
 `current-state.md`. Prototype counts and tuning remain hypotheses, not permanent rules.
+The Hades inspiration for three biomes, three bosses, and restorative transitions
+was explicitly confirmed on 2026-10-19.
 
 ## Purpose
 
@@ -46,21 +48,24 @@ Waystone takes:
 - push-your-luck attrition;
 - nested encounter selection, gradual roster mutation, discovered routes, and a non-monotonic difficulty waveform.
 
-Waystone does not take CQ2's hit rolls or combat mathematics. The run grammar transfers; the resolution model does not.
-
 ### Dark Souls: commitment and consequence
 
 Waystone takes committed actions, spacing, distinctive movesets, resource tension, and the emotional value of a dangerous journey. For Expedition, the important transfer is consequence: a decision spends time, space, initiative, information, resources, or future options and cannot simply be taken back.
 
-Dark Souls' interconnected checkpoint world belongs primarily to Campaign. Expedition omits checkpoint respawns and campaign return loops. Its three approved post-boss Waystones are single-use restorations, not checkpoints; attrition remains cumulative within each biome and death still ends the run.
+Dark Souls' interconnected checkpoint world primarily informs Campaign. In Expedition,
+the post-boss Waystones restore resources once, attrition accumulates within each
+biome, and death ends the run. The detailed restoration contract lives in the
+[implementation ledger](expedition-0.3.0-implementation.md).
 
-Waystone does not take reflex-dependent combat, tight input windows, animation-cancel technique, or continuous 3D topology.
-
-### Hades: legibility and role combinations
+### Hades: legibility, role combinations, and Expedition rhythm
 
 Waystone takes readable attack shapes, differentiated telegraphs, strong silhouettes, faithful contact, and enemies whose roles become more interesting in combination.
 
-It does not take Hades' dash-cancel combat loop or its sequence of disconnected authored chambers. Expedition must remain a continuous procedural journey in which approach, scouting, escalation, and the condition in which the player arrives all matter.
+Hades also inspires the run's **three biomes, three bosses, and resource refresh
+between biomes**. Each biome develops its own encounter language and culminates in
+a boss; the restorative transition resolves that stage and prepares the player for
+the next. Waystone applies this rhythm within a continuous procedural journey where
+approach, scouting, escalation, and arrival resources matter.
 
 ### Other comparative lessons
 
@@ -318,7 +323,9 @@ to your last known position" is a full behaviour or only the visible half of one
 
 This consolidation is derived from the existing accepted project record:
 
-- `docs/design-foundations.md` §§1–4, 6–7, 9–10, and 13;
+- [Design Foundations](design-foundations.md): inspirations, characters, encounters, and journeys;
+- [Design research](design-research.md): comparative run structure and composition evidence;
+- [Development scope](development-scope.md): scale, future content, and open questions;
 - `docs/expedition-encounter-redesign.md`;
 - `docs/design-brief.md` §§1–3;
 - `docs/combat-character-framework.md` §§6, 10, and 13;

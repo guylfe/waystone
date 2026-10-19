@@ -415,6 +415,12 @@ The working direction for Waystone is:
 
 Use an authored macro-waveform, bounded procedural sequencing, protected resolution after peaks, guaranteed contrast and resource beats, optional intensity valves, and late-tier content for every pacing role.
 
+The run-wide structure is three biomes, each culminating in a boss, with a resource
+refresh between biomes. This Hades-inspired rhythm gives each stage an introduction,
+development, climax, and restorative transition. The earlier seven-locale examples
+in this document illustrate pacing roles; they are not the current route contract.
+See [Expedition design principles](expedition-design-principles.md#hades-legibility-role-combinations-and-expedition-rhythm).
+
 ### Campaign
 
 Use spatial intensity gradients, differentiated branches, Waystone-centred outward arcs, persistent consequences, mastery on return, and shortcuts as both structural reward and emotional resolution.

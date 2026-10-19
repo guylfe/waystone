@@ -774,6 +774,10 @@ Characters begin at level 1.
 
 The player ordinarily sees no more than four available upgrade destinations at once and only rarely five. A normal Expedition should allow at least one chosen track to reach completion by approximately level 9 or 10.
 
+Level-up presents the actual next upgrades directly in the character sheet, usually
+three options and occasionally four or five. Each option exposes the upgrade and
+its consequences before the player selects it.
+
 ### 11.6 Gating positions and authored track length
 
 Every ordinary authored track family has five potential gating positions, even when a particular track deliberately leaves positions empty. Level 10 remains a universal final opportunity.
@@ -814,6 +818,9 @@ If the track supplies an active ability, it uses the fifth active-action positio
 ### 11.9 Wanderer
 
 Wanderer builds the same five-track sheet through forced choices among weapon, Defense, main identity, and secondary identity. The choices occur during the run or its opening rather than creating a separate progression system.
+
+Achievements expand the pool of options available to those forced choices. The
+intended reward is access to more ways to construct a character.
 
 The current leaning is forced construction in both Expedition and Campaign, with collection sites potentially affecting presentation in Campaign. Exact acquisition cadence remains deferred.
 
@@ -1032,8 +1039,7 @@ Turnabout triggers once per empowered attack, not once per Knife contact. Acroba
 ### 14.11 Universal clean evasion
 
 > **Superseded in `0.2.13`, in part.** Source 2 below -- clean-evade credit for
-> ordinary movement -- was removed with attack capture. `docs/design-foundations.md`
-> lists it among rejected directions and the handoff carries it as guardrail 7:
+> ordinary movement -- was removed with attack capture. The current event contract is:
 > evasion rewards belong to authored defensive techniques. It was also about to
 > fire constantly, since capture makes attacks pass close to a retreating player
 > by design. Source 1 (genuine i-frames) is unchanged, so Dodge and Vault both

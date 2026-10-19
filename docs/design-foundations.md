@@ -1,440 +1,96 @@
 # Waystone — design foundations
 
-**Purpose:** the enduring context for Waystone — what it is, how big it intends to be, what it borrows and refuses from other games, what has been settled, and what is still planned. This is the *why and what* document. `docs/combat-character-framework.md` specifies combat and character rules in detail; `WAYSTONE_MIGRATION_HANDOFF.md` carries operational priorities and procedure; `README.md` carries implemented-version history.
+Waystone is an Android-first, PC-compatible tactical fantasy roguelike. **Time stops while you think, and runs while you act.** Simple inputs give the player control over consequential actions in a continuous physical world. Mastery grows through spatial judgment, knowledge, commitment, and adaptation.
 
-**Provenance and status:** reconstructed from the full design conversation that produced the project and reviewed against `0.2.95` on 2026-09-22. Its historical examples retain the version that produced them. Where this document and the code disagree, the code is the implementation fact and this document is the intent — investigate the gap rather than silently picking one. `docs/current-state.md` owns the current boundary and work order.
+This document describes the game's identity and intended experience. [Current state](current-state.md) describes what is implemented; the documents at the end specify individual systems and development plans.
 
-**Relationship to `docs/design-brief.md`:** that file predates this one and overlaps it.
-Its Promise, Achievement philosophy, Non-goals, and corrected simple-input pillar remain
-accurate; its world/geometry sections are explicitly future slice targets. Prefer this
-document for enduring rationale and `docs/current-state.md` for current implementation.
+## The player experience
 
----
+The player explores a dangerous world, learns its creatures, and develops a character whose particular strengths shape the journey. Each encounter asks them to read the situation, choose an action, and live through its consequences. Success makes both the character and the player's understanding more valuable.
 
-## In plain terms
+Waystone is immediately understandable and rewards long mastery. Its controls support comfortable one-handed touch play and adapt to desktop input. Threats, targets, movement, resources, and interactables remain clear across phone, foldable, and desktop layouts.
 
-Waystone is a phone-first tactical roguelike built on one idea: **time stops while you think, and runs while you act.** That single decision is what lets a game with the depth of Dark Souls work with one thumb on a touchscreen — it replaces reflexes with foresight. Almost every other rule in the project exists to protect that idea or to exploit it.
+## Inspirations
 
-The game draws on three sources. From **Cardinal Quest 2** it takes the shape of a run: short, replayable, built from small randomised pieces, where you assemble a temporary character you become reluctant to lose. From **Dark Souls** it takes commitment and place: attacks you cannot take back, and a world that folds back on itself so that opening a shortcut feels like relief. From **Hades** it takes readable enemy attacks and the isometric presentation.
+### Cardinal Quest 2 — runs and character growth
 
-It also refuses specific things from each of them, and the refusals matter more than the borrowings — they are what stop the project drifting into a different genre one reasonable-sounding suggestion at a time.
+Cardinal Quest 2 inspires compact, replayable adventures assembled from small authored pieces, bounded randomness, distinctive classes, consumables, progression, and rewards. A run becomes compelling as the player assembles a particular temporary character and becomes reluctant to lose it.
 
----
+Its economy of actions and limited carrying capacity give individual choices weight. Classes gain depth by recombining a compact vocabulary of abilities and effects. Achievements and discoveries open further ways to play.
 
-## 1. What Waystone is
+### Dark Souls — commitment and place
 
-An Android-first, PC-compatible tactical fantasy roguelike, built in Godot, aimed at being immediately understandable and rewarding long mastery — through spatial judgment, action choice, commitment, and adaptation rather than execution speed or hidden probability.
+Dark Souls inspires consequential actions, recovery, spacing, and weapons distinguished by their movesets. Offense, defense, and repositioning compete for time, initiative, and resources.
 
-The working definition of its combat identity, arrived at late in the design conversation after several attempts:
+It also inspires Campaign's interconnected world: dangerous outward journeys, consequential checkpoints, and shortcuts discovered from the far side. The emotional reference is the elevator down to Firelink — recognizing that a long journey has brought you back to familiar safety, with a new understanding of the world.
 
-> A knowledge-driven action RPG in which the player can deliberate indefinitely, but every committed action has continuous physical consequences.
+### Hades — readability and Expedition rhythm
 
-And the corresponding statement of what an input means:
+Hades inspires clear attack shapes, differentiated telegraphs, strong silhouettes, isometric presentation, and enemy roles that become interesting in combination. Animation and collision together communicate what an attack does.
 
-> Every input is simple, but every action is a commitment that advances a legible world.
+Hades also inspires Expedition's structure: **three biomes, three bosses, and a resource refresh between biomes**. Each biome develops its own encounter language, builds toward its boss, and resolves into a restorative pause before the next stage of the ascent.
 
----
+## Time and commitment
 
-## 2. Scope
+Whenever the player is ready to choose, the world is frozen. They can inspect the situation and deliberate for as long as they need. Committing to an action advances the whole world through that action's startup, active phase, and recovery. Enemies, projectiles, and hazards continue moving during this interval.
 
-### Platform and production
+Actions have continuous spatial consequences. Position, facing, reach, attack arcs, and the moment of commitment all matter. The player predicts how the scene will change while the chosen action unfolds.
 
-Android-first, developed in tandem with Windows from early on — specifically so that later systems cannot silently assume touch-only input. The test device is a Pixel Fold, which sets the bar for orientation-agnostic layout, foldable aspect ratios and camera-cutout safe areas. Solo development with AI assistance. Publishing is a possibility, not a commitment, and no monetisation, online service or store integration work has been scoped.
+Input windows are generous. A continued input deliberately advances time; releasing input lets the current commitment finish and returns the player to a safe thinking state when ready. Ordinary movement is a chain of short committed steps, with each next step taking the player's chosen direction.
 
-### Intended size of each mode
+## Physical combat and information
 
-| Mode | Target | Status |
+Visible weapon contact determines hits, and ordinary damage follows fixed values and explicit modifiers. Attack animation and collision describe the same action. The visual attack is the player's reliable guide to its reach, shape, and effect.
+
+Players read attacks through preparation, commitment, impact, and recovery. Enemy preparation gives them information with which to choose; recovery creates an opportunity to act. An unavoidable threat during a player's commitment must have been readable when that commitment began.
+
+Inspection describes useful qualities such as speed, reach, stability, and vulnerability during recovery. The player combines that information with spatial judgment. Enemy behavior, awareness, noise, patrols, terrain, and procedural variation create changing situations in which to apply what they have learned.
+
+## Characters and progression
+
+Players and enemies share the same foundations: attributes, action phases, posture, conditions, perception, damage, and spatial rules. A character's identity comes from the way its weapons, defenses, temperament, class, and abilities combine and transform these systems.
+
+Each starting character already has a complete play style. Upgrades deepen that identity and introduce meaningful ways to specialize. The player sees concrete upgrades and their consequences before committing to choices that last for the run. Equipment and limited consumable capacity add further tradeoffs.
+
+Most power develops within a run. Lasting progression opens classes, options, challenges, cosmetics, and world possibilities. Achievements give the player new directions to explore: demonstrate a class's strengths, discover a connection, try an unusual solution, or meet a demanding condition. Their families make these possibilities legible, and hidden achievements reward experimentation.
+
+## Encounters and difficulty
+
+An encounter becomes interesting when it presents competing demands. A shield encourages the player to go around; an archer makes exposed ground dangerous. An enemy that rewards patience can combine with another whose influence grows over time. The player must find a response that accounts for the whole situation.
+
+Ordinary enemies have understandable behaviors and workable individual answers. Compositions, terrain, entry direction, partial information, and arrival resources change the cost of those answers. Difficulty develops through new techniques, combinations, elite properties, and changes to the rules of a situation.
+
+## Journey and modes
+
+A journey alternates pressure, relief, discovery, preparation, disruption, and climax. Quiet exploration and recovery give the player time to recognize their progress and anticipate what comes next. Optional routes and rewards let them choose how much additional risk to take.
+
+The modes share combat, characters, enemies, equipment, conditions, and world content. Each gives those systems a distinct structure and rules for persistence.
+
+| Mode | Journey | Progress and restoration |
 |---|---|---|
-| **Expedition** | Three standalone biomes forming one mountain ascent, six main and two optional encounters per biome, three solo bosses and single-use post-boss restoration. | Implemented 0.3.0 prototype; mechanical checks passed, human validation pending. See `expedition-0.3.0-implementation.md`. Supersedes the seven-region, one-boss target. |
-| **Regional Campaign** | 60–120 minutes. 2–4 Waystones, 1–2 layered regions, several bidirectional shortcuts, one major boss. A proof of concept, not a product. | Proposed, not started |
-| **Short Campaign** | 3–6 hours to first completion. One interconnected procedural world per playthrough. The crucial validation step before any full campaign. | Not started |
-| **Full Campaign** | Dark Souls / Hollow Knight-scale exploration: curated macro-geography with procedural local variation, NPCs, knowledge-based gates, possible multiple endings. | Long-term |
-| **Endless** | Indefinite chained segments with escalating pressure and periodic secure points. | Not started |
+| **Expedition** | A forward journey through three biomes, each culminating in a boss. Exploration and branching routes unfold within each biome. | A temporary build, finite supplies, and permadeath. Single-use post-boss restoration refreshes resources; leaving a biome commits the player to the next stage. |
+| **Campaign** | An interconnected world organized around Waystones, exploration, and return journeys. | Persistent character growth and Waystone anchoring. Rest restores supplies and ordinary enemies; death returns the player to a Waystone. |
+| **Endless** | Chained segments with escalating pressure. | Run-long growth and periodic restoration at increasing opportunity cost, continuing until death. |
 
-### Content ambition
+## Campaign and a sense of place
 
-Eight initial weapon frames — Sword, Hand Axe, Zweihander, Spear, Twin Knives, Bow, Impact, Staff — with Gauntlets, Flail, Whip and Scythe deferred. Four playable profiles exist (Warrior · Vanguard, Rogue · Acrobat, Rogue · Sharpshooter, Mage · Elementalist) against a much larger designed roster; see §13.
+Campaign geography consists of connected 2D layers. Stairs, ladders, lifts, and tunnels link places the player can learn and recognize. Stable major geography, landmarks, and Waystones support an accumulating mental map.
 
-### Hard budgets
+A meaningful shortcut connects familiar places after real progress and materially improves travel. The player opens it from the far side and gains a lasting route in both directions. Recognition, relief, and increased freedom are part of its reward.
 
-These come from measurement, not preference, and they constrain encounter design directly:
+Danger, knowledge, discovery, and major milestones give routes their accessibility. Exploration gradually reveals how places relate, and the player chooses how to approach the opportunities they uncover.
 
-- **Enemy counts:** 5–12 visible enemies is normal, 15–25 an exceptional swarm, and roughly 30 the ceiling for simultaneously active nearby actors. Total regional population may be far larger provided most stay dormant. Measured on desktop, 30 active enemies cost ~8.5ms average frame; a 50-enemy stress case ran ~22ms average, over budget.
-- **Survey sample sizes:** roughly 30 rooms before the data teaches anything, ~100 for a first encounter grammar, 130–150 for real confidence, with 10–15% deliberate near-exact repeats so encounter quality can be separated from player variance.
+## Detailed documentation
 
-### Non-goals
-
-No large inventory, crafting, hunger or durability. No final art, lore, audio, monetisation, online services or store integration in the current phase. No reuse of Cardinal Quest 2's code, art, audio, names, maps or characters — original equivalents only.
-
----
-
-## 3. Lineage
-
-The three influences are not blended. Each contributes specific things and is explicitly refused on others.
-
-### 3.1 Cardinal Quest 2 — the run
-
-**Taken:** run and expedition structure; decision density; class asymmetry; bounded randomness; consumables; progression cadence; achievements and unlocks; reward rhythm; the "use the whole buffalo" philosophy where classes recombine a compact shared set of verbs rather than each owning bespoke systems.
-
-The most important borrowing is a diagnosis rather than a mechanic. CQ2 runs become compelling because **the player assembles a particular temporary character and becomes reluctant to lose it.** Everything about loot, progression pacing and permadeath serves that, and when a Waystone run feels flat the first question should be whether a build is forming at all.
-
-**Refused:** CQ2's combat mathematics. Waystone's contact is deterministic, so hit rolls and to-hit probability have nothing to attach to. Only the run grammar transfers, not the resolution model. Also refused: the complexity level of *Pixel Dungeon* — sprawling skill trees, inventory management, hunger, durability, crafting. Simple to pick up, hard to master.
-
-**What CQ2's combat actually does well.** Its combat is turn-based and arithmetically simple, which makes it easy to assume nothing transfers. What transfers is its *economy*, and most of it is already load-bearing in Waystone:
-
-- **Speed is action economy, not damage.** A faster CQ2 actor gets more actions per unit time rather than hitting harder. This is the direct ancestor of Waystone's personal tempo, and the reason Speed accelerates voluntary actions but deliberately does not shorten involuntary states like hit reactions or condition durations.
-- **A tiny action vocabulary.** Move, potion, skill, wait. Four verbs; the depth is in *when*, not in how many exist. Waystone's action row is the same shape, and any proposal that adds a fifth standing verb should have to justify itself against this.
-- **Talents transform rather than accumulate.** A CQ2 talent replaces or reshapes a skill you already have instead of adding another button. This is why Waystone's tracks develop a complete starting loop rather than assembling one, and why "starting characters must already possess a complete play loop" is a rule.
-- **Class identity is legible from the first encounter**, before any choice has been made.
-- **Limited capacity forces genuine tradeoffs.** Few slots, few consumables, no inventory screen — every acquisition displaces something. Waystone's belt exists for this reason, and it is why a full inventory system keeps being refused.
-- **XP, loot and consumables have distinct roles** and are not interchangeable currencies. When one starts substituting for another, decisions collapse.
-- **Push your luck.** Risk finite supplies within each biome. The approved expedition now has one-use post-boss restoration, but no resurrection checkpoint or return to departed biomes. Campaign banking remains a different persistence rule.
-
-### 3.2 Dark Souls — commitment and place
-
-**Taken:** committed actions with real recovery; spacing as the core spatial skill; weapon identity expressed through moveset rather than stat inflation; checkpoints with consequences (Waystones); dangerous outward journeys that reconnect; far-side shortcuts; a world stable enough to become a memory machine; the tension between spending resources on offense and holding them for defense.
-
-The named target feel, from the outset: **the elevator down to Firelink** — the moment a long dangerous route is revealed to have been curling back toward safety the whole time. The design goal is to produce that repeatedly, and it is why the campaign is an interconnected graph rather than a sequence.
-
-**Refused:** real-time reflex combat, tight parry windows, input buffering, animation-cancel technique. These solve a problem Waystone does not have — Souls needs input buffers because the player must commit under time pressure, and Waystone's freeze structure removes that pressure entirely. Also refused: continuous 3D topology. Waystone is 2D with discrete layers.
-
-Souls' checkpoint loop is worth understanding as one system rather than a feature list: bonfire, Estus refill, leveling, enemy respawn and bloodstain recovery interlock. Adopting any one of them in isolation tends not to work.
-
-### 3.3 Hades — legibility
-
-**Taken:** enemy-role combinations; attack-shape readability; isometric presentation technique.
-
-The key lesson, arrived at after asking why Hades reads so well in isometric despite the projection making exact geometry hard: it does not expose precise hitboxes. It relies on faithful animation, generous collision resolution at borderlines, strong silhouettes, and differentiated telegraphs. Hence the working principle: **the visual attack is the promise; collision should fulfil that promise.** Collision is tuned to match what looks like it hit, rather than treated as ground truth the player must decode.
-
-**Refused:** Hades as a primary reference. Its real-time dash-cancel loop would pull Waystone toward an action game. Waystone is also harder than Hades in two respects — commitment is more punishing, with no dash-cancel escape from a misjudgment, and its geography is procedural rather than authored chambers, so clearance and occlusion rules must be stricter.
-
-### 3.4 Considered and rejected wholesale
-
-- **Into the Breach** — exact enemy-intent telegraphs and puzzle-perfect forecasting. Rejected explicitly: Waystone is a streamlined traditional roguelike with behavioural tendencies and statistical uncertainty, not a solvable tactics puzzle. No permanent threat overlays.
-- **Sekiro** — posture-only combat where both sides accrue toward a win condition. It works because Sekiro's entire loop is a continuous attack/deflect exchange; Waystone is multi-weapon, multi-enemy and non-reflex, so it does not transfer.
-- **Slay the Spire** — an early random three-choice upgrade modal was built and later removed entirely. Progression happens inside the character sheet, not in a card draft.
-
----
-
-## 4. Comparative analyses
-
-Findings from studying other games' systems directly. Kept because they are the reasoning behind several current rules, and because re-deriving them costs more than reading them.
-
-### 4.1 Cardinal Quest 2's actual structure
-
-Established by decompiling the APK and reading its data tables (`plot.txt`, `plotpacks.txt`, `mobpacks.txt`, `towerpacks.txt`):
-
-- Three acts of 7, 8 and 9 floors. Each floor owns its generator, tileset, enemy pool, loot table and shop probability.
-- Encounters are selected in **two weighted stages** — first an encounter archetype, then a specific formation within it. A floor is assembled from many small independently-rolled formations, not one large fixed roster.
-- The enemy roster **mutates gradually in weight** across a run rather than hard-switching between tiers.
-- Difficulty is a **waveform** — pressure, relief, disruption, climax — not a monotonic ramp.
-- Its endless "Tower" mode is 20-floor tiers in five 4-floor blocks, each ending in a boss, with three enemy families roughly mapping to the three acts.
-- 169 Steam achievements, distinguishing functional unlocks from commemorative ones.
-- **Exits and routes are discovered, not signposted.** CQ2 does not draw a main path through a floor; you find the way down. An early Waystone Expedition build did signpost its route and it was removed for exactly this reason — legibility of *threats* is required, legibility of *where to go* is not.
-
-The conclusion that matters: **CQ2's richness comes from its encounter grammar, not from map size or enemy count.** This is the model for Waystone's own encounter work, and it is why more content is not the answer to a flat run.
-
-### 4.2 How FromSoftware games actually decompose
-
-The most useful finding of the whole comparative pass, because it corrected a wrong assumption: FromSoft never uses stamina *instead of* recovery. It layers **five independent systems**, and conflating any two of them produces a double penalty that reads as unfair:
-
-| System | Question it answers |
+| Subject | Document |
 |---|---|
-| **Recovery** | When may I choose again? Weapon-specific. The primary commitment system. |
-| **Stamina** | How much more may I choose to do before yielding initiative? |
-| **Hitstun** | What is my immediate reaction to one impact? |
-| **Poise / hyperarmor** | Does my *current committed action* survive being hit? Action-specific, not a permanent trait. |
-| **Posture / stance** | Has cumulative pressure earned a punish opening? |
-
-**Recovery is the primary balancing lever; stamina is a lighter secondary burst budget.** Waystone learned this the expensive way, having first shipped a stamina model that duplicated recovery's job.
-
-Reference values, useful for calibration rather than copying:
-
-- Dark Souls: ~100–160 stamina, ~45/sec regeneration.
-- Bloodborne: 100–160; a Saw Cleaver five-hit combo costs exactly the full bar; dodge costs 10.
-- Elden Ring: 96–142 stamina, ~45/sec regen, dodge 12, heavy attacks 30–66. Enemy stance ~15–65 for ordinary enemies and 80–120 for bosses, regenerating ~13/sec after a tier-scaled delay.
-
-### 4.3 Attack anatomy across 2D action games
-
-Surveying Hollow Knight, Dead Cells, Hyper Light Drifter, Death's Door, Blasphemous, Salt and Sanctuary, Tunic and others produced a consistent shape:
-
-- Player attacks decompose as **startup → brief active contact → recovery**, with an optional cancel or continuation. The active window should be *short*; a long damaging window is what makes an attack feel like a lawnmower.
-- Enemy attacks need **wind-up → commitment point → fast impact → recovery**, where direction locks at the commitment point and the recovery is a real punish window.
-
-From this came the **commitment horizon** fairness rule: an enemy that was not already visibly threatening when the player committed should not be able to begin *and* land an unavoidable attack before the player's next decision point.
-
-### 4.4 The six costs of an action
-
-A frame for asking why a defensive option is or is not being used. Any action can charge: **time**, **space**, **resource**, **initiative** (how soon you may reconsider), **information**, and **future options**.
-
-Waystone's recurring failure has been ordinary movement paying almost none of them — which is exactly why Dodge went unused and why `docs/combat-loop-diagnosis.md` reads the way it does. When a tool is ignored, check which of the six its alternative is failing to charge.
-
-### 4.5 The solvability risk
-
-Dead Cells and its peers get replayability partly from **execution variance** — you can fail a run you understand perfectly. Frozen time removes the *reflex* component of that: Waystone never tests reaction speed, and knowledge of how an enemy behaves accumulates permanently.
-
-So Waystone needs more **renewable strategic uncertainty** than either CQ2 or a typical action roguelike: bounded probabilistic enemy action selection, terrain variation, partial information, genuine build diversity, and difficulty that escalates by introducing new enemy *techniques and combinations* — the Boss Cells / tiered-difficulty model — rather than by inflating numbers.
-
-This is the strongest long-term argument for the information-as-a-resource system in §13.
-
-#### A familiar room is not a solved room
-
-**This subsection exists because the inference has been drawn repeatedly, by more than one reader of this document, and it corrupts everything downstream of it.** The error is to read "frozen time removes execution variance" as "a room the player understands is finished", and then to reason as though Waystone were a tactics game in which a solved position is a memorised move sequence. **Waystone is a continuous spatial simulation, not a tactics puzzle**, and §3.4 rejects that framing by name.
-
-Three reasons the inference fails:
-
-- **There is no move list to memorise.** A tactics game offers a finite discrete choice per turn, so a solved position collapses to a remembered sequence. Waystone's action space is *continuous over continuous geometry*: where you stand, which way you face, which arc a swing sweeps, how far you have travelled when you commit, and how deep into an enemy's telegraph you commit. Those are judged fresh every time on a continuum; they are not matched against a stored answer.
-- **The instance is never recreated.** Enemies advance continuously at 120 Hz through every committed action, so the room's state a moment from now is a function of exactly when and where you acted. Add bounded probabilistic action selection once telegraphed, detection and noise, patrol and formation variation, entry direction, terrain, the build you are carrying, and the health, stamina and potion state you arrived in — the same recipe is a different problem.
-- **Unlimited thinking time does not yield an answer, because the numbers are withheld.** §6 exposes properties qualitatively and deliberately refuses exact durations, distances and posture values so that deliberation cannot become arithmetic. A player with infinite time still has to *judge*.
-
-What accumulates permanently is **knowledge of enemies and of principles** — what a Boar commits to, what a Shield punishes, that an Archer prices open ground. What does not accumulate is a **solution to a room**, because rooms are not instantiated twice.
-
-Two consequences, both load-bearing for content and pacing:
-
-- **A familiar composition is legitimate content anywhere in a run.** Repetition of a *recipe* is not repetition of an *experience*, and a beat built on well-understood enemies is not thereby empty. §4.6 already records the measurement that looks like counter-evidence — Boar/Hound/Knife rating 3/5 and then 1/5 twice in `0.2.18` — and already concludes that it measured the grading task, not the game.
-- **Skill expression survives.** Frozen time removes reaction speed as a skill; it does not remove spatial judgement. Two players who both understand a room perfectly will play it differently and get different results, and the better one is executing better.
-
-Any argument that begins *"the player already knows the answer, so this beat is empty"* is starting from a false premise. Discard the argument, not the beat.
-
-### 4.6 Individually solvable, combinatorially hard
-
-An enemy a patient player cannot beat one-on-one is either unfair or a boss. Difficulty belongs to the **room**, not to the unit: each kind should be answerable alone, and the encounter is what makes the answer expensive. Designing each enemy to be individually unsolvable produces a roster of walls rather than a set of questions.
-
-The corollary is the composition rule: **pair enemies whose correct answers conflict.** Two enemies demanding the same response produce one problem twice, however different their silhouettes.
-
-- A Duellist says *wait for the right moment.* A Chanter says *hurry, this is compounding.*
-- A Shield says *go around.* An Archer says *not while you are out in the open.*
-- An Ox says *watch your bearing.* Flankers say *watch your back.*
-
-Two things in the Combat Survey record support this, and one qualifies it.
-
-Rooms containing a ranged or area-denial element rate consistently higher than pure melee rooms — in the `0.2.20` survey, rooms 4, 8, 10 and 11 all scored 3/5 for fun and tactical interest while melee-only rooms scored 1–2. Those rooms are precisely the ones where two demands conflict: close the distance, but not through open ground.
-
-A caution on the second observation, because it was originally written up as a design law and is not one. In the `0.2.18` survey, Boar/Hound/Knife appeared three times: its first appearance rated 3/5 for fun, its second and third **1/5 across every axis**, in different arenas under different recipe labels. That is a real measurement, but of the **instrument**, not of the game. In a Combat Survey the tester is grading rooms, and a room whose problem is already solved is less interesting *to assess* — which explains the drop without saying anything about a player mid-run who is not filling in ratings.
-
-The conflict finding above is unaffected, because it compares different room types **within a single run** rather than comparing a room against its own repeats.
-
-> **The Combat Survey is a coverage instrument, not a slice of the game.** Its room ordering, pacing, repetition and threat curve are properties of the harness. Ratings compare rooms *to each other within a run*; they are not a forecast of how a room would feel encountered once, in a real expedition, by someone playing rather than grading. Drawing pacing or content rules from the survey's shape is a map-territory error, and it has been made here before.
-
----
-
-## 5. The frozen-time premise
-
-Time is completely frozen whenever the player is ready and has not committed. On commitment, the world simulates that action's full duration — startup, active, recovery — at 120 Hz, with continuous positions, real collision shapes and swept attack geometry. Enemies and projectiles advance during that window, and the simulation can freeze mid-enemy-action or mid-flight.
-
-This exists to make a commitment-based combat game playable with one thumb. It substitutes **prediction for reaction**: the player is tested on reading geometry and choosing, never on execution speed.
-
-Three consequences follow, and they are constraints rather than preferences:
-
-**Input windows must stay generous.** The game tests decisions, not narrow button timing. This is why combo continuation is a decision sampled at strike transitions rather than a frame-perfect cancel, and why parry is designed as prediction rather than reaction.
-
-**Releasing input must always produce a safe thinking state.** *The player cannot die because they stopped touching the game.* This was locked as non-negotiable and it constrains even the endgame — see §12, where boss powers that act during stopped time are explicitly bounded so they can never land a damaging hit while the player is frozen.
-
-Note the rule protects the *absence* of input, not its presence. Holding an input is an active, ongoing choice to advance time, and carries whatever risk that entails — which is why held movement and held Wait have no protective guardrails.
-
-**Ordinary movement is a first-class defensive tool, not a loophole.** It has no Energy price and chains short fixed-distance steps. A held or dragged direction steers the *next* step; the current step completes rather than curving mid-commitment. This is the accepted small-step control model, not a proposal for long Dodge-like strides. The design problem is to make its effectiveness depend on *when* it is used. See `docs/combat-character-framework.md` §1.3 and `docs/attack-capture-design.md`.
-
----
-
-## 6. Determinism
-
-If the displayed weapon crosses an enemy, it hits. Ordinary damage is fixed after explicit modifiers. There are no hit rolls, no universal miss chance, and no damage ranges added to manufacture tension. Attack rendering and collision sample the same geometry on the same timeline.
-
-Where uncertainty is allowed to live: enemy action selection among contextually sensible options once telegraphed; detection, stealth and noise; patrol and formation variation; generation; reinforcement. Never in whether a visible hit connects.
-
-Miss chance exists only as a deliberate, named property — Stealth, blindness, a specific evasion skill — not as background arithmetic.
-
-A related rule on information: exact action durations, posture values and distances are never exposed in normal play. Inspection speaks qualitatively ("Speed: Slow. Reach: Long. Stability: High. Vulnerable during recovery."). This is deliberate anti-optimisation design — with exact numbers and unlimited thinking time, every encounter could be arithmetic rather than judgment.
-
----
-
-## 7. Share the rules and content; specialize the journey
-
-One simulation, one content set, three journeys. Enemies, weapons, classes, tracks, items, biomes, conditions and encounters are shared. **Only the persistence rules differ** — what survives death, rest and transition.
-
-| | Expedition | Campaign | Endless |
-|---|---|---|---|
-| Topology | forward-only, branches rejoin, no return loops | interconnected graph around Waystones | chained escalating segments |
-| Death | permadeath ends the run | return to last Waystone | ends the run |
-| Healing | five-charge pouch, finite weaker rations, one-use post-boss refill | full restock at each Waystone | periodic, at rising cost |
-| Progression | lasts the run only | persists, anchored at Waystones | long-tail growth |
-
-Both modes share restoration and the original pouch. The October 17 expedition decision adds single-use post-boss Waystones: restore health, Energy, readiness and five pouch charges, without respawning enemies, reviving the player or creating a checkpoint. Rations never refill. Campaign anchoring and death recovery are separate mode policy, not implied by the shared word Waystone.
-
-### Combat Survey — the instrument
-
-A fourth mode, **Combat Survey**, is a developer instrument rather than a shipping mode: a deterministic, seeded, room-by-room laboratory with per-room ratings and telemetry export. From roughly v0.1.2 onward it has been the arbiter of combat decisions, and combat changes are expected to cite it rather than intuition.
-
-Its purpose is **attribution**. The same seed produces the same rooms across characters and combat-rule profiles, so a change can be isolated from the encounter it was measured in. Two resource profiles isolate different questions: **Encounter** refreshes health, stamina, potions and readiness between rooms, so it measures encounter quality alone; **Attrition** carries health, potions and build progression through the run, so it measures fatigue and resource pressure across a sequence.
-
-`WAYSTONE_MIGRATION_HANDOFF.md` §9 carries the operational detail — report format, per-room flow, export, and how to read a report. Two points from it are worth repeating because they are the ones most easily forgotten: **a victory is not evidence of fun**, and **high resource spending is not evidence of pressure** if the player still has a free way to be safe. Sample sizes are in §2 above.
-
-**Its blind spot is the whole point of the tool.** Survey rooms are isolated arenas. A change optimised purely against them will drift Waystone toward a series of disconnected combat chambers — closer to Hades than to a continuous CQ2-style route — because the Survey cannot see approach, scouting, accidental escalation, or the cost of arriving at a fight already damaged. The discipline is: validate combinations in the Survey, then **re-embed them in a large continuous Expedition slice** before believing the result. A number that looks right in a room and wrong in a route is the route's verdict, not the room's.
-
----
-
-## 8. The interconnected world
-
-Campaign geography is **discrete stacked 2D layers** in a shared coordinate space. Collision, combat, awareness, line of sight, projectiles, hazards, navigation and discovery operate within a layer; stairs, ladders, lifts and tunnels create explicit bidirectional edges between them. There is no continuous vertical physics, and adding some would not make the game more Souls-like — it would break the simulation model.
-
-Layer alignment is **loosely anchored**: biome-level approximate coordinates and elevation, not room-level exact anchoring. Exact alignment is reserved for local, player-observable payoffs — a bridge over a path you walked earlier, a ladder joining two floors of one building. Exact global anchoring was considered and rejected as expensive for a benefit the player cannot perceive.
-
-**Shortcuts** are the point of the campaign, and a graph edge is not a shortcut. One qualifies only if the player had prior context for its near side, reaches the far side after real progress, it materially shortens return travel, and both endpoints are recognisable. Shortcuts open from the far side and are **permanently bidirectional** once opened — one-way returns were explicitly rejected as exchanging one inconvenience for another rather than granting freedom.
-
-**Gates** should be soft before hard: danger-gated routes first, then knowledge and Awareness gates, then far-side shortcut gates, then a small number of major fragment gates, and very few arbitrary keys. The Lordvessel shape is the model — a single midgame unlock opening several divergent routes at once, with the player choosing order.
-
-Campaign world geography is generated **once per campaign** and then stays stable. It is not rerolled on death; a learnable world is worth more than endless novelty.
-
-### Death, memory and the Shadow *(designed, not built)*
-
-Campaign memory has three tiers. **Anchored** truths — Waystones, major topology, layers, landmarks, boss outcomes, opened shortcuts — are always reliable. **Trace** memory is approximate: rough direction, vague danger. **Volatile** detail — exact patrols, minor loot, small obstacles — may change.
-
-On death, unspent XP and not-yet-integrated skills are left behind as a **Shadow** at the death location. The Shadow holds only those; it explicitly does *not* hold map knowledge, loot, currency or shortcut knowledge. That exclusion was reasoned out rather than assumed: recovering map memory into regenerated geography is incoherent — you would "discover" rooms you never walked through. Shortcuts persist only if anchored at a Waystone before dying.
-
-Regeneration is three independent axes — geography, encounters, loot — with named presets: **Stable** (geography frozen, most Souls-like), **Fractured** (unanchored geography rerolls), **Hybrid** (landmarks fixed, selected regions regenerate). Hybrid is the standing instinct and per-biome volatility is intended as worldbuilding rather than a global switch. This was never formally ratified.
-
----
-
-## 9. Character architecture
-
-Players and enemies are the same kind of actor, sharing attributes, action phases, posture, conditions, perception, damage events and spatial rules. Identity comes from combining and transforming shared verbs, never from bespoke minigames.
-
-A character is **five tracks plus a sixth acquired later**: Weapon, Defense, Temperament, Main Class, Subclass, and an Adopted discipline unlocked mid-run through a diegetic teaching site. In the current source the Warrior's track order is `swordsmanship / evasion / steadfast / warrior / vanguard / adopted`.
-
-The governing principle, arrived at after two failed attempts at uniformity, is **shared cadence, independently authored tracks.** A shared cadence grid determines *when* a track may gate; each track chooses which slots it uses, and its length and content are authored on merit. Attempts to make every track a uniform four or five nodes were tried in both directions and rejected — tracks must be free to be themselves.
-
-One hard universal rule: **every Weapon track has exactly five ranks**, because switching weapon category grants proficiency at `highest existing − 1` and that requires consistent rank counts.
-
-Choices are permanent for the run. Level-up offers the actual next upgrade directly — usually three options, sometimes four or five — never a track-selection meta-screen, because choosing a track before seeing its contents is not a real choice.
-
-**Starting characters must already possess a complete play loop.** Upgrades develop it; they are never required to make a character functional.
-
----
-
-## 10. Progression philosophy
-
-Power grows mainly **within** a run. External progression unlocks possibilities — classes, options, challenges, achievements, cosmetics, world variation — rather than imposing a stat grind. A focused player should be able to max one chosen track in a successful Expedition, around character level 9–10.
-
-Achievements are a **play-direction system**, not a trophy list: unlock a subclass by proving its fantasy, unlock a route by discovering its counterpart in another mode, unlock a challenge by beating a boss under a condition. They are organised into visible families — discovery, mastery, class craft, unusual solutions, world knowledge, challenge feats, long-tail milestones — and hidden ones should reward delightful experimentation rather than obscurity. They are also the intended unlock mechanism for the **Wanderer**, a class built from forced one-of-several draft choices across weapon, defense and discipline, whose option pool widens through achievements. That is what gives achievements mechanical teeth.
-
-Campaign progression is finite and authored, with a level cap derived from intended purchases and reached near the end of a thorough campaign. Endless may differ — it has no authored ending, so a diminishing long-tail sink is acceptable there and nowhere else.
-
----
-
-## 11. What creates difficulty
-
-Difficulty comes from action selection, composition, terrain, partial information, resource pressure, elite properties and rule changes.
-
-Not from inflated health, not from hidden math, not from arbitrary misses, and not from input-dexterity tests. Escalation should introduce new enemy *techniques and combinations*, not larger numbers.
-
-The strongest empirical finding from Combat Survey to date: **an encounter becomes interesting when it forces the player to manage two competing problems at once.** Threat is not a function of enemy count. Homogeneous melee groups are weak at any size; a three-enemy mixed group beats a six-enemy uniform one.
-
-Enemy roles in current use: frontline, flanker, ranged pressure, area denial, anchor. A cap of two simultaneous ranged-pressure enemies has held up in testing.
-
----
-
-## 12. Narrative *(designed, not built; not revisited since)*
-
-The fiction exists to make the mechanics diegetic rather than unexplained conveniences.
-
-Someone trying to keep themselves or a loved one alive **broke the Waystone**. The original stone did not create time-freeze — it anchored time into one stable history. Breaking it scattered fragments among several people. Ordinary creatures freeze completely; the player carries a small fragment, which is why they remain conscious in stopped time and retain memory through resets.
-
-That character is the **final boss**, and is also a vendor present throughout the game — the only NPC who subtly moves while time is stopped. Not scripted: a mechanically real tell that escalates from eyes following you, to a shifted hand, to a caught movement, to dropping the pretence entirely.
-
-Fragment authority is tiered. Major bosses get **Counterstop**: after the player commits to an attack and it becomes readable, the bearer may freeze everyone including itself, choose a reaction, and resume alongside the committed attack. This mirrors the player's own power — gaining a decision after seeing committed information — rather than granting free movement, which was the first proposal and was judged too strong. The final bearer can briefly stop the player's body and take one bounded stolen action, but **can never land a damaging hit while the player is frozen**; control returns with unlimited thinking time before anything becomes active. By the finale the player's collected fragments contest that authority to roughly parity.
-
-This is where §5's non-negotiable accessibility rule does its real work: even the final boss cannot punish a player for putting the phone down.
-
----
-
-## 13. Implemented roster and future content
-
-### Class roster
-
-Built: **Warrior · Vanguard** (Sword, Rally, Advance), **Rogue · Acrobat** (Knife, Stealth, Vault), **Rogue · Sharpshooter** (Bow, Stealth, Take Aim), and **Mage · Elementalist** (Staff, Circle, Grimoire, and the elemental spellbook).
-
-Designed, but with no currently approved build order:
-
-- **Rogue · Cutthroat** — extended twin-knife sequences, a Laceration-versus-Poison build fork, heavy interaction with Stealth and unaware-attack damage.
-- **Warrior · Guardian** — large one-handed sword and shield, held directional Block, posture-based guard-breaking, high Resolve and hyperarmor.
-- **Warrior · Berserker** — dual axes, Endure-based defense, low-health aggression incentives, and a Blood drop-healing economy scaling with proximity to death.
-
-The earlier plan placed Mage after a six-build audit. That plan was superseded: Mage · Elementalist shipped first because Grimoire and elemental effects were the stronger architecture test. Further concepts remain at sketch level only: Artificer (Apothecary / Tinkerer), Martial Artist, Phalanx, and the Wanderer draft class.
-
-**Held for a future Mage · Illusionist:** *Anchor* — place a mark, and later return to it instantly. Considered and set aside as the Mage's main-class ability in favour of Circle, but worth keeping. What makes it good is that it is **premeditated** where every other movement tool in the game is reactive: Dodge and Windstep answer something happening now, while Anchor is a decision made before you knew you would need it, and the skill is in choosing the spot. That is an Illusionist's kind of thinking rather than a generic caster's. One caution to resolve before building it: "return to a marked place" sits close to the game's central noun, and a personal waystone must not muddy what a Waystone is.
-
-### Enemy roles to fill
-
-Only after survey data demonstrates the gap. Chanter now fills the coordinator/support role, Earth Caster supplies terrain control, Shield supplies a screen, and the non-human roster includes Hound, Boar, Ox, Werewolf, and Warden. Remaining plausible gaps are an information/stealth ambusher and any role a future journey test can demonstrate; they are not a content queue. Deliberately *not* a generic swarm — existing groups already collapse into multi-target cleanup.
-
-**Historical pre-`0.2.57` comparison:** The Fire Caster had been a positive reference for distinctive, readable pressure, while the Ice Caster's old cone could begin and connect inside an already-committed player action. That cone was replaced by Frost Lance and Cold Front in `0.2.57`; the old complaint is not a live verdict on the current Ice Caster. Judge the replacement abilities by current Combat Survey/play evidence rather than inheriting either caster's earlier reputation.
-
-### Friendly Forest — historical reference expedition
-
-Seven authored stages, each with its own spatial grammar and enemy introduction: Sunlit Verge (open meadow, Boars), Brookwood (brook and fords, Hounds), Old Forest Road (road spine versus overgrown detour, Bandits), Elder Grove (radial stone circle, casters), Rootbound Woods (braided root routes, Bandits with Archers), Forest Ruins (courts and cloisters, Two-Handed Knights), Heartwood Approach (ceremonial final approach, Werewolf boss with two Hounds).
-
-This remains the legacy-save geography and a possible Campaign reference, not the current expedition content plan. The approved replacement is Briarwild Foothills → above-ground Cinderworks → Stormglass Summit. Its bounded rosters, rewards, bosses and verification contract live in `expedition-0.3.0-implementation.md`; those starting counts and statistics are not permanent design laws.
-
-### Systems still to build
-
-- **Reward and discovery grammar.** Items should often be visible promises in the environment rather than incidental drops: guarded caches, teachers and skill-teaching sites, shops, secrets, rare events.
-- **Mature pack generation.** Role-aware recipes, formations, exact-roster experiments, and non-melee guarantees exist, but final Expedition packs still need tactical purpose, aggro relationships, terrain fit, reinforcement/retreat behaviour, reward relationships, entry directions, and journey-aware failure constraints.
-- **Information as a resource** — a unifying system across stealth, Awareness, noise, vision, hidden passages and partial map knowledge. Flagged as the strongest candidate to become one of Waystone's defining systems, because it serves Rogue, Sharpshooter, exploration, secrets, traps and Campaign memory simultaneously, and because it is a renewable source of the uncertainty §4.5 says a deterministic game needs.
-- **Exceptional consumables** beyond healing: escape and return, area denial, concealment, enemy displacement, sleep and frenzy, anti-status, terrain manipulation, and a one-use time reversal that prevents an Expedition death.
-- **Campaign systems:** Waystone anchoring, death memory, shortcut validation, finite level cap, the Adopted track, secondary loadout, delayed fast travel unlocked by a fragment rather than available from the start, and a Homeward-Bone-style return consumable that sacrifices unanchored gains.
-- **Endless** as its own escalation and long-tail model.
-
-### Deferred mechanics
-
-Parry (designed, unimplemented). Player movesets beyond Sword, Knife, Bow, and Staff. Faith and the magic school that depends on it. The full loot and equipment system. Single-player asynchronous "echoes" — bloodstain and ghost-message analogues, possibly derived from survey death data. Intelligence and elemental magic are implemented and no longer belong on this list.
-
----
-
-## 14. Rejected directions
-
-Kept because these were argued out once and should not be re-argued without new evidence.
-
-| Rejected | Why |
-|---|---|
-| Pure tile/grid turn combat | Superseded by committed-action combat at high spatial and temporal resolution |
-| Exact enemy-intent telegraphs, threat overlays | Turns a roguelike into a solvable tactics puzzle |
-| Random three-choice upgrade modal | Progression belongs in the character sheet |
-| Universal miss chance / to-hit rolls | Contradicts deterministic visible contact |
-| Exposed exact timings and distances | Lets every encounter be solved arithmetically |
-| One-way return shortcuts | A shortcut must grant freedom, not trade inconveniences |
-| Exact global layer coordinate anchoring | Large generator cost, no perceivable player benefit |
-| Committed-stride movement | Turns ordinary movement into a second dodge; the simpler pursuit model must be shown insufficient first |
-| Clean-evade credit for ordinary movement | Evasion rewards belong to authored defensive techniques |
-| Guardrails on held Wait or held movement | The accessibility rule protects releasing input, not holding it; assistance on one and not the other inverts the risk relationship |
-| Sekiro-style posture-only combat | Depends on a continuous duel loop Waystone does not have |
-| Souls-style input buffering | Solves a time-pressure problem frozen time already removes |
-| Stamina as a substitute for recovery | FromSoft layers five independent systems; conflating two produces a double penalty (§4.2) |
-| A separate "weapon familiarity" resource | Unneeded complexity; solved instead by gating Weapon Arts |
-| An abstract mid-run relic/build-discovery layer | Loot, weapons and consumables already are the differentiation system |
-| Main-hand/off-hand inventory slots | A weapon category is one complete configuration; shields are weapon metadata |
-| Uniform node counts across all tracks | Tried in both directions; tracks must be authored on merit |
-| Track-selection meta-screen at level-up | Choosing a track before seeing its contents is not a choice |
-| Time-suspending "temporal" weapons | Muddies the consistent action-time rules everything else depends on |
-| CQ2-style per-subclass starting variants | The Wanderer draft class absorbs that replay-variety role |
-| Large inventory, crafting, hunger, durability | Obscures the tactical core |
-| Reuse of any CQ2 code, art, audio, names or maps | Original equivalents only |
-
----
-
-## 15. Standing open questions
-
-- Campaign regeneration default — Stable, Fractured or Hybrid — never ratified.
-- Campaign level cap, Adopted-track catch-up size, secondary-loadout progression.
-- Why the player carries a fragment; deliberately deferred until the campaign's characters and ending exist.
-- The degree of probabilistic enemy action selection that keeps a deterministic system from being solved (§4.5).
-- Whether Recovery or Energy is the better long-term combat economy. Current costs are implemented and survey-tuned; the unresolved question is a matched boss-pressure comparison, not the obsolete `0.2.18` Stamina candidate.
-- Which remaining enemy role, if any, has a demonstrated decision gap after the current boss work.
-- Whether the narrative layer in §12 survives contact with implementation. It has not been revisited since it was designed and nothing depends on it yet.
-
----
-
-## 16. How to use this document
-
-Read it before making a design decision, not before making a code change. If a proposal contradicts §3's refusals, §5's constraints or §6's determinism, that is a strong signal to stop — those are the load-bearing commitments, and each was reached by argument rather than assumption.
-
-If something here is wrong or has been superseded, fix it here rather than working around it. A design document that quietly drifts out of date is what produced the need for this one.
+| Implementation, verification status, and next work | [Current state](current-state.md) |
+| Production scope, future content, and open questions | [Development scope](development-scope.md) |
+| Combat, character tracks, and progression rules | [Combat and character framework](combat-character-framework.md) |
+| Enemy, encounter, and boss design | [Battle design bible](battle-design-bible.md) |
+| Expedition structure and content principles | [Expedition design principles](expedition-design-principles.md) |
+| Pacing across a complete journey | [Journey design principles](journey-design-principles.md) |
+| Campaign topology, persistence, and progression | [Campaign design](campaign-design.md) |
+| Fiction, characters, and fragment powers | [Narrative design](narrative-design.md) |
+| Comparative research and historical combat evidence | [Design research](design-research.md) |
+| Survey procedure, performance budgets, and validation | [Development handoff](../WAYSTONE_MIGRATION_HANDOFF.md#9-how-combat-survey-reports-work) |

@@ -2,7 +2,9 @@
 
 **Reviewed:** 2026-10-18 (controller slot shortcuts and action-specific aiming)
 **Release baseline:** `0.3.3` (`versionCode 303`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `36`). Human play acceptance remains open; see the controller ledger for verification.
-**Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history and the other design documents retain rationale, evidence, rejected alternatives, and future targets.
+**Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
+
+**Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
 
 ## What exists now
 
@@ -37,7 +39,12 @@ The October 17 approval supersedes the Warden-first content gate for this experi
 | Document | Use now |
 |---|---|
 | `docs/current-state.md` | Current implementation boundary and next work. Update with every material change. |
-| `docs/design-foundations.md` | Enduring design intent, constraints, refusals, and long-term scope. |
+| `docs/design-foundations.md` | Standalone description of the game's identity, inspirations, intended experience, and design principles. |
+| `docs/development-scope.md` | Production scope, proposed mode scale, future content, and open questions. Current work order remains here. |
+| `docs/campaign-design.md` | Detailed Campaign geography, shortcuts, progression, and proposed death/memory policy; unresolved choices are labeled. |
+| `docs/narrative-design.md` | Unimplemented story and fragment-power proposals. |
+| `docs/design-research.md` | Comparative research, calibration notes, and historical survey evidence. |
+| `docs/design-brief.md` | Earlier vertical-slice brief and world/geometry proposals; historical Expedition targets are labeled. |
 | `docs/battle-design-bible.md` | Credence-rated enemy, encounter, and boss principles. |
 | `docs/combat-character-framework.md` | Shared actor, combat, character, and progression design. Implemented facts must still be checked against source. |
 | `docs/controller-controls.md` | Implemented native PC bindings, input-safety contracts and verification ledger. |
