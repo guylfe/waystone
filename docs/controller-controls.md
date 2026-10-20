@@ -1,5 +1,14 @@
 # PC controller controls
 
+The 21 October isolated Survey correction reflows shared native menu hints into
+whole glyph/word pairs at narrow widths, preserving their labels and sizes. The
+archive uses wrapping 48-unit records in one scroll owner; focus scrolling and
+A selection must correspond to visible rows. The focused five-size 0/1/6/12-run
+renderer/input probe and exact review boundary are owned by
+[Survey integration](survey-combat-integration.md#archive-layout-correction--21-october-2026).
+Physical controller feel remains unverified; focused independent archive recheck
+precedes publication of this candidate.
+
 0.3.4 adds opt-in experimental controls inside the normal **Dev → Survey** entry.
 LT arms Commit; right-stick click cycles eligible targets; RT explicitly confirms
 or continues; left-stick click recovers at a frozen Sword junction. Start opens

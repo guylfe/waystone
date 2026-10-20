@@ -35,25 +35,30 @@ static func toolbar(canvas: CanvasItem, rect: Rect2, key: String, label: String)
 	draw(canvas, key, Rect2(rect.position + Vector2(3, (rect.size.y - side) * 0.5), Vector2.ONE * side))
 	text(canvas, rect.position + Vector2(side + 6, rect.size.y * 0.63), label, rect.size.x - side - 9, int(rect.size.y * 0.34), Color("e0edf2"))
 
-class MenuHints extends HBoxContainer:
+class MenuHints extends HFlowContainer:
 	var controller: RefCounted
 	var back_label := "Back"
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_theme_constant_override("separation", 10)
+		add_theme_constant_override("h_separation", 10)
+		add_theme_constant_override("v_separation", 4)
 		var prompts := [["dpad", "Choose"], ["a", "Confirm"]]
 		if back_label != "": prompts.append(["b", back_label])
 		for pair in prompts:
+			# Keep each glyph and its word together when narrow menus reflow.
+			var prompt := HBoxContainer.new()
+			prompt.add_theme_constant_override("separation", 10)
+			add_child(prompt)
 			var icon := TextureRect.new()
 			icon.texture = load("res://scripts/presentation/controller_glyphs.gd").texture(pair[0])
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			icon.custom_minimum_size = Vector2(48, 48)
-			add_child(icon)
+			prompt.add_child(icon)
 			var label := Label.new()
 			label.text = pair[1]
 			label.add_theme_font_size_override("font_size", 24)
 			label.add_theme_color_override("font_color", Color("e0edf2"))
-			add_child(label)
+			prompt.add_child(label)
 	func _process(_delta: float) -> void:
 		visible = controller != null and controller.active

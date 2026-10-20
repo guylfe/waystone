@@ -1,5 +1,13 @@
 ## 0.3.4 Survey integration candidate — 20 October 2026
 
+21 October archive correction: one scroll owner contains wrapping >=48-unit
+record rows and archive actions. Report/detail summaries wrap; shared controller
+hints reflow whole glyph/word pairs. Lifecycle/report owners and schema versions
+remain unchanged. The owning Survey integration document describes the new
+0/1/6/12-record five-size real-renderer/routed-input regression. Preserve the
+original `962ee4a` candidate and builds; focused independent archive recheck is
+the remaining release gate, with no new user approval required afterward.
+
 Normal entry: Dev → Survey → choose behavior/scenario → Play selected Survey.
 Windows/APK are synchronized at 0.3.4 / Android 304; save schema 39 and report
 format 37 retain experimental provenance and owed action state. All named presets,

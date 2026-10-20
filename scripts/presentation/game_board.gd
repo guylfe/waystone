@@ -607,6 +607,7 @@ func _build_survey_report_overlay() -> void:
 	var summary := Label.new()
 	summary.text = "%d rooms  •  run seed %d  •  ended by %s\nThe UTF-8 report is archived inside Waystone." % [room_count, state.run_seed, state.survey_end_reason.replace("_", " ")]
 	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	summary.add_theme_font_size_override("font_size", 16)
 	content.add_child(summary)
 	if state.mode_id == "boss_lab":
@@ -705,17 +706,18 @@ func _build_survey_archive_overlay() -> void:
 	overview.text = "%d saved run%s" % [runs.size(), "" if runs.size() == 1 else "s"]
 	overview.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(overview)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
+	# One scroll owner for the complete archive, including its rows and actions.
+	# An expanding inner ScrollContainer collapses inside minimum-sized content.
+	content.add_child(list)
 	for index in range(mini(12, runs.size())):
 		var run := Dictionary(runs[index])
 		var row := Button.new()
 		row.text = "%02d. Seed %d  •  %d rooms  •  %s  •  %s" % [index + 1, int(run.get("run_seed", 0)), Array(run.get("rooms", [])).size(), String(run.get("loadout", "unknown")), String(run.get("ended_at", "unknown"))]
 		row.add_theme_font_size_override("font_size", 14)
-		row.custom_minimum_size = Vector2(0, 44)
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.custom_minimum_size = Vector2(0, 48)
 		row.pressed.connect(_open_archived_survey.bind(index))
 		list.add_child(row)
 	if runs.is_empty():
@@ -723,7 +725,6 @@ func _build_survey_archive_overlay() -> void:
 		empty.text = "No completed survey runs yet."
 		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		list.add_child(empty)
-	content.add_child(scroll)
 	content.add_child(_survey_action_button("EXPORT ALL REPORTS", _export_all_survey_reports))
 	survey_export_status_label = Label.new()
 	survey_export_status_label.text = survey_export_status
@@ -735,6 +736,7 @@ func _build_survey_archive_overlay() -> void:
 	content.add_child(survey_export_status_label)
 	content.add_child(_survey_action_button("COPY LATEST", _copy_latest_survey_report))
 	content.add_child(_survey_action_button("CLOSE", _close_survey_archive))
+	_layout()
 
 func _open_archived_survey(index: int) -> void:
 	var runs: Array = state.survey_archive().get("runs", [])
@@ -759,12 +761,14 @@ func _open_archived_survey(index: int) -> void:
 	var summary := Label.new()
 	summary.text = "%d rooms  •  %s  •  %s\n%s" % [Array(survey_archived_run.get("rooms", [])).size(), String(survey_archived_run.get("loadout", "unknown")), String(survey_archived_run.get("profile", "encounter")).capitalize(), String(survey_archived_run.get("ended_at", "unknown"))]
 	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	summary.add_theme_font_size_override("font_size", 16)
 	content.add_child(summary)
 	content.add_child(_survey_action_button("SAVE THIS TXT", _save_archived_survey_report))
 	content.add_child(_survey_action_button("SHARE THIS REPORT", _share_archived_survey_report))
 	content.add_child(_survey_action_button("COPY THIS REPORT", _copy_archived_survey_report))
 	content.add_child(_survey_action_button("BACK TO ARCHIVE", _build_survey_archive_overlay))
+	_layout()
 
 func _archived_report_text() -> String:
 	return String(survey_archived_run.get("report_text", ""))

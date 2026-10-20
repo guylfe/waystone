@@ -4,6 +4,11 @@ Current prototype version: `0.3.4` (Android version code `304`).
 
 ## v0.3.4 — experimental combat in Combat Survey
 
+The staged archive correction provides visible wrapping 48-unit run rows in one
+scroll area, safe-width report/details and controller hints that reflow on narrow
+screens. It awaits focused independent archive recheck; original candidates and
+normal local/GitHub versions remain preserved. Version remains 0.3.4 / Android 304.
+
 From the normal game's **Dev → Survey**, choose Existing combat, experimental
 Paused Sword cuts, or Paused Sword + Commit, independently of Energy / Recovery.
 Use generated/custom rooms or any of the eleven named seed42 presets. G's shifted

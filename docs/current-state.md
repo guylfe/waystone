@@ -1,6 +1,6 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-20 (Combat Survey integration candidate)
+**Reviewed:** 2026-10-21 (Combat Survey archive correction candidate)
 **Review candidate:** `0.3.4` (`versionCode 304`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
@@ -24,6 +24,15 @@ precedes the already-authorized GitHub/local update. The authoritative normal
 local checkout and existing audits/prototypes remain preserved during staging.
 The historical isolated-lab entries below describe earlier evidence; they are
 superseded as the player-facing delivery route. Guy's feel acceptance remains open.
+
+The independent `962ee4a` lifecycle review passed 231 checks and its exported
+binary probe; presentation review found invisible archive rows and narrow detail
+overflow. The isolated repair uses one scroll owner, wrapping 48-unit record rows,
+safe-width summaries and reflowing controller hints. Its 0/1/6/12-record five-size
+rendered/input matrix and focused regressions are documented in the integration
+owner and exact task handoff. Focused independent archive recheck remains the
+release gate; original candidates, normal local source/builds and GitHub stay
+preserved until it passes. Version remains 0.3.4 / Android 304.
 
 ## What exists now
 

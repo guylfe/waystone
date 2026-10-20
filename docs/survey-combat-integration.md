@@ -7,6 +7,41 @@ entry. The original isolated package remains preserved. This candidate awaits
 independent integration review before the authorized GitHub/local publication.
 Human combat feel, physical controls and device play are separate evidence.
 
+## Archive layout correction — 21 October 2026
+
+The independent lifecycle/persistence/provenance review of `962ee4a` passed
+231 checks and its exported-binary identity probe. Independent presentation
+review reproduced invisible archive rows and portrait detail overflow. The
+isolated correction retains 0.3.4 / Android 304 and awaits focused independent
+archive recheck before the already-authorized normal-local/GitHub update.
+
+`game_board.gd` now gives the complete archive one outer ScrollContainer:
+header, up to twelve stored records, export/copy and close share its content.
+Rows wrap their full seed, room count, character and timestamp without ellipsis,
+and have a 48-unit minimum height. Archive entry/detail reset to the safe layout;
+the detail summary and saved-report summary wrap, including long seeds.
+`controller_glyphs.gd` owns shared menu hints: glyph/word pairs stay together
+in a horizontal flow that adds rows at narrow widths. Existing labels, glyph
+sizes, input callbacks, report storage/export/share/copy and back owners remain.
+
+`tests/survey_archive_layout_test.gd` requires isolated `.runtime` user data.
+It creates twelve real completed/archived Survey records with explicit automated
+notes, then tests 0/1/6/12-record subsets at 390x844, 720x480, 960x600,
+720x1280 and 1280x800, with controller hints shown and hidden. The saved-report
+View Archive action is tapped through viewport input. First/final records are
+revealed with touch drags and tapped; D-pad navigation and A select visible
+focused rows and return from details. It intersects every clipping ancestor,
+checks the safe viewport itself, preserves exact record/report bytes, and resizes
+an open detail without replacing the selection. `-- --capture` saves real GPU
+pixels and structured controls/labels; headless geometry alone is insufficient.
+The same test with `--baseline` demonstrates the six-record original failure.
+
+Focused regressions cover Survey setup/ratings/notes/retry, report/archive and
+controller menus because hints are shared. The task handoff owns final clean
+revision, exact rendered runs/captures and rebuilt Windows/APK identities. The
+original candidate and normal checkout remain preserved. Synthetic input and
+saved renderer pixels do not establish physical device/controller play or feel.
+
 ## Entry and choices
 
 Run `scenes/main.tscn` or the Windows/APK build. Choose **Dev → Survey**.
