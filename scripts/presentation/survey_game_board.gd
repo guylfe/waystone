@@ -34,7 +34,7 @@ func _load_survey_identity() -> void:
 	survey_choices = state.survey_experiment.duplicate(true)
 	variant = String(survey_choices["behavior"])
 	fixture = String(survey_choices["scenario"])
-	arrival = String(survey_choices["arrival"])
+	arrival = state.survey_profile if fixture == "generated" else String(survey_choices["arrival"])
 	lab_rules = state.combat_rules
 	lab_loadout = state.loadout_id
 	scouting = bool(survey_choices["scouting"])

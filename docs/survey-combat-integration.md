@@ -94,6 +94,8 @@ Sessions/rooms record experiment ID/version, behavior/scenario, diagnostic/natur
 provenance, seed, resource rules, profile/loadout/build, accepted source, immutable
 entry manifest/digest, and source/build identity. The manifest includes initial
 actor dictionaries, geometry, RNG/tick, resources and generated site records.
+Ordinary room manifests identify `survey_encounter` or `survey_attrition` resources;
+the disabled preset-arrival selector never claims that an Attrition carryover is full.
 `build-all.ps1` writes ignored `build-identity.json` only from a clean committed tree
 and embeds the same identity in both exports; external build hashes avoid a circular
 self-hash. Development runs without it identify themselves as unmanifested.

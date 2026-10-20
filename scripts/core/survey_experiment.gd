@@ -63,5 +63,6 @@ static func record_entry(state) -> void:
 	if config["arrival"] == "low": provenance += "; injected 60% HP / 35% Energy"
 	if config["arrival"] == "sweep": provenance += "; earned level-two Swordsmanship transaction"
 	var entry: Dictionary = lab.json_safe(lab.manifest(state,scenario,String(config["arrival"]),bool(config["scouting"])))
+	if scenario == "generated": entry["resources"] = "survey_"+state.survey_profile
 	# The immutable manifest is captured once per room, before any player input.
 	state.survey_room_definition["experiment"] = {"id":ID,"version":VERSION,"scenario_id":scenario,"behavior_id":config["behavior"],"behavior":BEHAVIORS[config["behavior"]],"provenance":provenance,"identity":identity(),"profile":state.survey_profile,"resource_rules":state.combat_rules,"accepted_source":ACCEPTED_SOURCE,"entry":entry}
