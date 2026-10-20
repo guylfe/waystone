@@ -78,12 +78,15 @@ The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and
 
 The independent review-correction candidate adds truthful pips, a fixed state panel, range-filtered explicit targets, debt/facing/resistance reads and real background OpenGL captures. C remains default. See the lab owner document and accompanying handoff for focused checks and limits; physical input, independent acceptance and Guy's feel remain open.
 
-A further isolated presentation repair from reviewed `f31046b` bounds details and
-Compare in a scrollable slot, restores compact world/control geometry through
-close/Resume and rotation, separates attributed enemy phase/resistance text from
-combat marks, and retires obsolete suspension guidance after neutral. The same
-new regression sequence fails on the preserved candidate and passes on the
-repair across five sizes and both projections, with actual background-rendered
-evidence and focused input/replay checks. See the lab owner and repair handoff
-for exact evidence. C/G/E mechanics and selection remain unchanged; independent
-rendered re-check, physical delivery and human feel acceptance remain open.
+The follow-up isolated repair from `118060a` adds captured content swipes,
+48-unit Previous/Next inspection paging and controller access through Start,
+D-pad focus and A next/use. Compare uses labelled 48-unit cycling fields and
+an explicit Start fresh reset. Three concise enemy phase/resistance lines share
+the upper information slot; the F2 world is 200 units high at 720x480 and about
+254 at 390x844. Separated outlined numeric keys use leaders to sampled actor
+bodies. Original close/rotation geometry and D3 Resume behavior are retained.
+See the lab owner and delivery handoff for GUI-event traces, exact unchanged
+natural-contact digests, inspected real-renderer frames and limits. These are
+engineering results awaiting independent re-check; physical input, motion
+readability and Guy's acceptance remain open. Production and combat rules are
+unchanged, with C default and G/E separate comparisons.

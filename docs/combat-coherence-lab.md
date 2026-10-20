@@ -80,10 +80,12 @@ fixtures with a P suffix remain injected recovery diagnoses. Captures and synthe
 input do not establish physical hardware behavior or human acceptance. The handoff
 records exact checks, inspected frames and the background-launch route.
 
-## Focused presentation repair (20 October 2026)
+## Historical presentation repair: 118060a (20 October 2026)
 
 An isolated revision based on reviewed `f31046b2910b6af485be5cdeb90a4b0635cabf72`
-repairs D1–D3. Details and Compare now share an 82-unit scrollable information
+attempted D1–D3. Independent re-check retained the geometry/D3 result but found
+raw touch swipes inert and crowded F2 markers unreadable. The following paragraph
+records that superseded implementation. Details and Compare shared an 82-unit scrollable information
 slot above the fixed action controls. The title remains visible; opening either
 temporarily replaces instruction/feedback in that slot. Full inspected traits,
 diagnostics and all selectors remain reachable by scrolling. Closing restores
@@ -116,3 +118,68 @@ JSON reports. The identical harness fails on the preserved reviewed candidate.
 The accompanying repair handoff owns exact logs, before/after captures, hashes,
 inspection records and focused input/replay results. No physical input, native
 window delivery, export/install or Guy acceptance is established.
+
+## Touch and battlefield repair from 118060a (20 October 2026)
+
+Status: isolated engineering candidate for independent re-check. This section
+supersedes the previous inspection/roster/key layout. All combat timing, costs,
+damage, conditions, collision, AI, paid pips, optional pips and captured queue
+direction retain their existing owners. C remains default; G/E are independent.
+
+The fixed upper information slot is 110 units high. Its ordinary view contains
+two lines for immediate commitment/debt/queued direction, one line for meaningful
+event feedback and three 18-unit attributed enemy lines at the existing 14px
+type size. Each includes the stable key, full name, current phase and concise
+resistance wording from the same shared predicates. Full traits, current phase,
+resistance, diagnostics, controls and last event remain in Review details.
+Repeated tutorial text and the native travelling-area splash are removed from
+the battlefield. There is no separate 114-unit enemy strip. No projection or
+world/contact geometry policy is changed; the existing projection uses the
+recovered area. Relevant visible F1–F3 enemies remain listed regardless of target.
+Off-view status is explicit; full F0/offscreen-threat completeness is unclaimed.
+
+| C/F2 default viewport | Previous world height | Repaired world height | Lead floor |
+|---|---:|---:|---:|
+| 720x480, both projections | 106 | 200 | 200 |
+| 390x844, both projections | about 164.47 | about 254.47 | 250 |
+
+Details and Compare exclusively replace that information slot. Their 64x48
+Previous/Next buttons are visible only during inspection. Content supports wheel,
+mouse drag and raw ScreenTouch/ScreenDrag scrolling with global mouse-from-touch
+emulation still disabled. Pointer identity is captured until release/cancel,
+including after close, resize and leaving the panel. A local GUI tap translation
+activates the same controls once; a swipe cannot activate a field or underlying
+combat button. Closing cancels adapter gestures and retains an input release gate
+for held inspection keys/buttons/axes. Normal controls retain their bindings.
+
+Controller Start opens Compare at a GUI focus target; D-pad traverses the visible
+inspection fields, pages and utility controls. A advances a labelled cycling
+field or uses a button; B closes. Review details is reachable through that focus
+loop. All six selectors, Scouting and Start fresh have whole 48-unit targets;
+cycling avoids small native-popup choices. Selection is staged until explicit
+Start fresh, apart from the projection preview. Inspection navigation does not
+advance the authoritative world or spend resources. Compare preserves the existing
+legal suspension/drain contract; opening it during a commitment can finish that
+obligation before navigation begins. Resume retains the existing neutral gate and
+retires only obsolete gate messages, preserving refusal/interruption feedback.
+
+Numeric actor keys are captured at fixture creation and survive earlier-actor
+removal and visibility changes. Placement considers the whole visible cluster,
+body/facing bounds and current action reach. Outlined 16px numbers have no opaque
+backing; separated positions lead to the sampled native pose/reaction body edge.
+This is a bounded F1–F3 hierarchy, not an all-roster label-layout guarantee. The
+raw initial and Wait1/2/3 C/F2 frames use ordinary requests without injected
+positions/actions; their full authoritative states match 118060a exactly at
+0.0, 0.5, 1.5 and 2.0 simulation seconds.
+
+`combat_lab_touch_battlefield_test.gd` dispatches raw GUI touch, drag and joypad
+events, records before/after authoritative digests, exercises each Compare field
+and explicit reset, controller paging to the final details line, multi-pointer
+close/resize/cancel, held trigger release, all five sizes in both projections,
+natural contact and queued Dodge presentation. The unchanged independent reviewer
+probes are included with provenance in the delivery handoff. The original
+presentation/input/contract checks and selected exact policy replays remain
+separate evidence. Captured pixels, logs, traces, inspected-frame list, patch and
+hash inventory accompany the candidate. Automated and rendered engineering checks
+do not establish independent acceptance, physical touch/controller behavior,
+native-window delivery, motion/latency, export/install or Guy's play judgment.
