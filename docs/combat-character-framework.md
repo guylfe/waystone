@@ -1287,3 +1287,7 @@ with Warden after the implemented Werewolf slice; see `docs/current-state.md`.
 Amend this framework whenever concrete play or implementation changes an owned rule.
 Changes must be explicit and land with the code rather than silently allowing behavior or
 an obsolete roadmap to become the de facto design.
+
+## Local combat coherence experiment (20 October 2026)
+
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.

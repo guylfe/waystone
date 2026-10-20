@@ -71,3 +71,7 @@ Documentation is part of the implementation boundary, not optional cleanup.
 ## Repository boundary
 
 The live development branch is `main`. `archive/main-pre-0.2` is historical. Do not resume work from removed checkpoint branches or an older synchronized checkout. Inspect the remote and the current version before publishing.
+
+## Local combat coherence experiment (20 October 2026)
+
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.

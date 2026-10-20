@@ -280,6 +280,8 @@ var survey_archived_run: Dictionary = {}
 var survey_export_status := ""
 var survey_export_status_label: Label
 
+var lab_session := false
+
 func _ready() -> void:
 	Input.joy_connection_changed.connect(func(device_id: int, connected: bool):
 		if connected: controller.connected(self, device_id)
@@ -287,10 +289,11 @@ func _ready() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_ORIENTATION):
 		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR)
 	if desktop_controls and DisplayServer.get_name() != "headless":
-		DisplayServer.window_set_min_size(Vector2i(720, 480))
+		DisplayServer.window_set_min_size(Vector2i(360, 480) if lab_session else Vector2i(720, 480))
 	Input.emulate_mouse_from_touch = false
 	state = RunStateScript.new(false)
-	state.load_run()
+	state.combat_lab = lab_session
+	if not lab_session: state.load_run()
 	if state.run_active: state.prewarm_expedition_navigation()
 	_create_seed_input()
 	_create_survey_overlay()
@@ -1161,13 +1164,18 @@ func _process(delta: float) -> void:
 		while stream_accumulator >= state.SIM_DT and ticks_processed < MAX_SIM_TICKS_PER_FRAME and String(state.player_action["kind"]) != "idle" and state.player_hp > 0:
 			stream_previous_frame = stream_current_frame
 			stream_current_frame = stream_frame_b if stream_current_frame == stream_frame_a else stream_frame_a
-			state.advance_streamed_action_tick()
+			var advanced := state.advance_streamed_action_tick()
 			var capture_start := Time.get_ticks_usec()
 			stream_current_frame.capture(state)
 			state.performance_metrics["presentation_capture_ms"] = float(Time.get_ticks_usec() - capture_start) / 1000.0
+			if not advanced:
+				stream_previous_frame = stream_current_frame
+				stream_accumulator = 0.0
+				break
 			stream_accumulator -= state.SIM_DT
 			ticks_processed += 1
-		if String(state.player_action["kind"]) == "idle" or state.player_hp <= 0:
+		if String(state.player_action["kind"]) == "idle" or state.player_hp <= 0 or state.lab_junction():
+			stream_accumulator = 0.0
 			streaming_action = false
 			playing = false
 			visual = stream_current_frame.data
@@ -1968,6 +1976,7 @@ func _desktop_held_direction() -> Vector2:
 	return _screen_delta_to_world_direction(screen_direction) if not screen_direction.is_zero_approx() else Vector2.ZERO
 
 func _can_repeat_primary_action() -> bool:
+	if state.combat_lab and state.lab_neutral_required: return false
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return false
 	if is_instance_valid(survey_overlay) and survey_overlay.visible: return false
 	if controller.active and controller.modal(self): return false
@@ -2028,6 +2037,8 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	return false
 
 func _notification(what: int) -> void:
+	if lab_session and state != null and what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
+		state.lab_suspend()
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
 		if controller != null and controller.active:
 			if controller.palette_open: controller.set_palette(self, false)
@@ -5810,7 +5821,7 @@ func _draw_button(name: String, rect: Rect2) -> void:
 		# wrong the moment an ability is repriced -- Sweeping Cut alone runs to 13.4s
 		# against the 6.5 this used to assume, which would draw the bar full from the
 		# first frame. Each cooldown records what it started at instead.
-		var maximum: float = float(state.EXHAUSTION_DURATION if energy_locked else defense_maximum if name == "defense" else state.skill_cooldown_max if name == "skill" else (state.main_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.rally_cooldown_max) if name == "rally" else (state.subclass_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.advance_cooldown_max))
+		var maximum: float = float(state.EXHAUSTION_DURATION if energy_locked else defense_maximum if name == "defense" else state.skill_cooldown_max if name == "skill" else (state.main_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.cooldown_maximum(state.COOLDOWN_RALLY)) if name == "rally" else (state.subclass_ability_cooldown_max if state.loadout_id.begins_with("rogue_") else state.advance_cooldown_max))
 		var ready_ratio := 1.0 - clampf(remaining / maximum, 0.0, 1.0)
 		draw_rect(Rect2(rect.position + Vector2(0, rect.size.y - 5.0), Vector2(rect.size.x * ready_ratio, 5.0)), color)
 	var title_font := maxi(12, int(minf(rect.size.x, rect.size.y) * 0.21))

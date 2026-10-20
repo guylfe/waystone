@@ -384,3 +384,7 @@ The reasoning error is worth recording: I reasoned from *"the Mage gains poise w
 At `0.2.84` the Mage track's first node is **Studious** (+1 Intelligence). Steadier Cast is gone, and **nothing in the track repairs spell cancellation any more.** The comment describes a node that no longer exists.
 
 This matters here because it is the only written statement of *why* the Mage's Resolve is 3, and a universal Resolve-to-poise conversion makes that number load-bearing in a second system. Whoever implements the conversion should correct or replace the comment rather than deriving from it.
+
+## Local combat coherence experiment (20 October 2026)
+
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.

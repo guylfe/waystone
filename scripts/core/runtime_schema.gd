@@ -25,6 +25,11 @@ static func validate(schema: String, value: Dictionary) -> PackedStringArray:
 		if not value.has(field): errors.append("%s is missing required field %s" % [schema, field])
 	if schema == "projectile" and String(value.get("elevation_profile", "flat")) == "arc" and not value.has("arc_span"):
 		errors.append("arcing projectile is missing required field arc_span")
+	if schema == "action":
+		for descriptor in StateFieldSchema.LAB_ACTION_FIELDS:
+			var key := String(descriptor["key"])
+			if value.has(key) and typeof(value[key]) != typeof(descriptor["default"]): errors.append("Invalid lab action field type: %s" % key)
+		if bool(value.get("lab_pending",false)) and (String(value.get("kind","")) != "combo" or bool(value.get("lab_prepaid",false)) or bool(value.get("terminal_recovery_locked",false))): errors.append("Invalid pending Sword junction")
 	return errors
 
 static func validate_registry() -> PackedStringArray:

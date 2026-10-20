@@ -2447,6 +2447,12 @@ func _store_survey_feedback() -> void:
 # a headless run completes rooms with no renderer at all. Death takes precedence, since a
 # player who fell in the same exchange has already finished that room.
 func _resolve_pending_room_clear() -> void:
+	if combat_lab:
+		if String(player_action["kind"]) == "idle":
+			room_clear_pending = false
+			trial_complete = true
+			lab_notice = "Fixture clear; retry to compare."
+		return
 	if not room_clear_pending or not is_player_ready(): return
 	room_clear_pending = false
 	if trial_complete or survey_feedback_pending: return
@@ -3368,6 +3374,125 @@ func _idle_action() -> Dictionary:
 		"perfect_triggered": false,
 	}
 
+# Local lab state is transient and deliberately excluded from normal saves.
+var combat_lab := false
+var lab_variant := "A"
+var lab_armed := false
+var lab_neutral_required := false
+var lab_notice := ""
+
+func lab_frozen_rules() -> bool:
+	return combat_lab and lab_variant != "A" and player_weapon_frame == "sword"
+
+func lab_junction() -> bool:
+	return lab_frozen_rules() and bool(player_action.get("lab_pending", false))
+
+func lab_toggle_commit() -> bool:
+	if not lab_frozen_rules() or lab_variant == "B" or not is_player_ready() or lab_neutral_required: return false
+	lab_armed = not lab_armed
+	lab_notice = "Commit armed: tap enemy or T/RS select, Enter/RT confirm. Full cost; no refund." if lab_armed else "Commit disarmed."
+	return true
+
+func lab_input_neutral() -> void:
+	lab_neutral_required = false
+
+func lab_forced_replacement() -> void:
+	if not combat_lab: return
+	lab_armed = false
+	if bool(player_action.get("lab_prepaid",false)): lab_neutral_required = true
+	if player_action.has("lab_exit_request"): lab_notice = "Queued %s cancelled by interruption." % player_action["lab_exit_request"]["kind"]
+
+func lab_target(target_id: int, held: bool = false) -> bool:
+	var enemy := _enemy_by_id(target_id)
+	if lab_junction():
+		if enemy.is_empty() or int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy) or not enemy_visible_to_player(enemy) or not is_visible(enemy["pos"]): return false
+		return lab_continue(held)
+	if not lab_armed: return false
+	if enemy.is_empty() or int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy) or not _opposes(0, enemy) or not enemy_visible_to_player(enemy) or not is_visible(enemy["pos"]) or not _has_line_of_sight(player_pos, enemy["pos"]):
+		lab_notice = "Commit refused: choose a living visible hostile target on this layer."
+		return false
+	var definition := player_basic_attack_definition()
+	var technique := AttackGeometryScript.technique(String(definition["technique"]))
+	if player_pos.distance_to(enemy["pos"]) > float(definition["reach"]) + float(technique.get("radius",0.0)) + float(enemy["radius"]):
+		lab_notice = "Commit refused: target outside normal attack range."
+		return false
+	if not is_player_ready() or not _can_start_basic_attack() or lab_neutral_required: return false
+	var phases := _sword_phases(false)
+	var cost := 0.0
+	for phase in phases: cost += energy_cost(float(phase["energy_cost"]))
+	if uses_energy_rules() and player_energy + 0.000001 < cost:
+		lab_notice = "Commit refused: need %.2f Energy." % cost
+		return false
+	if not _spend_energy(cost, false): return false
+	lab_armed = false
+	_begin_sword_combo(Vector2(enemy["pos"])-player_pos, true, false, true)
+	player_action["lab_prepaid"] = true
+	player_action["lab_paid_cost"] = cost if uses_energy_rules() else 0.0
+	var final: Dictionary = player_action["phases"][-1]
+	var bonus := int(load("res://scripts/experiments/combat_lab_catalog.gd").FINISHER_BONUS)
+	final["damage_min"] += bonus
+	final["damage_max"] += bonus
+	lab_notice = "Commit running: all cuts and recovery owed."
+	return true
+
+func lab_continue(held: bool = false) -> bool:
+	if not lab_junction() or bool(player_action.get("terminal_recovery_locked",false)): return false
+	player_action["lab_pending"] = false
+	player_action["lab_continue_token"] = true
+	player_action["continue_held"] = held
+	return true
+
+func lab_recover(queued: String = "", direction: Vector2 = Vector2.ZERO, distance: float = MOVE_RANGE) -> bool:
+	if not lab_junction(): return false
+	var phases: Array = player_action["phases"]
+	_lock_combo_terminal_recovery(phases[int(player_action["committed_phase"])])
+	player_action["lab_pending"] = false
+	player_action["lab_continue_token"] = false
+	if queued != "":
+		player_action["lab_exit_request"] = {"kind":queued,"direction":direction,"distance":distance}
+		lab_neutral_required = true
+	lab_notice = "Recovering -> %s" % queued.capitalize() if queued != "" else "Recovering"
+	return true
+
+func lab_suspend() -> void:
+	lab_armed = false
+	set_attack_hold(false)
+	# Finish the normal current cut, closing at the legal boundary. Commit ignores
+	# this exit flag and pays its full obligation through the same tick executor.
+	if lab_frozen_rules() and String(player_action.get("kind","")) == "combo":
+		player_action["lab_suspend_exit"] = true
+	if lab_junction(): lab_recover()
+	if String(player_action.get("kind","")) == "bow_draw": release_bow_attack()
+	var guard := 0
+	while String(player_action["kind"]) != "idle" and player_hp > 0 and guard < 2000:
+		if not advance_streamed_action_tick():
+			if lab_junction(): lab_recover()
+			else: break
+		guard += 1
+	lab_neutral_required = true
+	lab_notice = "Suspended; input must return to neutral."
+
+# One pre-tick gate owns all simulation entry paths, including direct test ticks.
+# A stopped frame precedes the complete tick that would cross the link.
+func lab_tick_blocked(dt: float) -> bool:
+	if combat_lab and String(player_action.get("kind","")) == "idle": return true
+	if not lab_frozen_rules() or String(player_action.get("kind","")) != "combo" or bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("terminal_recovery_locked",false)): return false
+	var phases: Array = player_action["phases"]
+	var index := int(player_action["committed_phase"])
+	if index >= phases.size()-1: return false
+	if float(player_action["elapsed"]) + dt*_player_personal_tempo() < float(phases[index]["link"]): return false
+	if bool(player_action.get("lab_suspend_exit",false)):
+		_lock_combo_terminal_recovery(phases[index])
+		player_action["lab_pending"] = false
+		return false
+	if bool(player_action.get("lab_continue_token",false)) or bool(player_action.get("continue_held",false)):
+		player_action["lab_pending"] = false
+		player_action["lab_continue_token"] = true
+		return false
+	player_action["lab_pending"] = true
+	lab_notice = "Continue cut %d or Recover (%.3fs exit owed)" % [index+2, player_control_world_remaining()]
+	return true
+
 func is_player_ready() -> bool:
 	return run_active and not death_pending and String(player_action["kind"]) == "idle" and player_hp > 0
 
@@ -3377,6 +3502,7 @@ func request_move(direction: Vector2, distance: float = MOVE_RANGE, simulate_imm
 	return true
 
 func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bool:
+	if lab_junction(): return lab_recover("move", direction, distance)
 	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01:
 		return false
 	_break_player_combo()
@@ -3394,6 +3520,7 @@ func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bo
 	return true
 
 func advance_streamed_action_tick() -> bool:
+	if lab_tick_blocked(SIM_DT): return false
 	if String(player_action["kind"]) == "idle" or player_hp <= 0: return false
 	var tick_start := Time.get_ticks_usec()
 	_tick(SIM_DT)
@@ -3463,6 +3590,11 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 # sequence for as long as it lasts while a tap commits exactly one strike. It must
 # never be assumed: an action begun from a released input has no continuation.
 func request_combo(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
+	if lab_junction():
+		var accepted := lab_continue(held)
+		if accepted and simulate_immediately: _simulate_until_ready()
+		return accepted
+	if combat_lab and (lab_armed or lab_neutral_required): return false
 	if direction.length_squared() < 0.01 or not _can_start_basic_attack(): return false
 	_break_player_combo()
 	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held)
@@ -3889,9 +4021,7 @@ func _set_actor_impulse(actor: Variant, velocity: Vector2) -> void:
 		var storage := _actor_storage(actor)
 		if not storage.is_empty(): storage["gale_velocity"] = velocity
 
-func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> void:
-	if not _spend_energy(12.0): return
-	player_facing = direction.normalized()
+func _sword_phases(from_advance: bool) -> Array[Dictionary]:
 	var edge_damage := 1 if has_track_rank("swordsmanship", 3) else 0
 	var edge_posture := 0.5 if has_track_rank("swordsmanship", 3) else 0.0
 	var flowing := has_track_rank("swordsmanship", 5)
@@ -3908,7 +4038,13 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 		{"startup": 2.18 if flowing else 2.42, "active_end": 2.48 if flowing else 2.72, "end": duration, "reach": 158.0, "damage_min": finisher_damage + edge_damage, "damage_max": finisher_damage + edge_damage, "posture": finisher_posture + edge_posture, "technique": "turning_slash", "energy_cost": 14.0},
 	]
 	phases = _linked_combo_phases(phases, 0.25)
-	duration = float(phases[-1]["end"])
+	return phases
+
+func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool, prepaid: bool = false) -> void:
+	if not prepaid and not _spend_energy(12.0): return
+	player_facing = direction.normalized()
+	var phases := _sword_phases(from_advance)
+	var duration := float(phases[-1]["end"])
 	player_action = _action("combo", duration, player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = 3
@@ -3929,12 +4065,14 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool) -> v
 	_set_message("The opening cut begins. Hold to commit the next strike.")
 
 func set_attack_hold(held: bool) -> void:
+	if bool(player_action.get("lab_prepaid",false)): return
 	if String(player_action.get("kind", "idle")) != "combo": return
 	player_action["continue_held"] = held
 	if not held:
 		_set_message("Release noted. Finish the current cut, then time freezes.")
 
 func resume_combo_hold() -> bool:
+	if lab_junction(): return lab_continue(true)
 	if String(player_action.get("kind", "idle")) != "combo": return false
 	var phases: Array = player_action.get("phases", [])
 	var committed_phase := int(player_action.get("committed_phase", 0))
@@ -4240,6 +4378,10 @@ func request_circle(simulate_immediately: bool = true) -> bool:
 	return true
 
 func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> bool:
+	if lab_junction():
+		var accepted := lab_recover("dodge", direction)
+		if accepted and simulate_immediately: _simulate_until_ready()
+		return accepted
 	if not is_player_ready() or trial_complete or (dodge_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01:
 		return false
 	# Exhaustion locks every physical action except this one. Milestone B's floor --
@@ -5081,6 +5223,7 @@ func _update_enemy_bucket_membership(enemy: Dictionary) -> void:
 	_enemy_bucket_cell_by_id[enemy_id] = next_cell
 
 func _shape_bounds(shape: Dictionary) -> Rect2:
+	if String(shape.get("kind","")) == "rect": return Rect2(shape["rect"])
 	var radius := float(shape.get("radius", 0.0))
 	if String(shape.get("kind", "circle")) == "circle":
 		return Rect2(Vector2(shape["center"]) - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)
@@ -5451,6 +5594,7 @@ func _action(kind: String, duration: float, direction: Vector2) -> Dictionary:
 	return result
 
 func _annotate_player_action(ability_id: String) -> void:
+	if combat_lab: lab_armed = false
 	player_action["actor_kind"] = "player"
 	player_action["weapon_frame"] = player_weapon_frame
 	player_action["ability_id"] = ability_id
@@ -5582,6 +5726,7 @@ func _simulate_until_ready() -> void:
 	var frame_accumulator := 0.0
 	var guard := 0
 	while String(player_action["kind"]) != "idle" and player_hp > 0 and guard < 1000:
+		if lab_tick_blocked(SIM_DT): break
 		_tick(SIM_DT)
 		frame_accumulator += SIM_DT
 		if frame_accumulator + 0.00001 >= FRAME_DT:
@@ -5605,6 +5750,11 @@ func _simulate_until_ready() -> void:
 	changed.emit()
 
 func _tick(dt: float) -> void:
+	if lab_tick_blocked(dt): return
+	var lab_previous := player_action
+	var lab_paid := combat_lab and bool(lab_previous.get("lab_prepaid",false))
+	var lab_exit: Dictionary = lab_previous.get("lab_exit_request",{})
+	if combat_lab and String(player_action["kind"]) != "idle": lab_armed = false
 	_simulation_tick_index += 1
 	simulation_time += dt
 	if is_measurement_mode(): _sample_engagement()
@@ -5678,6 +5828,17 @@ func _tick(dt: float) -> void:
 	# Resolve after _update_player(), in the same tick that recovery becomes idle:
 	# frozen time means there will not be another simulation tick to do it later.
 	if room_clear_pending: _resolve_pending_room_clear()
+	if combat_lab:
+		var replaced := player_action != lab_previous
+		if lab_paid and replaced:
+			lab_neutral_required = true
+			lab_notice = "Commit ended; release inputs before another sequence."
+		if not lab_exit.is_empty() and replaced:
+			var completed := String(player_action["kind"]) == "idle" and float(lab_previous["elapsed"]) + 0.00001 >= float(lab_previous["duration"])
+			if completed and player_hp > 0:
+				var accepted := request_dodge(lab_exit["direction"], false) if lab_exit["kind"] == "dodge" else begin_streamed_move(lab_exit["direction"], float(lab_exit["distance"]))
+				lab_notice = "Queued %s started after recovery." % lab_exit["kind"] if accepted else "Queued %s unavailable after recovery; ready." % lab_exit["kind"]
+			else: lab_notice = "Queued %s cancelled by interruption." % lab_exit["kind"]
 
 func _condition_threshold(condition_id: String, resistance: int, specific_multiplier: float = 1.0) -> float:
 	var base := float({"laceration": 18.0, "poison": 20.0, "sleep": 18.0, "frost": 16.0, "burning": 14.0, "frenzy": 20.0}.get(condition_id, 20.0))
@@ -5705,6 +5866,7 @@ func _trigger_player_condition(condition_id: String) -> void:
 		"poison": player_conditions[condition_id] = 8.0
 		"sleep":
 			player_conditions[condition_id] = 3.0
+			lab_forced_replacement()
 			player_action = _action("sleep", 3.0, Vector2.ZERO)
 		"frost": player_conditions[condition_id] = 6.0
 		"burning": player_conditions[condition_id] = 4.0
@@ -6036,17 +6198,18 @@ func _update_player_combo(elapsed: float) -> void:
 	var phase: Dictionary = phases[committed_phase]
 	var link := float(phase.get("link", phase["active_end"]))
 	if not bool(player_action.get("terminal_recovery_locked", false)) and elapsed >= link:
-		if committed_phase >= phases.size() - 1 or not bool(player_action.get("continue_held", false)):
+		if committed_phase >= phases.size() - 1 or not (bool(player_action.get("continue_held", false)) or (lab_frozen_rules() and bool(player_action.get("lab_continue_token",false))) or bool(player_action.get("lab_prepaid",false))):
 			_lock_combo_terminal_recovery(phase)
-		elif not _can_commit_physical_action():
+		elif not bool(player_action.get("lab_prepaid",false)) and not _can_commit_physical_action():
 			energy_blocked_continuations += 1
 			_lock_combo_terminal_recovery(phase)
 		else:
 			var next_phase := committed_phase + 1
-			if not _spend_energy(float(Dictionary(phases[next_phase]).get("energy_cost", 0.0))):
+			if not bool(player_action.get("lab_prepaid",false)) and not _spend_energy(float(Dictionary(phases[next_phase]).get("energy_cost", 0.0))):
 				energy_blocked_continuations += 1
 				_lock_combo_terminal_recovery(phase)
 			else:
+				if lab_frozen_rules(): player_action["lab_continue_token"] = false
 				committed_phase = next_phase
 				player_action["committed_phase"] = committed_phase
 				phase = Dictionary(phases[committed_phase])
@@ -6086,7 +6249,9 @@ func _lock_combo_terminal_recovery(phase: Dictionary) -> void:
 func _break_player_combo() -> void:
 	# Combos are now one continuous action, so there is no between-action chain
 	# state to preserve. Keeping this boundary makes interruption call sites clear.
-	pass
+	if combat_lab:
+		lab_armed = false
+		if bool(player_action.get("lab_prepaid",false)): lab_neutral_required = true
 
 func _follow_the_opening(phase_index: int) -> void:
 	var phases: Array = player_action.get("phases", [])
@@ -6356,6 +6521,7 @@ func _resolve_player_attack_tick(elapsed: float) -> void:
 			enemy["action"] = _action("idle", 0.0, Vector2.ZERO)
 			_add_effect("block", hit_point)
 			_add_effect("posture_break", player_pos)
+			lab_forced_replacement()
 			player_action = _action("stagger", DUELLIST_PARRY_STAGGER, Vector2.ZERO)
 			_apply_action_poise(player_action)
 			_set_message("The duellist turns your blade aside.")
@@ -6769,7 +6935,7 @@ func _break_posture(enemy: Dictionary, contact: Vector2 = Vector2.INF, interrupt
 	# is world-clocked, independent of either actor's Speed.
 	var player_recovery_world_seconds := 0.0
 	if String(player_action.get("kind", "idle")) != "idle":
-		player_recovery_world_seconds = player_commitment_world_remaining()
+		player_recovery_world_seconds = player_control_world_remaining()
 	var guaranteed_world_seconds := player_recovery_world_seconds + POSTURE_BREAK_OPENING_SECONDS + break_bonus_seconds
 	stagger_duration = maxf(stagger_duration, guaranteed_world_seconds)
 	_record_enemy_control(enemy, "posture_break", action, stagger_duration)
@@ -7483,6 +7649,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			# band. The band is tolerance for a slight overshoot, not a target: aiming
 			# at its edge would put every commitment a band-width further out than the
 			# authored capture values assume.
+			if combat_lab and lab_variant == "E" and kind == "move" and String(enemy["kind"]) == "briarhook" and Vector2(enemy["pos"]).distance_to(player_pos) <= float(CombatCatalogScript.EXPEDITION_KITS["briarhook"]["engage"]) and _has_line_of_sight(enemy["pos"],player_pos):
+				action["duration"] = minf(float(action["duration"]),float(action["elapsed"]))
 			if kind == "move":
 				var intended_distance := float(enemy.get("intended_strike_distance", 0.0))
 				if intended_distance > 0.0 and Vector2(enemy["pos"]).distance_to(player_pos) <= intended_distance:
@@ -8621,11 +8789,17 @@ func _update_shield_patience(enemy: Dictionary, dt: float) -> void:
 func _player_commitment_remaining() -> float:
 	var kind := String(player_action.get("kind", "idle"))
 	if kind in ["idle", "move"]: return 0.0
-	return player_commitment_world_remaining()
+	return player_control_world_remaining()
 
 # Only the paid, committed combo phase is irrevocable. The catalogue's full
 # sequence duration includes optional future choices and is not an answer budget.
 func player_commitment_world_remaining() -> float:
+	if combat_lab and bool(player_action.get("lab_prepaid",false)):
+		return maxf(0.0,float(player_action["duration"])-float(player_action["elapsed"]))/maxf(0.01,_player_personal_tempo())
+	return player_control_world_remaining()
+
+# AI visible-strike reads and incapacitation floors never include prepaid futures.
+func player_control_world_remaining() -> float:
 	var action := player_action
 	if String(action["kind"])=="idle": return 0.0
 	var end := float(action["duration"])
@@ -9827,6 +10001,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		_add_effect("block", impact, chip_damage)
 		if player_posture <= 0.0001:
 			set_block_hold(false)
+			lab_forced_replacement()
 			player_action = _action("stagger", 0.78, Vector2.ZERO)
 			_set_message("Your guard breaks under sustained pressure.")
 		elif chip_damage > 0:
@@ -9937,6 +10112,7 @@ func _resolve_incoming_hit(source_id: int, damage: int, source_name: String, inc
 		return
 	if interrupted_kind == "rally" and not bool(interrupted_action.get("rally_started", false)):
 		rally_cooldown = 3.0
+	lab_forced_replacement()
 	if interrupted_kind == "combo": set_attack_hold(false)
 	if interrupted_kind in ["attack", "sweep", "combo", "art_combo", "twin_fang"]: _survey_finalize_strike_probe("interrupted")
 	if posture_broken or track_choice("flow_discipline") != "unshaken": _break_battle_flow(false, "stagger" if posture_broken else "hit")
@@ -10641,6 +10817,7 @@ func _point_on_loaded_floor(point: Vector2) -> bool:
 	return false
 
 func _shape_contains_point(shape: Dictionary, point: Vector2) -> bool:
+	if String(shape.get("kind","")) == "rect": return Rect2(shape["rect"]).has_point(point)
 	var radius := float(shape.get("radius", 0.0))
 	if String(shape.get("kind", "circle")) == "circle": return point.distance_to(Vector2(shape["center"])) <= radius
 	return _distance_to_segment(point, Vector2(shape["from"]), Vector2(shape["to"])) <= radius
@@ -10659,7 +10836,7 @@ func _area_id_at_position(point: Vector2, layer: String) -> int:
 		var part_id := int(shape.get("part_id", -1))
 		if part_id < 0: continue
 		var radius := float(shape.get("radius", 0.0))
-		var inside := point.distance_to(Vector2(shape["center"])) <= radius if String(shape.get("kind", "circle")) == "circle" else _distance_to_segment(point, Vector2(shape["from"]), Vector2(shape["to"])) <= radius
+		var inside := _shape_contains_point(shape,point)
 		if inside: candidate_ids[part_id] = true
 	var best_id := -1
 	var best_distance := INF
@@ -10957,6 +11134,7 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 	return result
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
+	if combat_lab: return false
 	# The app finishes the existing player commitment before suspending. Refuse
 	# a premature new-expedition save rather than silently deleting that action.
 	if not expedition.is_empty() and not death_pending and String(player_action["kind"])!="idle": return false
@@ -11188,6 +11366,7 @@ func _build_save_payload() -> Dictionary:
 	return result
 
 func load_run(path: String = "user://waystone-expedition.save") -> bool:
+	if combat_lab: return false
 	if not FileAccess.file_exists(path): return false
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null: return false

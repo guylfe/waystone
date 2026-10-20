@@ -100,6 +100,7 @@ func spell_shortcuts(board) -> Array:
 	return result
 
 func set_palette(board, open: bool) -> void:
+	if open and board.state.combat_lab: board.state.lab_armed = false
 	if open == palette_open: return
 	if open: palette_previous_spellbook = board.spellbook_open
 	release_actions(board)
@@ -210,6 +211,9 @@ func release_actions(board) -> void:
 
 func disconnected(board, disconnected_device: int) -> void:
 	if disconnected_device != device: return
+	if board.state.combat_lab:
+		board.state.lab_suspend()
+		target_id = -1
 	if palette_open: set_palette(board, false)
 	targeting_action = ""
 	release_actions(board)
@@ -234,7 +238,12 @@ func handle(board, event: InputEvent) -> bool:
 	device = event.device
 	if event is InputEventJoypadMotion:
 		axes[event.axis] = event.axis_value
-		if event.axis == JOY_AXIS_TRIGGER_RIGHT:
+		if event.axis == JOY_AXIS_TRIGGER_LEFT and board.state.combat_lab:
+			var was_down := bool(held.get("lab_lt",false))
+			var down: bool = event.axis_value > (TRIGGER_RELEASE if was_down else TRIGGER_PRESS)
+			held["lab_lt"] = down
+			if down and not was_down and not neutral_required and not modal(board): board.state.lab_toggle_commit()
+		elif event.axis == JOY_AXIS_TRIGGER_RIGHT:
 			var was_down := bool(held.get("trigger", false))
 			var down: bool = event.axis_value > (TRIGGER_RELEASE if was_down else TRIGGER_PRESS)
 			held["trigger"] = down
@@ -265,6 +274,7 @@ func handle(board, event: InputEvent) -> bool:
 		board.queue_redraw()
 		return true
 	if event.button_index == JOY_BUTTON_START:
+		if board.state.combat_lab: board.state.lab_suspend()
 		if palette_open: set_palette(board, false)
 		release_actions(board)
 		paused = true
@@ -278,7 +288,10 @@ func handle(board, event: InputEvent) -> bool:
 	elif event.button_index == JOY_BUTTON_LEFT_SHOULDER:
 		if not neutral_required: set_palette(board, true)
 	elif palette_open: palette_button(board, event.button_index)
-	elif event.button_index == JOY_BUTTON_RIGHT_STICK and has_ranged_aim(board): cycle_target(board)
+	elif board.state.lab_junction() and not neutral_required:
+		if event.button_index == JOY_BUTTON_B: board._begin_streamed_action(board.state.request_dodge(direction(board,true),false))
+		elif event.button_index == JOY_BUTTON_LEFT_STICK: board._begin_streamed_action(board.state.lab_recover())
+	elif event.button_index == JOY_BUTTON_RIGHT_STICK and (has_ranged_aim(board) or (board.state.combat_lab and board.state.lab_armed)): cycle_target(board)
 	elif not neutral_required:
 		if board.playing and event.button_index in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_RIGHT_SHOULDER, JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN]:
 			pending_button = event.button_index
@@ -318,6 +331,16 @@ func attack(board, down: bool) -> void:
 		attack_held = false
 		return
 	if neutral_required or palette_open or modal(board): return
+	if board.state.combat_lab and board.state.lab_neutral_required: return
+	if board.state.lab_junction():
+		attack_held = board.state.lab_continue(true)
+		board._begin_streamed_action(attack_held)
+		return
+	if board.state.combat_lab and board.state.lab_armed:
+		if target_id < 0:
+			board.state.lab_notice = "Commit refused: RS selects a visible target; RT confirms."
+		else: board._begin_streamed_action(board.state.lab_target(target_id,true))
+		return
 	if board.playing:
 		attack_held = board.state.resume_combo_hold() or String(board.state.player_action.get("kind", "")) == "move"
 		return
@@ -340,6 +363,14 @@ func use_quick_action(board) -> void:
 
 func update(board, delta: float) -> void:
 	if not active: return
+	if board.state.combat_lab:
+		if stick(JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y).is_zero_approx() and not held.values().has(true): board.state.lab_input_neutral()
+		if board.state.lab_neutral_required:
+			attack_held = false
+			pending_button = -1
+		if board.state.lab_junction() and not neutral_required:
+			var move := move_direction(board)
+			if not move.is_zero_approx(): board._begin_streamed_action(board.state.request_move(move,board.state.MOVE_RANGE,false))
 	# Sample both axes together once per frame, rather than retaining the transient
 	# half-updated heading from the two separate axis-release events.
 	var pointing := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)

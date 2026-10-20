@@ -159,3 +159,7 @@ read the combat state/catalogs; they do not author combat costs or availability 
   stick feel remains for the user to assess.
 - Windows and Android exports produced `0.3.3` / Android code `303`. Wireless ADB
   discovery returned no Fold; installation and new Fold play checks remain pending.
+
+## Local combat coherence experiment (20 October 2026)
+
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.

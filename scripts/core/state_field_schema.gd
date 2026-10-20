@@ -9,6 +9,11 @@ const DETERMINISM := "determinism"
 # Shared authoritative fields are declared once with explicit consumers. Presentation
 # pooling and save migration remain audience-specific policies around this schema.
 const FIELDS := [
+	{"key":"combat_lab", "source":"combat_lab", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
+	{"key":"lab_variant", "source":"lab_variant", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
+	{"key":"lab_armed", "source":"lab_armed", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
+	{"key":"lab_neutral_required", "source":"lab_neutral_required", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
+	{"key":"lab_notice", "source":"lab_notice", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
 	# The immutable presentation does not need a growing run event journal every frame.
 	{"key":"expedition", "source":"expedition", "audiences":[SAVE, DETERMINISM], "copy":"dictionary"},
 	{"key":"simulation_tick_index", "source":"_simulation_tick_index", "audiences":[SAVE, DETERMINISM]},
@@ -66,6 +71,15 @@ const FIELDS := [
 # Entity descriptors are the single projection authority for presentation and
 # determinism. Optional fields are copied only when present; a descriptor with a
 # `default` is authored into the projection even when an old runtime record lacks it.
+const LAB_ACTION_FIELDS := [
+	{"key":"lab_pending", "default":false, "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+	{"key":"lab_continue_token", "default":false, "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+	{"key":"lab_prepaid", "default":false, "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+	{"key":"lab_paid_cost", "default":0.0, "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+	{"key":"lab_suspend_exit", "default":false, "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+	{"key":"lab_exit_request", "default":{}, "copy":"dictionary", "audiences":[SNAPSHOT,PRESENTATION,DETERMINISM]},
+]
+
 const ENEMY_FIELDS := [
 	{"key":"expedition_site", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
 	{"key":"expedition_xp", "audiences":[SNAPSHOT, SAVE, DETERMINISM]},

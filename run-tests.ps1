@@ -187,6 +187,15 @@ foreach ($name in $Selected) {
 ]+)') | ForEach-Object { 'FAILED: ' + $_.Groups[1].Value.Trim() }) +
         @([regex]::Matches($cleanOutput, 'at:\s*([A-Za-z_0-9]+ \(res://tests/[^)]+\))') | ForEach-Object { 'at: ' + $_.Groups[1].Value.Trim() })
     ) | Sort-Object -Unique
+    # Runtime errors in production scripts may return exit zero and have no
+    # res://tests location. Keep the exact expected-test ledger, but count every
+    # other engine error instead of calling that run clean.
+    $engineErrors = @([regex]::Matches($cleanOutput, '(?m)(?:SCRIPT )?ERROR:\s*([^\r\n]+)\r?\n\s*at:\s*([^\r\n]+)') | ForEach-Object {
+        if ($_.Groups[2].Value -notmatch 'res://tests/') {
+            'ENGINE ERROR: ' + $_.Groups[1].Value.Trim() + ' at: ' + $_.Groups[2].Value.Trim()
+        }
+    })
+    $failureLines = @($failureLines + $engineErrors) | Sort-Object -Unique
     $problems = $failureLines.Count
     $ok = (-not $timedOut) -and ($problems -eq 0) -and ($code -eq 0)
     $expectedProperty = $ExpectedFailures.PSObject.Properties[$name]

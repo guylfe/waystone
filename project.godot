@@ -1,5 +1,7 @@
 [application]
-config/name="Waystone Prototype"
+config/name="Waystone Experimental Combat Lab"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="WaystoneCombatLab"
 config/icon="res://assets/waystone-icon.svg"
 run/main_scene="res://scenes/main.tscn"
 
