@@ -24,6 +24,7 @@ var action_grid: GridContainer
 var target_button: Button
 var details_button: Button
 var utility_row: HBoxContainer
+var lab_badge_rects: Array[Rect2] = []
 var hud_rect := Rect2()
 var detail_open := false
 var previous_layout_size := Vector2.ZERO
@@ -339,6 +340,7 @@ func _resistance_text(enemy: Dictionary) -> String:
 	return ("Recovering" if recovering else "Current phase") + " · Flinch allowed"
 
 func _draw() -> void:
+	lab_badge_rects.clear()
 	super._draw()
 	if state == null or not state.run_active: return
 	var origin := _world_to_screen(state.player_pos)
@@ -380,7 +382,18 @@ func _draw_lab_caption(point: Vector2, text: String, color: Color) -> void:
 	var width := ThemeDB.fallback_font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
 	point.x = clampf(point.x,board_rect.position.x+8,maxf(board_rect.position.x+8,board_rect.end.x-width-8))
 	point.y = clampf(point.y,board_rect.position.y+18,board_rect.end.y-18)
-	draw_rect(Rect2(point-Vector2(3,13),Vector2(width+6,18)),Color("101b23"))
+	var badge := Rect2(point-Vector2(3,13),Vector2(width+6,18))
+	for offset in [0,22,-22,44,-44,66,-66]:
+		var candidate := Rect2(Vector2(badge.position.x,clampf(badge.position.y+offset,board_rect.position.y,board_rect.end.y-badge.size.y)),badge.size)
+		var available := true
+		for occupied in lab_badge_rects:
+			if candidate.grow(2).intersects(occupied): available = false
+		if available:
+			badge = candidate
+			break
+	lab_badge_rects.append(badge)
+	point = badge.position+Vector2(3,13)
+	draw_rect(badge,Color("101b23"))
 	draw_string(ThemeDB.fallback_font,point,text,HORIZONTAL_ALIGNMENT_LEFT,-1,12,color)
 
 func _physical_input_neutral() -> bool:

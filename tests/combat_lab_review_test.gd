@@ -53,6 +53,8 @@ func sample(board, viewport, name: String, projection: String) -> void:
 	var image_path := ""
 	if capture:
 		await RenderingServer.frame_post_draw
+		for first in range(board.lab_badge_rects.size()):
+			for second in range(first+1,board.lab_badge_rects.size()): check(not board.lab_badge_rects[first].intersects(board.lab_badge_rects[second]),"rendered resistance badges have distinct regions")
 		image_path = "res://.runtime/review-captures/%dx%d-%s-%s.png" % [viewport.size.x,viewport.size.y,projection,name]
 		check(viewport.get_texture().get_image().save_png(image_path) == OK,"capture written " + name)
 	evidence.append({"name":name,"projection":projection,"viewport":viewport.size,"panel":board.action_panel_state(),"controls":rects,"board":board.board_rect,"image":image_path,"notice":board.state.lab_notice})
