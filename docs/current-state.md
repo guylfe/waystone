@@ -90,3 +90,15 @@ natural-contact digests, inspected real-renderer frames and limits. These are
 engineering results awaiting independent re-check; physical input, motion
 readability and Guy's acceptance remain open. Production and combat rules are
 unchanged, with C default and G/E separate comparisons.
+
+The subsequent isolated information-overflow repair from `495ddd` removes
+nominal label-height assumptions and duplicate live guidance. Actual font-sized
+rows show current obligation/exit, relevant refusal or interruption and all three
+enemy facts together within the same 110-unit slot; full wording and observed
+event history remain in Details. The 200/250 world floors, original 20/15/14px
+type and 48-unit controls are retained. A 292-state five-size/two-projection
+matrix passes rendered glyph/row containment with unchanged authoritative states;
+the identical test fails on the preserved control. Exact boundary pixels and
+input/restoration regression evidence accompany the handoff. This is engineering
+verification awaiting focused independent acceptance; physical input and human
+feel remain unverified.

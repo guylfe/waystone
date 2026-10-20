@@ -47,6 +47,8 @@ var inspection_buttons: Dictionary = {}
 var inspection_held: Dictionary = {}
 var inspection_axes: Dictionary = {}
 var inspection_release_required := false
+var notice_history: Array[String] = []
+var previous_notice := ""
 
 
 func _ready() -> void:
@@ -86,15 +88,12 @@ func _ready() -> void:
 	information_slot.add_child(guidance)
 	guidance.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	instruction = _lab_label(guidance, 15, 0)
-	instruction.custom_minimum_size.y = 36
 	feedback = _lab_label(guidance, 14, 0)
-	feedback.custom_minimum_size.y = 18
 	enemy_information = VBoxContainer.new()
 	enemy_information.add_theme_constant_override("separation",0)
 	guidance.add_child(enemy_information)
 	for index in range(3):
 		var line := _lab_label(enemy_information,14,0)
-		line.custom_minimum_size.y = 18
 		enemy_lines.append(line)
 	inspection_frame = HBoxContainer.new()
 	information_slot.add_child(inspection_frame)
@@ -453,6 +452,8 @@ func _restart() -> void:
 	_cancel_inspection_input()
 	if state != null and state.run_active: state.lab_suspend()
 	state = Lab.create(variant,fixture,lab_loadout,arrival,lab_rules,scouting)
+	notice_history.clear()
+	previous_notice = ""
 	enemy_tags.clear()
 	for index in range(state.enemies.size()): enemy_tags[int(state.enemies[index]["id"])] = str(index+1)
 	state.changed.connect(_on_state_changed)
@@ -512,8 +513,9 @@ func action_panel_state() -> Dictionary:
 	var queued: Dictionary = action.get("lab_exit_request", {})
 	var remaining := state.player_commitment_world_remaining()
 	var title := "Ready · Time frozen"
-	var text := "%s / %s · Traits and controls in Review details" % [variant,fixture]
+	var text := "%s / %s · Tap one cut; hold to continue" % [variant,fixture]
 	var phase := _phase(action).capitalize()
+	phase = {"Winding Up":"Startup","Following Through":"Follow-through"}.get(phase,phase)
 	if suspended:
 		title = "Suspended · Time frozen"
 		text = "Resume requires neutral controls."
@@ -522,20 +524,19 @@ func action_panel_state() -> Dictionary:
 		text = "Sequence ended · Consequence still running."
 	elif not queued.is_empty():
 		title = "Recovering → " + String(queued["kind"]).capitalize()
-		text = "Debt ~%.2fs · Not active yet\nExit: %s · Queue locked" % [remaining,_direction_read(queued["direction"])]
+		text = "Debt %.2fs · Inactive · Exit %s · Locked" % [remaining,_direction_read(queued["direction"])]
 	elif state.lab_junction():
 		title = "Choose next cut · Time frozen"
-		text = "Recovery owed ~%.2fs\nSequence facing %s" % [state.player_control_world_remaining(),_direction_read(state.player_facing)]
+		text = "Debt %.2fs · Facing %s" % [state.player_control_world_remaining(),_direction_read(state.player_facing)]
 	elif kind == "combo":
 		var paid := bool(action.get("lab_prepaid",false))
-		if bool(action.get("terminal_recovery_locked",false)) or int(action.get("committed_phase",0)) >= Array(action.get("phases",[])).size()-1 and phase == "Following through":
+		if bool(action.get("terminal_recovery_locked",false)) or int(action.get("committed_phase",0)) >= Array(action.get("phases",[])).size()-1 and phase == "Follow-through":
 			title = "Recovering"
 			text = "Ready in ~%.2fs · %s" % [remaining,"All cuts locked" if paid else "Recovery chosen" if bool(action.get("terminal_recovery_locked",false)) else "Final cut"]
 			if paid: title = "Commit · Recovering"
 		else:
 			title = "%s · Cut %d/3" % ["Commit" if paid else "Normal",maxi(0,int(action.get("phase_index",0)))+1]
-			text = "%s · %s: ~%.2fs" % [phase,"Whole commitment" if paid else "Current cut + exit",remaining]
-			text += " · All cuts locked" if paid else " · Future cuts optional"
+			text = "%s · %s %.2fs · %s" % [phase,"Whole" if paid else "Cut + exit",remaining,"All cuts locked" if paid else "Future optional"]
 	elif not state.is_player_ready():
 		title = phase if phase != "" else kind.capitalize()
 		text = "Current commitment: ~%.2fs" % remaining
@@ -545,22 +546,30 @@ func action_panel_state() -> Dictionary:
 	elif state.lab_armed:
 		title = "Commit armed · Time frozen"
 		var target: Dictionary = state._enemy_by_id(controller.target_id)
-		text = "Choose eligible enemy" if target.is_empty() or state.lab_target_refusal(controller.target_id) != "" else "Target: " + String(CombatCatalogScript.presentation(String(target["kind"]))["name"])
-		text += " · %.2f Energy" % state.lab_commit_cost() if state.uses_energy_rules() else " · Recovery rules"
-		text += "\n3 cuts · No refund · Interruptible"
+		if not target.is_empty(): title = "Commit armed · #%s · Frozen" % _enemy_readout_tag(controller.target_id)
+		text = "%.2f Energy" % state.lab_commit_cost() if state.uses_energy_rules() else "Recovery rules"
+		text += " · 3 cuts · No refund · Interruptible"
 	if state.lab_variant == "A" and kind == "idle" and not suspended and not state.lab_neutral_required: text = "Control · Existing tap / hold rules"
-	elif state.lab_variant == "B" and state.is_player_ready(): text += " · Commit unavailable in B"
-	return {"title":title,"instruction":text,"queued":queued,"whole_remaining":remaining,"cut_remaining":state.player_control_world_remaining()}
+	elif state.lab_variant == "B" and state.is_player_ready(): text = "B / %s · Normal cuts only; Commit unavailable" % fixture
+	return {"title":title,"instruction":text,"feedback":_immediate_notice(),"queued":queued,"whole_remaining":remaining,"cut_remaining":state.player_control_world_remaining()}
 
 func _refresh_action_panel() -> void:
 	var model := action_panel_state()
 	status.text = model["title"]
 	if inspection_scroll.visible: status.text = "Inspect · D-pad focus · A next/use"
 	instruction.text = model["instruction"]
-	feedback.text = _compact_notice(state.lab_notice)
+	feedback.text = model["feedback"]
+	# Empty events take no space. Label/Container sizing uses the actual font's
+	# shaped line heights, not nominal 36/18px minima. At the narrow boundary the
+	# live summary is one 15px line plus one 14px event, then three 14px enemy rows.
+	feedback.visible = not feedback.text.is_empty()
+	if state.lab_notice != previous_notice:
+		previous_notice = state.lab_notice
+		if not previous_notice.is_empty(): notice_history.append(previous_notice)
 	var reads := enemy_readout_model()
 	for index in range(enemy_lines.size()):
 		enemy_lines[index].text = reads[index]["lines"][0] if index < reads.size() else ""
+		enemy_lines[index].visible = not enemy_lines[index].text.is_empty()
 	continue_button.text = "Continue cut %d\nEnter / RT" % (int(state.player_action["committed_phase"])+2) if state.lab_junction() else "Confirm target\nEnter / RT" if state.lab_armed else "Attack\nF / RT"
 	commit_button.text = "Disarm\nK / LT" if state.lab_armed else "Commit\nK / LT"
 	# Keep refusals tappable and positions fixed; unavailable actions explain why.
@@ -571,8 +580,41 @@ func _refresh_action_panel() -> void:
 		if int(inspected.get("hp",0)) <= 0 or not state.enemy_visible_to_player(inspected): continue
 		var facts := CombatCatalogScript.presentation(String(inspected["kind"]))
 		diagnostics.text += "\n#%s %s · %s · %s · %s speed · %s reach · %s" % [_enemy_readout_tag(int(inspected["id"])),facts["name"],_enemy_phase(inspected),_resistance_text(inspected),facts["speed"],facts["reach"],facts["trait"]]
+	diagnostics.text += "\nEvent history (full wording):\n" + "\n".join(notice_history)
+
+func _immediate_notice() -> String:
+	var notice: String = state.lab_notice
+	var action: Dictionary = state.player_action
+	# De-duplicate only facts already stated by the current title/summary. Never
+	# clear the semantic event: Details retains the original and observed history.
+	if notice == "%s / %s / seed42 / %s" % [state.lab_variant,fixture,arrival]: return ""
+	if suspended and notice.begins_with("Suspended"): return ""
+	if state.lab_neutral_required and state.is_player_ready() and notice in ["Release controls to continue.","Release controls first.","Commit ended; release inputs before another sequence."]: return ""
+	if action.has("lab_exit_request") and (notice.begins_with("Recovering") or notice.begins_with("Already queued:")): return ""
+	if bool(action.get("lab_prepaid",false)) and notice in ["Commit running: all cuts and recovery owed.","Commit running · All remaining cuts locked."]: return ""
+	if String(action.get("kind","")) == "combo" and bool(action.get("terminal_recovery_locked",false)) and notice == "Recovering": return ""
+	if state.lab_junction() and notice.begins_with("Continue cut "): return "Continue, Recover, Move or Dodge"
+	if state.lab_armed and notice == "Choose enemy; T / RS click selects, Enter / RT confirms.":
+		var target: Dictionary = state._enemy_by_id(controller.target_id)
+		return "Target: %s · Enter / RT confirms" % CombatCatalogScript.presentation(String(target["kind"]))["name"] if not target.is_empty() and state.lab_target_refusal(controller.target_id) == "" else "Choose target: T / RS · Enter / RT confirms"
+	return _compact_notice(notice)
 
 func _compact_notice(notice: String) -> String:
+	var summaries := {
+		"Commit refused: Choose a living visible hostile target on this layer.":"Refused · Need live visible hostile on this layer",
+		"Commit refused: Target outside normal attack range.":"Commit refused · Outside normal attack range",
+		"Interrupted · Sequence ended. Queued Dodge cleared.":"Interrupted · Sequence ended · Dodge queue cleared",
+		"Interrupted · Sequence ended. Queued Move cleared.":"Interrupted · Sequence ended · Move queue cleared",
+		"Interrupted · Commit ended. No refund.":"Interrupted · Commit ended · No refund",
+		"Interrupted · Commit ended. No refund. Queued Dodge cleared.":"Interrupted · No refund · Dodge queue cleared",
+		"Interrupted · Commit ended. No refund. Queued Move cleared.":"Interrupted · No refund · Move queue cleared",
+		"Commit unavailable: Sword in C, G or E required.":"Commit unavailable · Needs Sword in C/G/E",
+		"Recover requires a frozen junction; finish current commitment.":"Recover refused · Finish current commitment",
+		"Choose Continue, Recover, Move or Dodge at this junction.":"Choose Continue, Recover, Move or Dodge",
+		"Queued dodge started after recovery.":"Dodge started · Recovery paid",
+		"Queued move started after recovery.":"Move started · Recovery paid",
+	}
+	if summaries.has(notice): return summaries[notice]
 	return notice.replace("Choose enemy; T / RS click selects, Enter / RT confirms.","Choose enemy: T / RS; confirm: Enter / RT").replace("Recover requires a frozen junction; finish current commitment.","Recover refused · Finish current commitment").replace("Choose Continue, Recover, Move or Dodge at this junction.","Choose Continue, Recover, Move or Dodge").replace("Commit ended; release inputs before another sequence.","Commit ended · Release controls").replace("Commit refused: RS selects a visible target; RT confirms.","Commit refused · RS selects; RT confirms").replace("Queued Dodge unavailable after recovery; ready.","Queued Dodge unavailable · Ready").replace("Queued Move unavailable after recovery; ready.","Queued Move unavailable · Ready")
 
 func _resistance_text(enemy: Dictionary) -> String:

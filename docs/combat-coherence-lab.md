@@ -121,15 +121,17 @@ window delivery, export/install or Guy acceptance is established.
 
 ## Touch and battlefield repair from 118060a (20 October 2026)
 
-Status: isolated engineering candidate for independent re-check. This section
-supersedes the previous inspection/roster/key layout. All combat timing, costs,
+Status: historical `495ddd` candidate. Independent review passed its inspection,
+world/marker and D3 boundaries, but rejected combined information overflow. The
+next section owns the repaired live summary. This section supersedes the earlier
+inspection/roster/key layout. All combat timing, costs,
 damage, conditions, collision, AI, paid pips, optional pips and captured queue
 direction retain their existing owners. C remains default; G/E are independent.
 
-The fixed upper information slot is 110 units high. Its ordinary view contains
-two lines for immediate commitment/debt/queued direction, one line for meaningful
-event feedback and three 18-unit attributed enemy lines at the existing 14px
-type size. Each includes the stable key, full name, current phase and concise
+The fixed upper information slot is 110 units high. Its authored 36/18-unit
+label minima underestimated the actual font heights (47/43 for wrapped text;
+20 per enemy row), causing the independently reproduced D2 failure. Each enemy
+line includes the stable key, full name, current phase and concise
 resistance wording from the same shared predicates. Full traits, current phase,
 resistance, diagnostics, controls and last event remain in Review details.
 Repeated tutorial text and the native travelling-area splash are removed from
@@ -183,3 +185,75 @@ separate evidence. Captured pixels, logs, traces, inspected-frame list, patch an
 hash inventory accompany the candidate. Automated and rendered engineering checks
 do not establish independent acceptance, physical touch/controller behavior,
 native-window delivery, motion/latency, export/install or Guy's play judgment.
+
+## Combined live information repair from 495ddd (20 October 2026)
+
+The existing 110-unit slot and fixed action coordinates remain. Labels now use
+their actual shaped font minimums without authored 36/18-unit height reservations.
+At the installed font metrics a 15px instruction line is 22 units, a 14px event
+line is 20, and three 14px enemy rows total 60: 102 units together. The retained
+20px title fits its existing 30-unit slot. Empty event/enemy labels reserve no
+blank row. Fonts, targets, projection/camera policy and combat owners are unchanged.
+
+The immediate summary is derived from the same authoritative action. Normal
+shows phase, current cut plus exit debt and optional future cuts; Commit shows
+phase, whole remaining obligation and locked cuts. Armed Commit shows exact cost,
+three cuts, no refund and interruptibility. A selected actor's stable key stays
+in the title even when refusal replaces target-selection guidance. Junctions show
+owed debt and captured sequence facing. Queued Move/Dodge shows remaining debt,
+inactive status, projected captured exit direction and the locked queue. Both
+interruption and neutral-required states retain their event consequences.
+
+Only redundant event wording is omitted from the live view: initial configuration
+already available in Details, armed targeting invitation, running Commit's repeated
+lock statement, and the current recovery queue's repeated name. A meaningful
+refusal replaces the invitation. Other relevant event text remains in its own
+complete line, with concise equivalent wording for known long reasons. No semantic
+notice is cleared by presentation. Details keeps the current original event and
+full wording of distinct events observed by the panel since Start fresh. This
+history is session-local UI data, reset with the fixture; it changes no save schema.
+
+`combat_lab_information_test.gd` runs unchanged on the preserved control and repair.
+It checks actual Label line heights/counts, visible lines, no trim/skip/clip, full
+single-line glyph width, allocation containment, all sibling/action boundaries,
+three complete enemy rows, original type sizes, 48-unit controls and world floors
+after deferred layout settles and after content changes. It covers 292 panels at
+1280x800, 960x600, 720x480, 720x1280 and 390x844 in both projections, including
+A/B/G/E comparison wording at both small boundaries. The old headless control has
+450 allocation/action-boundary failures; the real-renderer candidate has zero
+failures in 37,482 checks. All 292 authoritative digests match across candidates.
+Assertion totals differ because the check iterates actual visible labels, shaped
+line counts and captured images rather than a fixed number of authored slots.
+The final harness adds explicit essential-fact assertions (obligation, cost,
+refund, target, inactive queue, direction, interruption and neutral). It passes
+38,110 headless checks; the control still has only the same 450 layout failures.
+The supplemental render launch was refused before process creation because
+Windows could not guarantee background focus. No foreground retry occurred.
+The completed final-source renderer report is retained separately from the
+strengthened headless report; all 292 panels match exactly in every recorded
+field except image path, including text, font/line metrics, bounds and digest.
+The exact executed render harness and the added-assertion difference accompany
+the package. This distinguishes rendered evidence from the later headless checks.
+
+The raw K/Enter no-target case uses routed input. Normal startup/active/follow-
+through, both junctions, Recover, captured Move/Dodge and duplicate queue feedback
+use ordinary F2 APIs and native ticks with the original three actors. Commit uses
+three ordinary short rightward steps to reach a legal target. Two explicitly
+labelled diagnostics use the real resolver: an incoming hit tests interrupted
+queues/Commit; a cost-minus-one Energy fixture tests resource refusal. No actor
+positions/actions are injected to make these paths pass. Earlier test setup
+failures (a long move clamped to one step; low-arrival Energy regenerating enough
+to afford Commit) are preserved in development logs and corrected in the final test.
+
+The unchanged executed independent boundary probe is included with provenance in
+the handoff. Its exact refusal/normal/queued-Dodge reproductions fail on `495ddd`
+and pass on the repair in headless and real-renderer runs. Full raw viewports and
+native-scale panel crops cover both small sizes and projections. Engineering
+pixel inspection confirms complete, separated current summaries/events/enemy rows.
+The unchanged routed touch/controller suite and independent recheck pass again
+on the final renderer, retaining Details reach, access/isolation, D3 and restoration.
+Natural initial/Wait1/2/3 digests and static keys are preserved. The handoff owns
+paths, log/result hashes, inspected-image inventory and exact revision. Independent
+acceptance, physical/native input, motion, F0/offscreen completeness, sustained
+performance and Guy's acceptance of feel remain open. No export/install or
+production publication is part of this repair.
