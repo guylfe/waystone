@@ -570,7 +570,7 @@ func _refresh_action_panel() -> void:
 	for inspected in state.enemies:
 		if int(inspected.get("hp",0)) <= 0 or not state.enemy_visible_to_player(inspected): continue
 		var facts := CombatCatalogScript.presentation(String(inspected["kind"]))
-		diagnostics.text += "\n#%s %s · %s · %s · %s speed · %s reach · %s" % [_enemy_readout_tag(int(inspected["id"])),facts["name"],_phase(inspected["action"]),_resistance_text(inspected),facts["speed"],facts["reach"],facts["trait"]]
+		diagnostics.text += "\n#%s %s · %s · %s · %s speed · %s reach · %s" % [_enemy_readout_tag(int(inspected["id"])),facts["name"],_enemy_phase(inspected),_resistance_text(inspected),facts["speed"],facts["reach"],facts["trait"]]
 
 func _compact_notice(notice: String) -> String:
 	return notice.replace("Choose enemy; T / RS click selects, Enter / RT confirms.","Choose enemy: T / RS; confirm: Enter / RT").replace("Recover requires a frozen junction; finish current commitment.","Recover refused · Finish current commitment").replace("Choose Continue, Recover, Move or Dodge at this junction.","Choose Continue, Recover, Move or Dodge").replace("Commit ended; release inputs before another sequence.","Commit ended · Release controls").replace("Commit refused: RS selects a visible target; RT confirms.","Commit refused · RS selects; RT confirms").replace("Queued Dodge unavailable after recovery; ready.","Queued Dodge unavailable · Ready").replace("Queued Move unavailable after recovery; ready.","Queued Move unavailable · Ready")
@@ -618,15 +618,18 @@ func enemy_readout_model() -> Array:
 		var on_board := board_rect.has_point(pos)
 		if not state.enemy_visible_to_player(enemy): continue
 		var facts := CombatCatalogScript.presentation(String(enemy["kind"]))
-		var action: Dictionary = enemy.get("action",{})
-		var phase := _phase(action).capitalize()
-		if phase == "": phase = String(action.get("kind","idle")).capitalize()
+		var phase := _enemy_phase(enemy)
 		var resistance := _resistance_text(enemy)
 		var tag := _enemy_readout_tag(int(enemy["id"]))
 		result.append({"id":int(enemy["id"]),"phase":phase,"resistance":resistance,"on_board":on_board,
 			"rect":enemy_lines[result.size()].get_global_rect(),
 			"lines":["#%s %s · %s · %s%s" % [tag,facts["name"],_compact_phase(phase),_compact_resistance(resistance)," · off view" if not on_board else ""]]})
 	return result
+
+func _enemy_phase(enemy: Dictionary) -> String:
+	var action: Dictionary = enemy.get("action",{})
+	var phase := _phase(action).capitalize()
+	return String(action.get("kind","idle")).capitalize() if phase == "" else phase
 
 func _compact_phase(phase: String) -> String:
 	return {"Exposed Recovery":"Recovery","Following Through":"Recovery","Following through":"Recovery","Winding":"Windup","Preparing":"Windup"}.get(phase,phase)
