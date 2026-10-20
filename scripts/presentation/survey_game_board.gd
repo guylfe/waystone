@@ -221,6 +221,7 @@ func _refresh_action_panel() -> void:
 	super._refresh_action_panel()
 	if state.is_player_ready() and not state.lab_armed and not state.lab_neutral_required and not suspended:
 		instruction.text = "Paused cuts · Tap cut; hold to continue" if variant == "B" else "Commit · Tap cut; hold to continue"
+		if state.player_weapon_frame != "sword": instruction.text = state.player_weapon_frame.capitalize()+" · Ordinary primary actions"
 	var count := 0
 	for enemy in state.enemies:
 		if int(enemy["hp"]) > 0 and state.enemy_visible_to_player(enemy): count += 1
