@@ -3388,9 +3388,14 @@ func lab_junction() -> bool:
 	return lab_frozen_rules() and bool(player_action.get("lab_pending", false))
 
 func lab_toggle_commit() -> bool:
-	if not lab_frozen_rules() or lab_variant == "B" or not is_player_ready() or lab_neutral_required: return false
+	if not lab_frozen_rules() or lab_variant == "B":
+		lab_notice = "Commit unavailable: Sword in C, G or E required."
+		return false
+	if not is_player_ready() or lab_neutral_required:
+		lab_notice = "Release controls first." if lab_neutral_required and is_player_ready() else "Finish the current commitment first."
+		return false
 	lab_armed = not lab_armed
-	lab_notice = "Commit armed: tap enemy or T/RS select, Enter/RT confirm. Full cost; no refund." if lab_armed else "Commit disarmed."
+	lab_notice = "Choose enemy; T / RS click selects, Enter / RT confirms." if lab_armed else "Commit disarmed."
 	return true
 
 func lab_input_neutral() -> void:
@@ -3399,8 +3404,26 @@ func lab_input_neutral() -> void:
 func lab_forced_replacement() -> void:
 	if not combat_lab: return
 	lab_armed = false
-	if bool(player_action.get("lab_prepaid",false)): lab_neutral_required = true
-	if player_action.has("lab_exit_request"): lab_notice = "Queued %s cancelled by interruption." % player_action["lab_exit_request"]["kind"]
+	var paid := bool(player_action.get("lab_prepaid",false))
+	if paid: lab_neutral_required = true
+	lab_notice = "Interrupted · Commit ended. No refund." if paid else "Interrupted · Sequence ended."
+	if player_action.has("lab_exit_request"): lab_notice += " Queued %s cleared." % String(player_action["lab_exit_request"]["kind"]).capitalize()
+
+# Target cycling, preview and launch share eligibility; this never mutates facing/time.
+func lab_target_refusal(target_id: int) -> String:
+	var enemy := _enemy_by_id(target_id)
+	if enemy.is_empty() or int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy) or not _opposes(0, enemy) or not enemy_visible_to_player(enemy) or not is_visible(enemy["pos"]) or not _has_line_of_sight(player_pos, enemy["pos"]):
+		return "Choose a living visible hostile target on this layer."
+	var definition := player_basic_attack_definition()
+	var technique := AttackGeometryScript.technique(String(definition["technique"]))
+	if player_pos.distance_to(enemy["pos"]) > float(definition["reach"]) + float(technique.get("radius",0.0)) + float(enemy["radius"]):
+		return "Target outside normal attack range."
+	return ""
+
+func lab_commit_cost() -> float:
+	var cost := 0.0
+	for phase in _sword_phases(false): cost += energy_cost(float(phase["energy_cost"]))
+	return cost if uses_energy_rules() else 0.0
 
 func lab_target(target_id: int, held: bool = false) -> bool:
 	var enemy := _enemy_by_id(target_id)
@@ -3408,26 +3431,22 @@ func lab_target(target_id: int, held: bool = false) -> bool:
 		if enemy.is_empty() or int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy) or not enemy_visible_to_player(enemy) or not is_visible(enemy["pos"]): return false
 		return lab_continue(held)
 	if not lab_armed: return false
-	if enemy.is_empty() or int(enemy["hp"]) <= 0 or not _enemy_on_current_layer(enemy) or not _opposes(0, enemy) or not enemy_visible_to_player(enemy) or not is_visible(enemy["pos"]) or not _has_line_of_sight(player_pos, enemy["pos"]):
-		lab_notice = "Commit refused: choose a living visible hostile target on this layer."
+	var refusal := lab_target_refusal(target_id)
+	if refusal != "":
+		lab_notice = "Commit refused: " + refusal
 		return false
-	var definition := player_basic_attack_definition()
-	var technique := AttackGeometryScript.technique(String(definition["technique"]))
-	if player_pos.distance_to(enemy["pos"]) > float(definition["reach"]) + float(technique.get("radius",0.0)) + float(enemy["radius"]):
-		lab_notice = "Commit refused: target outside normal attack range."
+	if not is_player_ready() or not _can_start_basic_attack() or lab_neutral_required:
+		lab_notice = "Commit refused: release controls first." if lab_neutral_required else "Commit refused: finish recovery first."
 		return false
-	if not is_player_ready() or not _can_start_basic_attack() or lab_neutral_required: return false
-	var phases := _sword_phases(false)
-	var cost := 0.0
-	for phase in phases: cost += energy_cost(float(phase["energy_cost"]))
+	var cost := lab_commit_cost()
 	if uses_energy_rules() and player_energy + 0.000001 < cost:
-		lab_notice = "Commit refused: need %.2f Energy." % cost
+		lab_notice = "Need %.2f Energy · Have %.2f." % [cost, player_energy]
 		return false
 	if not _spend_energy(cost, false): return false
 	lab_armed = false
 	_begin_sword_combo(Vector2(enemy["pos"])-player_pos, true, false, true)
 	player_action["lab_prepaid"] = true
-	player_action["lab_paid_cost"] = cost if uses_energy_rules() else 0.0
+	player_action["lab_paid_cost"] = cost
 	var final: Dictionary = player_action["phases"][-1]
 	var bonus := int(load("res://scripts/experiments/combat_lab_catalog.gd").FINISHER_BONUS)
 	final["damage_min"] += bonus
@@ -3436,14 +3455,18 @@ func lab_target(target_id: int, held: bool = false) -> bool:
 	return true
 
 func lab_continue(held: bool = false) -> bool:
-	if not lab_junction() or bool(player_action.get("terminal_recovery_locked",false)): return false
+	if not lab_junction() or bool(player_action.get("terminal_recovery_locked",false)):
+		lab_notice = "Recovery chosen · Cannot continue." if bool(player_action.get("terminal_recovery_locked",false)) else "Continue requires a frozen junction."
+		return false
 	player_action["lab_pending"] = false
 	player_action["lab_continue_token"] = true
 	player_action["continue_held"] = held
 	return true
 
 func lab_recover(queued: String = "", direction: Vector2 = Vector2.ZERO, distance: float = MOVE_RANGE) -> bool:
-	if not lab_junction(): return false
+	if not lab_junction():
+		lab_notice = "Recover requires a frozen junction; finish current commitment."
+		return false
 	var phases: Array = player_action["phases"]
 	_lock_combo_terminal_recovery(phases[int(player_action["committed_phase"])])
 	player_action["lab_pending"] = false
@@ -5832,13 +5855,13 @@ func _tick(dt: float) -> void:
 		var replaced := player_action != lab_previous
 		if lab_paid and replaced:
 			lab_neutral_required = true
-			lab_notice = "Commit ended; release inputs before another sequence."
+			if not lab_notice.begins_with("Interrupted"): lab_notice = "Commit ended; release inputs before another sequence."
 		if not lab_exit.is_empty() and replaced:
 			var completed := String(player_action["kind"]) == "idle" and float(lab_previous["elapsed"]) + 0.00001 >= float(lab_previous["duration"])
 			if completed and player_hp > 0:
 				var accepted := request_dodge(lab_exit["direction"], false) if lab_exit["kind"] == "dodge" else begin_streamed_move(lab_exit["direction"], float(lab_exit["distance"]))
 				lab_notice = "Queued %s started after recovery." % lab_exit["kind"] if accepted else "Queued %s unavailable after recovery; ready." % lab_exit["kind"]
-			else: lab_notice = "Queued %s cancelled by interruption." % lab_exit["kind"]
+			else: lab_notice = "Interrupted · Sequence ended. Queued %s cleared." % String(lab_exit["kind"]).capitalize()
 
 func _condition_threshold(condition_id: String, resistance: int, specific_multiplier: float = 1.0) -> float:
 	var base := float({"laceration": 18.0, "poison": 20.0, "sleep": 18.0, "frost": 16.0, "burning": 14.0, "frenzy": 20.0}.get(condition_id, 20.0))
@@ -6968,6 +6991,23 @@ func _player_hit_can_interrupt() -> bool:
 	if String(player_action.get("kind", "idle")) != "combo": return true
 	return int(player_action.get("phase_index", 0)) >= 2
 
+# Read by contact resolution and the lab's current-phase inspection. This is an
+# ordinary flinch read, not a damage immunity or posture-break guarantee.
+func enemy_hit_reaction_resistance(enemy: Dictionary, action: Dictionary, impact: float = 0.0, forced: bool = false) -> String:
+	var kind := String(enemy.get("kind", "blade"))
+	var action_kind := String(action.get("kind", "idle"))
+	var elapsed := float(action.get("elapsed", 0.0))
+	var active_started := action.has("startup") and elapsed >= float(action.get("startup", INF))
+	if bool(action.get("protected", false)) and elapsed <= float(action.get("active_end", 0.0)): return "Armored attack"
+	if action_kind == "charge" and bool(action.get("unstoppable_from_commit", false)): return "Committed charge"
+	if not forced and String(Dictionary(enemy.get("properties", {})).get("hit_reaction_policy", "ordinary")) == "posture_only": return "Posture-governed body"
+	if not forced and (_enemy_mass(kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
+		if active_started or impact < 3.5: return "Heavy commitment"
+	if not forced and kind == "boar" and action_kind == "charge" and String(action.get("label", "")) == "pounce" and elapsed >= float(action.get("momentum_armour_start", INF)) and impact < 3.5: return "Momentum armor"
+	var active_contact := action.has("startup") and action.has("active_end") and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"])
+	if not forced and active_contact and action_kind in ["melee", "dodge_strike"] and kind not in ["hound", "bandit"]: return "Active contact resists flinch"
+	return ""
+
 func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_before: String, action_before: Dictionary, contact: Vector2 = Vector2.INF, source_action: Dictionary = {}) -> bool:
 	if int(enemy.get("hp", 0)) <= 0: return false
 	if not bool(source_action.get("allow_hit_reaction", true)): return false
@@ -6979,43 +7019,13 @@ func _apply_enemy_hit_reaction(enemy: Dictionary, impact: float, awareness_befor
 	# authored opening. Later contacts cannot restart its timer and pin an enemy
 	# indefinitely; a posture break may still replace it with a distinct stagger.
 	if action_kind == "hit_reaction" and not forced: return false
-	var elapsed := float(action_before.get("elapsed", 0.0))
-	var active_started := action_before.has("startup") and elapsed >= float(action_before.get("startup", INF))
-	if bool(action_before.get("protected",false)) and elapsed <= float(action_before.get("active_end",0.0)): return false
 	var high_impact := impact >= 3.5
-	# A committed charge may explicitly own its whole promise, including wind-up.
-	# Damage and posture have already resolved; only death or the charge's own solid-
-	# geometry crash may replace it. This is action data, not an Ox name check.
-	if action_kind == "charge" and bool(action_before.get("unstoppable_from_commit", false)):
-		_record_enemy_control(enemy, "reaction_held", action_before, 0.0)
-		_add_effect("strain", Vector2(enemy["pos"]))
-		return false
-	# Some bodies answer ordinary attacks through posture rather than a flinch on every
-	# health hit. Explicit forced reactions remain valid before they commit an action.
-	var reaction_policy := String(Dictionary(enemy.get("properties", {})).get("hit_reaction_policy", "ordinary"))
-	if not forced and reaction_policy == "posture_only":
-		_record_enemy_control(enemy, "reaction_held", action_before, 0.0)
-		_add_effect("strain", Vector2(enemy["pos"]))
-		return false
-	# Heavy bodies do not lose an authored attack to every light contact. Strong
-	# impacts may still interrupt startup, and accumulated posture damage remains
-	# the universal route to a full break. Once the weapon moves, even a strong
-	# ordinary hit must trade with or evade the grounded commitment.
-	if not forced and (_enemy_mass(enemy_kind) >= HEAVY_TELEGRAPH_MASS or _enemy_has_chant(enemy, "bulwark")) and action_kind in ["melee", "slam", "charge"]:
-		if active_started or not high_impact: return false
-	# A boar earns armour only after its pounce has accelerated. The crouch and
-	# early travel remain interruptible, and a posture-heavy technique can still
-	# arrest a full-speed charge.
-	if not forced and enemy_kind == "boar" and action_kind == "charge" and String(action_before.get("label", "")) == "pounce":
-		var armour_start := float(action_before.get("momentum_armour_start", INF))
-		if elapsed >= armour_start and not high_impact:
+	var resistance := enemy_hit_reaction_resistance(enemy, action_before, impact, forced)
+	if resistance != "":
+		if resistance in ["Committed charge", "Posture-governed body"]:
+			_record_enemy_control(enemy, "reaction_held", action_before, 0.0)
+		if resistance in ["Committed charge", "Posture-governed body", "Momentum armor"]:
 			_add_effect("strain", Vector2(enemy["pos"]))
-			return false
-	# Landing during an ordinary weapon's already-active contact window can still
-	# produce a trade. Startup and recovery are interruptible; the hound's pounce
-	# is the deliberate exception and can be knocked out of any phase.
-	var in_active_contact := action_before.has("startup") and action_before.has("active_end") and elapsed >= float(action_before["startup"]) and elapsed <= float(action_before["active_end"])
-	if not forced and in_active_contact and action_kind in ["melee", "dodge_strike"] and enemy_kind not in ["hound", "bandit"]:
 		return false
 	var duration := float(CombatCatalogScript.enemy_fact(enemy_kind, "hit_reaction"))
 	if awareness_before != "alerted": duration += 0.16

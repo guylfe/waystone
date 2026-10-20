@@ -2824,6 +2824,9 @@ func _draw_world() -> void:
 	_draw_selected_action_hint()
 	_draw_area_title()
 	_draw_room_clear_banner()
+	_draw_world_header()
+
+func _draw_world_header() -> void:
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
 	if state.is_measurement_mode(): label += "  •  RUN %d" % state.run_seed
 	var color := Color("f0b45a") if playing else DODGE_COLOR
@@ -3644,10 +3647,28 @@ func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> 
 	var total_width := spacing * float(count - 1)
 	origin.x = pos.x - total_width * 0.5
 	for index in range(count):
+		if state.lab_frozen_rules():
+			var pip := _lab_combo_pip_state(action, index)
+			var point := origin + Vector2(index * spacing, 0.0)
+			var dot_radius := maxf(3.0, radius * 0.14)
+			if pip == "completed": draw_circle(point, dot_radius, Color("f1e8d0"))
+			elif pip == "current": draw_arc(point, dot_radius + 1.0, 0, TAU, 16, Color("f1e8d0"), 2.0)
+			elif pip == "committed":
+				draw_circle(point, dot_radius, Color("d7aa58"))
+				draw_rect(Rect2(point - Vector2.ONE * (dot_radius + 2.0), Vector2.ONE * (dot_radius + 2.0) * 2.0), Color("d7aa58"), false)
+			else: draw_arc(point, dot_radius, 0, TAU, 16, Color("8b999f"), 1.0)
+			continue
 		var color := Color("465359")
 		if index <= active_index: color = Color("f1e8d0")
 		elif index <= committed_index or holding: color = Color("d7aa58")
 		draw_circle(origin + Vector2(index * spacing, 0.0), maxf(2.8, radius * 0.12), color)
+
+# Held normal continuation expresses intent, never ownership of future cuts.
+func _lab_combo_pip_state(action: Dictionary, index: int) -> String:
+	var current := maxi(0,int(action.get("phase_index", 0)))
+	if index < current: return "completed"
+	if index == current: return "current"
+	return "committed" if bool(action.get("lab_prepaid", false)) else "optional"
 
 func _draw_sequence_recovery(pos: Vector2, radius: float, remaining: float) -> void:
 	var count := 6
@@ -4675,6 +4696,7 @@ func _phase(action: Dictionary) -> String:
 	if kind == "take_aim": return "STUDYING"
 	if kind == "twin_fang": return "TWIN FANG" if elapsed < float(action.get("active_end", 0.29)) else "RECOVERING"
 	if kind in ["combo", "art_combo"]:
+		if state.lab_frozen_rules() and int(action.get("phase_index",0)) < 0: return "WINDING UP"
 		if bool(action.get("terminal_recovery_locked", false)): return "RECOVERING"
 		if elapsed < float(action.get("startup", 0.0)): return "WINDING UP"
 		if elapsed > float(action.get("active_end", 0.0)): return "FOLLOWING THROUGH"

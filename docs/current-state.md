@@ -75,3 +75,5 @@ The live development branch is `main`. `archive/main-pre-0.2` is historical. Do 
 ## Local combat coherence experiment (20 October 2026)
 
 The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
+
+The independent review-correction candidate adds truthful pips, a fixed state panel, range-filtered explicit targets, debt/facing/resistance reads and real background OpenGL captures. C remains default. See the lab owner document and accompanying handoff for focused checks and limits; physical input, independent acceptance and Guy's feel remain open.

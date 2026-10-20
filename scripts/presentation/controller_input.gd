@@ -176,6 +176,7 @@ func cycle_target(board) -> void:
 	var candidates: Array = []
 	for enemy in board.state.enemies:
 		if String(enemy["layer"]) == board.state.current_layer and int(enemy.get("hp", 0)) > 0 and board.state.enemy_visible_to_player(enemy) and board.state.is_visible(Vector2(enemy["pos"])):
+			if board.state.combat_lab and board.state.lab_armed and board.state.lab_target_refusal(int(enemy["id"])) != "": continue
 			candidates.append(enemy)
 	candidates.sort_custom(func(a, b): return board.state.player_pos.distance_squared_to(a["pos"]) < board.state.player_pos.distance_squared_to(b["pos"]))
 	var index := -1

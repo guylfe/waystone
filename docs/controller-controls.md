@@ -163,3 +163,5 @@ read the combat state/catalogs; they do not author combat costs or availability 
 ## Local combat coherence experiment (20 October 2026)
 
 The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
+
+The local correction keeps K/T/Enter/J and LT/RS click/RT/LS click. Armed target cycling now filters the exact launch eligibility, including range and LOS. The panel labels Recover as LS click, distinguishes queued direction from facing, and explains the neutral gate. This is synthetic-engine and background rendered evidence, with no physical-controller acceptance. See [the lab owner record](combat-coherence-lab.md).
