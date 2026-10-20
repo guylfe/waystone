@@ -1,12 +1,12 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-21 (Combat Survey archive correction candidate)
-**Review candidate:** `0.3.4` (`versionCode 304`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
+**Reviewed:** 2026-10-21 (accepted Combat Survey integration)
+**Release baseline:** `0.3.4` (`versionCode 304`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
 **Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
 
-## Survey integration candidate
+## Survey integration
 
 0.3.4 integrates the accepted frozen-Sword/Commit experiment into the normal
 **Dev → Survey** entry for generated/custom/exact-roster rooms and all eleven
@@ -19,9 +19,9 @@ sizes. The shared readout prioritizes three enemies and exposes all visible fact
 through Details, without limiting the actual Survey population.
 
 See [Survey integration](survey-combat-integration.md) for ownership, entry,
-controls, exact fixture policy and verification. Independent integration review
-precedes the already-authorized GitHub/local update. The authoritative normal
-local checkout and existing audits/prototypes remain preserved during staging.
+controls, exact fixture policy and verification. Independent integration and
+focused presentation review have passed. The normal launcher is the delivered
+entry; existing audits, prototypes and personal data remain separately owned.
 The historical isolated-lab entries below describe earlier evidence; they are
 superseded as the player-facing delivery route. Guy's feel acceptance remains open.
 
@@ -30,9 +30,12 @@ binary probe; presentation review found invisible archive rows and narrow detail
 overflow. The isolated repair uses one scroll owner, wrapping 48-unit record rows,
 safe-width summaries and reflowing controller hints. Its 0/1/6/12-record five-size
 rendered/input matrix and focused regressions are documented in the integration
-owner and exact task handoff. Focused independent archive recheck remains the
-release gate; original candidates, normal local source/builds and GitHub stay
-preserved until it passes. Version remains 0.3.4 / Android 304.
+owner and exact task handoff. Independent R1/R2 review passed the `dbefcb5`
+repair; its fresh shared-MenuHints run passed 786 checks with zero failures.
+The unchanged lifecycle owners retain the 231-check acceptance. Version remains
+0.3.4 / Android 304. Device installation and human feel are not certified by these
+checks. Final publication identities and destination verification live in the
+external release handoff, so source/build identity stays reproducible.
 
 ## What exists now
 
@@ -102,7 +105,7 @@ The live development branch is `main`. `archive/main-pre-0.2` is historical. Do 
 
 ## Local combat coherence experiment (20 October 2026)
 
-The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. At that historical checkpoint the release baseline was 0.3.3; the current normal Survey integration is described above. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
 
 The independent review-correction candidate adds truthful pips, a fixed state panel, range-filtered explicit targets, debt/facing/resistance reads and real background OpenGL captures. C remains default. See the lab owner document and accompanying handoff for focused checks and limits; physical input, independent acceptance and Guy's feel remain open.
 

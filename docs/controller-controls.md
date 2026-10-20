@@ -1,13 +1,13 @@
 # PC controller controls
 
-The 21 October isolated Survey correction reflows shared native menu hints into
+The accepted 21 October Survey correction reflows shared native menu hints into
 whole glyph/word pairs at narrow widths, preserving their labels and sizes. The
 archive uses wrapping 48-unit records in one scroll owner; focus scrolling and
 A selection must correspond to visible rows. The focused five-size 0/1/6/12-run
 renderer/input probe and exact review boundary are owned by
 [Survey integration](survey-combat-integration.md#archive-layout-correction--21-october-2026).
-Physical controller feel remains unverified; focused independent archive recheck
-precedes publication of this candidate.
+Independent R1/R2 review passed; 786 fresh shared-hints checks passed across
+setup, feedback, report and retry. Physical controller feel remains unverified.
 
 0.3.4 adds opt-in experimental controls inside the normal **Dev → Survey** entry.
 LT arms Commit; right-stick click cycles eligible targets; RT explicitly confirms
@@ -17,7 +17,7 @@ input is required on return. All-enemy Details supports touch taps/swipes and
 controller paging. Other modes retain the bindings below. See
 [Survey integration](survey-combat-integration.md) for ownership and evidence limits.
 
-**Baseline:** 0.3.3, presentation 20. **Status:** implemented; physical play acceptance
+**Baseline:** 0.3.4, presentation 20 (ordinary bindings retained from 0.3.3). **Status:** implemented; physical play acceptance
 remains open. This owns the bindings and verification record, not combat mechanics;
 the character framework and RunState remain authoritative for those.
 
@@ -179,6 +179,6 @@ read the combat state/catalogs; they do not author combat costs or availability 
 
 ## Local combat coherence experiment (20 October 2026)
 
-The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
+The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. At that historical checkpoint the release baseline was 0.3.3; the current normal Survey integration is described above. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
 
 The local correction keeps K/T/Enter/J and LT/RS click/RT/LS click. Armed target cycling now filters the exact launch eligibility, including range and LOS. The panel labels Recover as LS click, distinguishes queued direction from facing, and explains the neutral gate. This is synthetic-engine and background rendered evidence, with no physical-controller acceptance. See [the lab owner record](combat-coherence-lab.md).

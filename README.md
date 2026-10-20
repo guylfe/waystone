@@ -4,10 +4,10 @@ Current prototype version: `0.3.4` (Android version code `304`).
 
 ## v0.3.4 — experimental combat in Combat Survey
 
-The staged archive correction provides visible wrapping 48-unit run rows in one
+The archive correction provides visible wrapping 48-unit run rows in one
 scroll area, safe-width report/details and controller hints that reflow on narrow
-screens. It awaits focused independent archive recheck; original candidates and
-normal local/GitHub versions remain preserved. Version remains 0.3.4 / Android 304.
+screens. Independent R1/R2 and shared-menu-hints review passed the accepted
+`dbefcb5` repair. Version remains 0.3.4 / Android 304.
 
 From the normal game's **Dev → Survey**, choose Existing combat, experimental
 Paused Sword cuts, or Paused Sword + Commit, independently of Energy / Recovery.
@@ -22,9 +22,10 @@ the three immediate priority enemy reads link to all visible enemies in Details.
 Save schema 39 preserves experimental action debt and enemy phases; schema 38
 migrates as Existing combat. Report format 37 keeps historical archive text.
 See [Survey integration](docs/survey-combat-integration.md) for controls, ownership,
-verification and release boundaries. This revision is staged for independent
-integration review; publication, local replacement and device installation follow
-that review. Guy's acceptance of combat feel remains open.
+verification and release boundaries. Independent lifecycle review passed 231
+checks; focused presentation review passed R1/R2 and 786 fresh shared-hints checks.
+The release retains the normal launcher and Survey workflow. Device installation,
+physical controls and Guy's acceptance of combat feel remain separate and open.
 
 ## v0.3.3 — familiar bars, direct shortcuts and directional aim
 

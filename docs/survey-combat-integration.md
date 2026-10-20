@@ -1,10 +1,11 @@
 # Combat Survey experimental behavior
 
-20 October 2026. 0.3.4 integration candidate; Android 304, save schema 39,
+21 October 2026. Accepted 0.3.4 integration; Android 304, save schema 39,
 Survey format 37. The accepted internal combat source is
 `060cb8e0a47f1c54e542a9860f44ebda683b94de`. The main game is the player-facing
-entry. The original isolated package remains preserved. This candidate awaits
-independent integration review before the authorized GitHub/local publication.
+entry. The original isolated package remains preserved. Independent lifecycle,
+archive R1/R2 and shared-menu-hints review have passed; this is the normal release
+route. External release evidence records final GitHub/local destination checks.
 Human combat feel, physical controls and device play are separate evidence.
 
 ## Archive layout correction — 21 October 2026
@@ -12,8 +13,12 @@ Human combat feel, physical controls and device play are separate evidence.
 The independent lifecycle/persistence/provenance review of `962ee4a` passed
 231 checks and its exported-binary identity probe. Independent presentation
 review reproduced invisible archive rows and portrait detail overflow. The
-isolated correction retains 0.3.4 / Android 304 and awaits focused independent
-archive recheck before the already-authorized normal-local/GitHub update.
+accepted correction `dbefcb5` retains 0.3.4 / Android 304. Independent review
+verified the retained 3,696-check, zero-failure archive matrix, inspected boundary
+pixels, and freshly passed 786 shared-hints checks across setup, feedback, report
+and retry. The unchanged lifecycle owners carry forward their 231-check pass.
+These are source, routed-input and renderer results; no physical-input or device
+play acceptance is implied.
 
 `game_board.gd` now gives the complete archive one outer ScrollContainer:
 header, up to twelve stored records, export/copy and close share its content.

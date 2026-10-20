@@ -7,7 +7,7 @@
 
 # Local combat coherence lab
 
-20 October 2026. Experimental local branch from `0fb5694fda7f6018b03f4aeed2a3c8533759ec52`. This unnumbered experiment implements Dr. Stone's resolved combat contract. Production remains 0.3.3. Guy's acceptance of feel remains open.
+20 October 2026. Experimental local branch from `0fb5694fda7f6018b03f4aeed2a3c8533759ec52`. This unnumbered experiment implements Dr. Stone's resolved combat contract. At this historical checkpoint the release baseline was 0.3.3; the current normal Survey route is described in the banner above. Guy's acceptance of feel remains open.
 
 The entry scene is `scenes/combat_coherence_lab.tscn`. `scripts/experiments/combat_lab_catalog.gd` owns variant IDs, payoff, exact seed42 fixtures, profile setup, manifest and supplemental authoritative digest. Normal Sword phases remain authored once in RunState. GameBoard, actor constructors, contact, navigation, incoming hits and Expedition executors remain shared.
 

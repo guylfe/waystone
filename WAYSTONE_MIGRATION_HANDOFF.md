@@ -1,12 +1,13 @@
-## 0.3.4 Survey integration candidate — 20 October 2026
+## 0.3.4 accepted Survey integration — 21 October 2026
 
 21 October archive correction: one scroll owner contains wrapping >=48-unit
 record rows and archive actions. Report/detail summaries wrap; shared controller
 hints reflow whole glyph/word pairs. Lifecycle/report owners and schema versions
 remain unchanged. The owning Survey integration document describes the new
 0/1/6/12-record five-size real-renderer/routed-input regression. Preserve the
-original `962ee4a` candidate and builds; focused independent archive recheck is
-the remaining release gate, with no new user approval required afterward.
+original `962ee4a` candidate and builds. Independent R1/R2 review of `dbefcb5`
+passed; its fresh shared-hints run passed 786 checks with zero failures, exit 0
+and empty stderr. The unchanged lifecycle owners retain their 231-check pass.
 
 Normal entry: Dev → Survey → choose behavior/scenario → Play selected Survey.
 Windows/APK are synchronized at 0.3.4 / Android 304; save schema 39 and report
@@ -15,18 +16,20 @@ generated rooms and existing custom/exact-roster composition use the real Survey
 feedback/archive/export workflow. Existing/non-Survey behavior remains available.
 See [the owning integration document](docs/survey-combat-integration.md).
 
-This candidate is staged for independent review. Do not replace the authoritative
-normal checkout/builds or publish before that review. The task handoff owns the
-exact source/build hashes and preserved-work/update plan. Publication is already
-authorized once review passes; no additional user approval is required. The normal
-local destination remains the Codex\2026-07-12\if-2\waystone checkout named below.
+The accepted release retains `run-windows.ps1` and the normal main scene.
+The external publication handoff owns final source/build hashes, remote and local
+destination verification, verified backups and preserved-work evidence. Both
+packages must embed the final clean revision, including this documentation commit.
+The authoritative normal source/build destination is
+`C:\Users\Trans\Documents\Codex\2026-07-12\if-2\waystone`.
 The older Documents\Games checkout is toolchain fallback only. Device installation
-and human feel remain separate checks.
+and human feel remain separate checks; the historical Bandit expected failure
+remains documented and is not a newly passing test.
 
 # Waystone migration and development handoff
 
-**Updated:** 2026-10-18
-**Release baseline:** `0.3.3` (`versionCode 303`, save schema `38`, expedition generator `1`, Combat Survey generator `3`, presentation `20`, Survey format `36`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+**Updated:** 2026-10-21
+**Release baseline:** `0.3.4` (`versionCode 304`, save schema `39`, expedition generator `1`, Combat Survey generator `3`, presentation `20`, Survey format `37`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
 
 0.3.3 restores the incumbent ability/item bars with controller badges and held-LB
 direct shortcuts, replacing the 0.3.2 rail/selection modal. Melee follows movement;
