@@ -1,10 +1,29 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-18 (controller slot shortcuts and action-specific aiming)
-**Release baseline:** `0.3.3` (`versionCode 303`, save schema `38`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `36`). Human play acceptance remains open; see the controller ledger for verification.
+**Reviewed:** 2026-10-20 (Combat Survey integration candidate)
+**Review candidate:** `0.3.4` (`versionCode 304`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
 **Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
+
+## Survey integration candidate
+
+0.3.4 integrates the accepted frozen-Sword/Commit experiment into the normal
+**Dev → Survey** entry for generated/custom/exact-roster rooms and all eleven
+named presets. Existing behavior remains the initial default; Energy/Recovery is
+independent. G/E remain labelled comparisons. The normal completion, ratings,
+notes, next, archive and export path retains scenario/source/build provenance.
+Save schema 39 preserves experimental obligations and enemy phases; old runs
+migrate with no experiment. Feedback/report layouts scroll and reflow at narrow
+sizes. The shared readout prioritizes three enemies and exposes all visible facts
+through Details, without limiting the actual Survey population.
+
+See [Survey integration](survey-combat-integration.md) for ownership, entry,
+controls, exact fixture policy and verification. Independent integration review
+precedes the already-authorized GitHub/local update. The authoritative normal
+local checkout and existing audits/prototypes remain preserved during staging.
+The historical isolated-lab entries below describe earlier evidence; they are
+superseded as the player-facing delivery route. Guy's feel acceptance remains open.
 
 ## What exists now
 

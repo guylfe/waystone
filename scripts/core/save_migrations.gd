@@ -1,7 +1,7 @@
 class_name SaveMigrations
 extends RefCounted
 
-const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+const SUPPORTED_START_VERSIONS := [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
 
 static func normalize(source: Dictionary, current_version: int) -> Dictionary:
 	var payload := source.duplicate(true)
@@ -37,6 +37,17 @@ static func _migrate_one(payload: Dictionary, from_version: int) -> Dictionary:
 			if not result.get("cooldowns") is Dictionary: return {}
 			result["expedition"] = {} # Retain the legacy geography and ending.
 			result["cooldowns"]["adopted"] = {"remaining":0.0,"maximum":10.0}
+			return result
+		38:
+			var result := _copy(payload)
+			result["survey_experiment"] = {}
+			result["player_action"] = {"kind":"idle", "elapsed":0.0, "duration":0.0}
+			result["room_clear_pending"] = false
+			result["next_combo_instance_id"] = 1
+			result["next_presentation_id"] = 1
+			result["condition_tick_accumulator"] = 0.0
+			result["player_burn_debt"] = 0.0
+			result["stealth_last_ended_at"] = -1.0
 			return result
 		_: return {}
 
@@ -120,4 +131,11 @@ static func validate_current(payload: Dictionary, current_version: int) -> Packe
 	if current_version >= 38:
 		if not payload.get("expedition") is Dictionary: errors.append("Save expedition must be a Dictionary")
 		else: errors.append_array(preload("res://scripts/core/expedition_coordinator.gd").validate(payload["expedition"]))
+	if current_version >= 39:
+		if not payload.get("survey_experiment") is Dictionary: errors.append("Save experiment must be a Dictionary")
+		elif not Dictionary(payload["survey_experiment"]).is_empty():
+			if String(payload.get("mode_id","")) != "combat_survey" or not load("res://scripts/core/survey_experiment.gd").validate(payload["survey_experiment"]): errors.append("Unsupported Survey experiment")
+			if not payload.get("player_action") is Dictionary: errors.append("Missing experimental action")
+			for key in ["room_clear_pending","next_combo_instance_id","next_presentation_id","condition_tick_accumulator","player_burn_debt","stealth_last_ended_at"]:
+				if not payload.has(key): errors.append("Missing experiment resume field: "+key)
 	return errors

@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource path="res://scripts/presentation/game_board.gd" type="Script" id="1"]
+[ext_resource path="res://scripts/presentation/survey_game_board.gd" type="Script" id="1"]
 
 [node name="GameBoard" type="Control"]
 layout_mode = 3

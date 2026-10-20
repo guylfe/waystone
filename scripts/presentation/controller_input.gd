@@ -451,6 +451,7 @@ func back(board) -> void:
 		var kind: String = board.survey_overlay.get_meta("kind", "")
 		if kind == "archive": board._close_survey_archive()
 		elif kind == "end_confirm": board.survey_overlay.hide()
+		elif kind == "experiment_setup": board._close_experiment_setup()
 		# Ratings and outcomes must be deliberately submitted, not silently skipped.
 	elif paused:
 		if abandon_confirm: abandon_confirm = false
@@ -539,6 +540,8 @@ func add_rect(board, entries: Array, rect: Rect2) -> void:
 	entries.append({"rect": rect, "activate": func(): board._pointer_pressed(rect.get_center())})
 
 func collect_buttons(node: Node, entries: Array) -> void:
+	if (node is LineEdit or node is TextEdit) and node.is_visible_in_tree():
+		entries.append({"control":node,"activate":func(): node.grab_focus()})
 	if node is BaseButton and node.is_visible_in_tree() and not node.disabled:
 		entries.append({"control": node, "activate": func():
 			if node.toggle_mode: node.button_pressed = not node.button_pressed

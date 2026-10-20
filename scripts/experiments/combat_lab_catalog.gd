@@ -18,6 +18,16 @@ static func create(variant: String = "C", fixture: String = "F1", loadout: Strin
 	state.combat_lab = true
 	state.lab_variant = variant
 	state.start_run(loadout, "expedition" if fixture == "F0" else "combat_survey", 42, "encounter", rules)
+	configure(state,variant,fixture,resources,scouting)
+	return state
+
+static func configure(state: RunState, variant: String, fixture: String, resources: String, scouting: bool = false) -> void:
+	if fixture == "F0" and state.mode_id == "combat_survey":
+		# Recorded native first-biome geometry; no Expedition progression is enabled.
+		state._install_layout(load("res://scripts/core/expedition_generator.gd").generate(42,0))
+		state._respawn_enemies()
+		state._apply_shortcut_world_state()
+		state._update_exploration(true)
 	if fixture != "F0":
 		var player := Vector2(1000,800)
 		var roster: Array = [["briarhook",101,Vector2(1170,800)]]
@@ -78,14 +88,13 @@ static func create(variant: String = "C", fixture: String = "F1", loadout: Strin
 	if resources == "low":
 		state.player_hp = roundi(state.player_max_hp*0.60)
 		state.player_energy = state.player_max_energy*0.35
-	if resources == "sweep" and loadout == "warrior":
+	if resources == "sweep" and state.loadout_id == "warrior":
 		# Earn the actual level-two stage through the existing upgrade transaction.
 		state.carried_xp = state.next_upgrade_cost()
 		assert(state.choose_upgrade("swordsmanship|prototype_sweeping_cut"))
 		assert(state.player_equipped_weapon_art == "prototype_sweeping_cut")
 	if fixture != "F0": state._capture_survey_room_entry()
 	state.lab_notice = "%s / %s / seed42 / %s" % [variant,fixture,resources]
-	return state
 
 static func _feature(kind: String, point: Vector2, radius: float) -> Dictionary:
 	return {"kind":kind,"pos":point,"radius":radius,"blocks":true,"layer":LAYER,"part_id":0}
@@ -94,7 +103,7 @@ static func manifest(state: RunState, fixture: String, resources: String, scouti
 	var actors: Array = []
 	for enemy in state.enemies:
 		actors.append({"id":enemy["id"],"kind":enemy["kind"],"pos":enemy["pos"],"hp":enemy["hp"],"posture":enemy["posture"],"attributes":enemy["attributes"],"properties":enemy["properties"],"facing":enemy["facing"],"action":enemy["action"].duplicate(true),"awareness":enemy["awareness"],"alert_remaining":enemy["alert_remaining"],"shot_cooldown":enemy["shot_cooldown"],"occupancy_scope":"current loaded geometry; distant F0 regions unassessed", "occupiable":state._can_occupy(enemy["pos"],float(enemy["radius"]),int(enemy["id"])),"los":state._has_line_of_sight(state.player_pos,enemy["pos"]),"visible":state.is_visible(enemy["pos"])})
-	var result := {"catalog":VERSION,"baseline":"0fb5694fda7f6018b03f4aeed2a3c8533759ec52","variant":state.lab_variant,"fixture":fixture,"resources":resources,"scouting":scouting,"loadout":state.loadout_id,"rules":state.combat_rules,"seed":state.run_seed,"rng_state":str(state.rng.state),"tick":state._simulation_tick_index,"time":state.simulation_time,"player":state.player_pos,"hp":state.player_hp,"energy":state.player_energy,"level":state.character_level(),"ranks":state.track_ranks.duplicate(true),"equipped_art":state.player_equipped_weapon_art,"actors":actors,"walls":state.walls.duplicate(),"floor":state.floor_shapes.duplicate(true),"features":state.terrain_features.duplicate(true),"generated_sites":state.expedition_sites.duplicate(true),"initial_delay_override":"all five diagnostic enemy cooldown slots zero; F0 retains native generation/awareness/cooldowns"}
+	var result := {"catalog":VERSION,"baseline":"0fb5694fda7f6018b03f4aeed2a3c8533759ec52","variant":state.lab_variant,"fixture":fixture,"resources":resources,"scouting":scouting,"loadout":state.loadout_id,"rules":state.combat_rules,"seed":state.run_seed,"rng_state":str(state.rng.state),"tick":state._simulation_tick_index,"time":state.simulation_time,"player":state.player_pos,"hp":state.player_hp,"energy":state.player_energy,"level":state.character_level(),"ranks":state.track_ranks.duplicate(true),"equipped_art":state.player_equipped_weapon_art,"actors":actors,"walls":state.walls.duplicate(),"floor":state.floor_shapes.duplicate(true),"features":state.terrain_features.duplicate(true),"generated_sites":state.expedition_sites.duplicate(true),"initial_delay_override":"native generation / awareness / cooldowns" if fixture in ["generated","F0"] else "all five diagnostic enemy cooldown slots zero"}
 
 	result["authoritative_entry"] = authoritative(state)
 	result["entry_digest"] = decision_digest(state)

@@ -1,3 +1,20 @@
+## 0.3.4 Survey integration candidate — 20 October 2026
+
+Normal entry: Dev → Survey → choose behavior/scenario → Play selected Survey.
+Windows/APK are synchronized at 0.3.4 / Android 304; save schema 39 and report
+format 37 retain experimental provenance and owed action state. All named presets,
+generated rooms and existing custom/exact-roster composition use the real Survey
+feedback/archive/export workflow. Existing/non-Survey behavior remains available.
+See [the owning integration document](docs/survey-combat-integration.md).
+
+This candidate is staged for independent review. Do not replace the authoritative
+normal checkout/builds or publish before that review. The task handoff owns the
+exact source/build hashes and preserved-work/update plan. Publication is already
+authorized once review passes; no additional user approval is required. The normal
+local destination remains the Codex\2026-07-12\if-2\waystone checkout named below.
+The older Documents\Games checkout is toolchain fallback only. Device installation
+and human feel remain separate checks.
+
 # Waystone migration and development handoff
 
 **Updated:** 2026-10-18

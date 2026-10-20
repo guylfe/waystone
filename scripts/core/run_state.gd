@@ -449,8 +449,8 @@ const POST_HIT_PROTECTION_TAIL := 0.35
 const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KINDS
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
-const SAVE_VERSION := 38
-const GAME_VERSION := "0.3.3"
+const SAVE_VERSION := 39
+const GAME_VERSION := "0.3.4"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 20
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -957,7 +957,26 @@ func build_laboratory() -> void:
 func build_expedition_room() -> void:
 	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
-func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy", legacy_expedition: bool = false) -> void:
+func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy", legacy_expedition: bool = false, survey_options: Dictionary = {}) -> void:
+	# Experiments are opted into only by the Survey entry; old/default runs stay control.
+	var was_integrated := not survey_experiment.is_empty()
+	survey_experiment = survey_options.duplicate(true) if chosen_mode == "combat_survey" else {}
+	if not survey_experiment.is_empty():
+		assert(load("res://scripts/core/survey_experiment.gd").validate(survey_experiment))
+		combat_lab = String(survey_experiment["behavior"]) != "A"
+		lab_variant = String(survey_experiment["behavior"])
+		if String(survey_experiment["scenario"]) != "generated":
+			custom_room_kinds.clear()
+			custom_room_formation = ""
+			custom_room_hp_percent = 1.0
+			custom_room_xp = 0
+			custom_room_repeat = false
+	elif was_integrated or not combat_lab or not survey_options.is_empty():
+		combat_lab = false
+		lab_variant = "A"
+	lab_armed = false
+	lab_neutral_required = false
+	lab_notice = ""
 	loadout_id = chosen_loadout if CombatCatalogScript.loadout_ids().has(chosen_loadout) else "warrior"
 	mode_id = ModeRulesScript.normalize(chosen_mode)
 	mode_config = ModeRulesScript.definition(mode_id)
@@ -1199,6 +1218,8 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 	run_active = true
 	_update_exploration(true)
 	if is_measurement_mode():
+		if not survey_experiment.is_empty():
+			load("res://scripts/core/survey_experiment.gd").install(self)
 		_capture_survey_room_entry()
 		if mode_id == ModeRulesScript.BOSS_LAB:
 			boss_lab_initial_setup = {
@@ -2168,6 +2189,7 @@ func _groups_interact(first: Dictionary, second: Dictionary, obstacle_rects: Arr
 	return false
 
 func _capture_survey_room_entry() -> void:
+	if not survey_experiment.is_empty(): load("res://scripts/core/survey_experiment.gd").record_entry(self)
 	survey_room_view_modes.assign([survey_current_view_mode])
 	# Attack records are per room. The aggregate is computed when the room closes,
 	# so carrying the previous room's attacks in would blend two encounters.
@@ -2404,7 +2426,7 @@ func _complete_survey_room(outcome: String) -> void:
 	survey_pending_record.merge(SurveyCounterCatalogScript.room_values(self, survey_room_entry), true)
 	survey_feedback_pending = true
 	# A one-shot custom room finishes the run when its room finishes, whatever the outcome.
-	survey_run_ending = outcome in ["death", "manual_end"] or mode_id == ModeRulesScript.BOSS_LAB or (_custom_room_active() and not custom_room_repeat)
+	survey_run_ending = outcome in ["death", "manual_end"] or mode_id == ModeRulesScript.BOSS_LAB or (_custom_room_active() and not custom_room_repeat) or (not survey_experiment.is_empty() and String(survey_experiment["scenario"]) != "generated")
 	survey_end_reason = outcome
 	player_action = _idle_action()
 	projectiles.clear()
@@ -2447,20 +2469,21 @@ func _store_survey_feedback() -> void:
 # a headless run completes rooms with no renderer at all. Death takes precedence, since a
 # player who fell in the same exchange has already finished that room.
 func _resolve_pending_room_clear() -> void:
-	if combat_lab:
+	if combat_lab and survey_experiment.is_empty():
 		if String(player_action["kind"]) == "idle":
 			room_clear_pending = false
 			trial_complete = true
 			lab_notice = "Fixture clear; retry to compare."
 		return
-	if not room_clear_pending or not is_player_ready(): return
+	if not room_clear_pending or (not is_player_ready() if survey_experiment.is_empty() else String(player_action["kind"]) != "idle"): return
 	room_clear_pending = false
 	if trial_complete or survey_feedback_pending: return
 	_complete_survey_room("victory")
 
 func end_survey_run() -> void:
 	if not is_measurement_mode() or trial_complete or survey_feedback_pending: return
-	_complete_survey_room("manual_end")
+	if not survey_experiment.is_empty(): lab_suspend()
+	if not survey_feedback_pending and not trial_complete: _complete_survey_room("manual_end")
 
 func _finalize_survey_run(reason: String) -> void:
 	survey_session["ended_at"] = Time.get_datetime_string_from_system(false, true)
@@ -2472,6 +2495,9 @@ func _finalize_survey_run(reason: String) -> void:
 	changed.emit()
 
 func _load_next_survey_room() -> void:
+	if not survey_experiment.is_empty():
+		lab_armed = false
+		lab_neutral_required = combat_lab
 	survey_room_number += 1
 	if survey_profile == "encounter":
 		player_hp = player_max_hp
@@ -3375,6 +3401,7 @@ func _idle_action() -> Dictionary:
 	}
 
 # Local lab state is transient and deliberately excluded from normal saves.
+var survey_experiment: Dictionary = {}
 var combat_lab := false
 var lab_variant := "A"
 var lab_armed := false
@@ -5853,7 +5880,7 @@ func _tick(dt: float) -> void:
 	# A final kill can leave the room waiting through the winning action's recovery.
 	# Resolve after _update_player(), in the same tick that recovery becomes idle:
 	# frozen time means there will not be another simulation tick to do it later.
-	if room_clear_pending: _resolve_pending_room_clear()
+	if room_clear_pending and survey_experiment.is_empty(): _resolve_pending_room_clear()
 	if combat_lab:
 		var replaced := player_action != lab_previous
 		if lab_paid and replaced:
@@ -5865,6 +5892,8 @@ func _tick(dt: float) -> void:
 				var accepted := request_dodge(lab_exit["direction"], false) if lab_exit["kind"] == "dodge" else begin_streamed_move(lab_exit["direction"], float(lab_exit["distance"]))
 				lab_notice = "Queued %s started after recovery." % lab_exit["kind"] if accepted else "Queued %s unavailable after recovery; ready." % lab_exit["kind"]
 			else: lab_notice = "Interrupted · Sequence ended. Queued %s cleared." % String(lab_exit["kind"]).capitalize()
+
+	if room_clear_pending and not survey_experiment.is_empty(): _resolve_pending_room_clear()
 
 func _condition_threshold(condition_id: String, resistance: int, specific_multiplier: float = 1.0) -> float:
 	var base := float({"laceration": 18.0, "poison": 20.0, "sleep": 18.0, "frost": 16.0, "burning": 14.0, "frenzy": 20.0}.get(condition_id, 20.0))
@@ -10346,7 +10375,7 @@ func _remove_dead_enemies() -> void:
 		# Hold the handover only while the blow that won the room is still resolving.
 		# With nothing in flight there is nothing to wait for, so the room completes at
 		# once and a headless caller sees the behaviour it always saw.
-		if is_player_ready(): _complete_survey_room("victory")
+		if is_player_ready() and survey_experiment.is_empty(): _complete_survey_room("victory")
 		else: room_clear_pending = true
 		return
 	for area_id in defeated_areas:
@@ -11147,7 +11176,7 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 	return result
 
 func save_run(path: String = "user://waystone-expedition.save") -> bool:
-	if combat_lab: return false
+	if combat_lab and survey_experiment.is_empty(): return false
 	# The app finishes the existing player commitment before suspending. Refuse
 	# a premature new-expedition save rather than silently deleting that action.
 	if not expedition.is_empty() and not death_pending and String(player_action["kind"])!="idle": return false
@@ -11379,7 +11408,7 @@ func _build_save_payload() -> Dictionary:
 	return result
 
 func load_run(path: String = "user://waystone-expedition.save") -> bool:
-	if combat_lab: return false
+	if combat_lab and survey_experiment.is_empty(): return false
 	if not FileAccess.file_exists(path): return false
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null: return false
@@ -11397,9 +11426,13 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 		if not payload.has(renamed): payload[renamed] = payload[saved_key]
 	var save_version := int(payload.get("save_version", 0))
 	var normalized_payload := SaveMigrationsScript.normalize(payload, SAVE_VERSION)
-	if normalized_payload.is_empty(): return false
+	if normalized_payload.is_empty():
+		message = "This save version is unsupported. Your existing save and Survey archive are preserved."
+		return false
 	payload = normalized_payload
-	if not SaveMigrationsScript.validate_current(payload, SAVE_VERSION).is_empty(): return false
+	if not SaveMigrationsScript.validate_current(payload, SAVE_VERSION).is_empty():
+		message = "This saved rules contract is unsupported or incomplete. Your save and Survey archive are preserved."
+		return false
 	var migration_notices: Array[String] = []
 	# v19 replaces the prototype Wayfarer progression with the first durable
 	# class/subclass sheet.  Importing older ranks would silently produce an
@@ -11445,8 +11478,11 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	custom_room_hp_percent = float(payload.get("custom_room_hp_percent", 1.0))
 	custom_room_xp = int(payload.get("custom_room_xp", 0))
 	custom_room_repeat = bool(payload.get("custom_room_repeat", false))
+	var saved_experiment := Dictionary(payload["survey_experiment"]).duplicate(true)
+	# A previously configured object must not carry rules into an old/non-Survey save.
+	combat_lab = false
 	var saved_expedition := Dictionary(payload["expedition"]).duplicate(true)
-	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")), saved_expedition.is_empty())
+	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")), saved_expedition.is_empty(), saved_experiment)
 	if not saved_expedition.is_empty():
 		expedition = saved_expedition
 		_install_layout(ExpeditionGeneratorScript.generate(run_seed, int(expedition["biome"])))
@@ -11524,7 +11560,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	player_overexertion_pending = false
 	player_exhaustion_remaining = 0.0
 	player_energy_regen_delay = 0.0
-	if not expedition.is_empty():
+	if not expedition.is_empty() or not survey_experiment.is_empty():
 		# Resuming is not restorative. Historical migrations may clear debt, but
 		# a current expedition retains its exact exhaustion and regeneration gate.
 		player_overexertion_pending = bool(payload.get("player_overexertion_pending",false))
@@ -11745,7 +11781,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	simulation_time = float(payload.get("time", 0.0))
 	# Alternating AI ticks are part of a current expedition's combat clock, not
 	# a disposable render cache. Preserve the phase across suspension.
-	if not expedition.is_empty(): _simulation_tick_index = int(payload.get("simulation_tick_index",roundi(simulation_time/SIM_DT)))
+	if not expedition.is_empty() or not survey_experiment.is_empty(): _simulation_tick_index = int(payload.get("simulation_tick_index",roundi(simulation_time/SIM_DT)))
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:
 		migration_notices.push_front("The forest shifted. Its old geography fades from memory.")
@@ -11755,7 +11791,7 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	_next_enemy_id = 1
 	for index in range(enemies.size()):
 		var enemy: Dictionary = _hydrate_enemy_combat_profile(enemies[index])
-		if expedition.is_empty():
+		if expedition.is_empty() and survey_experiment.is_empty():
 			enemy["action"] = _idle_action()
 			enemy["is_moving"] = false
 			enemy["last_motion"] = Vector2.ZERO
@@ -11770,6 +11806,17 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	_visibility_anchor = Vector2.INF
 	_visibility_anchor_cell = Vector2i(-999999, -999999)
 	_update_exploration(true)
+	if not survey_experiment.is_empty():
+		player_action = Dictionary(payload["player_action"]).duplicate(true)
+		room_clear_pending = bool(payload["room_clear_pending"])
+		_next_combo_instance_id = int(payload["next_combo_instance_id"])
+		_next_presentation_id = int(payload["next_presentation_id"])
+		_condition_tick_accumulator = float(payload["condition_tick_accumulator"])
+		_player_burn_debt = float(payload["player_burn_debt"])
+		_stealth_last_ended_at = float(payload["stealth_last_ended_at"])
+		lab_armed = false
+		lab_neutral_required = true
+		lab_notice = "Resumed Survey; release controls before continuing."
 	last_timeline.clear()
 	return true
 

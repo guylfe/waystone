@@ -1,5 +1,13 @@
 # PC controller controls
 
+0.3.4 adds opt-in experimental controls inside the normal **Dev → Survey** entry.
+LT arms Commit; right-stick click cycles eligible targets; RT explicitly confirms
+or continues; left-stick click recovers at a frozen Sword junction. Start opens
+the Survey menu; D-pad/A navigate native choices and ratings, and fresh neutral
+input is required on return. All-enemy Details supports touch taps/swipes and
+controller paging. Other modes retain the bindings below. See
+[Survey integration](survey-combat-integration.md) for ownership and evidence limits.
+
 **Baseline:** 0.3.3, presentation 20. **Status:** implemented; physical play acceptance
 remains open. This owns the bindings and verification record, not combat mechanics;
 the character framework and RunState remain authoritative for those.

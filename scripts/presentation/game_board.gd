@@ -403,16 +403,19 @@ func _build_survey_feedback_overlay() -> void:
 	var title := Label.new()
 	title.text = "%s ATTEMPT COMPLETE" % state.boss_lab_boss_kind.replace("_", " ").to_upper() if state.mode_id == "boss_lab" else "ROOM %d COMPLETE" % state.survey_room_number
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size", 30)
 	content.add_child(title)
 	var reproduction := Label.new()
 	reproduction.text = "RUN SEED %d  •  ROOM SEED %d  •  %s" % [state.run_seed, state.survey_room_seed, String(state.survey_room_definition.get("arena", "arena")).replace("_", " ").to_upper()]
 	reproduction.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reproduction.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reproduction.add_theme_font_size_override("font_size", 15)
 	content.add_child(reproduction)
 	var prompt := Label.new()
 	prompt.text = "Rate the encounter while it is fresh. 1 is low; 5 is high."
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	prompt.add_theme_font_size_override("font_size", 18)
 	content.add_child(prompt)
 	var questions := {
@@ -427,16 +430,23 @@ func _build_survey_feedback_overlay() -> void:
 		"want_again": "Want a room like this again?",
 	}
 	for question_id in questions:
-		var row := HBoxContainer.new()
+		var narrow := safe_layout_rect.size.x < 660
+		var row := GridContainer.new()
+		row.columns = 1 if narrow else 2
+		row.set_meta("survey_rating_row",true)
 		row.custom_minimum_size.y = 58.0
 		row.add_theme_constant_override("separation", 8)
 		var label := Label.new()
 		label.text = String(questions[question_id])
-		label.custom_minimum_size = Vector2(225, 58)
+		label.custom_minimum_size = Vector2(0 if narrow else 225, 40 if narrow else 58)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.add_theme_font_size_override("font_size", 19)
 		row.add_child(label)
+		var rating_row := HBoxContainer.new()
+		rating_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rating_row.add_theme_constant_override("separation",8)
+		row.add_child(rating_row)
 		var buttons: Array[Button] = []
 		for rating in range(1, 6):
 			var button := Button.new()
@@ -447,7 +457,7 @@ func _build_survey_feedback_overlay() -> void:
 			button.add_theme_font_size_override("font_size", 22)
 			_apply_survey_toggle_style(button)
 			button.pressed.connect(_survey_rating_pressed.bind(String(question_id), rating))
-			row.add_child(button)
+			rating_row.add_child(button)
 			buttons.append(button)
 		survey_rating_buttons[String(question_id)] = buttons
 		content.add_child(row)
@@ -457,12 +467,14 @@ func _build_survey_feedback_overlay() -> void:
 		tag_label.add_theme_font_size_override("font_size", 20)
 		content.add_child(tag_label)
 		var tag_grid := GridContainer.new()
-		tag_grid.columns = 3
+		tag_grid.set_meta("survey_tag_grid",true)
+		tag_grid.columns = 2 if safe_layout_rect.size.x < 560 else 3
 		tag_grid.add_theme_constant_override("h_separation", 7)
 		tag_grid.add_theme_constant_override("v_separation", 7)
 		for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure", "energy meaningful", "energy frustrating"]:
 			var button := Button.new()
 			button.text = String(tag).to_upper()
+			button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			button.toggle_mode = true
 			button.custom_minimum_size = Vector2(150, 50)
 			button.add_theme_font_size_override("font_size", 15)
@@ -579,11 +591,16 @@ func _build_survey_report_overlay() -> void:
 	survey_overlay.set_meta("kind", "report")
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 12)
-	survey_overlay.add_child(content)
+	var report_scroll := ScrollContainer.new()
+	report_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	survey_overlay.add_child(report_scroll)
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	report_scroll.add_child(content)
 	_add_controller_hints(content, false)
 	var title := Label.new()
 	title.text = "BOSS LAB ATTEMPT SAVED" if state.mode_id == "boss_lab" else "COMBAT SURVEY SAVED"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size", 28)
 	content.add_child(title)
 	var room_count := Array(state.survey_session.get("rooms", [])).size()
@@ -606,6 +623,7 @@ func _build_survey_report_overlay() -> void:
 
 func _survey_action_button(label: String, callback: Callable) -> Button:
 	var button := Button.new()
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.text = label
 	button.custom_minimum_size = Vector2(0, 56)
 	button.add_theme_font_size_override("font_size", 17)
@@ -621,7 +639,7 @@ func _build_survey_end_confirmation() -> void:
 	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	survey_overlay.add_child(center)
 	var content := VBoxContainer.new()
-	content.custom_minimum_size.x = minf(620.0, maxf(360.0, survey_overlay.size.x - 48.0))
+	content.custom_minimum_size.x = minf(620.0, maxf(0.0, survey_overlay.size.x - 32.0))
 	content.add_theme_constant_override("separation", 18)
 	center.add_child(content)
 	_add_controller_hints(content)
@@ -669,11 +687,16 @@ func _build_survey_archive_overlay() -> void:
 	survey_overlay.visible = true
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 9)
-	survey_overlay.add_child(content)
+	var report_scroll := ScrollContainer.new()
+	report_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	survey_overlay.add_child(report_scroll)
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	report_scroll.add_child(content)
 	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "COMBAT SURVEY ARCHIVE"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size", 26)
 	content.add_child(title)
 	var archive := state.survey_archive()
@@ -721,11 +744,16 @@ func _open_archived_survey(index: int) -> void:
 	survey_overlay.set_meta("kind", "archive")
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 11)
-	survey_overlay.add_child(content)
+	var report_scroll := ScrollContainer.new()
+	report_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	survey_overlay.add_child(report_scroll)
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	report_scroll.add_child(content)
 	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "ARCHIVED SURVEY — SEED %d" % int(survey_archived_run.get("run_seed", 0))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size", 25)
 	content.add_child(title)
 	var summary := Label.new()
@@ -2401,8 +2429,11 @@ func _start_run() -> void:
 	state.boss_lab_boss_kind = setup_boss_kind
 	state.boss_lab_arena_id = setup_boss_arena
 	state.boss_lab_variant_id = "solo_current"
-	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules)
+	state.start_run(setup_loadout, setup_mode, chosen_seed, setup_survey_profile, setup_combat_rules, false, survey_start_options())
 	_finish_run_start()
+
+func survey_start_options() -> Dictionary:
+	return {}
 
 func _finish_run_start() -> void:
 	controller.release_actions(self)

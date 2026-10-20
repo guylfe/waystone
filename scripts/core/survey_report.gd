@@ -4,7 +4,7 @@ extends RefCounted
 const ARCHIVE_PATH := "user://combat-survey-archive.json"
 const CURRENT_PATH := "user://combat-survey-current.json"
 const REPORT_DIRECTORY := "user://combat-survey-reports"
-const FORMAT_VERSION := 36
+const FORMAT_VERSION := 37
 
 static func save_current(session: Dictionary) -> bool:
 	return _write_json(CURRENT_PATH, session)
@@ -53,6 +53,8 @@ static func build_text(session: Dictionary) -> String:
 	lines.append("Presentation version: %d" % int(session.get("presentation_version", 0)))
 	lines.append("Profile: %s" % String(session.get("profile", "encounter")).capitalize())
 	lines.append("Combat rules: %s" % String(session.get("combat_rules", "energy")).capitalize())
+	if session.has("experiment"):
+		lines.append("Survey experiment: " + JSON.stringify(session["experiment"]))
 	lines.append("Character: %s" % String(session.get("loadout", "unknown")))
 	if boss_lab:
 		lines.append("Boss: %s" % String(session.get("boss_kind", "unknown")).replace("_", " ").capitalize())
@@ -68,6 +70,8 @@ static func build_text(session: Dictionary) -> String:
 		var room := Dictionary(room_value)
 		lines.append("ROOM %d" % int(room.get("room_number", 0)))
 		lines.append("-------")
+		if room.has("experiment"):
+			lines.append("Experiment / scenario / source / initial state: " + JSON.stringify(room["experiment"]))
 		lines.append("Room seed: %d" % int(room.get("room_seed", 0)))
 		lines.append("Outcome: %s" % String(room.get("outcome", "unknown")))
 		lines.append("Threat tier: %d (%s)" % [int(room.get("threat_tier", 0)), String(room.get("threat_band", "conventional"))])

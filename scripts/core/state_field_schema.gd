@@ -9,6 +9,12 @@ const DETERMINISM := "determinism"
 # Shared authoritative fields are declared once with explicit consumers. Presentation
 # pooling and save migration remain audience-specific policies around this schema.
 const FIELDS := [
+	{"key":"survey_experiment", "source":"survey_experiment", "audiences":[SAVE], "copy":"dictionary"},
+	{"key":"next_combo_instance_id", "source":"_next_combo_instance_id", "audiences":[SAVE]},
+	{"key":"next_presentation_id", "source":"_next_presentation_id", "audiences":[SAVE]},
+	{"key":"condition_tick_accumulator", "source":"_condition_tick_accumulator", "audiences":[SAVE]},
+	{"key":"player_burn_debt", "source":"_player_burn_debt", "audiences":[SAVE]},
+	{"key":"stealth_last_ended_at", "source":"_stealth_last_ended_at", "audiences":[SAVE]},
 	{"key":"combat_lab", "source":"combat_lab", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
 	{"key":"lab_variant", "source":"lab_variant", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
 	{"key":"lab_armed", "source":"lab_armed", "audiences":[SNAPSHOT,PRESENTATION], "lab_only":true},
@@ -45,8 +51,8 @@ const FIELDS := [
 	{"key":"battle_flow_pips", "source":"battle_flow_pips", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM]},
 	{"key":"battle_flow_remaining", "source":"battle_flow_remaining", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"float"},
 	{"key":"message", "source":"message", "audiences":[SNAPSHOT, PRESENTATION, SAVE]},
-	{"key":"room_clear_pending", "source":"room_clear_pending", "audiences":[SNAPSHOT, PRESENTATION]},
-	{"key":"player_action", "source":"player_action", "audiences":[SNAPSHOT, PRESENTATION, DETERMINISM], "copy":"dictionary", "interpolate":"action"},
+	{"key":"room_clear_pending", "source":"room_clear_pending", "audiences":[SNAPSHOT, PRESENTATION, SAVE]},
+	{"key":"player_action", "source":"player_action", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "copy":"dictionary", "interpolate":"action"},
 	{"key":"player_conditions", "source":"player_conditions", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "copy":"dictionary"},
 	{"key":"player_condition_buildup", "source":"player_condition_buildup", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "copy":"dictionary"},
 	{"key":"player_gale_velocity", "source":"player_gale_velocity", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"vector"},

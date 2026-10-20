@@ -100,6 +100,8 @@ func _initialize() -> void:
 	# taps, and three-to-two was impossible.
 	board.setup_mode = "combat_survey"
 	board.setup_stage = "options"
+	# Choose ordinary/custom Survey rather than a previously resumed named preset.
+	board.survey_choices = preload("res://scripts/core/survey_experiment.gd").defaults()
 	board._layout()
 	# One toggle on the options screen, always present under Combat Survey. It used to be a
 	# section chip that revealed a button that opened a panel you then backed out of before
@@ -185,6 +187,9 @@ func _initialize() -> void:
 	assert(not board.custom_room_open)
 	board._start_run()
 	assert(board.state._custom_room_active())
+	# The normal game's Survey now explicitly confirms behavior/scenario first.
+	assert(board.survey_overlay.get_meta("kind", "") == "experiment_setup")
+	board._confirm_experiment_setup()
 	assert(String(board.state.survey_room_definition.get("formation", "")) == "retinue")
 	assert(bool(board.state.survey_room_definition.get("custom_room", false)))
 	assert(board.state.player_hp <= roundi(float(board.state.player_max_hp) * 0.3))

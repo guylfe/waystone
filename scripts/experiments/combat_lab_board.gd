@@ -1,6 +1,7 @@
 extends "res://scripts/presentation/game_board.gd"
 
 const Lab = preload("res://scripts/experiments/combat_lab_catalog.gd")
+var survey_integrated := false
 var variant := "C"
 var fixture := "F1"
 var arrival := "full"
@@ -52,7 +53,7 @@ var previous_notice := ""
 
 
 func _ready() -> void:
-	lab_session = true
+	lab_session = not survey_integrated
 	var args := OS.get_cmdline_user_args()
 	for index in range(args.size()-1):
 		match args[index]:
@@ -63,7 +64,7 @@ func _ready() -> void:
 			"--rules": lab_rules = args[index+1]
 	scouting = args.has("--scouting")
 	super._ready()
-	_restart()
+	if not survey_integrated: _restart()
 	var panel := PanelContainer.new()
 	lab_panel = panel
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -174,8 +175,11 @@ func _ready() -> void:
 		_sync_information())
 	_setup_inspection_focus()
 	_layout()
-	DisplayServer.window_set_title("Waystone — Experimental Combat Lab")
-	print("LAB READY ",variant," / ",fixture," data=",OS.get_user_data_dir())
+	if not survey_integrated: DisplayServer.window_set_title("Waystone — Experimental Combat Lab")
+	if not survey_integrated: print("LAB READY ",variant," / ",fixture," data=",OS.get_user_data_dir())
+
+func _lab_ui_active() -> bool:
+	return not survey_integrated or (state != null and state.run_active and state.combat_lab and not state.survey_experiment.is_empty() and not map_open and not character_sheet_open and not waystone_menu_open)
 
 func _lab_label(parent: Node, font: int, height: float) -> Label:
 	var label := Label.new()
@@ -367,6 +371,8 @@ func _layout() -> void:
 	# header space must never turn a physical portrait surface into landscape.
 	super._layout()
 	if not is_instance_valid(lab_panel) or not is_instance_valid(action_grid): return
+	lab_panel.visible = _lab_ui_active() and not state.survey_feedback_pending and not state.trial_complete
+	if not _lab_ui_active(): return
 	var full := super._display_safe_layout_rect()
 	var portrait := full.size.y >= full.size.x
 	var side_width := maxf(228,full.size.x*0.245)
@@ -449,6 +455,9 @@ func _selector(parent: Node, options: Array, current: String, caption: String, a
 		action.call(String(options[index])))
 
 func _restart() -> void:
+	if survey_integrated:
+		super._restart()
+		return
 	_cancel_inspection_input()
 	if state != null and state.run_active: state.lab_suspend()
 	state = Lab.create(variant,fixture,lab_loadout,arrival,lab_rules,scouting)
@@ -475,13 +484,18 @@ func _restart() -> void:
 	if entry != null: entry.store_string(JSON.stringify(Lab.json_safe(Lab.manifest(state,fixture,arrival,scouting)),"\t"))
 
 func _sync_survey_overlay() -> void:
-	pass
+	if survey_integrated: super._sync_survey_overlay()
 
 func _mark_autosave(_immediate: bool = false) -> void:
-	pass
+	if survey_integrated: super._mark_autosave(_immediate)
 
 func _process(delta: float) -> void:
 	if state == null: return
+	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
+		if is_instance_valid(lab_panel): lab_panel.visible = false
+		super._process(delta)
+		return
+	lab_panel.visible = true
 	if inspection_release_required:
 		if inspection_held.is_empty() and inspection_axes.is_empty() and inspection_pointers.is_empty() and _physical_input_neutral():
 			inspection_release_required = false
@@ -628,7 +642,7 @@ func _resistance_text(enemy: Dictionary) -> String:
 func _draw() -> void:
 	lab_badge_rects.clear()
 	super._draw()
-	if state == null or not state.run_active: return
+	if state == null or not state.run_active or not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete)): return
 	var origin := _world_to_screen(state.player_pos)
 	if state.lab_armed:
 		var target: Dictionary = state._enemy_by_id(controller.target_id)
@@ -684,6 +698,9 @@ func _enemy_readout_tag(actor_id: int) -> String:
 	return String(enemy_tags.get(actor_id,"?"))
 
 func _draw_actor_phase(_pos: Vector2, _radius: float, _phase_text: String, _player: bool) -> void:
+	if not _lab_ui_active():
+		super._draw_actor_phase(_pos,_radius,_phase_text,_player)
+		return
 	# Player phase belongs in the main panel; enemy phase in the readout strip.
 	pass
 
@@ -723,12 +740,19 @@ func _suspend_lab() -> void:
 	visual = _presentation_snapshot()
 
 func _notification(what: int) -> void:
+	if state == null or not is_instance_valid(survey_overlay): return
+	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
+		super._notification(what)
+		return
 	if state != null and what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED]:
 		_cancel_inspection_input()
 		_suspend_lab()
 	else: super._notification(what)
 
 func _input(event: InputEvent) -> void:
+	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
+		super._input(event)
+		return
 	if is_instance_valid(lab_panel) and _inspection_input(event): return
 	var device := "controller" if event is InputEventJoypadMotion or event is InputEventJoypadButton else "touch" if event is InputEventScreenTouch else "desktop" if event is InputEventMouseButton or event is InputEventKey else ""
 	if device != "" and lab_device != "" and device != lab_device:
@@ -748,6 +772,9 @@ func _input(event: InputEvent) -> void:
 	super._input(event)
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
+		super._unhandled_key_input(event)
+		return
 	if not event is InputEventKey: return
 	if not event.pressed or event.echo:
 		super._unhandled_key_input(event)
@@ -781,6 +808,9 @@ func _keyboard_direction(key: int) -> Vector2:
 	return _screen_delta_to_world_direction(direction)
 
 func _gui_input(event: InputEvent) -> void:
+	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
+		super._gui_input(event)
+		return
 	if suspended or inspection_scroll.visible or replaying_inspection_tap: return
 	var is_pointer := event is InputEventMouseButton or event is InputEventScreenTouch
 	if is_pointer and state.lab_armed and (not board_rect.has_point(event.position) or selected_action != ""):
@@ -810,10 +840,16 @@ func _gui_input(event: InputEvent) -> void:
 	super._gui_input(event)
 
 func _draw_attack_button() -> void:
+	if not _lab_ui_active():
+		super._draw_attack_button()
+		return
 	pass
 
 # The native HUD puts gauges over the board. The lab reserves their own region.
 func _draw_hud() -> void:
+	if not _lab_ui_active():
+		super._draw_hud()
+		return
 	for slot_id in consumable_rects: _draw_consumable(String(slot_id),Rect2(consumable_rects[slot_id]))
 	for name in buttons: _draw_button(String(name),Rect2(buttons[name]))
 	_draw_spell_row()
@@ -831,29 +867,56 @@ func _draw_hud() -> void:
 		draw_string(ThemeDB.fallback_font,hud_rect.position+Vector2(0,78),"XP %d/%d · %s / %s" % [state.carried_xp,state.next_upgrade_cost(),variant,fixture],HORIZONTAL_ALIGNMENT_LEFT,hud_rect.size.x,12,Color("bdcfce"))
 
 func _draw_reset_button() -> void:
+	if not _lab_ui_active():
+		super._draw_reset_button()
+		return
 	pass
 func _draw_view_button() -> void:
+	if not _lab_ui_active():
+		super._draw_view_button()
+		return
 	pass
 func _draw_map_button() -> void:
+	if not _lab_ui_active():
+		super._draw_map_button()
+		return
 	pass
 func _draw_sheet_button() -> void:
+	if not _lab_ui_active():
+		super._draw_sheet_button()
+		return
 	pass
 func _draw_survey_end_button() -> void:
+	if not _lab_ui_active():
+		super._draw_survey_end_button()
+		return
 	pass
 func _draw_inspection() -> void:
+	if not _lab_ui_active():
+		super._draw_inspection()
+		return
 	# Phase/resistance use the reserved strip. Full traits and actual facing
 	# remain in scrollable Review details, outside world telegraphs.
 	if not detail_open: return
 
 func _draw_world_header() -> void:
+	if not _lab_ui_active():
+		super._draw_world_header()
+		return
 	pass
 
 func _draw_area_title() -> void:
+	if not _lab_ui_active():
+		super._draw_area_title()
+		return
 	# Fixture identity lives in the fixed panel/Details; the native travelling-area
 	# splash would cover this bounded battlefield and can outlive a lab restart.
 	pass
 
 func _draw_enemy(enemy: Dictionary) -> void:
+	if not _lab_ui_active():
+		super._draw_enemy(enemy)
+		return
 	# The native camera has a generous offscreen draw margin. A lab actor outside
 	# its reserved board must not be painted under the action/ability panels.
 	var pos := _world_to_screen(enemy["pos"])

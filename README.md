@@ -1,6 +1,25 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.3` (Android version code `303`).
+Current prototype version: `0.3.4` (Android version code `304`).
+
+## v0.3.4 — experimental combat in Combat Survey
+
+From the normal game's **Dev → Survey**, choose Existing combat, experimental
+Paused Sword cuts, or Paused Sword + Commit, independently of Energy / Recovery.
+Use generated/custom rooms or any of the eleven named seed42 presets. G's shifted
+Archer is an F2-only comparison; E's Briarhook boundary remains a labelled comparison.
+The existing Survey ratings, tags, notes, next-room, archive and export workflow
+records behavior, scenario, setup provenance and source/build identity. Presets
+end in a report with explicit same-setup retry. Existing/non-Survey play keeps its
+rules. The shared accepted touch/controller controls serve experimental Survey;
+the three immediate priority enemy reads link to all visible enemies in Details.
+
+Save schema 39 preserves experimental action debt and enemy phases; schema 38
+migrates as Existing combat. Report format 37 keeps historical archive text.
+See [Survey integration](docs/survey-combat-integration.md) for controls, ownership,
+verification and release boundaries. This revision is staged for independent
+integration review; publication, local replacement and device installation follow
+that review. Guy's acceptance of combat feel remains open.
 
 ## v0.3.3 — familiar bars, direct shortcuts and directional aim
 

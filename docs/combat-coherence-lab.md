@@ -1,3 +1,10 @@
+> 0.3.4 integration: the normal game's Dev → Survey is now the player-facing
+> experimental route. See [Survey integration](survey-combat-integration.md).
+> This document retains the internal standalone harness's historical controls
+> and evidence. The preserved accepted package remains unchanged. Use isolated
+> APPDATA/LOCALAPPDATA for internal lab regression; its no-op save/feedback is not
+> the delivered Survey workflow. G/E remain comparisons and feel remains open.
+
 # Local combat coherence lab
 
 20 October 2026. Experimental local branch from `0fb5694fda7f6018b03f4aeed2a3c8533759ec52`. This unnumbered experiment implements Dr. Stone's resolved combat contract. Production remains 0.3.3. Guy's acceptance of feel remains open.
