@@ -123,3 +123,12 @@ synthetic input, rendered inspection, exports, device installation and human pla
 must remain distinct. The pre-existing Bandit expected failure stays in its ledger.
 The old internal scene remains available for regression with isolated user data;
 its no-op feedback/save is not the delivered Survey route.
+
+The explicit debug-only `-- --survey-smoke` entry runs the exported main scene's
+real Survey setup/preset/ratings/archive/save flow, writes `survey-export-smoke.json`
+in user data and exits. It refuses user data outside `.runtime`; all notes say
+AUTOMATED EXPORTED BUILD SMOKE. Ordinary launches never enter this probe. The UI
+custom composer retains its original six-slot limit; eight-actor RunState rooms
+and repositioned crowds in automated evidence are explicit stress diagnostics.
+F0 always retains its native entrance; the earlier harness's unused F0 Scouting
+flag is now explicitly unavailable rather than claiming a shift that never occurred.

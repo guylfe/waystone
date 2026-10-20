@@ -26,6 +26,8 @@ func _ready() -> void:
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
 	_load_survey_identity()
 	_layout()
+	if OS.get_cmdline_user_args().has("--survey-smoke"):
+		load("res://scripts/core/survey_export_probe.gd").call_deferred("run",self)
 
 func _load_survey_identity() -> void:
 	if state.survey_experiment.is_empty(): return

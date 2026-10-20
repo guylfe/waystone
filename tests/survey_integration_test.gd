@@ -153,7 +153,11 @@ func run() -> void:
 	check(board.state.survey_report_text().contains("sword-frozen-commit"),"text report retains provenance")
 	if capture:
 		board._copy_current_survey_report()
-		check(DisplayServer.clipboard_get() == board.state.survey_report_text(),"real clipboard copy readback")
+		await process_frame
+		var copied := DisplayServer.clipboard_get().replace("\r\n","\n")
+		var expected := board.state.survey_report_text().replace("\r\n","\n")
+		evidence.append({"clipboard_expected_characters":expected.length(),"clipboard_copied_characters":copied.length(),"clipboard_equal":copied==expected})
+		check(copied == expected,"real clipboard copy readback (Windows newline normalized)")
 	var archive: Dictionary = board.state.survey_archive()
 	check(archive["runs"].size() == 2 and archive["runs"][1]["report_text"] == "LEGACY ARCHIVE SENTINEL","old archive retained")
 	board._build_survey_archive_overlay()
