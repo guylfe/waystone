@@ -3400,6 +3400,9 @@ func lab_toggle_commit() -> bool:
 
 func lab_input_neutral() -> void:
 	lab_neutral_required = false
+	# Retire only obsolete gate guidance. Refusal/interruption events survive.
+	if lab_notice in ["Suspended; input must return to neutral.","Release controls to continue.","Release controls first.","Suspended · Resume first."]:
+		lab_notice = ""
 
 func lab_forced_replacement() -> void:
 	if not combat_lab: return

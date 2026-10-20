@@ -28,6 +28,11 @@ var lab_badge_rects: Array[Rect2] = []
 var hud_rect := Rect2()
 var detail_open := false
 var previous_layout_size := Vector2.ZERO
+var information_slot: Control
+var guidance: VBoxContainer
+var inspection_scroll: ScrollContainer
+var inspection_content: VBoxContainer
+var enemy_readout_rect := Rect2()
 
 
 func _ready() -> void:
@@ -50,7 +55,6 @@ func _ready() -> void:
 	surface.bg_color = Color("151b1f")
 	panel.add_theme_stylebox_override("panel",surface)
 	add_child(panel)
-	panel.resized.connect(_layout)
 	var margin := MarginContainer.new()
 	for edge in ["left", "right", "top", "bottom"]: margin.add_theme_constant_override("margin_" + edge, 8)
 	panel.add_child(margin)
@@ -58,8 +62,24 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", 8)
 	margin.add_child(column)
 	status = _lab_label(column, 20, 26)
-	instruction = _lab_label(column, 15, 40)
-	feedback = _lab_label(column, 14, 34)
+	# Fixed-height information slot: expanded content scrolls rather than taking
+	# space from the world. The title and every action remain available.
+	information_slot = Control.new()
+	information_slot.custom_minimum_size.y = 82
+	column.add_child(information_slot)
+	guidance = VBoxContainer.new()
+	information_slot.add_child(guidance)
+	guidance.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	instruction = _lab_label(guidance, 15, 40)
+	feedback = _lab_label(guidance, 14, 34)
+	inspection_scroll = ScrollContainer.new()
+	inspection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	information_slot.add_child(inspection_scroll)
+	inspection_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	inspection_content = VBoxContainer.new()
+	inspection_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inspection_scroll.add_child(inspection_content)
+	inspection_scroll.visible = false
 	feedback.add_theme_color_override("font_color", Color("f0c680"))
 	action_grid = GridContainer.new()
 	action_grid.columns = 4
@@ -81,18 +101,21 @@ func _ready() -> void:
 	column.add_child(utility_row)
 	_lab_button(utility_row,"Compare / Retry",func():
 		_suspend_lab()
-		selector_panel.visible = not selector_panel.visible)
+		selector_panel.visible = not selector_panel.visible
+		_sync_information())
 	_lab_button(utility_row,"Resume",func():
 		suspended = false
 		controller.paused = false
-		state.lab_neutral_required = true)
+		state.lab_neutral_required = true
+		if state.lab_notice.begins_with("Suspended"): state.lab_notice = "Release controls to continue.")
 	details_button = _lab_button(utility_row,"Review details",func():
 		detail_open = not detail_open
-		diagnostics.visible = detail_open)
-	diagnostics = _lab_label(column, 14, 0)
+		diagnostics.visible = detail_open
+		_sync_information())
+	diagnostics = _lab_label(inspection_content, 14, 0)
 	diagnostics.visible = false
 	selector_panel = HFlowContainer.new()
-	column.add_child(selector_panel)
+	inspection_content.add_child(selector_panel)
 	selector_panel.visible = false
 	_selector(selector_panel,["isometric","top_down"],view_mode,func(value):
 		view_mode=value
@@ -104,12 +127,15 @@ func _ready() -> void:
 	_selector(selector_panel,["energy","recovery"],lab_rules,func(value): lab_rules=value)
 	var scout := CheckButton.new()
 	scout.text = "Scouting (-340 west)"
+	scout.custom_minimum_size.y = 48
 	scout.button_pressed = scouting
 	scout.toggled.connect(func(value): scouting=value)
 	selector_panel.add_child(scout)
 	_lab_button(selector_panel,"Start fresh",func():
 		_restart()
-		selector_panel.visible=false)
+		selector_panel.visible=false
+		_sync_information())
+	_layout()
 	DisplayServer.window_set_title("Waystone — Experimental Combat Lab")
 	print("LAB READY ",variant," / ",fixture," data=",OS.get_user_data_dir())
 
@@ -127,35 +153,33 @@ func _lab_label(parent: Node, font: int, height: float) -> Label:
 	else: parent.add_child(label)
 	return label
 
+func _sync_information() -> void:
+	inspection_scroll.visible = detail_open or selector_panel.visible
+	guidance.visible = not inspection_scroll.visible
+	inspection_scroll.scroll_vertical = 0
+	_layout()
+
 func _layout() -> void:
+	# Native orientation is always derived from the full safe display. Reserved
+	# header space must never turn a physical portrait surface into landscape.
 	super._layout()
-	if not is_instance_valid(lab_panel): return
+	if not is_instance_valid(lab_panel) or not is_instance_valid(action_grid): return
 	var full := super._display_safe_layout_rect()
 	var portrait := full.size.y >= full.size.x
 	var side_width := maxf(228,full.size.x*0.245)
 	var width := full.size.x if portrait else full.size.x-side_width-12
-	lab_panel.position = full.position
-	lab_panel.size.x = width
 	action_grid.columns = 2 if width < 460 else 4
-	if not portrait:
-		# Preserve the native right-side gauges/skills; reserve only world area.
-		var header := lab_panel.size.y + 8.0
-		board_area.size.x = width
-		board_area.position.y = full.position.y + header
-		board_area.size.y = maxf(80.0, full.size.y - header)
-		_update_projection()
-		for rect_name in ["reset_rect", "view_rect", "map_rect", "sheet_button_rect", "survey_end_rect"]:
-			var rect: Rect2 = get(rect_name)
-			rect.position.y += header
-			set(rect_name, rect)
+	# Recompute from authored compact slots, never the previous Container size.
+	var header := 30.0 + 82.0 + (104.0 if action_grid.columns == 2 else 48.0) + 48.0 + 24.0 + 16.0
+	lab_panel.position = full.position
+	lab_panel.size = Vector2(width,header)
 	if portrait:
-		board_area.size.y = minf(board_area.size.y,maxf(80,interaction_rect.position.y-8-board_area.position.y))
-		_update_projection()
 		for action_name in buttons:
 			var rect: Rect2 = buttons[action_name]
 			rect.size.y = maxf(48,rect.size.y)
 			buttons[action_name] = rect
-		hud_rect = Rect2(full.position + Vector2(8,lab_panel.size.y+8),Vector2(full.size.x-16,62))
+		interaction_rect.size.y = maxf(48,interaction_rect.size.y)
+		hud_rect = Rect2(full.position + Vector2(8,header+8),Vector2(full.size.x-16,62))
 	else:
 		var side_x := full.end.x-side_width+4
 		var control_width := side_width-12
@@ -167,6 +191,16 @@ func _layout() -> void:
 		var action_names := ["defense","skill","rally","advance","adopted"]
 		var action_height := maxf(48,(full.size.y-212-32)/5)
 		for index in range(5): buttons[action_names[index]] = Rect2(Vector2(side_x,full.position.y+204+index*(action_height+8)),Vector2(control_width,action_height))
+	# Phase/resistance reads have their own strip, outside every contact tell.
+	# Reserve by fixture roster (including off-camera actors), so action/visibility
+	# changes do not shift the world. The current F2 maximum is three actors.
+	var rows := mini(3,state.enemies.size()) if state != null else 0
+	var readout_y := full.position.y + header + (78.0 if portrait else 8.0)
+	enemy_readout_rect = Rect2(Vector2(full.position.x,readout_y),Vector2(width,rows*38.0))
+	var world_y := enemy_readout_rect.end.y + 4
+	var world_end := interaction_rect.position.y-8 if portrait else full.end.y
+	board_area = Rect2(Vector2(full.position.x,world_y),Vector2(width,maxf(0,world_end-world_y)))
+	_update_projection()
 	# These native toolbar hit regions would be invisible under the lab panel.
 	reset_rect = Rect2()
 	view_rect = Rect2()
@@ -183,14 +217,6 @@ func _layout() -> void:
 		selected_action = ""
 		state.set_attack_hold(false)
 	previous_layout_size = size
-
-func _display_safe_layout_rect() -> Rect2:
-	var rect := super._display_safe_layout_rect()
-	if is_instance_valid(lab_panel) and rect.size.y >= rect.size.x:
-		var header := lab_panel.size.y + 78.0
-		rect.position.y += header
-		rect.size.y -= header
-	return rect
 
 func _lab_attack(held: bool = false) -> void:
 	if suspended:
@@ -216,7 +242,7 @@ func _lab_button(parent: Node, text: String, action: Callable) -> Button:
 
 func _selector(parent: Node, options: Array, current: String, action: Callable) -> void:
 	var select := OptionButton.new()
-	select.custom_minimum_size.y = 48
+	select.custom_minimum_size = Vector2(48,48)
 	for value in options: select.add_item(String(value))
 	select.selected = options.find(current)
 	select.item_selected.connect(func(index): action.call(String(options[index])))
@@ -361,12 +387,42 @@ func _draw() -> void:
 		var end := _world_to_screen(state.player_pos + Vector2(queued["direction"]).normalized() * 140)
 		draw_dashed_line(origin,end,Color("f0cf77"),2,7)
 		_draw_lab_arrow(origin,end,Color("f0cf77"))
+	draw_rect(enemy_readout_rect,Color("101b23"))
+	for read in enemy_readout_model():
+		var rect: Rect2 = read["rect"]
+		draw_rect(rect,Color("101b23"))
+		draw_string(ThemeDB.fallback_font,rect.position+Vector2(8,15),read["lines"][0],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("eff3e8"))
+		draw_string(ThemeDB.fallback_font,rect.position+Vector2(8,32),read["lines"][1],HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color("c3d9d6"))
+
+func enemy_readout_model() -> Array:
+	var result: Array = []
 	for enemy in Array(visual.get("enemies",[])):
+		if result.size() >= 3: break
 		if int(enemy.get("hp",0)) <= 0: continue
 		var pos := _world_to_screen(enemy["pos"])
-		if board_rect.has_point(pos):
-			var read := _resistance_text(enemy).split(" · ")[-1]
-			_draw_lab_caption(pos + Vector2(38,-8),read,Color("dbe5d9"))
+		# No offscreen-threat completeness claim: identify unseen actors explicitly.
+		var on_board := board_rect.has_point(pos)
+		if not state.enemy_visible_to_player(enemy): continue
+		var facts := CombatCatalogScript.presentation(String(enemy["kind"]))
+		var action: Dictionary = enemy.get("action",{})
+		var phase := _phase(action).capitalize()
+		if phase == "": phase = String(action.get("kind","idle")).capitalize()
+		var resistance := _resistance_text(enemy)
+		var tag := _enemy_readout_tag(int(enemy["id"]))
+		result.append({"id":int(enemy["id"]),"phase":phase,"resistance":resistance,"on_board":on_board,
+			"rect":Rect2(enemy_readout_rect.position+Vector2(0,result.size()*38),Vector2(enemy_readout_rect.size.x,36)),
+			"lines":["#%s %s · %s%s" % [tag,facts["name"],phase," · off view" if not on_board else ""],resistance]})
+	return result
+
+func _enemy_readout_tag(actor_id: int) -> String:
+	# Stable short fixture-local key; removing a dead actor never renumbers peers.
+	for index in range(state.enemies.size()):
+		if int(state.enemies[index]["id"]) == actor_id: return str(index+1)
+	return "?"
+
+func _draw_actor_phase(_pos: Vector2, _radius: float, _phase_text: String, _player: bool) -> void:
+	# Player phase belongs in the main panel; enemy phase in the readout strip.
+	pass
 
 func _direction_read(direction: Vector2) -> String:
 	var screen := _screen_direction(direction)
@@ -377,24 +433,6 @@ func _draw_lab_arrow(start: Vector2, end: Vector2, color: Color) -> void:
 	var backward := (start-end).normalized()
 	draw_line(end,end+backward.rotated(0.5)*10,color,2)
 	draw_line(end,end+backward.rotated(-0.5)*10,color,2)
-
-func _draw_lab_caption(point: Vector2, text: String, color: Color) -> void:
-	var width := ThemeDB.fallback_font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,12).x
-	point.x = clampf(point.x,board_rect.position.x+8,maxf(board_rect.position.x+8,board_rect.end.x-width-8))
-	point.y = clampf(point.y,board_rect.position.y+18,board_rect.end.y-18)
-	var badge := Rect2(point-Vector2(3,13),Vector2(width+6,18))
-	for offset in [0,22,-22,44,-44,66,-66]:
-		var candidate := Rect2(Vector2(badge.position.x,clampf(badge.position.y+offset,board_rect.position.y,board_rect.end.y-badge.size.y)),badge.size)
-		var available := true
-		for occupied in lab_badge_rects:
-			if candidate.grow(2).intersects(occupied): available = false
-		if available:
-			badge = candidate
-			break
-	lab_badge_rects.append(badge)
-	point = badge.position+Vector2(3,13)
-	draw_rect(badge,Color("101b23"))
-	draw_string(ThemeDB.fallback_font,point,text,HORIZONTAL_ALIGNMENT_LEFT,-1,12,color)
 
 func _physical_input_neutral() -> bool:
 	if Input.is_anything_pressed(): return false
@@ -534,8 +572,8 @@ func _draw_sheet_button() -> void:
 func _draw_survey_end_button() -> void:
 	pass
 func _draw_inspection() -> void:
-	# The current resistance badge is always visible. Full traits and actual facing
-	# remain in Review details, outside world telegraphs.
+	# Phase/resistance use the reserved strip. Full traits and actual facing
+	# remain in scrollable Review details, outside world telegraphs.
 	if not detail_open: return
 
 func _draw_world_header() -> void:
@@ -544,4 +582,12 @@ func _draw_world_header() -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	# The native camera has a generous offscreen draw margin. A lab actor outside
 	# its reserved board must not be painted under the action/ability panels.
-	if board_rect.has_point(_world_to_screen(enemy["pos"])): super._draw_enemy(enemy)
+	var pos := _world_to_screen(enemy["pos"])
+	if not board_rect.has_point(pos): return
+	super._draw_enemy(enemy)
+	# Short identifier sits inside the actor silhouette rather than across its
+	# facing, pips or contact geometry. Full name and facts live in the strip.
+	var tag := _enemy_readout_tag(int(enemy["id"]))
+	var width := ThemeDB.fallback_font.get_string_size(tag,HORIZONTAL_ALIGNMENT_LEFT,-1,11).x
+	draw_rect(Rect2(pos-Vector2(width/2+2,9),Vector2(width+4,14)),Color("101b23"))
+	draw_string(ThemeDB.fallback_font,pos+Vector2(-width/2,2),tag,HORIZONTAL_ALIGNMENT_LEFT,-1,11,Color.WHITE)

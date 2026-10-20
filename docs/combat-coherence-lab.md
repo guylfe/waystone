@@ -79,3 +79,40 @@ under `.runtime/review-captures`. Incoming-hit captures use actual resolution;
 fixtures with a P suffix remain injected recovery diagnoses. Captures and synthetic
 input do not establish physical hardware behavior or human acceptance. The handoff
 records exact checks, inspected frames and the background-launch route.
+
+## Focused presentation repair (20 October 2026)
+
+An isolated revision based on reviewed `f31046b2910b6af485be5cdeb90a4b0635cabf72`
+repairs D1–D3. Details and Compare now share an 82-unit scrollable information
+slot above the fixed action controls. The title remains visible; opening either
+temporarily replaces instruction/feedback in that slot. Full inspected traits,
+diagnostics and all selectors remain reachable by scrolling. Closing restores
+guidance. Header height is recomputed from compact authored slots, and native
+orientation always uses the full safe display. Portrait abilities stay in their
+bottom row. Simulation/world geometry is unchanged.
+
+The lab suppresses redundant actor phase captions through a presentation hook;
+normal-game caption placement is preserved. Enemy phase and resistance facts
+occupy a separate two-line strip above the world, using the existing phase and
+resistance predicates. Full names and stable fixture-local numbers match keys inside
+actor silhouettes, leaving facing arrows, pips and contact tells free of long
+captions. The strip reserves up to three fixture roster rows independent of
+action/visibility changes. This costs 38 logical units per row of world-view
+height; it is a bounded F1–F3 experiment presentation, not an offscreen-threat
+or full F0 camera solution. Human motion readability of the hierarchy remains open.
+
+Resume retains its fresh-neutral requirement. Only obsolete suspension/neutral
+gate messages are retired on neutral; interruption and refusal messages persist.
+No combat timing, costs, damage, armor, target eligibility, captured exit bearing,
+optional/Commit pip rules or variant selection changes are included. C remains
+default; G/E remain independent comparisons.
+
+`combat_lab_presentation_test.gd` runs repeated details/Compare/Resume, actual
+synthetic key hold/release, scroll reachability, viewport containment, 48-unit
+controls, full enemy text widths and portrait/landscape rotation at the five
+review sizes in both projections. `-- --capture` requires real rendering and
+saves pixels in `.runtime/presentation-captures`, with separate headless/render
+JSON reports. The identical harness fails on the preserved reviewed candidate.
+The accompanying repair handoff owns exact logs, before/after captures, hashes,
+inspection records and focused input/replay results. No physical input, native
+window delivery, export/install or Guy acceptance is established.

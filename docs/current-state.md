@@ -77,3 +77,13 @@ The live development branch is `main`. `archive/main-pre-0.2` is historical. Do 
 The isolated, unnumbered candidate implements selectable A/B/C/G/E lab rules and seed42 fixtures. Production remains 0.3.3. See [the lab implementation and verification boundary](combat-coherence-lab.md); automated success does not establish human acceptance of feel.
 
 The independent review-correction candidate adds truthful pips, a fixed state panel, range-filtered explicit targets, debt/facing/resistance reads and real background OpenGL captures. C remains default. See the lab owner document and accompanying handoff for focused checks and limits; physical input, independent acceptance and Guy's feel remain open.
+
+A further isolated presentation repair from reviewed `f31046b` bounds details and
+Compare in a scrollable slot, restores compact world/control geometry through
+close/Resume and rotation, separates attributed enemy phase/resistance text from
+combat marks, and retires obsolete suspension guidance after neutral. The same
+new regression sequence fails on the preserved candidate and passes on the
+repair across five sizes and both projections, with actual background-rendered
+evidence and focused input/replay checks. See the lab owner and repair handoff
+for exact evidence. C/G/E mechanics and selection remain unchanged; independent
+rendered re-check, physical delivery and human feel acceptance remain open.

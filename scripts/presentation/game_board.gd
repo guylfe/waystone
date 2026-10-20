@@ -3600,7 +3600,7 @@ func _draw_player() -> void:
 	# radius x 4.4 clipped "FOLLOWING THROUGH" to "FOLLOWING THR". 0.2.66 widened the enemy
 	# readout for exactly this and never checked the player's, which is its own draw site --
 	# the same defect surviving on the side the player looks at most.
-	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, -radius * 2.05), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8f4f1"))
+	_draw_actor_phase(pos, radius, phase, true)
 	_draw_warrior_status(pos, radius, action)
 	var exhaustion := float(visual.get("player_exhaustion_remaining", state.player_exhaustion_remaining))
 	if exhaustion > 0.0001:
@@ -3806,7 +3806,14 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var phase := _phase(action)
 	# Width was radius x 4.4, which clipped "DRAWING BREATH" to "DRAWING BREAT". A telegraph
 	# that cannot finish its own word is not a telegraph.
-	if phase != "": draw_string(ThemeDB.fallback_font, pos + Vector2(-radius * 3.4, radius * 2.1), phase, HORIZONTAL_ALIGNMENT_CENTER, radius * 6.8, maxi(9, int(radius * 0.55)), Color("d8ddd8"))
+	_draw_actor_phase(pos, radius, phase, false)
+
+# The lab moves redundant actor captions into reserved information regions.
+# Normal-game placement, sizes and colours retain their existing behavior.
+func _draw_actor_phase(pos: Vector2, radius: float, phase_text: String, player: bool) -> void:
+	if phase_text == "": return
+	var offset := -2.05 if player else 2.1
+	draw_string(ThemeDB.fallback_font,pos+Vector2(-radius*3.4,radius*offset),phase_text,HORIZONTAL_ALIGNMENT_CENTER,radius*6.8,maxi(9,int(radius*0.55)),Color("d8f4f1") if player else Color("d8ddd8"))
 
 # The hurl promises both a lane and a landing point at commitment. Its projectile will
 # follow this exact line; neither marker chases the player during the wind-up.
