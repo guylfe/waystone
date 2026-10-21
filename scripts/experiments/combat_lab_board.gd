@@ -790,6 +790,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		state.lab_notice = "Commit running · All remaining cuts locked."
 		return
 	match event.keycode:
+		KEY_F:
+			# The primary attack key also continues a stopped Sword sequence.
+			# The ordinary board requires idle before starting a new attack, while
+			# a junction still owns the current combo and its unpaid exit.
+			if state.lab_junction():
+				attack_key_held = true
+				_begin_streamed_action(state.lab_continue(true))
+			else: super._unhandled_key_input(event)
 		KEY_K: state.lab_toggle_commit()
 		KEY_J: _begin_streamed_action(state.lab_recover())
 		KEY_T: controller.cycle_target(self)

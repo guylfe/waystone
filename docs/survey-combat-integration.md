@@ -8,6 +8,56 @@ archive R1/R2 and shared-menu-hints review have passed; this is the normal relea
 route. External release evidence records final GitHub/local destination checks.
 Human combat feel, physical controls and device play are separate evidence.
 
+## Isolated primary-key correction — 21 October 2026
+
+Candidate only, based on released `8c6b62f`; no release replacement. In B/C
+Sword play, F down/up, wait for the first frozen junction, then F down/up
+previously left the action at cut 1. The native board's F handler requires an
+idle player before starting an attack; a frozen junction retains its combo.
+The shared experiment adapter now routes F at a junction through `lab_continue`,
+and tracks the key so its release still ends the hold. Initial attack, Enter,
+RT, pointer, recovery and ordinary non-experimental rules retain their owners.
+
+`tests/survey_pause_input_test.gd` enters the main scene's Survey setup, chooses
+actual native fields/buttons, reads back effective behavior/scenario/resource
+rules, and routes viewport keyboard, mouse, touch and controller events. It
+manually advances normal board frames and records action IDs, cut indices,
+simulation ticks, release, long deliberation, continuation and menu handover.
+Named F1-P is explicitly an injected recovery diagnostic; ordinary seed42 rooms
+use the normal generator. The test checks B/C versus Existing, Energy/Recovery,
+tap and hold, RT hysteresis, all three cuts, Enter, Recover, queued Move/Dodge,
+and Esc/menu Resume. It refuses user storage outside `.runtime` and resets
+only its isolated save. Run with isolated APPDATA/LOCALAPPDATA using
+`./run-tests.ps1 survey_pause_input_test`.
+
+The retained baseline/candidate traces distinguish a refused F continuation
+from a new attack: the baseline stays at tick 76, elapsed 0.633333, phase 0,
+action ID 1; the correction reaches tick 140, elapsed 1.166667, phase 1 with
+ID 1, then phase 2 with that same ID. Existing control intentionally finishes
+its recovery and starts action ID 2/cut 1 on the next attack. Opening the menu
+also deliberately finishes the current obligation, so a post-Resume attack is
+a new sequence. Neither observation establishes which path Guy encountered.
+The exact reported reset remains unresolved without his mode, effective
+Behavior/weapon and input sequence. No out-of-Survey mechanic was changed.
+
+Candidate verification: the final routed suite passes 324 checks with zero
+failures. The same harness against released source and embedded resources fails 17
+continuation checks, all on F; other routed checks pass. Five focused suites
+also pass: Survey integration, combo continuation, experimental contract
+(11,563 checks, including explicit forced-hit diagnostics), experimental input,
+and controller input. The historical tests missed this defect because the
+lab input test started its normal combo through a direct state request and
+continued it with Enter; the integration suite did not test F-release-F at a
+frozen junction. The new test is included in the default headless suite.
+
+These are source and synthetic viewport-input results. Loading a byte-identical
+released EXE as `--main-pack` in the matching Godot 4.7 console engine tests its
+embedded resources, not physical execution of its Windows input surface. The
+export template ignores the external `--script` probe; no direct-executable
+combat reproduction, new export, device install, rendered inspection or human
+feel acceptance is claimed here. External handoff records exact results and
+artifact paths. Existing contract tests cover legitimate interruption separately.
+
 ## Archive layout correction — 21 October 2026
 
 The independent lifecycle/persistence/provenance review of `962ee4a` passed

@@ -8,6 +8,15 @@
 
 ## Survey integration
 
+An isolated correction candidate from `8c6b62f` routes the primary F key through
+the existing continuation token at a frozen Sword junction. Released F was
+refused there by the native idle-only attack gate. The main-scene routed input
+regression and remaining reproduction gap are documented in
+[Survey integration](survey-combat-integration.md#isolated-primary-key-correction--21-october-2026).
+This is a bounded demonstrated input fix; Guy's specific attack-reset report
+remains unconfirmed. No release, normal build replacement or human acceptance
+is implied.
+
 0.3.4 integrates the accepted frozen-Sword/Commit experiment into the normal
 **Dev → Survey** entry for generated/custom/exact-roster rooms and all eleven
 named presets. Existing behavior remains the initial default; Energy/Recovery is

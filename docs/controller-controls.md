@@ -1,5 +1,11 @@
 # PC controller controls
 
+The isolated 21 October primary-key correction also permits keyboard F to
+continue a frozen experimental Sword junction, using the same token as Enter
+and RT. Its routed regression checks RT 0.55/0.25 press/release hysteresis and
+release/repress through cuts 2/3; physical-controller acceptance remains open.
+See [the bounded correction](survey-combat-integration.md#isolated-primary-key-correction--21-october-2026).
+
 The accepted 21 October Survey correction reflows shared native menu hints into
 whole glyph/word pairs at narrow widths, preserving their labels and sizes. The
 archive uses wrapping 48-unit records in one scroll owner; focus scrolling and
