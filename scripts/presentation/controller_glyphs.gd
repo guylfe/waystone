@@ -30,6 +30,7 @@ static func hint(canvas: CanvasItem, position: Vector2, key: String, label: Stri
 	text(canvas, position + Vector2(36, 21) * scale, label, 150 * scale, int(16 * scale), Color("e0edf2"))
 
 static func toolbar(canvas: CanvasItem, rect: Rect2, key: String, label: String) -> void:
+	if rect.size.x <= 0 or rect.size.y <= 0: return
 	canvas.draw_rect(rect, Color("101f28"))
 	var side := rect.size.y * 0.75
 	draw(canvas, key, Rect2(rect.position + Vector2(3, (rect.size.y - side) * 0.5), Vector2.ONE * side))

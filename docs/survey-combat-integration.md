@@ -1,5 +1,11 @@
 # Combat Survey experimental behavior
 
+> An unpublished successor to the keyboard-only `fb61431` candidate repairs the
+> Survey menu/Character input handover and bounded navigation/metrics contract.
+> [The correction ledger](menu-input-correction.md) owns exact implementation,
+> source/headless checks and the remaining rendered boundary. Live 0.3.4 is not
+> replaced, and Guy's precise attack-reset report is not labelled resolved.
+
 21 October 2026. Accepted 0.3.4 integration; Android 304, save schema 39,
 Survey format 37. The accepted internal combat source is
 `060cb8e0a47f1c54e542a9860f44ebda683b94de`. The main game is the player-facing

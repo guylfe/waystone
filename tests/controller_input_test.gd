@@ -135,6 +135,7 @@ func test_palette_and_setup() -> void:
 	var entries: Array = board.controller.menu_entries(board)
 	check(entries.size() >= 6, "setup exposes all four characters and start/back")
 	board.controller.focus_index = 3
+	board.controller.focus_id = "" # Legacy explicit-index unit diagnostic; routed journeys own navigation acceptance.
 	tap(board, JOY_BUTTON_A)
 	check(board.setup_loadout == "mage_elementalist", "fourth character is reachable on controller")
 	tap(board, JOY_BUTTON_B)

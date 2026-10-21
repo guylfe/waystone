@@ -1,5 +1,16 @@
 # PC controller controls
 
+**Unpublished 22 October correction:** setting rows use Up/Down to choose and
+Left/Right to change values; grids follow visible neighbors; A/Enter activates
+and B/Escape returns to the invoker. Captured releases survive Character/menu
+handover, while held controls still require physical neutral and a fresh press.
+Setup edits preserve semantic focus/scroll. Archive list/detail and Character
+subviews have separate return contexts. Character uses responsive native rows;
+menu sizes convert through the actual viewport transform. See the
+[implementation and evidence ledger](menu-input-correction.md). This is a
+candidate contract, with final native rendering and physical comfort still open;
+the established released bindings below retain their historical status.
+
 The isolated 21 October primary-key correction also permits keyboard F to
 continue a frozen experimental Sword junction, using the same token as Enter
 and RT. Its routed regression checks RT 0.55/0.25 press/release hysteresis and

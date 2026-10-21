@@ -189,7 +189,10 @@ func run() -> void:
 	await junction()
 	key(KEY_ESCAPE,true); key(KEY_ESCAPE,false); advance(0.1)
 	check(board.suspended and board.state.is_player_ready(),"menu deliberately pays cut exit")
-	tap(board.utility_row.get_child(1).get_global_rect().get_center()); advance(0.1)
+	await settle() # Native menu metrics settle through Container layout before hit testing.
+	# The full menu now owns Resume; use its visible command rather than the HUD
+	# shortcut covered by the modal.
+	tap(board.next_page.get_parent().get_child(3).get_global_rect().get_center()); advance(0.1)
 	check(not board.suspended and not board.state.lab_neutral_required,"Resume releases neutral gate")
 	attack("F",true); advance(0.05); attack("F",false)
 	check(board.state.player_action.get("combo_instance_id",-1)==2 and board.state.player_action.get("committed_phase",-1)==0,"fresh post-menu attack begins a new sequence")

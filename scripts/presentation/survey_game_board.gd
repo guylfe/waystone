@@ -1,12 +1,42 @@
 extends "res://scripts/experiments/combat_lab_board.gd"
 
 const Experiment = preload("res://scripts/core/survey_experiment.gd")
+var inspection_return := false
 var survey_choices := Experiment.defaults()
 var survey_setup_confirmed := false
 var overlay_pointers: Dictionary = {}
 var overlay_replaying := false
 var overlay_release_gate := false
 var survey_setup_summary: Label
+
+func _return_inspection_view() -> void:
+	if not inspection_return: return
+	inspection_return=false
+	suspended=true
+	selector_panel.visible=true
+	_sync_information()
+
+func _refresh_setup_choices() -> void:
+	for control in survey_overlay.find_children("*","Button",true,false):
+		if control.has_meta("menu_refresh"):
+			control.get_meta("menu_refresh").call()
+			var row=control.get_parent()
+			row.get_child(0).disabled=control.disabled
+			row.get_child(row.get_child_count()-1).disabled=control.disabled
+	_update_setup_summary()
+
+func _choice_row(parent: Node, button: Button, id: String, change: Callable) -> void:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var previous := _survey_action_button("‹",func(): change.call(-1))
+	previous.custom_minimum_size.x=48; previous.set_meta("menu_skip",true)
+	row.add_child(previous)
+	button.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	button.set_meta("menu_id",id); button.set_meta("menu_change",change)
+	row.add_child(button)
+	var next := _survey_action_button("›",func(): change.call(1))
+	next.custom_minimum_size.x=48; next.set_meta("menu_skip",true)
+	row.add_child(next)
 
 func _restart() -> void:
 	super._restart()
@@ -20,9 +50,9 @@ func _ready() -> void:
 		selector_panel.remove_child(child)
 		child.queue_free()
 	_selector(selector_panel,["isometric","top_down"],view_mode,"Projection",func(value): view_mode=value; _layout())
-	_lab_button(selector_panel,"Character · C",func(): _close_inspection(); suspended=false; character_sheet_open=true)
-	_lab_button(selector_panel,"Map · M",func(): _close_inspection(); suspended=false; map_open=true)
-	_lab_button(selector_panel,"End Survey / rate",func(): _close_inspection(); suspended=false; _build_survey_end_confirmation())
+	_lab_button(selector_panel,"Character · C",func(): inspection_return=true; _close_inspection(); suspended=false; _open_character_sheet())
+	_lab_button(selector_panel,"Map · M",func(): inspection_return=true; _close_inspection(); suspended=false; map_open=true)
+	_lab_button(selector_panel,"End Survey / rate",func(): inspection_return=true; _close_inspection(); suspended=false; _build_survey_end_confirmation())
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
 	_load_survey_identity()
 	_layout()
@@ -83,7 +113,8 @@ func _build_experiment_setup() -> void:
 	_add_setup_choice(content,"Between rooms",["encounter","attrition"],setup_survey_profile,func(value): setup_survey_profile=value)
 	var seed := LineEdit.new()
 	seed.text = seed_input.text
-	seed.placeholder_text = "Seed · blank for random; presets use 42"
+	seed.placeholder_text = "Seed · optional keyboard entry; presets use 42"
+	seed.set_meta("menu_id","setup:seed")
 	seed.custom_minimum_size.y = 56
 	seed.add_theme_font_size_override("font_size",18)
 	seed.text_changed.connect(func(value): seed_input.text=value)
@@ -99,7 +130,7 @@ func _build_experiment_setup() -> void:
 	survey_setup_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	survey_setup_summary.add_theme_font_size_override("font_size",17)
 	content.add_child(survey_setup_summary)
-	_update_setup_summary()
+	_refresh_setup_choices()
 	content.add_child(_survey_action_button("PLAY SELECTED SURVEY",_confirm_experiment_setup))
 	content.add_child(_survey_action_button("BACK TO CHARACTER / RESOURCE / CUSTOM SETUP",_close_experiment_setup))
 	_add_controller_hints(content)
@@ -109,11 +140,19 @@ func _build_experiment_setup() -> void:
 		if control is Control and control.focus_mode != Control.FOCUS_NONE:
 			control.focus_entered.connect(func(): scroll.ensure_control_visible(control))
 
-func _add_setup_choice(parent: Node, caption: String, values: Array, current: String, action: Callable) -> void:
-	var shown := CombatCatalogScript.loadout_name(current) if caption == "Character" else current.capitalize()
-	parent.add_child(_survey_action_button(caption+" · "+shown+" ›",func():
-		action.call(String(values[(values.find(current)+1)%values.size()]))
-		_build_experiment_setup()))
+func _add_setup_choice(parent: Node, caption: String, values: Array, _current: String, action: Callable) -> void:
+	var property: String={"Character":"setup_loadout","Resource rules":"setup_combat_rules","Between rooms":"setup_survey_profile"}[caption]
+	var button := _survey_action_button("",func(): pass)
+	var refresh := func():
+		var current := str(get(property))
+		button.text=caption+" · "+(CombatCatalogScript.loadout_name(current) if caption=="Character" else current.capitalize())
+	var change := func(delta: int):
+		action.call(str(values[posmod(values.find(str(get(property)))+delta,values.size())]))
+		_refresh_setup_choices()
+	button.set_meta("menu_refresh",refresh)
+	button.pressed.connect(func(): change.call(1))
+	_choice_row(parent,button,"setup:"+property,change)
+	refresh.call()
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 	super._pointer_pressed(position,is_mouse)
@@ -122,21 +161,22 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 
 func _add_choice(parent: Node, field: String, options: Dictionary, caption: String) -> void:
 	var button := _survey_action_button("",func(): pass)
-	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var refresh := func(): button.text = caption+" · "+String(options[survey_choices[field]])+" ›"
-	refresh.call()
-	button.pressed.connect(func():
+	var refresh := func():
+		button.text=caption+" · "+str(options[survey_choices[field]])
+		button.disabled=field in ["arrival","scouting"] and survey_choices.scenario=="generated" or field=="scouting" and survey_choices.scenario=="F0"
+	var change := func(delta: int):
 		var keys := options.keys()
-		survey_choices[field] = keys[(keys.find(survey_choices[field])+1)%keys.size()]
-		if survey_choices["behavior"] == "G" and survey_choices["scenario"] != "F2":
-			if field == "behavior": survey_choices["scenario"] = "F2"
-			else: survey_choices["behavior"] = "C"
-		if survey_choices["scenario"] == "generated":
-			survey_choices["arrival"] = "full"
-			survey_choices["scouting"] = false
-		if survey_choices["scenario"] == "F0": survey_choices["scouting"] = false
-		_build_experiment_setup())
-	parent.add_child(button)
+		survey_choices[field]=keys[posmod(keys.find(survey_choices[field])+delta,keys.size())]
+		if survey_choices.behavior=="G" and survey_choices.scenario!="F2":
+			if field=="behavior": survey_choices.scenario="F2"
+			else: survey_choices.behavior="C"
+		if survey_choices.scenario=="generated": survey_choices.arrival="full"; survey_choices.scouting=false
+		if survey_choices.scenario=="F0": survey_choices.scouting=false
+		_refresh_setup_choices()
+	button.set_meta("menu_refresh",refresh)
+	button.pressed.connect(func(): change.call(1))
+	_choice_row(parent,button,"setup:"+field,change)
+	refresh.call()
 
 func _update_setup_summary() -> void:
 	var named: bool = survey_choices["scenario"] != "generated"
@@ -269,6 +309,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	super._unhandled_key_input(event)
 
 func _input(event: InputEvent) -> void:
+	if state != null: _observe_menu_input(event)
 	# Real native Survey overlay touch taps and swipes share one captured route.
 	# Pointer IDs stay cancelled across closing/rebuilding/resizing until release.
 	if overlay_replaying: return

@@ -12,7 +12,7 @@ var status: Label
 var continue_button: Button
 var recover_button: Button
 var commit_button: Button
-var selector_panel: HFlowContainer
+var selector_panel: VBoxContainer
 var lab_keys: Dictionary = {}
 var lab_pointer := false
 var lab_device := ""
@@ -46,6 +46,11 @@ var inspection_focus: Array[Control] = []
 var enemy_tags: Dictionary = {}
 var inspection_buttons: Dictionary = {}
 var inspection_held: Dictionary = {}
+var inspection_focus_name := ""
+var inspection_navigation := Vector2.ZERO
+var inspection_repeat := 0.0
+var inspection_backdrop: ColorRect
+var observed_contacts: Dictionary = {}
 var inspection_axes: Dictionary = {}
 var inspection_release_required := false
 var notice_history: Array[String] = []
@@ -98,7 +103,14 @@ func _ready() -> void:
 		enemy_lines.append(line)
 	inspection_frame = HBoxContainer.new()
 	information_slot.add_child(inspection_frame)
-	inspection_frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	inspection_frame.reparent(self)
+	inspection_frame.z_index=80
+	inspection_backdrop=ColorRect.new()
+	inspection_backdrop.color=Color("102128")
+	inspection_backdrop.z_index=70
+	inspection_backdrop.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	add_child(inspection_backdrop)
+	inspection_backdrop.hide()
 	inspection_scroll = ScrollContainer.new()
 	inspection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	inspection_frame.add_child(inspection_scroll)
@@ -107,6 +119,8 @@ func _ready() -> void:
 	inspection_frame.add_child(pages)
 	previous_page = _lab_button(pages,"Prev ↑",func(): _inspection_page(-1))
 	next_page = _lab_button(pages,"Next ↓",func(): _inspection_page(1))
+	_lab_button(pages,"Back",_inspection_back)
+	_lab_button(pages,"Resume",_resume_inspection)
 	previous_page.custom_minimum_size.x = 64
 	next_page.custom_minimum_size.x = 64
 	inspection_content = VBoxContainer.new()
@@ -140,8 +154,7 @@ func _ready() -> void:
 		selector_panel.visible = not selector_panel.visible
 		_sync_information())
 	_lab_button(utility_row,"Resume",func():
-		_close_inspection()
-		suspended = false
+		_resume_inspection()
 		controller.paused = false
 		state.lab_neutral_required = true
 		if state.lab_notice.begins_with("Suspended"): state.lab_notice = "Release controls to continue.")
@@ -152,7 +165,7 @@ func _ready() -> void:
 		_sync_information())
 	diagnostics = _lab_label(inspection_content, 14, 0)
 	diagnostics.visible = false
-	selector_panel = HFlowContainer.new()
+	selector_panel = VBoxContainer.new()
 	inspection_content.add_child(selector_panel)
 	selector_panel.visible = false
 	_selector(selector_panel,["isometric","top_down"],view_mode,"Projection",func(value):
@@ -208,12 +221,28 @@ func _sync_information() -> void:
 		lab_keys.clear()
 		desktop_movement_keys.clear()
 	inspection_frame.visible = inspection_scroll.visible
+	inspection_backdrop.visible = inspection_frame.visible
 	guidance.visible = not inspection_scroll.visible
 	inspection_scroll.scroll_vertical = 0
 	_setup_inspection_focus()
 	_layout()
 
+func _inspection_back() -> void:
+	if detail_open and survey_integrated:
+		detail_open=false; diagnostics.visible=false; selector_panel.visible=true
+		_sync_information()
+	else: _resume_inspection()
+
+func _resume_inspection() -> void:
+	_close_inspection()
+	suspended = false
+	controller.paused = false
+	controller.release_actions(self)
+	state.lab_neutral_required = true
+
 func _close_inspection() -> void:
+	var focused := get_viewport().gui_get_focus_owner()
+	if focused is BaseButton and inspection_focus.has(focused): inspection_focus_name=focused.text
 	detail_open = false
 	diagnostics.visible = false
 	selector_panel.visible = false
@@ -244,10 +273,10 @@ func _setup_inspection_focus() -> void:
 		control.focus_mode = Control.FOCUS_NONE
 	inspection_focus.clear()
 	if inspection_scroll.visible:
-		inspection_focus.assign([previous_page,next_page])
+		inspection_focus.assign([])
 		if selector_panel.visible:
 			for control in selector_panel.get_children(): inspection_focus.append(control)
-		inspection_focus.append_array(utility_row.get_children())
+		inspection_focus.append_array(previous_page.get_parent().get_children())
 	for index in range(inspection_focus.size()):
 		var control := inspection_focus[index]
 		control.focus_mode = Control.FOCUS_ALL
@@ -262,9 +291,27 @@ func _setup_inspection_focus() -> void:
 		if not control.focus_entered.is_connected(_inspection_focused.bind(control)):
 			control.focus_entered.connect(_inspection_focused.bind(control))
 	if inspection_focus.has(focused): focused.grab_focus()
+	elif inspection_scroll.visible:
+		var initial = inspection_focus[0] if not inspection_focus.is_empty() else null
+		for control in inspection_focus:
+			if control.text==inspection_focus_name: initial=control; break
+		if initial != null: initial.call_deferred("grab_focus")
+
+func _step_inspection(direction: Vector2) -> void:
+	var focused := get_viewport().gui_get_focus_owner()
+	var entries: Array=[]
+	for control in inspection_focus: entries.append({"control":control})
+	if entries.is_empty(): return
+	var index := maxi(0,inspection_focus.find(focused))
+	if direction.x!=0 and inspection_focus[index].has_meta("menu_change"):
+		inspection_focus[index].get_meta("menu_change").call(int(direction.x))
+	else:
+		index=controller.Navigation.neighbor(entries,index,direction)
+		inspection_focus[index].grab_focus()
 
 func _inspection_focused(control: Control) -> void:
-	if selector_panel.is_ancestor_of(control): inspection_scroll.ensure_control_visible(control)
+	inspection_focus_name=control.text if control is BaseButton else ""
+	if selector_panel.is_ancestor_of(control): inspection_scroll.call_deferred("ensure_control_visible",control)
 
 # Local GUI tap translation, with no global mouse-from-touch emulation. Captured
 # content gestures never enter GameBoard, even after leaving/closing the panel.
@@ -280,7 +327,7 @@ func _inspection_input(event: InputEvent) -> bool:
 			if event.pressed: inspection_held[key] = true
 			else: inspection_held.erase(key)
 	if event is InputEventScreenTouch:
-		if event.pressed and lab_panel.get_global_rect().has_point(event.position):
+		if event.pressed and (lab_panel.get_global_rect().has_point(event.position) or utility_row.get_global_rect().has_point(event.position) or (inspection_frame.visible and inspection_frame.get_global_rect().has_point(event.position))):
 			if inspection_scroll.visible or utility_row.get_global_rect().has_point(event.position):
 				inspection_pointers[event.index] = {"start":event.position,"last":event.position,"dragged":false,"cancelled":false,"scroll":inspection_scroll.visible and inspection_scroll.get_global_rect().has_point(event.position)}
 		if inspection_pointers.has(event.index):
@@ -300,7 +347,7 @@ func _inspection_input(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		return true
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed and inspection_scroll.visible and lab_panel.get_global_rect().has_point(event.position):
+		if event.pressed and inspection_scroll.visible and inspection_frame.get_global_rect().has_point(event.position):
 			inspection_pointers[-1] = {"start":event.position,"last":event.position,"dragged":false,"cancelled":false,"scroll":inspection_scroll.get_global_rect().has_point(event.position)}
 		if inspection_pointers.has(-1):
 			var pointer: Dictionary = inspection_pointers[-1]
@@ -329,14 +376,26 @@ func _inspection_input(event: InputEvent) -> bool:
 		if event.pressed:
 			if inspection_scroll.visible:
 				inspection_buttons[event.button_index] = true
-				_close_inspection()
+				_resume_inspection()
 			else:
 				_suspend_lab()
 				selector_panel.visible = true
 				_sync_information()
-				previous_page.grab_focus()
+				_setup_inspection_focus()
 		return true
 	if inspection_scroll.visible:
+		if event is InputEventJoypadMotion:
+			get_viewport().set_input_as_handled()
+			return true # _process owns stick navigation and its repeat clock.
+		var direction := Vector2.ZERO
+		if event is InputEventJoypadButton and event.pressed:
+			direction={JOY_BUTTON_DPAD_UP:Vector2.UP,JOY_BUTTON_DPAD_DOWN:Vector2.DOWN,JOY_BUTTON_DPAD_LEFT:Vector2.LEFT,JOY_BUTTON_DPAD_RIGHT:Vector2.RIGHT}.get(event.button_index,Vector2.ZERO)
+		elif event is InputEventKey and event.pressed:
+			direction={KEY_UP:Vector2.UP,KEY_DOWN:Vector2.DOWN,KEY_LEFT:Vector2.LEFT,KEY_RIGHT:Vector2.RIGHT}.get(event.keycode,Vector2.ZERO)
+		if not direction.is_zero_approx():
+			_step_inspection(direction)
+			inspection_navigation=direction; inspection_repeat=0.32
+			get_viewport().set_input_as_handled(); return true
 		if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_A:
 			get_viewport().set_input_as_handled()
 			if event.pressed:
@@ -349,13 +408,19 @@ func _inspection_input(event: InputEvent) -> bool:
 			get_viewport().set_input_as_handled()
 			if event.pressed:
 				if event is InputEventJoypadButton: inspection_buttons[event.button_index] = true
-				_close_inspection()
+				_inspection_back()
 		# GUI focus, wheel and popup navigation continue; gameplay adapter does not.
 		return true
 	return false
 
 func _gui_inspection_tap(point: Vector2) -> void:
-	if inspection_scroll.visible and action_grid.get_global_rect().has_point(point): return
+	if inspection_scroll.visible:
+		# The expanded modal can cover the old action grid. Hit its visible commands
+		# first, and consume blank space instead of forwarding to covered HUD buttons.
+		var hit := false
+		for control in inspection_focus:
+			if control.is_visible_in_tree() and control.get_global_rect().has_point(point): hit=true; break
+		if not hit: return
 	replaying_inspection_tap = true
 	for down in [true,false]:
 		var click := InputEventMouseButton.new()
@@ -406,6 +471,13 @@ func _layout() -> void:
 	var world_end := interaction_rect.position.y-8 if portrait else full.end.y
 	board_area = Rect2(Vector2(full.position.x,world_y),Vector2(width,maxf(0,world_end-world_y)))
 	_update_projection()
+	if is_instance_valid(inspection_frame) and inspection_frame.visible:
+		var menu_area := MenuMetrics.rect(self)
+		inspection_frame.position=menu_area.position
+		inspection_frame.size=menu_area.size
+		inspection_backdrop.position=menu_area.position
+		inspection_backdrop.size=menu_area.size
+		MenuMetrics.apply(self,inspection_frame)
 	# These native toolbar hit regions would be invisible under the lab panel.
 	reset_rect = Rect2()
 	view_rect = Rect2()
@@ -448,11 +520,13 @@ func _selector(parent: Node, options: Array, current: String, caption: String, a
 	# The same visible field and GUI activation serve taps, mouse and controller.
 	var select := _lab_button(parent,caption+"\n"+current+" ›",func(): pass)
 	select.set_meta("selection",options.find(current))
-	select.pressed.connect(func():
-		var index := (int(select.get_meta("selection"))+1)%options.size()
+	var change := func(delta: int):
+		var index := posmod(int(select.get_meta("selection"))+delta,options.size())
 		select.set_meta("selection",index)
 		select.text = caption+"\n"+String(options[index])+" ›"
-		action.call(String(options[index])))
+		action.call(String(options[index]))
+	select.set_meta("menu_change",change)
+	select.pressed.connect(func(): change.call(1))
 
 func _restart() -> void:
 	if survey_integrated:
@@ -491,13 +565,26 @@ func _mark_autosave(_immediate: bool = false) -> void:
 
 func _process(delta: float) -> void:
 	if state == null: return
+	if is_instance_valid(character_menu): character_menu.sync(self)
 	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
 		if is_instance_valid(lab_panel): lab_panel.visible = false
 		super._process(delta)
 		return
 	lab_panel.visible = true
+	if inspection_scroll.visible:
+		var nav := Vector2(float(inspection_axes.get(JOY_AXIS_LEFT_X,0)),float(inspection_axes.get(JOY_AXIS_LEFT_Y,0)))
+		var pad := Vector2(int(inspection_held.has(str(JOY_BUTTON_DPAD_RIGHT)))-int(inspection_held.has(str(JOY_BUTTON_DPAD_LEFT))),int(inspection_held.has(str(JOY_BUTTON_DPAD_DOWN)))-int(inspection_held.has(str(JOY_BUTTON_DPAD_UP))))
+		if not pad.is_zero_approx(): nav=pad
+		if nav.length()<0.40: inspection_navigation=Vector2.ZERO
+		elif nav.length()>=(0.40 if not inspection_navigation.is_zero_approx() else 0.55):
+			var direction := Vector2(0,signf(nav.y)) if absf(nav.y)>=absf(nav.x) else Vector2(signf(nav.x),0)
+			inspection_repeat-=delta
+			if direction!=inspection_navigation or inspection_repeat<=0:
+				_step_inspection(direction)
+				inspection_repeat=0.32 if direction!=inspection_navigation else 0.14
+				inspection_navigation=direction
 	if inspection_release_required:
-		if inspection_held.is_empty() and inspection_axes.is_empty() and inspection_pointers.is_empty() and _physical_input_neutral():
+		if _inspection_released():
 			inspection_release_required = false
 		else:
 			visual = _presentation_snapshot()
@@ -661,7 +748,7 @@ func _draw() -> void:
 		var end := _world_to_screen(state.player_pos + Vector2(queued["direction"]).normalized() * 140)
 		draw_dashed_line(origin,end,Color("f0cf77"),2,7)
 		_draw_lab_arrow(origin,end,Color("f0cf77"))
-	_draw_enemy_keys()
+	if not controller.modal(self) and not inspection_scroll.visible: _draw_enemy_keys()
 
 func enemy_readout_model() -> Array:
 	var result: Array = []
@@ -721,8 +808,15 @@ func _physical_input_neutral() -> bool:
 			if absf(Input.get_joy_axis(device,axis)) > controller.DEADZONE: return false
 	return true
 
+func _cancel_disconnected_inspection() -> void:
+	for key in inspection_held.keys():
+		if not str(key).begins_with("key:"): inspection_held.erase(key)
+	inspection_axes.clear()
+	inspection_buttons.clear()
+	inspection_release_required=true
+
 func _inspection_released() -> bool:
-	return inspection_held.is_empty() and inspection_axes.is_empty() and inspection_pointers.is_empty() and _physical_input_neutral()
+	return inspection_held.is_empty() and inspection_axes.is_empty() and inspection_pointers.is_empty() and observed_contacts.is_empty() and _physical_input_neutral()
 
 func _suspend_lab() -> void:
 	state.lab_suspend()
@@ -740,6 +834,8 @@ func _suspend_lab() -> void:
 	visual = _presentation_snapshot()
 
 func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and state != null:
+		inspection_release_required=true
 	if state == null or not is_instance_valid(survey_overlay): return
 	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
 		super._notification(what)
@@ -749,7 +845,48 @@ func _notification(what: int) -> void:
 		_suspend_lab()
 	else: super._notification(what)
 
+# Release ownership survives presentation handover. Observations are never
+# cleared merely because time elapsed or a menu changed.
+func _observe_menu_input(event: InputEvent) -> void:
+	if event is InputEventJoypadMotion or event is InputEventJoypadButton:
+		if controller.device >= 0 and controller.device != event.device: return
+		if (inspection_scroll.visible or inspection_release_required) and controller.device < 0 and ((event is InputEventJoypadButton and event.pressed) or (event is InputEventJoypadMotion and absf(event.axis_value)>controller.DEADZONE)):
+			# Inspection can consume the event before the combat adapter receives it.
+			# Retain the device so its real disconnect cancels these exact captures.
+			controller.device=event.device
+			controller.active=true
+	if event is InputEventScreenTouch or (event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT):
+		var contact := str(event.index) if event is InputEventScreenTouch else "mouse"
+		if event.pressed: observed_contacts[contact]=true
+		else: observed_contacts.erase(contact)
+	if event is InputEventJoypadMotion:
+		if absf(event.axis_value) > controller.DEADZONE: inspection_axes[event.axis] = event.axis_value
+		else: inspection_axes.erase(event.axis)
+		controller.axes[event.axis] = event.axis_value
+		if event.axis == JOY_AXIS_TRIGGER_RIGHT and event.axis_value <= controller.TRIGGER_RELEASE:
+			controller.held.erase("trigger")
+			controller.attack(self,false)
+		if event.axis == JOY_AXIS_TRIGGER_LEFT and event.axis_value <= controller.TRIGGER_RELEASE: controller.held.erase("lab_lt")
+	elif event is InputEventJoypadButton or event is InputEventKey:
+		var key := str(event.button_index) if event is InputEventJoypadButton else "key:"+str(event.keycode)
+		if event.pressed: inspection_held[key] = true
+		else:
+			inspection_held.erase(key)
+			if event is InputEventJoypadButton:
+				if inspection_release_required or inspection_buttons.has(event.button_index): controller.held.erase(event.button_index)
+				inspection_buttons.erase(event.button_index)
+			else:
+				lab_keys.erase(event.keycode)
+				if event.keycode in [KEY_F,KEY_ENTER]:
+					attack_key_held = false
+					state.set_attack_hold(false)
+	elif event is InputEventScreenTouch and not event.pressed and not _lab_ui_active():
+		inspection_pointers.erase(event.index)
+	elif event is InputEventMouseButton and not event.pressed and not _lab_ui_active():
+		inspection_pointers.erase(-1)
+
 func _input(event: InputEvent) -> void:
+	if state != null: _observe_menu_input(event)
 	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
 		super._input(event)
 		return

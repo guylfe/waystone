@@ -8,6 +8,14 @@
 
 ## Survey integration
 
+An unpublished successor to `fb61431` repairs menu/Character release ownership,
+semantic focus/Back, directional navigation, stable setup rows and responsive
+menu/Character metrics. See the [correction ledger](menu-input-correction.md).
+Its engineering checks and before/after trace are separate from final rendered,
+independent and human acceptance. The live 0.3.4 source/builds remain unchanged.
+Guy's exact attack reset and the two additional inspection/outcome proposals
+remain unresolved/unadopted respectively.
+
 An isolated correction candidate from `8c6b62f` routes the primary F key through
 the existing continuation token at a frozen Sword junction. Released F was
 refused there by the native idle-only attack gate. The main-scene routed input

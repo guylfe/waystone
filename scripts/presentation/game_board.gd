@@ -281,8 +281,14 @@ var survey_export_status := ""
 var survey_export_status_label: Label
 
 var lab_session := false
+var character_menu: PanelContainer
+const MenuMetrics = preload("res://scripts/presentation/menu_metrics.gd")
 
 func _ready() -> void:
+	character_menu=preload("res://scripts/presentation/character_menu.gd").new()
+	character_menu.z_index=100
+	character_menu.hide()
+	add_child(character_menu)
 	Input.joy_connection_changed.connect(func(device_id: int, connected: bool):
 		if connected: controller.connected(self, device_id)
 		else: controller.disconnected(self, device_id))
@@ -378,6 +384,7 @@ func _sync_survey_overlay() -> void:
 		survey_overlay.visible = false
 
 func _clear_survey_overlay() -> void:
+	if survey_overlay.has_meta("menu_context"): survey_overlay.remove_meta("menu_context")
 	for child in survey_overlay.get_children():
 		survey_overlay.remove_child(child)
 		child.queue_free()
@@ -451,6 +458,7 @@ func _build_survey_feedback_overlay() -> void:
 		for rating in range(1, 6):
 			var button := Button.new()
 			button.text = str(rating)
+			button.set_meta("menu_id","rating:"+str(question_id)+":"+str(rating))
 			button.toggle_mode = true
 			button.custom_minimum_size = Vector2(54, 54)
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -488,6 +496,7 @@ func _build_survey_feedback_overlay() -> void:
 	notes_label.add_theme_font_size_override("font_size", 20)
 	content.add_child(notes_label)
 	survey_notes = TextEdit.new()
+	survey_notes.set_meta("menu_id","feedback:notes")
 	survey_notes.placeholder_text = "What made this attempt work or fail?" if state.mode_id == "boss_lab" else "What made this room work or fail?"
 	survey_notes.custom_minimum_size = Vector2(0, 132)
 	survey_notes.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
@@ -670,6 +679,7 @@ func _build_survey_end_confirmation() -> void:
 func _cancel_survey_end_confirmation() -> void:
 	survey_overlay.visible = false
 	survey_overlay.set_meta("kind", "")
+	if has_method("_return_inspection_view"): call("_return_inspection_view")
 	queue_redraw()
 
 func _confirm_survey_end_run() -> void:
@@ -683,8 +693,10 @@ func _confirm_survey_end_run() -> void:
 	queue_redraw()
 
 func _build_survey_archive_overlay() -> void:
+	survey_archived_run.clear()
 	_clear_survey_overlay()
 	survey_overlay.set_meta("kind", "archive")
+	survey_overlay.set_meta("menu_context","archive_list")
 	survey_overlay.visible = true
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 9)
@@ -714,6 +726,7 @@ func _build_survey_archive_overlay() -> void:
 	for index in range(mini(12, runs.size())):
 		var run := Dictionary(runs[index])
 		var row := Button.new()
+		row.set_meta("menu_id","archive:"+str(run.get("run_seed",0))+":"+str(run.get("ended_at","")))
 		row.text = "%02d. Seed %d  •  %d rooms  •  %s  •  %s" % [index + 1, int(run.get("run_seed", 0)), Array(run.get("rooms", [])).size(), String(run.get("loadout", "unknown")), String(run.get("ended_at", "unknown"))]
 		row.add_theme_font_size_override("font_size", 14)
 		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -753,6 +766,7 @@ func _open_archived_survey(index: int) -> void:
 	report_scroll.add_child(content)
 	_add_controller_hints(content)
 	var title := Label.new()
+	survey_overlay.set_meta("menu_context","archive_detail")
 	title.text = "ARCHIVED SURVEY — SEED %d" % int(survey_archived_run.get("run_seed", 0))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1121,8 +1135,9 @@ func _layout() -> void:
 	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
 		var overlay_margin := Vector2(maxf(12.0, layout_size.x * 0.04), maxf(12.0, layout_size.y * 0.035))
-		survey_overlay.position = layout_origin + overlay_margin
-		survey_overlay.size = layout_size - overlay_margin * 2.0
+		var menu_area := MenuMetrics.rect(self)
+		survey_overlay.position = menu_area.position
+		survey_overlay.size = menu_area.size
 	map_mode_rect = _map_action_rect(1)
 	seed_copy_rect = _map_action_rect(2)
 	queue_redraw()
@@ -1148,6 +1163,9 @@ func _update_projection() -> void:
 	iso_origin = Vector2.ZERO
 
 func _process(delta: float) -> void:
+	if is_instance_valid(character_menu): character_menu.sync(self)
+	if is_instance_valid(survey_overlay) and survey_overlay.visible: MenuMetrics.apply(self,survey_overlay)
+	controller.sync_context(self) # Bind native focus for touch/keyboard handover too.
 	controller.update(self, delta)
 	frame_metric_elapsed += delta
 	frame_metric_worst_ms = maxf(frame_metric_worst_ms, delta * 1000.0)
@@ -1378,6 +1396,9 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 	return result
 
 func _input(event: InputEvent) -> void:
+	if controller.menu_key(self,event):
+		get_viewport().set_input_as_handled()
+		return
 	if _controller_event(event): return
 	if controller.active and ((event is InputEventKey and event.pressed) or (event is InputEventMouseButton and event.pressed) or event is InputEventScreenTouch):
 		if controller.palette_open: controller.set_palette(self, false)
@@ -1418,6 +1439,12 @@ func _gui_input(event: InputEvent) -> void:
 		_pointer_dragged(event.position)
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
+	var menu_entries: Array=controller.menu_entries(self)
+	for index in menu_entries.size():
+		if menu_entries[index].has("rect") and Rect2(menu_entries[index].rect).has_point(position):
+			controller.focus_index=index
+			controller.focus_id=controller.Navigation.id(menu_entries[index])
+			break
 	if not state.run_active:
 		# The overlay eats every press while it is up, so nothing behind it is reachable.
 		# This has to come before the archive button, which sits in a corner the picker
@@ -4944,51 +4971,9 @@ func _draw_view_button() -> void:
 	draw_string(ThemeDB.fallback_font, view_rect.position + Vector2(0.0, view_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, view_rect.size.x, font, Color("d7dddd"))
 
 func _draw_character_sheet() -> void:
-	sheet_art_rects.clear()
-	sheet_property_rects.clear()
-	sheet_upgrade_rects.clear()
-	sheet_equipment_rects.clear()
-	sheet_consumable_rects.clear()
-	sheet_detail_close_rect = Rect2()
-	sheet_detail_confirm_rect = Rect2()
-	sheet_skill_choice_rects.clear()
-	var panel := sheet_panel_rect
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.0, 0.0, 0.0, 0.58))
-	draw_rect(panel, Color(0.035, 0.06, 0.075, 0.985))
-	draw_rect(panel, Color("58d2cf"), false, 2.0)
-	var data := state.character_sheet_data()
-	var margin := clampf(minf(panel.size.x, panel.size.y) * 0.025, 14.0, 28.0)
-	var header_font := maxi(20, int(minf(panel.size.x, panel.size.y) * 0.036))
-	var body_font := maxi(12, int(header_font * 0.56))
-	var level_context := String(data.get("level_up_context", ""))
-	var leveling := not level_context.is_empty()
-	var character_name := String(data.get("name", "Wayfarer")).to_upper()
-	var title := "%s · LEVEL UP" % character_name if leveling else character_name
-	var level_source := "EXPEDITION" if level_context == "expedition" else "COMBAT SURVEY" if level_context == "survey" else "WAYSTONE"
-	var subtitle := "%s  •  %d XP  •  SELECT A GOLD TRACK" % [level_source, int(data.get("level_up_xp", 0))] if leveling else "LEVEL %d  •  %d XP TO SPEND" % [state.character_level(), state.carried_xp]
-	var title_width := panel.size.x - 2.0 * margin - 104.0
-	var title_font := _sheet_fit_font_size(title, title_width, header_font, 12)
-	var subtitle_font := _sheet_fit_font_size(subtitle, panel.size.x - 2.0 * margin, body_font, 8)
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + title_font), title, HORIZONTAL_ALIGNMENT_LEFT, title_width, title_font, Color("f2e7c8") if leveling else Color("eef4ef"))
-	draw_string(ThemeDB.fallback_font, panel.position + Vector2(margin, margin + header_font * 1.62), subtitle, HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 2.0 * margin, subtitle_font, Color("d7aa58"))
-	_draw_map_action(sheet_close_rect, "CLOSE [ESC]" if desktop_controls else "CLOSE")
-	var content_top := panel.position.y + margin + header_font * 2.02
-	var content_bottom := panel.end.y - margin
-	# Leveling preserves the ordinary Sheet's hierarchy. It only compresses the
-	# overview and omits belt repacking so the same grouped track panels gain room.
-	var summary_ratio := 0.185 if leveling else 0.31
-	var summary_height := clampf((content_bottom - content_top) * summary_ratio, 142.0 if leveling else 176.0, 238.0)
-	var summary := Rect2(Vector2(panel.position.x + margin, content_top), Vector2(panel.size.x - margin * 2.0, summary_height))
-	_draw_sheet_summary(summary, data, body_font)
-	var tracks_top := summary.end.y + margin * 0.48
-	if not leveling:
-		var belt_height := clampf(summary_height * 0.21, 38.0, 50.0)
-		var belt := Rect2(Vector2(summary.position.x, summary.end.y + margin * 0.32), Vector2(summary.size.x, belt_height))
-		_draw_sheet_consumables(belt, data, body_font)
-		tracks_top = belt.end.y + margin * 0.45
-	var tracks := Rect2(Vector2(summary.position.x, tracks_top), Vector2(summary.size.x, content_bottom - tracks_top))
-	_draw_sheet_tracks(tracks, Array(data["tracks"]), body_font, Array(data.get("level_up_options", [])), int(data.get("level_up_cost", 0)))
-	if not sheet_detail.is_empty(): _draw_sheet_detail(panel, margin, body_font)
+	# Native flowing content owns text, hit regions and scrolling. The historical
+	# drawn helpers below remain available to existing diagnostics only.
+	if is_instance_valid(character_menu): character_menu.sync(self)
 
 func _draw_sheet_summary(rect: Rect2, data: Dictionary, font: int) -> void:
 	var gap := maxf(8.0, rect.size.x * 0.022)

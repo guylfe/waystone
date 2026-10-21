@@ -1,4 +1,5 @@
 extends RefCounted
+const Navigation = preload("res://scripts/presentation/menu_navigation.gd")
 const Glyphs = preload("res://scripts/presentation/controller_glyphs.gd")
 const Prompts = preload("res://scripts/presentation/controller_prompts.gd")
 ## Native gamepad intent adapter. Owns no combat rules and never synthesizes mouse
@@ -35,6 +36,55 @@ var pending_button := -1
 var pending_seconds := 0.0
 var abandon_confirm := false
 var help_open := false
+var focus_memory: Dictionary = {}
+var focus_id := ""
+var editing_text := false
+var sheet_return_pause := false
+var navigation_vector := Vector2.ZERO
+
+func sync_context(board) -> void:
+	if is_instance_valid(board.character_menu): board.character_menu.sync(board)
+	var context := context_id(board)
+	var entries := menu_entries(board)
+	if context != last_context:
+		if last_context != "": focus_memory[last_context] = focus_id
+		if last_context != "" and (modal(board) or last_context != "combat"): release_actions(board)
+		last_context = context
+		focus_id = str(focus_memory.get(context,""))
+		focus_index = 0
+		navigation_vector = Vector2.ZERO
+		navigation_remaining = 0
+		editing_text = false
+	for i in entries.size():
+		if Navigation.id(entries[i]) == focus_id: focus_index=i; break
+	focus_index = clampi(focus_index,0,maxi(0,entries.size()-1))
+	if not entries.is_empty(): focus_id = Navigation.id(entries[focus_index])
+
+func step_menu(board, direction: Vector2) -> void:
+	sync_context(board)
+	var entries := menu_entries(board)
+	if entries.is_empty(): return
+	var control = entries[focus_index].get("control")
+	if direction.x != 0 and is_instance_valid(control) and control.has_meta("menu_change"):
+		control.get_meta("menu_change").call(int(direction.x))
+	else: focus_index=Navigation.neighbor(entries,focus_index,direction)
+	focus_id=Navigation.id(menu_entries(board)[focus_index])
+	focus_native(menu_entries(board))
+
+func menu_key(board, event: InputEvent) -> bool:
+	if not event is InputEventKey or not modal(board): return false
+	if not event.pressed: return false
+	var owner = board.get_viewport().gui_get_focus_owner()
+	if (owner is LineEdit or owner is TextEdit) and editing_text:
+		if event.keycode == KEY_ESCAPE: editing_text=false; return true
+		return false
+	if event.echo: return event.keycode in [KEY_ENTER,KEY_ESCAPE]
+	if event.keycode in [KEY_UP,KEY_DOWN,KEY_LEFT,KEY_RIGHT]:
+		step_menu(board,{KEY_UP:Vector2.UP,KEY_DOWN:Vector2.DOWN,KEY_LEFT:Vector2.LEFT,KEY_RIGHT:Vector2.RIGHT}[event.keycode])
+	elif event.keycode in [KEY_ENTER,KEY_KP_ENTER]: menu_button(board,JOY_BUTTON_A)
+	elif event.keycode == KEY_ESCAPE: back(board)
+	else: return false
+	return true
 
 func connected(board, connected_device: int) -> void:
 	if not board.desktop_controls or board.state == null: return
@@ -190,6 +240,7 @@ func modal(board) -> bool:
 func native_panel(board) -> Node:
 	if is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: return board.expedition_dialog
 	if is_instance_valid(board.survey_overlay) and board.survey_overlay.visible: return board.survey_overlay
+	if is_instance_valid(board.character_menu) and board.character_menu.visible: return board.character_menu
 	return null
 
 func release_actions(board) -> void:
@@ -220,6 +271,7 @@ func disconnected(board, disconnected_device: int) -> void:
 	release_actions(board)
 	axes.clear()
 	held.clear()
+	if board.has_method("_cancel_disconnected_inspection"): board._cancel_disconnected_inspection()
 	device = -1
 	paused = board.state.run_active
 	board.queue_redraw()
@@ -365,7 +417,7 @@ func use_quick_action(board) -> void:
 func update(board, delta: float) -> void:
 	if not active: return
 	if board.state.combat_lab:
-		if stick(JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y).is_zero_approx() and not held.values().has(true): board.state.lab_input_neutral()
+		if axes.values().all(func(v): return absf(float(v)) <= DEADZONE) and not Input.is_anything_pressed() and not held.values().has(true): board.state.lab_input_neutral()
 		if board.state.lab_neutral_required:
 			attack_held = false
 			pending_button = -1
@@ -378,14 +430,8 @@ func update(board, delta: float) -> void:
 	if not pointing.is_zero_approx() and targeting_action == "" and not modal(board):
 		aim = board._screen_delta_to_world_direction(pointing)
 	pending_seconds = maxf(0.0, pending_seconds - delta)
-	var context := context_id(board)
-	if context != last_context:
-		if last_context != "" and (modal(board) or last_context != "combat"): release_actions(board)
-		last_context = context
-		focus_index = 0
-		navigation_direction = 0
-		navigation_remaining = 0.0
-	if neutral_required and stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y).is_zero_approx() and not held.values().has(true): neutral_required = false
+	sync_context(board)
+	if neutral_required and not Input.is_anything_pressed() and axes.values().all(func(v): return absf(float(v)) <= DEADZONE) and not held.values().has(true): neutral_required = false
 	if targeting_action != "":
 		if board.state.death_pending or board.state.trial_complete:
 			finish_targeting(board, false)
@@ -399,16 +445,19 @@ func update(board, delta: float) -> void:
 	if modal(board):
 		var entries := menu_entries(board)
 		focus_index = clampi(focus_index, 0, maxi(0, entries.size() - 1))
-		var nav := stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y)
-		var step := 0
-		if nav.length() >= 0.55: step = int(signf(nav.y if absf(nav.y) >= absf(nav.x) else nav.x))
-		if step == 0: navigation_direction = 0
+		var nav := stick(JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y)
+		var dpad := Vector2(int(bool(held.get(JOY_BUTTON_DPAD_RIGHT,false)))-int(bool(held.get(JOY_BUTTON_DPAD_LEFT,false))),int(bool(held.get(JOY_BUTTON_DPAD_DOWN,false)))-int(bool(held.get(JOY_BUTTON_DPAD_UP,false))))
+		if not dpad.is_zero_approx(): nav=dpad
+		var direction := Vector2.ZERO
+		var threshold := 0.40 if not navigation_vector.is_zero_approx() else 0.55
+		if nav.length() >= threshold: direction=Vector2(0,signf(nav.y)) if absf(nav.y) >= absf(nav.x) else Vector2(signf(nav.x),0)
+		if direction.is_zero_approx(): navigation_vector=Vector2.ZERO
 		else:
 			navigation_remaining -= delta
-			if step != navigation_direction or navigation_remaining <= 0.0:
-				focus_index = posmod(focus_index + step, maxi(1, entries.size()))
-				navigation_remaining = 0.32 if step != navigation_direction else 0.14
-				navigation_direction = step
+			if direction != navigation_vector or navigation_remaining <= 0:
+				step_menu(board,direction)
+				navigation_remaining=0.32 if direction != navigation_vector else 0.14
+				navigation_vector=direction
 		focus_native(entries)
 		return
 	if String(board.state.player_action.get("kind", "")) == "bow_draw" and attack_held: board.state.set_bow_aim(direction(board))
@@ -418,29 +467,36 @@ func update(board, delta: float) -> void:
 func context_id(board) -> String:
 	if help_open: return "help"
 	var panel := native_panel(board)
-	if panel != null: return "native:%d" % panel.get_instance_id()
+	if panel != null:
+		return "native:"+str(panel.get_meta("menu_context",panel.get_meta("kind",panel.name)))
 	if paused: return "pause:%s" % abandon_confirm
 	if targeting_action != "": return "targeting"
 	if not board.state.run_active: return "setup:%s:%s:%s" % [board.setup_stage, board.custom_room_open, board.custom_page]
-	if board.character_sheet_open: return "sheet:%s" % String(board.sheet_detail.get("kind", "summary"))
+	if board.character_sheet_open: return "sheet:%s:%s" % [String(board.sheet_detail.get("kind", "summary")),String(board.sheet_detail.get("track",""))]
 	if board.map_open: return "map"
 	if board.waystone_menu_open: return "waystone"
 	if board.state.death_pending or board.state.trial_complete: return "outcome"
 	return "combat"
 
 func menu_button(board, button: int) -> void:
-	if button in [JOY_BUTTON_B, JOY_BUTTON_START, JOY_BUTTON_BACK]:
-		back(board)
+	sync_context(board)
+	if button in [JOY_BUTTON_B,JOY_BUTTON_START,JOY_BUTTON_BACK]:
+		if editing_text: editing_text=false
+		else: back(board)
 		return
 	if help_open: return
-	var entries := menu_entries(board)
-	if entries.is_empty(): return
-	focus_index = clampi(focus_index, 0, entries.size() - 1)
-	if button in [JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_LEFT]: focus_index = posmod(focus_index - 1, entries.size())
-	elif button in [JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_RIGHT]: focus_index = posmod(focus_index + 1, entries.size())
+	var directions := {JOY_BUTTON_DPAD_UP:Vector2.UP,JOY_BUTTON_DPAD_DOWN:Vector2.DOWN,JOY_BUTTON_DPAD_LEFT:Vector2.LEFT,JOY_BUTTON_DPAD_RIGHT:Vector2.RIGHT}
+	if directions.has(button):
+		step_menu(board,directions[button])
+		navigation_vector=directions[button]; navigation_remaining=0.32
 	elif button == JOY_BUTTON_A:
+		var entries := menu_entries(board)
+		if entries.is_empty(): return
 		release_actions(board)
+		var control = entries[focus_index].get("control")
+		editing_text=control is LineEdit or control is TextEdit
 		entries[focus_index]["activate"].call()
+		sync_context(board)
 	focus_native(menu_entries(board))
 
 func back(board) -> void:
@@ -449,8 +505,12 @@ func back(board) -> void:
 	elif is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: board.expedition_dialog.hide()
 	elif is_instance_valid(board.survey_overlay) and board.survey_overlay.visible:
 		var kind: String = board.survey_overlay.get_meta("kind", "")
-		if kind == "archive": board._close_survey_archive()
-		elif kind == "end_confirm": board.survey_overlay.hide()
+		if kind == "archive":
+			if not board.survey_archived_run.is_empty(): board._build_survey_archive_overlay()
+			else: board._close_survey_archive()
+		elif kind == "end_confirm":
+			board.survey_overlay.hide()
+			if board.has_method("_return_inspection_view"): board._return_inspection_view()
 		elif kind == "experiment_setup": board._close_experiment_setup()
 		# Ratings and outcomes must be deliberately submitted, not silently skipped.
 	elif paused:
@@ -458,8 +518,13 @@ func back(board) -> void:
 		else: paused = false
 	elif board.character_sheet_open:
 		if not board.sheet_detail.is_empty(): board.sheet_detail.clear()
-		else: board.character_sheet_open = false
-	elif board.map_open: board.map_open = false
+		else:
+			board.character_sheet_open = false
+			if sheet_return_pause: paused=true; sheet_return_pause=false
+			elif board.has_method("_return_inspection_view"): board._return_inspection_view()
+	elif board.map_open:
+		board.map_open = false
+		if board.has_method("_return_inspection_view"): board._return_inspection_view()
 	elif board.waystone_menu_open: board.waystone_menu_open = false
 	elif not board.state.run_active:
 		if board.custom_room_open:
@@ -467,6 +532,7 @@ func back(board) -> void:
 			else: board.custom_room_open = false
 		else: board.setup_stage = "root"
 		board._layout()
+	board._layout()
 
 func menu_entries(board) -> Array:
 	var entries: Array = []
@@ -481,7 +547,7 @@ func menu_entries(board) -> Array:
 			entries.append({"label": "Abandon this run (permanent)", "activate": func(): abandon_confirm = false; paused = false; board._restart()})
 			return entries
 		entries.append({"label": "Resume", "activate": func(): paused = false})
-		entries.append({"label": "Character & upgrades", "activate": func(): paused = false; board._open_character_sheet()})
+		entries.append({"label": "Character & upgrades", "activate": func(): sheet_return_pause=true; paused = false; board._open_character_sheet()})
 		entries.append({"label": "Controller guide", "activate": func(): help_open = true})
 		entries.append({"label": "Change view", "activate": func(): board._toggle_view()})
 		if board.state.is_measurement_mode(): entries.append({"label": "End test / report", "activate": func(): paused = false; board._build_survey_end_confirmation()})
@@ -537,12 +603,27 @@ func add_rect(board, entries: Array, rect: Rect2) -> void:
 	if rect.size.x <= 0.0 or rect.size.y <= 0.0: return
 	for entry in entries:
 		if entry.get("rect") == rect: return
-	entries.append({"rect": rect, "activate": func(): board._pointer_pressed(rect.get_center())})
+	var id := ""
+	for collection in ["progression_rects","custom_slot_rects","custom_remove_rects","custom_formation_rects","custom_hp_rects","custom_level_rects","custom_kind_rects","survey_profile_rects","combat_rule_rects","boss_choice_rects","map_layer_rects"]:
+		for key in board.get(collection):
+			if board.get(collection)[key] is Rect2 and board.get(collection)[key]==rect: id=collection+":"+str(key); break
+	for command in ["start_rect","setup_back_rect","archive_button_rect","custom_open_rect","custom_done_rect","custom_start_rect","custom_add_rect","custom_repeat_rect","custom_clear_rect","boss_arena_rect","seed_copy_rect","map_layer_previous_rect","map_layer_next_rect"]:
+		if board.get(command)==rect: id=command; break
+	entries.append({"id":id if id!="" else str(rect),"rect": rect, "activate": func(): board._pointer_pressed(rect.get_center())})
 
 func collect_buttons(node: Node, entries: Array) -> void:
 	if (node is LineEdit or node is TextEdit) and node.is_visible_in_tree():
+		if not node.has_meta("menu_edit_bound"):
+			node.set_meta("menu_edit_bound",true)
+			node.focus_entered.connect(func(): focus_id=Navigation.id({"control":node}))
+			node.tooltip_text="Optional text · use a keyboard to edit; Escape returns to navigation."
+			node.gui_input.connect(func(event):
+				if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed: editing_text=true)
 		entries.append({"control":node,"activate":func(): node.grab_focus()})
-	if node is BaseButton and node.is_visible_in_tree() and not node.disabled:
+	if node is BaseButton and node.is_visible_in_tree() and not node.disabled and not node.get_meta("menu_skip",false):
+		if not node.has_meta("menu_bound"):
+			node.set_meta("menu_bound",true)
+			node.focus_entered.connect(func(): focus_id=Navigation.id({"control":node}))
 		entries.append({"control": node, "activate": func():
 			if node.toggle_mode: node.button_pressed = not node.button_pressed
 			node.pressed.emit()})
@@ -551,11 +632,11 @@ func collect_buttons(node: Node, entries: Array) -> void:
 func focus_native(entries: Array) -> void:
 	if entries.is_empty(): return
 	var control = entries[clampi(focus_index, 0, entries.size() - 1)].get("control")
-	if is_instance_valid(control) and not control.has_focus():
+	if is_instance_valid(control):
 		control.grab_focus()
 		var parent = control.get_parent()
 		while parent != null:
-			if parent is ScrollContainer: parent.ensure_control_visible(control)
+			if parent is ScrollContainer: parent.call_deferred("ensure_control_visible",control)
 			parent = parent.get_parent()
 
 func quick_label(board) -> String:

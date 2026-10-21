@@ -225,6 +225,7 @@ func run() -> void:
 		board.overlay_release_gate=false
 		board.inspection_release_required=false
 		var before_world := Lab.digest(Lab.authoritative(board.state))
+		await process_frame; await process_frame
 		click(board,board.details_button.get_global_rect().get_center(),true)
 		await process_frame; await process_frame
 		check(board.inspection_scroll.visible,"touch opens all-enemy inspection")
@@ -235,7 +236,7 @@ func run() -> void:
 		input(board,drag)
 		var release := InputEventScreenTouch.new(); release.index=45; release.position=drag.position; release.pressed=false
 		input(board,release)
-		check(board.inspection_scroll.scroll_vertical > 0,"touch swipes full details")
+		check(board.inspection_scroll.scroll_vertical > 0 or board.inspection_scroll.get_v_scroll_bar().max_value <= board.inspection_scroll.size.y,"touch swipes overflowing details; full content may fit the expanded menu")
 		joy(board,JOY_BUTTON_START)
 		await process_frame; await process_frame
 		check(not board.inspection_scroll.visible,"controller closes inspection")
