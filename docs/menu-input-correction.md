@@ -73,6 +73,72 @@ behind modals, and hidden zero-sized toolbar rectangles do not draw glyph text.
 
 ## Verification and limits
 
+### Feedback width and Character information parity after independent review
+
+The successor to `bce46bb` repairs a second width-domain error: feedback controls
+were client-scaled, but their rating/tag columns were chosen from logical world
+width. Under the real project root transform, a modeled 390×844 client still
+looked logically wide and expanded the panel beyond the viewport. Reflow now
+budgets the requested MenuMetrics area minus actual panel padding and a reserved
+vertical scrollbar, in the same units as control minima. Question labels stack
+when necessary; rating grids and tags choose fitting columns. Body type and
+48-unit command minima remain intact. Reflow runs on creation and transform/area
+changes without rebuilding answers, tags, notes or controls. A post-layout scroll
+correction preserves the existing pointer-focused control as well as controller
+focus, without switching input devices or assigning a new focus target.
+
+Cold narrow entry also reproduced a double-scaled computed minimum in End Survey
+confirmation. It now uses bounded wrapping/scrolling content and a fitting
+button grid, retaining the same confirmation/cancel callbacks and wording. This
+is a related containment correction, not the unadopted manual-end wording change.
+
+Character again displays its state-supplied level-up context and spendable XP.
+Waystone secured100/carried147/cost6 displays spendable secured100, separately
+labelled carried147 and projected remaining94. Other contexts use their existing
+carried balance. The existing native transaction, account debits and autosave
+remain unchanged. Equipped/locked art, completed versus available/future stage
+status, stage-detail availability, weapon sequence/form and the empty adopted
+track explanation are restored in wrapping content. Sword/Knife/Twin Knives/Bow
+reuse the retained authored form strings; Staff uses the existing authored
+AttackGeometry technique label instead of the old generic Sword fallback.
+All known-art controls remain subject to the existing swap prohibition.
+
+The parity checklist compares the pre-migration Character header, retained
+combat summary, track cards, stage inspection and confirmation with current state
+data. Equipment names/placeholders, attributes, healing/belt counts, chosen stage
+labels, rank and purchase callbacks remain; no equipment-effects proposal was
+adopted. Exact checklist evidence and before/after labels belong in the external
+handoff.
+
+Three default headless regressions supplement the prior transaction/input tests:
+
+- `feedback_root_layout_test.gd` uses the actual project root stretch, routed
+  pointer/controller inputs and real delayed feedback. It covers wide→720×480→
+  390×844 and the other documented transforms, all answers/questions/tags/notes/
+  commands/hints, safe/clipping bounds, exact focus identity, scroll context,
+  retained and submitted values, and cold narrow entry. It does not replace the
+  normal root with a same-size direct SubViewport. Input journeys run with normal
+  board processing; rectangle inventories temporarily pause board dispatch so
+  controller auto-scroll does not fight inspection scrolling. Native child layout
+  continues, and each hints-on/off inventory asserts actual hints visibility.
+- `menu_density_layout_test.gd` begins with actual delayed feedback, then pauses
+  the isolated board for explicit unit/density geometry models using the same
+  layout code, plus a safe-area inset. A fresh labelled Boss Lab fixture checks
+  its separate authored questions. These are geometry models, not observed
+  platform DPI, mobile play or native frames. Normal runtime units still come
+  only from the actual viewport and platform density; explicit-unit helpers add
+  no player setting or saved state.
+- `character_information_test.gd` uses labelled synthetic XP/art/form fixtures,
+  generated native text, routed branch purchase and state-account assertions in
+  Waystone, Survey and Expedition contexts. It checks projected balance, art
+  eligibility/identity, completed/future detail and authored forms. These are not
+  naturally earned progression.
+
+The 390px root is a virtual narrow/phone layout boundary below the configured
+native Windows minimum. The 720×480/default/wide models retain the actual project
+stretch too. None of these headless checks certify GPU pixels or native-window
+input; final rendered review remains open through the lead-arranged surface.
+
 ### Character transaction correction after combined review
 
 The native branch selector originally stored a bare branch ID, while

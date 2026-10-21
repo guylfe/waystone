@@ -18,6 +18,12 @@ transactions and clears consumed Character return contexts after paid repacking.
 Its routed synthetic purchase/cancel/persistence and neighboring transaction
 checks are recorded in the same correction ledger; final rendered review remains
 open. Progression rules, save formats and the F-only correction remain unchanged.
+The next isolated combined correction repairs real-root-transform feedback
+containment and restores Character's actual upgrade balance, projected remainder,
+equipped/locked art and authored stage/form information. Its root/density models
+and synthetic information fixtures are in the same ledger; native rendered and
+independent combined-successor acceptance remain open. No normal destination or
+release identity changes.
 Guy's exact attack reset and the two additional inspection/outcome proposals
 remain unresolved/unadopted respectively.
 

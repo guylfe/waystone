@@ -269,6 +269,7 @@ var area_title_remaining := 0.0
 var area_title_name := ""
 var area_title_subtitle := ""
 var survey_overlay: PanelContainer
+var survey_reflow_signature := ""
 var survey_notes: TextEdit
 var survey_rating_buttons: Dictionary = {}
 var survey_tag_buttons: Dictionary = {}
@@ -437,22 +438,24 @@ func _build_survey_feedback_overlay() -> void:
 		"want_again": "Want a room like this again?",
 	}
 	for question_id in questions:
-		var narrow := safe_layout_rect.size.x < 660
 		var row := GridContainer.new()
-		row.columns = 1 if narrow else 2
+		row.columns = 1
 		row.set_meta("survey_rating_row",true)
 		row.custom_minimum_size.y = 58.0
-		row.add_theme_constant_override("separation", 8)
+		row.add_theme_constant_override("h_separation", 8)
+		row.add_theme_constant_override("v_separation", 8)
 		var label := Label.new()
 		label.text = String(questions[question_id])
-		label.custom_minimum_size = Vector2(0 if narrow else 225, 40 if narrow else 58)
+		label.custom_minimum_size = Vector2(0,40)
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.add_theme_font_size_override("font_size", 19)
 		row.add_child(label)
-		var rating_row := HBoxContainer.new()
+		var rating_row := GridContainer.new()
+		rating_row.columns = 5
 		rating_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		rating_row.add_theme_constant_override("separation",8)
+		rating_row.add_theme_constant_override("h_separation",8)
+		rating_row.add_theme_constant_override("v_separation",8)
 		row.add_child(rating_row)
 		var buttons: Array[Button] = []
 		for rating in range(1, 6):
@@ -472,11 +475,12 @@ func _build_survey_feedback_overlay() -> void:
 	if state.mode_id != "boss_lab":
 		var tag_label := Label.new()
 		tag_label.text = "Tags — choose any that apply"
+		tag_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		tag_label.add_theme_font_size_override("font_size", 20)
 		content.add_child(tag_label)
 		var tag_grid := GridContainer.new()
 		tag_grid.set_meta("survey_tag_grid",true)
-		tag_grid.columns = 2 if safe_layout_rect.size.x < 560 else 3
+		tag_grid.columns = 1
 		tag_grid.add_theme_constant_override("h_separation", 7)
 		tag_grid.add_theme_constant_override("v_separation", 7)
 		for tag in ["tense", "satisfying", "too easy", "too hard", "fair", "unfair", "crowded", "empty", "clear", "confusing", "unclear contact", "good mix", "bad matchup", "repetitive", "surprising", "ranged pressure", "energy meaningful", "energy frustrating"]:
@@ -493,6 +497,7 @@ func _build_survey_feedback_overlay() -> void:
 		content.add_child(tag_grid)
 	var notes_label := Label.new()
 	notes_label.text = "Optional notes"
+	notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	notes_label.add_theme_font_size_override("font_size", 20)
 	content.add_child(notes_label)
 	survey_notes = TextEdit.new()
@@ -507,6 +512,7 @@ func _build_survey_feedback_overlay() -> void:
 	content.add_child(survey_notes)
 	survey_submit_button = Button.new()
 	survey_submit_button.text = "ANSWER ALL FOUR RATINGS"
+	survey_submit_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	survey_submit_button.disabled = true
 	survey_submit_button.custom_minimum_size = Vector2(0, 64)
 	survey_submit_button.add_theme_font_size_override("font_size", 20)
@@ -514,10 +520,46 @@ func _build_survey_feedback_overlay() -> void:
 	content.add_child(survey_submit_button)
 	survey_skip_button = Button.new()
 	survey_skip_button.text = "SKIP — NOT ENOUGH INFORMATION"
+	survey_skip_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	survey_skip_button.custom_minimum_size = Vector2(0, 58)
 	survey_skip_button.add_theme_font_size_override("font_size", 18)
 	survey_skip_button.pressed.connect(_skip_survey_feedback)
 	content.add_child(survey_skip_button)
+	_reflow_survey_menu()
+
+func _reflow_survey_menu(explicit_unit: float = -1.0) -> void:
+	if not is_instance_valid(survey_overlay) or survey_overlay.get_meta("kind","") not in ["feedback","end_confirm"] or not survey_overlay.get_child_count(): return
+	var u := MenuMetrics.unit(self) if explicit_unit<0 else explicit_unit
+	var area := MenuMetrics.rect_for_unit(self,u)
+	var scroll: ScrollContainer=survey_overlay.get_child(0)
+	var content: Control=scroll.get_child(0)
+	# Use the requested bounded area, never the panel's already-inflated minimum.
+	# Reserve panel padding and a vertical scrollbar even when it is not yet shown.
+	var padding := survey_overlay.get_theme_stylebox("panel").get_minimum_size().x
+	var available := maxf(0,area.size.x-padding-scroll.get_v_scroll_bar().get_combined_minimum_size().x)
+	if survey_overlay.get_meta("kind","")=="end_confirm":
+		var buttons: GridContainer=content.get_child(content.get_child_count()-1)
+		buttons.columns=2 if available/u>=480 else 1
+	for row in content.get_children():
+		if row.get_meta("survey_rating_row",false):
+			var ratings: GridContainer=row.get_child(1)
+			var gap: float=ratings.get_theme_constant("h_separation")
+			var wide: bool=available >= 225*u + row.get_theme_constant("h_separation") + 5*54*u + 4*gap
+			row.columns=2 if wide else 1
+			var label: Label=row.get_child(0)
+			label.set_meta("menu_base_min",Vector2(225 if wide else 0,58 if wide else 40))
+			var rating_width: float=available-(225*u+row.get_theme_constant("h_separation") if wide else 0)
+			ratings.columns=clampi(int(floor((rating_width+gap)/(54*u+gap))),1,5)
+		if row.get_meta("survey_tag_grid",false):
+			var gap: float=row.get_theme_constant("h_separation")
+			row.columns=clampi(int(floor((available+gap)/(150*u+gap))),1,3)
+	MenuMetrics.apply_unit(content,u)
+	survey_overlay.position=area.position
+	survey_overlay.size=area.size
+	var next_signature := str([survey_overlay.get_meta("kind",""),u,area,available])
+	if next_signature!=survey_reflow_signature:
+		survey_reflow_signature=next_signature
+		call_deferred("_ensure_survey_focus_visible")
 
 func _apply_survey_toggle_style(button: Button) -> void:
 	button.add_theme_color_override("font_color", Color("eaf6f8"))
@@ -644,17 +686,19 @@ func _build_survey_end_confirmation() -> void:
 	_clear_survey_overlay()
 	survey_overlay.set_meta("kind", "end_confirm")
 	survey_overlay.visible = true
-	var center := CenterContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	survey_overlay.add_child(center)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	survey_overlay.add_child(scroll)
 	var content := VBoxContainer.new()
-	content.custom_minimum_size.x = minf(620.0, maxf(0.0, survey_overlay.size.x - 32.0))
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content.add_theme_constant_override("separation", 18)
-	center.add_child(content)
+	scroll.add_child(content)
 	_add_controller_hints(content)
 	var title := Label.new()
 	title.text = "END THIS BOSS ATTEMPT?" if state.mode_id == "boss_lab" else "END THIS SURVEY RUN?"
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 30)
 	content.add_child(title)
@@ -664,8 +708,10 @@ func _build_survey_end_confirmation() -> void:
 	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warning.add_theme_font_size_override("font_size", 19)
 	content.add_child(warning)
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 14)
+	var buttons := GridContainer.new()
+	buttons.columns = 2
+	buttons.add_theme_constant_override("h_separation", 14)
+	buttons.add_theme_constant_override("v_separation", 14)
 	var cancel := _survey_action_button("CANCEL — KEEP PLAYING", _cancel_survey_end_confirmation)
 	cancel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	buttons.add_child(cancel)
@@ -675,6 +721,7 @@ func _build_survey_end_confirmation() -> void:
 	confirm.add_theme_color_override("font_hover_color", Color.WHITE)
 	buttons.add_child(confirm)
 	content.add_child(buttons)
+	_reflow_survey_menu()
 
 func _cancel_survey_end_confirmation() -> void:
 	survey_overlay.visible = false
@@ -1138,9 +1185,21 @@ func _layout() -> void:
 		var menu_area := MenuMetrics.rect(self)
 		survey_overlay.position = menu_area.position
 		survey_overlay.size = menu_area.size
+		_reflow_survey_menu()
 	map_mode_rect = _map_action_rect(1)
 	seed_copy_rect = _map_action_rect(2)
 	queue_redraw()
+
+func _ensure_survey_focus_visible() -> void:
+	# Pointer-focused native controls need the same post-reflow visibility as
+	# controller focus, without switching input devices or grabbing a new control.
+	await get_tree().process_frame
+	var focused := get_viewport().gui_get_focus_owner()
+	if not is_instance_valid(focused) or not survey_overlay.visible or not survey_overlay.is_ancestor_of(focused): return
+	var parent := focused.get_parent()
+	while parent!=null:
+		if parent is ScrollContainer: parent.ensure_control_visible(focused)
+		parent=parent.get_parent()
 
 func _display_safe_layout_rect() -> Rect2:
 	var viewport_rect := Rect2(Vector2.ZERO, size)
@@ -1189,6 +1248,7 @@ func _process(delta: float) -> void:
 		needs_redraw = true
 	_sync_survey_overlay()
 	var finished_streamed_movement := false
+	_reflow_survey_menu()
 	if _autosave_frame_is_quiet(): autosave_quiet_elapsed += delta
 	else: autosave_quiet_elapsed = 0.0
 	if autosave_pending:

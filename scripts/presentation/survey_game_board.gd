@@ -361,11 +361,3 @@ func _layout() -> void:
 	if previous_layout_size != Vector2.ZERO and previous_layout_size != size:
 		for pointer in overlay_pointers.values(): pointer["dragged"] = true
 	super._layout()
-	if is_instance_valid(survey_overlay) and survey_overlay.get_meta("kind","") == "feedback" and survey_overlay.get_child_count():
-		var content := survey_overlay.get_child(0).get_child(0)
-		for node in content.get_children():
-			if node.get_meta("survey_rating_row",false):
-				var narrow := safe_layout_rect.size.x < 660
-				node.columns = 1 if narrow else 2
-				node.get_child(0).custom_minimum_size = Vector2(0 if narrow else 225,40 if narrow else 58)
-			if node.get_meta("survey_tag_grid",false): node.columns = 2 if safe_layout_rect.size.x < 560 else 3

@@ -9,13 +9,19 @@ static func unit(board: Control) -> float:
 	return density / maxf(0.1, minf(transform.x.length(),transform.y.length()))
 
 static func rect(board: Control, width: float = 820.0) -> Rect2:
+	return rect_for_unit(board,unit(board),width)
+
+# The explicit-unit helpers also support isolated density layout models. Normal
+# runtime callers always derive the unit from the actual viewport and platform.
+static func rect_for_unit(board: Control, u: float, width: float = 820.0) -> Rect2:
 	var safe: Rect2 = board._display_safe_layout_rect()
-	var u := unit(board)
 	var extent := Vector2(minf(safe.size.x-24*u,width*u),maxf(48*u,safe.size.y-24*u))
 	return Rect2(safe.get_center()-extent/2,extent)
 
 static func apply(board: Control, node: Node) -> void:
-	var u := unit(board)
+	apply_unit(node,unit(board))
+
+static func apply_unit(node: Node, u: float) -> void:
 	if node is Control:
 		if not node.has_meta("menu_base_min"): node.set_meta("menu_base_min",node.custom_minimum_size)
 		var base: Vector2 = node.get_meta("menu_base_min")
@@ -27,4 +33,4 @@ static func apply(board: Control, node: Node) -> void:
 			var font: int = node.get_meta("menu_base_font")
 			var desired := maxi(1,roundi(clampf(font,16,24)*u))
 			if node.get_theme_font_size("font_size") != desired: node.add_theme_font_size_override("font_size",desired)
-	for child in node.get_children(): apply(board,child)
+	for child in node.get_children(): apply_unit(child,u)

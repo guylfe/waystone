@@ -51,7 +51,13 @@ func sync(owner) -> void:
 		var context := "character:"+str(board.sheet_detail.get("kind","summary"))
 		set_meta("menu_context",context)
 		line(content,str(data.get("name","Character"))+" · Level "+str(board.state.character_level()))
-		line(content,"XP "+str(board.state.carried_xp)+" · HP "+str(board.state.player_hp)+" / "+str(board.state.player_max_hp)+" · Energy "+str(roundi(data.current_energy))+" / "+str(roundi(data.maximum_energy)))
+		var level_context := str(data.get("level_up_context",""))
+		if not level_context.is_empty():
+			var source := "EXPEDITION" if level_context=="expedition" else "COMBAT SURVEY" if level_context=="survey" else "WAYSTONE"
+			line(content,"LEVEL UP · "+source)
+			line(content,"Spendable "+("secured" if level_context=="waystone" else "carried")+" XP · "+str(data.level_up_xp))
+		if level_context.is_empty() or level_context=="waystone": line(content,"Carried XP · "+str(board.state.carried_xp))
+		line(content,"HP "+str(board.state.player_hp)+" / "+str(board.state.player_max_hp)+" · Energy "+str(roundi(data.current_energy))+" / "+str(roundi(data.maximum_energy)))
 		if board.sheet_detail.is_empty(): summary(data)
 		else: detail(board.sheet_detail)
 		command(content,"character:back","BACK",func(): board.controller.back(board))
@@ -70,10 +76,15 @@ func summary(data: Dictionary) -> void:
 	var stats: Array[String]=[]
 	for key in data.attributes: stats.append(str(key).capitalize()+" "+str(data.attributes[key]))
 	line(content," · ".join(stats))
-	line(content,str(data.weapon_frame).capitalize()+" · "+str(data.defense).capitalize())
+	var frame := str(data.weapon_frame)
+	var form := "DRAW › RELEASE" if frame=="bow" else "FOUR COMPACT CUTS" if frame=="knife" else "SIX ALTERNATING CUTS" if frame=="twin_knives" else "CUT › RETURN › DRIVING CUT" if frame=="sword" else str(board.state.AttackGeometryScript.technique(str(board.CombatCatalogScript.weapon_frame(frame).get("basic_technique",""))).get("label",""))
+	line(content,str(board.CombatCatalogScript.weapon_frame(frame).get("label",frame))+" · "+form)
+	line(content,"Defense · "+str(data.defense).capitalize())
+	var equipped := str(data.get("equipped_art",""))
+	line(content,"ART · "+("LOCKED" if equipped=="" else "EQUIPPED · "+str(board.CombatCatalogScript.weapon_art(equipped).get("label",equipped))))
 	for art in data.known_arts:
 		var id := str(art)
-		var art_button := command(content,"art:"+id,"Art · "+str(board.CombatCatalogScript.weapon_art(id).get("label",id)),func():
+		var art_button := command(content,"art:"+id,"Art · "+str(board.CombatCatalogScript.weapon_art(id).get("label",id))+(" · EQUIPPED" if id==equipped else " · Not equipped"),func():
 			if board.state.can_swap_weapon_art(): board.state.equip_weapon_art(id))
 		art_button.disabled=not board.state.can_swap_weapon_art()
 	if str(data.get("level_up_context","")) == "":
@@ -98,10 +109,11 @@ func summary(data: Dictionary) -> void:
 		var card := VBoxContainer.new(); card.size_flags_horizontal=Control.SIZE_EXPAND_FILL
 		tracks_grid.add_child(card)
 		line(card,str(track.label)+" · Rank "+str(track.rank))
+		if track.stages.is_empty(): line(card,"DISCIPLINE NOT YET FOUND")
 		for index in range(track.stages.size()):
 			var stage: Dictionary=track.stages[index]
 			var actionable: bool=Array(data.get("level_up_options",[])).has(track.id) and stage.get("current",false)
-			var status := "Done" if stage.get("completed",false) else str(data.get("level_up_cost",0))+" XP" if actionable else "Level "+str(stage.get("gate",0))
+			var status := "COMPLETED" if stage.get("completed",false) else "AVAILABLE · "+str(data.get("level_up_cost",0))+" XP" if actionable else "LOCKED · AVAILABLE FROM LEVEL "+str(stage.get("gate",0))
 			var label := str(stage.label)
 			if stage.get("completed",false) and str(stage.get("choice",""))!="":
 				for option in stage.get("choices",[]):
@@ -121,6 +133,7 @@ func detail(value: Dictionary) -> void:
 		var stage: Dictionary=value.get("stage",{})
 		line(content,str(value.get("track",""))+" · "+str(stage.get("label","")))
 		line(content,str(stage.get("description","")))
+		if kind=="stage": line(content,"COMPLETED" if stage.get("completed",false) else "AVAILABLE FROM LEVEL "+str(stage.get("gate",0)))
 		if kind=="track_choice":
 			for option in value.get("options",[]):
 				var choice := str(value.upgrade_id)+"|"+str(option.id)
@@ -128,6 +141,8 @@ func detail(value: Dictionary) -> void:
 				line(content,str(option.get("description","")))
 		if kind in ["upgrade","track_choice"]:
 			line(content,"Permanent choice · "+str(value.get("cost",0))+" XP")
+			var data: Dictionary=board.state.character_sheet_data()
+			line(content,"COST "+str(value.get("cost",0))+" XP · REMAINING "+str(maxi(0,int(data.level_up_xp)-int(value.get("cost",0))))+" XP")
 			var choice := str(value.get("selected","")) if kind=="track_choice" else str(value.get("upgrade_id",""))
 			var confirm := command(content,"character:confirm","SPEND "+str(value.get("cost",0))+" XP",func():
 				if not choice.is_empty() and board.state.choose_upgrade(choice):
