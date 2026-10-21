@@ -73,6 +73,40 @@ behind modals, and hidden zero-sized toolbar rectangles do not draw glyph text.
 
 ## Verification and limits
 
+### Character transaction correction after combined review
+
+The native branch selector originally stored a bare branch ID, while
+`RunState.choose_upgrade` and the original drawn selector require
+`track_id|branch_id`. The isolated successor to `03336ab` restores that encoded
+transaction value, retaining the existing semantic button IDs. Confirmation
+continues to use the existing eligibility, XP, rank, branch-effect and critical
+autosave owners; no progression or save format rules change.
+
+Two neighboring return defects were reproduced during that transaction audit.
+Character Back could restore pause before the native panel's visibility updated,
+letting native entries reach the drawn pause renderer, which expects labels.
+The native-panel lookup now also checks the actual Character-open state. A paid
+belt repack now consumes its pause/Survey return context when it closes Character,
+so a later independent Character opening cannot return to a stale invoker. The
+same state request still owns the slot swap and 0.32-second committed action.
+Weapon-art swapping remains disabled by the existing state policy.
+
+`tests/character_transaction_test.gd` enters the normal main scene's Character
+screen through routed controller input. Labelled synthetic progression fixtures
+exercise both initial Sword branches and both initial Steadfast branches in
+Expedition, ordinary Survey and Campaign Waystone contexts. Each compares all
+progression fields with the established state transaction and reloads the native
+confirmation's autosave. It covers selection/cancel, one debit/rank/history entry,
+completed-stage inspection, fresh A and duplicate rejection, ordinary Evasion,
+insufficient XP, level gates and a stale confirmation. Replenished-XP reloads
+separately diagnose the duplicate consumer guard at these initial-stage gates.
+Synthetic legacy-art and belt fixtures cover disabled swap eligibility, two-slot
+selection/cancel, paid repack timing against the state owner, frozen completion
+and return context in Expedition and experimental Survey. These fixtures are not
+naturally earned play, physical controller input or exhaustive progression play.
+The paired unchanged-control/successor logs, exact test hash and counts belong in
+the external transaction-repair handoff.
+
 `tests/menu_journey_test.gd` uses the normal main scene and viewport-routed inputs
 with normal frame processing. It configures B/C, named and ordinary Survey, both
 resource rules; traverses Character/stage/detail/Back, Map, safe Resume, held

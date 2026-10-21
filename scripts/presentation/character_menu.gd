@@ -88,7 +88,7 @@ func summary(data: Dictionary) -> void:
 				elif board.sheet_repack_slot==i: board.sheet_repack_slot=-1
 				else:
 					var first: int=board.sheet_repack_slot
-					board.sheet_repack_slot=-1; board.character_sheet_open=false
+					board.sheet_repack_slot=-1; board._close_character_for_action()
 					board._begin_streamed_action(board.state.request_repack(first,i,false)))
 	line(content,"TRACKS")
 	tracks_grid=GridContainer.new(); tracks_grid.size_flags_horizontal=Control.SIZE_EXPAND_FILL
@@ -123,8 +123,8 @@ func detail(value: Dictionary) -> void:
 		line(content,str(stage.get("description","")))
 		if kind=="track_choice":
 			for option in value.get("options",[]):
-				var choice := str(option.id)
-				command(content,"choice:"+choice,str(option.label)+(" · selected" if value.get("selected","")==choice else ""),func(): board.sheet_detail["selected"]=choice)
+				var choice := str(value.upgrade_id)+"|"+str(option.id)
+				command(content,"choice:"+str(option.id),str(option.label)+(" · selected" if value.get("selected","")==choice else ""),func(): board.sheet_detail["selected"]=choice)
 				line(content,str(option.get("description","")))
 		if kind in ["upgrade","track_choice"]:
 			line(content,"Permanent choice · "+str(value.get("cost",0))+" XP")

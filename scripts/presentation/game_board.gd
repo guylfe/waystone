@@ -4951,6 +4951,10 @@ func _draw_sheet_button() -> void:
 	if controller.active: label = "LEVEL UP [MENU]" if level_ready else "SHEET [MENU]"
 	draw_string(ThemeDB.fallback_font, sheet_button_rect.position + Vector2(0.0, sheet_button_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, sheet_button_rect.size.x, font, Color("d7dddd"))
 
+func _close_character_for_action() -> void:
+	character_sheet_open = false
+	controller.sheet_return_pause = false
+
 func _open_character_sheet() -> void:
 	sheet_repack_slot = -1
 	character_sheet_open = true

@@ -240,7 +240,7 @@ func modal(board) -> bool:
 func native_panel(board) -> Node:
 	if is_instance_valid(board.expedition_dialog) and board.expedition_dialog.visible: return board.expedition_dialog
 	if is_instance_valid(board.survey_overlay) and board.survey_overlay.visible: return board.survey_overlay
-	if is_instance_valid(board.character_menu) and board.character_menu.visible: return board.character_menu
+	if board.character_sheet_open and is_instance_valid(board.character_menu) and board.character_menu.visible: return board.character_menu
 	return null
 
 func release_actions(board) -> void:

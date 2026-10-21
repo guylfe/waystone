@@ -13,6 +13,11 @@ semantic focus/Back, directional navigation, stable setup rows and responsive
 menu/Character metrics. See the [correction ledger](menu-input-correction.md).
 Its engineering checks and before/after trace are separate from final rendered,
 independent and human acceptance. The live 0.3.4 source/builds remain unchanged.
+A further isolated successor to `03336ab` restores encoded Character branch
+transactions and clears consumed Character return contexts after paid repacking.
+Its routed synthetic purchase/cancel/persistence and neighboring transaction
+checks are recorded in the same correction ledger; final rendered review remains
+open. Progression rules, save formats and the F-only correction remain unchanged.
 Guy's exact attack reset and the two additional inspection/outcome proposals
 remain unresolved/unadopted respectively.
 

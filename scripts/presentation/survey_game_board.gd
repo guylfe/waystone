@@ -9,6 +9,10 @@ var overlay_replaying := false
 var overlay_release_gate := false
 var survey_setup_summary: Label
 
+func _close_character_for_action() -> void:
+	super._close_character_for_action()
+	inspection_return = false
+
 func _return_inspection_view() -> void:
 	if not inspection_return: return
 	inspection_return=false
