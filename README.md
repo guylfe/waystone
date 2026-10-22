@@ -1,6 +1,19 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.4` (Android version code `304`).
+Current prototype version: `0.3.5` (Android version code `305`).
+
+## v0.3.5 — dependable menus and frozen-Sword continuation
+
+Character/menu releases and neutral return, semantic focus/Back, responsive native
+menus, Character purchases and decision information, and feedback containment use
+the accepted `d797b01` runtime. F now continues at a frozen Sword junction. The
+normal Windows launch target remains unchanged. Save schema 39 and report format
+37 remain compatible; personal data is preserved by local delivery.
+
+Independent functional/information reviews and the bounded Windows GPU review
+passed. Exported package and destination receipts identify the exact local build;
+GitHub publication and Android device installation are separate. Guy's precise
+attack-reset report and physical/human feel acceptance remain unresolved.
 
 ## v0.3.4 — experimental combat in Combat Survey
 

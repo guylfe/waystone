@@ -1,40 +1,36 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-21 (accepted Combat Survey integration)
-**Release baseline:** `0.3.4` (`versionCode 304`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
+**Reviewed:** 2026-10-22 (accepted menu/input correction and local delivery)
+**Release baseline:** `0.3.5` (`versionCode 305`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
 **Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
 
 ## Survey integration
 
-An unpublished successor to `fb61431` repairs menu/Character release ownership,
-semantic focus/Back, directional navigation, stable setup rows and responsive
-menu/Character metrics. See the [correction ledger](menu-input-correction.md).
-Its engineering checks and before/after trace are separate from final rendered,
-independent and human acceptance. The live 0.3.4 source/builds remain unchanged.
-A further isolated successor to `03336ab` restores encoded Character branch
-transactions and clears consumed Character return contexts after paid repacking.
-Its routed synthetic purchase/cancel/persistence and neighboring transaction
-checks are recorded in the same correction ledger; final rendered review remains
-open. Progression rules, save formats and the F-only correction remain unchanged.
-The next isolated combined correction repairs real-root-transform feedback
-containment and restores Character's actual upgrade balance, projected remainder,
-equipped/locked art and authored stage/form information. Its root/density models
-and synthetic information fixtures are in the same ledger; native rendered and
-independent combined-successor acceptance remain open. No normal destination or
-release identity changes.
-Guy's exact attack reset and the two additional inspection/outcome proposals
-remain unresolved/unadopted respectively.
+0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`
+(tree `cf81df775d5f305a60a8f7d24b2d446657c02f3b`) for the normal local game.
+It repairs Character/menu release ownership, neutral/repress return, semantic
+focus/Back, responsive menu metrics, branch transactions and paid-repack return,
+feedback containment, and existing Character decision information. F continues
+through the existing token at a frozen Sword junction. Save schema, combat rules
+and report format are unchanged. The exact original attack-reset symptom is
+unidentified; this bounded F fix does not close that report.
 
-An isolated correction candidate from `8c6b62f` routes the primary F key through
-the existing continuation token at a frozen Sword junction. Released F was
-refused there by the native idle-only attack gate. The main-scene routed input
-regression and remaining reproduction gap are documented in
-[Survey integration](survey-combat-integration.md#isolated-primary-key-correction--21-october-2026).
-This is a bounded demonstrated input fix; Guy's specific attack-reset report
-remains unconfirmed. No release, normal build replacement or human acceptance
-is implied.
+Both independent final reviews passed that immutable runtime. The lead's bounded
+Windows/OpenGL review passed 647 checks / 99 GPU records, with a normal-processing
+archive supplement passing 240 checks / 12 records. The supplement corrected only
+a capture-harness artifact; product source stayed frozen. Headless root/density,
+transaction, handover and archive evidence remains separately recorded in the
+[correction ledger](menu-input-correction.md). Physical controller/touch, Android
+and foldable behavior, natural gameplay and subjective feel remain unverified.
+
+The local delivery uses the existing `builds/windows/Waystone.exe` launch target,
+with unchanged shortcut arguments/icon. Exact release-source, embedded build,
+package smoke, installed destination, rollback and personal-data preservation
+receipts live in the external `local-delivery-20261022` task folder. Remote
+publication and Android device installation are outside this local update.
+The equipment-effects and manual-end wording proposals remain unadopted.
 
 0.3.4 integrates the accepted frozen-Sword/Commit experiment into the normal
 **Dev → Survey** entry for generated/custom/exact-roster rooms and all eleven

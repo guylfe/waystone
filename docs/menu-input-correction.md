@@ -1,11 +1,16 @@
 # Isolated menu/input correction
 
-22 October 2026. Unpublished successor of `fb61431be4d8fe09de5a293c648dcb1f9904bc24`.
-Release remains 0.3.4 / Android 304 at `8c6b62f`. This ledger supplements the
-[controller owner](controller-controls.md) and [Survey owner](survey-combat-integration.md).
-It records implementation and engineering verification, not independent or human
-acceptance. The exact candidate revision and results belong in the external task
-handoff; no new binaries, installation, local replacement or publication is implied.
+22 October 2026. Runtime accepted at `d797b01`; locally packaged as 0.3.5 /
+Android 305 without runtime-code changes. Both independent final reviews and the
+lead's bounded native review passed, including its corrected normal-processing
+archive supplement. Exact build/destination verification lives in the external
+local-delivery receipt. No remote publication or Android installation is implied.
+
+The dated implementation entries below preserve their original evidence limits.
+Their earlier open native/independent-review status is superseded by the bounded
+acceptance above. Physical controls, Android/foldable behavior, natural play,
+Guy's exact reset and subjective feel remain open. The [current-state owner](current-state.md)
+records the delivered baseline; unadopted proposals remain separate.
 
 ## Contract and ownership
 
