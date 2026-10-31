@@ -10,6 +10,8 @@ The retained main-scene headless touch fixtures demonstrate two independent pick
 
 Generated exploratory supplies at `(650,3450)` collect successfully on the baseline across seeds 73, 717 and 99117, all three biomes and both projections. Merchant context interaction also remains usable at safe generated merchants. Tapping the merchant marker itself has no baseline handler and falls through to movement. The new route opens that same finite-stock shop, preserving its transactions and the context action.
 
+After an ordinary purchase, isometric goods can overlap the merchant's tap area: 47.175 projected units of separation versus a 49.336 pickup hit radius in the model. Pickup and merchant routing therefore compare screen distance before choosing a handler. An exact merchant tap reopens trading and leaves the goods; an exact goods tap collects that item. The existing pickup priority remains for indistinguishable equal-distance ties.
+
 Projectiles only check rectangular extent and endpoint walls in the baseline. A swept step can leave a concave floor union, re-enter it and hit a body beyond the void. Full projectile radius, curved boundaries and high arcing shots are covered by the correction. Large movement steps, vault, Advance, Windstep and Gale also require continuous floor checks; endpoint occupancy remains in force.
 
 ## Source ownership and behavior
@@ -28,6 +30,8 @@ Run under Godot 4.7 headless with APPDATA and LOCALAPPDATA redirected to an isol
 |---|---|
 | `phone_world_repair_test.gd` | Main-scene routed touch with discovered fixture cells; selected ID/overlap/stale snapshot/hidden marker; merchant marker and threat denial; normal/large swept floor crossings, source IDs, arcing height, first-body order and connected seams. Final counts are recorded externally; the initial baseline failed 16 of 19 cases. |
 | `generated_supply_route_test.gd` | 54 checks over generated data with explicit fixture positioning: 18 supply successes, 18 context successes, 18 marker-shop cases. Baseline fails only the 18 marker-shop cases. No earned journey or real-device input is claimed. |
+| `merchant_overlap_input_test.gd` | Eight routed-input checks for ordinary purchased ground goods beside the merchant in both projections. The first candidate fails two isometric reopen/preservation checks; final routing corrects them. |
+| `generated_floor_shot_test.gd` | Actual seed-717 Expedition floor/walls from `(650,3450)` to `(1400,2650)`; endpoints are valid, the segment crosses void, and interior-wall line of sight is clear. Baseline shots survive the gap at normal and one-second timesteps; the candidate stops both. Actors are removed and a shot injected to isolate geometry; no earned play is claimed. |
 | `phone_repair_guards_test.gd` | Safety/distance/layer guards, exactly-once collection, full belt and displaced stacks, equipment layer, atomic stock/currency/item persistence; piercing/player/firebomb ordering, airborne low-barrier exception and movement paths. |
 | `floor_boundary_geometry_test.gd` | Analytic expected circle/capsule/rect contact, a half-unit gap and exposed versus internal seams. Deterministic random union sweeps are compared with a separate dense perimeter oracle. |
 | `actor_floor_path_test.gd` | A large-step concave case where both separate axis paths are on floor but the returned diagonal crosses void. Three baseline failures cover player, enemy and vault; successor blocks all three. |
@@ -38,6 +42,8 @@ Run under Godot 4.7 headless with APPDATA and LOCALAPPDATA redirected to an isol
 The external evidence ledger records the final frozen revision, raw logs, full regression outcome and before/after timings. New cases deliberately preserve baseline failures. Historical and unsuccessful harness runs are retained and separately labeled; only error-free final runs support acceptance.
 
 Two pre-existing motion/steering tests spawned shots at `(150,150)` and `(100,100)`, outside the generated floor. Their origins are moved onto the authored starting clearing, keeping their displacement and unsteered-heading assertions. The same adjusted fixtures retain only the already documented defensive-choice failure on the baseline. The baseline structure audit separately has five unchanged version/banner failures; they are not suppressed or added to the expected-failure ledger by this repair.
+
+Broader diagnostics retain two baseline failures in `world_generation_test.gd` (legacy terrain-boundary expectation and route reachability). The four ordinary-policy seed-42 playthrough drivers also lose on both baseline and candidate, with different outcomes for three characters. These are not accepted journeys or balance evidence. No combat tuning is introduced to make an automated driver win; independent journey and human play acceptance remain open.
 
 ## Phone follow-up owned by the lead
 

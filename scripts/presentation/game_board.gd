@@ -2614,6 +2614,9 @@ func _try_pickup_press(position: Vector2) -> bool:
 			nearest = distance
 			selected = pickup
 	if selected.is_empty(): return false
+	# Purchased goods can sit inside the merchant's touch area in isometric view.
+	# Both remain usable: an exact merchant tap must not collect adjacent goods.
+	if _merchant_touch_distance(position) < nearest: return false
 	# Resolve the displayed ID against live state; never collect a different nearby item.
 	selected = state.pickup_by_id(String(selected.get("id", "")))
 	var denial := state.pickup_denial(selected)
@@ -2626,10 +2629,15 @@ func _try_pickup_press(position: Vector2) -> bool:
 	_begin_streamed_action(state.request_collect_pickup(String(selected["id"]), false))
 	return true
 
+func _merchant_touch_distance(position: Vector2) -> float:
+	if state.expedition.is_empty() or not state.expedition_markers.has("merchant"): return INF
+	var point := Vector2(state.expedition_markers["merchant"])
+	if not state.is_discovered(point, _render_discovered_cells()) or not _world_point_on_camera(point, 100.0): return INF
+	var distance := _world_to_screen(point).distance_to(position)
+	return distance if distance <= maxf(38.0, 42.0 * world_scale) else INF
+
 func _try_merchant_press(position: Vector2) -> bool:
-	if state.expedition.is_empty() or not state.expedition_markers.has("merchant"): return false
-	if not state.is_discovered(Vector2(state.expedition_markers["merchant"]), _render_discovered_cells()): return false
-	if _world_to_screen(Vector2(state.expedition_markers["merchant"])).distance_to(position) > maxf(38.0, 42.0 * world_scale): return false
+	if _merchant_touch_distance(position) == INF: return false
 	var denial := ExpeditionEconomyScript.merchant_denial(state)
 	if not denial.is_empty():
 		state.message = denial

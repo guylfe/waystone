@@ -58,6 +58,8 @@ New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-
 $HeadlessSuite = @(
     'phone_world_repair_test',
     'generated_supply_route_test',
+    'merchant_overlap_input_test',
+    'generated_floor_shot_test',
     'phone_repair_guards_test',
     'floor_boundary_geometry_test',
     'actor_floor_path_test',
