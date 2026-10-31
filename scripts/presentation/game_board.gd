@@ -2220,6 +2220,7 @@ func _handle_gesture(end_position: Vector2) -> void:
 		_begin_streamed_action(state.request_adopted(_screen_to_world(end_position),false))
 		return
 	if _try_pickup_press(end_position): return
+	if _try_merchant_press(end_position): return
 	if _try_waystone_press(end_position): return
 	if _try_transition_press(end_position): return
 	var drag := end_position - touch_start
@@ -2602,18 +2603,39 @@ func _try_waystone_press(position: Vector2) -> bool:
 
 func _try_pickup_press(position: Vector2) -> bool:
 	var selected: Dictionary = {}
+	var nearest := maxf(34.0, 38.0 * world_scale)
+	var discovered := _render_discovered_cells()
 	for pickup_value in Array(visual.get("world_pickups", [])):
 		var pickup: Dictionary = pickup_value
 		if String(pickup.get("layer", state.current_layer)) != state.current_layer: continue
-		if _world_to_screen(Vector2(pickup["pos"])).distance_to(position) <= maxf(34.0, 38.0 * world_scale): selected = pickup
+		if not state.is_discovered(Vector2(pickup["pos"]), discovered) or not _world_point_on_camera(Vector2(pickup["pos"]), 60.0): continue
+		var distance := _world_to_screen(Vector2(pickup["pos"])).distance_to(position)
+		if distance <= nearest and (selected.is_empty() or distance < nearest):
+			nearest = distance
+			selected = pickup
 	if selected.is_empty(): return false
-	if state.player_pos.distance_to(Vector2(selected["pos"])) > 112.0:
-		state.message = "Move closer to take the %s." % String(state.consumable_definition(String(selected.get("item_id", ""))).get("label", "item")).to_lower()
+	# Resolve the displayed ID against live state; never collect a different nearby item.
+	selected = state.pickup_by_id(String(selected.get("id", "")))
+	var denial := state.pickup_denial(selected)
+	if not denial.is_empty():
+		state.message = denial
 		visual = _presentation_snapshot()
 		queue_redraw()
 		return true
 	if _offer_equipment(selected): return true
-	_begin_streamed_action(state.request_collect_nearby_pickup(false))
+	_begin_streamed_action(state.request_collect_pickup(String(selected["id"]), false))
+	return true
+
+func _try_merchant_press(position: Vector2) -> bool:
+	if state.expedition.is_empty() or not state.expedition_markers.has("merchant"): return false
+	if not state.is_discovered(Vector2(state.expedition_markers["merchant"]), _render_discovered_cells()): return false
+	if _world_to_screen(Vector2(state.expedition_markers["merchant"])).distance_to(position) > maxf(38.0, 42.0 * world_scale): return false
+	var denial := ExpeditionEconomyScript.merchant_denial(state)
+	if not denial.is_empty():
+		state.message = denial
+		visual = _presentation_snapshot()
+		queue_redraw()
+	else: _show_expedition_shop()
 	return true
 
 func _expedition_panel(title_text: String) -> VBoxContainer:
@@ -2668,7 +2690,7 @@ func _show_expedition_shop() -> void:
 	var content := _expedition_panel("Wayfarer's Exchange" if int(state.expedition["biome"])==1 else "Mountain outfitter")
 	_panel_text(content,"%d crowns · finite stock · purchases are placed beside you\nNo selling, refills or restocking." % int(state.expedition["crowns"]))
 	if not ExpeditionEconomyScript.at_merchant(state):
-		_panel_text(content,"Approach the merchant in a safe, ready state.")
+		_panel_text(content,ExpeditionEconomyScript.merchant_denial(state))
 		return
 	if int(state.expedition["biome"])==1 and bool(state.expedition["writ"]):
 		_panel_text(content,"Your training writ grants TWO ranks in one permanent sixth discipline. No crowns required.")
@@ -4630,7 +4652,7 @@ func _draw_world_pickups(discovered: Dictionary) -> void:
 		draw_circle(center + Vector2(-radius * 0.15, -radius * 0.18), radius * 0.18, Color("fff3ce"))
 		if distance <= 410.0:
 			draw_string(ThemeDB.fallback_font, center + Vector2(-54.0, -radius * 2.00), "SUPPLY", HORIZONTAL_ALIGNMENT_CENTER, 108.0, maxi(9, int(12.0 * world_scale)), Color("fff3ce"))
-		if distance <= 145.0:
+		if distance <= state.PICKUP_RANGE:
 			var label := "TAKE %s" % ("DRAUGHT" if item_id == "rejuvenation" else String(state.consumable_definition(item_id).get("short", item_id)).to_upper())
 			draw_string(ThemeDB.fallback_font, center + Vector2(-58.0, radius * 2.28), label, HORIZONTAL_ALIGNMENT_CENTER, 116.0, maxi(8, int(11.0 * world_scale)), Color("f2e7c8"))
 

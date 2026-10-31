@@ -6,6 +6,16 @@
 
 **Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
 
+## Isolated phone world repair candidate — November 1
+
+The [gameplay repair ledger](phone-world-repair.md) owns the bounded candidate for
+pickup identity/denials, merchant marker input, continuous floor-boundary collision
+and measured presentation-copy optimization. Baseline failures and successor results
+are retained in isolated headless evidence. This candidate leaves release identity,
+installed software and personal saves alone. Real-phone rendering/touch/performance,
+independent acceptance, integration and destination delivery remain lead-owned.
+The exact late-run supply refusal and original attack-reset report remain unresolved.
+
 ## Survey integration
 
 0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`

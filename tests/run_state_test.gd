@@ -343,16 +343,19 @@ func test_polearm_reach_and_timing() -> void:
 func test_projectile_motion() -> void:
 	var state: RunState = RunStateScript.new()
 	state.enemies.clear()
-	state.projectiles = [{"kind":"arrow", "pos":Vector2(150.0, 150.0), "vel":Vector2(300.0, 0.0), "radius":9.0, "damage":2, "source_id":99, "layer":state.current_layer, "misdirected":false}]
+	# Keep the motion fixture on the authored starting floor. Void now stops shots.
+	var origin := state.player_pos + Vector2(-150.0, -150.0)
+	state.projectiles = [{"kind":"arrow", "pos":origin, "vel":Vector2(300.0, 0.0), "radius":9.0, "damage":2, "source_id":99, "layer":state.current_layer, "misdirected":false}]
 	assert(state.request_wait(0.20))
 	assert(state.projectiles.size() == 1)
 	var x := Vector2(state.projectiles[0]["pos"]).x
-	assert(x > 205.0 and x < 220.0)
+	assert(x > origin.x + 55.0 and x < origin.x + 70.0)
 
 func test_firebolt_tracking_is_limited() -> void:
 	var state: RunState = RunStateScript.new()
+	var origin := state.player_pos + Vector2(-250.0, -100.0)
 	state.player_pos = Vector2(420.0, 300.0)
-	state.projectiles = [{"pos": Vector2(100.0, 100.0), "vel": Vector2.RIGHT * 465.0, "launch_direction": Vector2.RIGHT, "turn_rate": 0.0, "max_track_angle": 0.0, "radius": 13.0, "damage": 3, "kind": "firebolt", "source_id": 99, "layer": state.current_layer, "misdirected": false}]
+	state.projectiles = [{"pos": origin, "vel": Vector2.RIGHT * 465.0, "launch_direction": Vector2.RIGHT, "turn_rate": 0.0, "max_track_angle": 0.0, "radius": 13.0, "damage": 3, "kind": "firebolt", "source_id": 99, "layer": state.current_layer, "misdirected": false}]
 	for index in range(20): state._update_projectiles(0.05)
 	assert(state.projectiles.size() == 1)
 	var steering: float = absf(Vector2.RIGHT.angle_to(Vector2(state.projectiles[0]["vel"]).normalized()))

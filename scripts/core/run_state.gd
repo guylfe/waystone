@@ -37,6 +37,7 @@ const NAV_CELL := 75.0
 const VISIBILITY_CELL := 50.0
 const SIGHT_RANGE := 520.0
 const WAYSTONE_RANGE := 145.0
+const PICKUP_RANGE := 112.0
 const SPATIAL_CELL := 360.0
 const ACTIVE_ENEMY_RADIUS := 1750.0
 const POSTURE_BREAK_OPENING_SECONDS := 0.72
@@ -830,6 +831,8 @@ var loaded_region_ids: Dictionary = {}
 var loaded_terrain_features: Array[Dictionary] = []
 var _loaded_floor_shapes: Array[Dictionary] = []
 var _wall_buckets: Dictionary = {}
+const FloorBoundaryScript = preload("res://scripts/core/floor_boundary.gd")
+var _floor_boundaries: Dictionary = {}
 var _shape_buckets_by_layer: Dictionary = {}
 var _enemy_buckets: Dictionary = {}
 var _enemy_bucket_cell_by_id: Dictionary = {}
@@ -3310,7 +3313,7 @@ func _tick_player_cast(dt: float) -> void:
 		if elapsed >= startup and elapsed <= startup + 0.32:
 			var step := Vector2(player_action["direction"]).normalized() * 1250.0 * dt
 			var landing := player_pos + step
-			if _teleport_allowed(landing, PLAYER_RADIUS, 0):
+			if _floor_boundary_hit(player_pos, landing, PLAYER_RADIUS * 0.72, true) == INF and _teleport_allowed(landing, PLAYER_RADIUS, 0):
 				player_pos = landing
 		return
 	if elapsed >= startup and not bool(player_action.get("effect_done", false)):
@@ -4727,16 +4730,35 @@ func nearby_pickup() -> Dictionary:
 	for pickup_value in world_pickups:
 		var pickup: Dictionary = pickup_value
 		if int(pickup.get("guard_site",-1)) >= 0 and not _area_is_clear(int(pickup["guard_site"])): continue
-		if String(pickup.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(pickup["pos"])) <= 112.0: return pickup
+		if String(pickup.get("layer", current_layer)) == current_layer and player_pos.distance_to(Vector2(pickup["pos"])) <= PICKUP_RANGE: return pickup
 	return {}
 
 func has_pending_pickup() -> bool:
 	return not pending_pickup.is_empty()
 
 func request_collect_nearby_pickup(simulate_immediately: bool = true) -> bool:
-	if not is_player_ready() or has_pending_pickup(): return false
-	var pickup := nearby_pickup()
-	if pickup.is_empty(): return false
+	return request_collect_pickup(String(nearby_pickup().get("id", "")), simulate_immediately)
+
+func pickup_by_id(pickup_id: String) -> Dictionary:
+	for pickup in world_pickups:
+		if String(pickup.get("id", "")) == pickup_id: return pickup
+	return {}
+
+func pickup_denial(pickup: Dictionary) -> String:
+	if pickup.is_empty(): return "That supply is no longer available."
+	if not is_player_ready(): return "Finish your current action before taking supplies."
+	if has_pending_pickup() and not ExpeditionCatalogScript.EQUIPMENT.has(String(pickup.get("item_id", ""))): return "Choose a belt replacement or leave the pending item first."
+	if String(pickup.get("layer", current_layer)) != current_layer: return "That supply is on another level."
+	if player_pos.distance_to(Vector2(pickup["pos"])) > PICKUP_RANGE: return "Move closer to take this supply."
+	if int(pickup.get("guard_site", -1)) >= 0 and not _area_is_clear(int(pickup["guard_site"])): return "Defeat this site's guards before taking its supplies."
+	return ""
+
+func request_collect_pickup(pickup_id: String, simulate_immediately: bool = true) -> bool:
+	var pickup := pickup_by_id(pickup_id)
+	var denial := pickup_denial(pickup)
+	if not denial.is_empty():
+		_set_message(denial)
+		return false
 	var item_id := String(pickup.get("item_id", ""))
 	if ExpeditionCatalogScript.EQUIPMENT.has(item_id): return false # Explicit comparison in the UI.
 	if item_id == "rejuvenation":
@@ -5134,15 +5156,21 @@ func _update_secret_passages() -> bool:
 	return false
 
 func _build_shape_spatial_index() -> void:
+	_floor_boundaries.clear()
 	_shape_buckets_by_layer.clear()
+	var by_layer := {}
 	for shape in floor_shapes:
 		var layer := String(shape.get("layer", current_layer))
+		if not by_layer.has(layer): by_layer[layer] = []
+		by_layer[layer].append(shape)
 		if not _shape_buckets_by_layer.has(layer): _shape_buckets_by_layer[layer] = {}
 		var buckets: Dictionary = _shape_buckets_by_layer[layer]
 		var bounds := _shape_bounds(shape)
 		for cell in _spatial_cells_for_rect(bounds):
 			if not buckets.has(cell): buckets[cell] = []
 			buckets[cell].append(shape)
+	# Build at map installation, outside the first committed action's CPU budget.
+	for layer in by_layer: _floor_boundaries[layer] = FloorBoundaryScript.new(by_layer[layer])
 
 func _build_wall_spatial_index() -> void:
 	_wall_buckets.clear()
@@ -6143,7 +6171,7 @@ func _update_player(dt: float) -> void:
 func _move_player_advance(origin: Vector2, delta: Vector2, pass_mass: float) -> Vector2:
 	if pass_mass < 0.0: return _move_actor(origin, delta, PLAYER_RADIUS, 0)
 	var candidate := origin + delta
-	if _position_blocked_static(candidate, PLAYER_RADIUS): return origin
+	if _floor_boundary_hit(origin, candidate, PLAYER_RADIUS * 0.72, true) != INF or _position_blocked_static(candidate, PLAYER_RADIUS): return origin
 	for enemy in _nearby_enemies(candidate, PLAYER_RADIUS + 90.0):
 		if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
 		if candidate.distance_to(Vector2(enemy["pos"])) >= PLAYER_RADIUS + float(enemy["radius"]): continue
@@ -7262,7 +7290,7 @@ func _charge_collision_context(charger: Dictionary, origin: Vector2, delta: Vect
 	var probes := [origin + delta, Vector2(origin.x + delta.x, origin.y), Vector2(origin.x, origin.y + delta.y)]
 	for position_value in probes:
 		var position := Vector2(position_value)
-		if not _inside_world(position, radius) or not _actor_footprint_on_floor(position, radius): return {"cause": "floor_edge"}
+		if _floor_boundary_hit(origin, position, radius * 0.72, true) != INF or not _inside_world(position, radius) or not _actor_footprint_on_floor(position, radius): return {"cause": "floor_edge"}
 		if _point_in_barrier(position, radius, int(charger.get("id", -1))): return {"cause": "barrier"}
 		for wall in _nearby_walls(position, radius + 8.0):
 			if _circle_intersects_rect(position, radius, wall): return {"cause": "wall"}
@@ -7825,7 +7853,7 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			# keeps Air from negating Earth outright.
 			var step := Vector2(action["direction"]).normalized() * float(action.get("speed", 1250.0)) * enemy_dt
 			var landing := Vector2(enemy["pos"]) + step
-			if _teleport_allowed(landing, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"])):
+			if _floor_boundary_hit(Vector2(enemy["pos"]), landing, float(enemy.get("radius", ENEMY_RADIUS)) * 0.72, true) == INF and _teleport_allowed(landing, float(enemy.get("radius", ENEMY_RADIUS)), int(enemy["id"])):
 				_set_enemy_position(enemy, landing)
 		elif kind == "cold_front" and elapsed >= float(action["startup"]) and not bool(action["effect_done"]):
 			action["effect_done"] = true
@@ -9568,9 +9596,9 @@ func _spawn_bow_art_projectiles(piercing: bool, direction: Vector2) -> void:
 func _move_vault_actor(origin: Vector2, delta: Vector2) -> Vector2:
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if not _position_blocked_static(candidate, PLAYER_RADIUS): result.x = candidate.x
+	if _floor_boundary_hit(origin, candidate, PLAYER_RADIUS * 0.72, true) == INF and not _position_blocked_static(candidate, PLAYER_RADIUS): result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if not _position_blocked_static(candidate, PLAYER_RADIUS): result.y = candidate.y
+	if _floor_boundary_hit(origin, candidate, PLAYER_RADIUS * 0.72, true) == INF and not _position_blocked_static(candidate, PLAYER_RADIUS): result.y = candidate.y
 	return result
 
 func _resolve_vault_crossings(origin: Vector2, finish: Vector2) -> void:
@@ -9662,7 +9690,7 @@ func _update_gale_drift(dt: float) -> void:
 	# Overlaps that survive the drift are resolved by the crowding push, as they always are.
 	if player_gale_velocity.length() > GALE_DRIFT_FLOOR:
 		var landing := player_pos + player_gale_velocity * dt
-		if _teleport_allowed(landing, PLAYER_RADIUS, 0):
+		if _floor_boundary_hit(player_pos, landing, PLAYER_RADIUS * 0.72, true) == INF and _teleport_allowed(landing, PLAYER_RADIUS, 0):
 			player_pos = landing
 			player_gale_velocity = player_gale_velocity.move_toward(Vector2.ZERO, GALE_DECELERATION * dt)
 		else:
@@ -9678,7 +9706,7 @@ func _update_gale_drift(dt: float) -> void:
 			continue
 		var radius := float(enemy.get("radius", ENEMY_RADIUS))
 		var target := Vector2(enemy["pos"]) + velocity * dt
-		if not _teleport_allowed(target, radius, int(enemy["id"])):
+		if _floor_boundary_hit(Vector2(enemy["pos"]), target, radius * 0.72, true) != INF or not _teleport_allowed(target, radius, int(enemy["id"])):
 			enemy.erase("gale_velocity")
 			continue
 		_set_enemy_position(enemy, target)
@@ -9848,6 +9876,25 @@ func _update_hazards(dt: float) -> void:
 		if float(hazard["elapsed"]) < float(hazard["duration"]): survivors.append(hazard)
 	hazards = survivors
 
+func _projectile_world_hit(start: Vector2, finish: Vector2, radius: float, grounded: bool) -> float:
+	var first := _floor_boundary_hit(start, finish, radius)
+	if not _inside_world(start, radius): return 0.0
+	var delta := finish - start
+	for axis in range(2):
+		if finish[axis] < radius: first = minf(first, (radius-start[axis])/delta[axis])
+		elif finish[axis] > world_size[axis]-radius: first = minf(first, (world_size[axis]-radius-start[axis])/delta[axis])
+	for wall in _nearby_walls((start+finish)*0.5, start.distance_to(finish)*0.5+radius):
+		if wall.has_point(start): return 0.0
+		var corners := [wall.position, Vector2(wall.end.x,wall.position.y),wall.end,Vector2(wall.position.x,wall.end.y)]
+		for i in range(4): first = minf(first, FloorBoundaryScript.segment_hit(start,finish,corners[i],corners[(i+1)%4],radius))
+	if grounded:
+		for segment in barriers:
+			# Preserve existing low-barrier allegiance/elevation rules.
+			if not _barrier_opposes(segment,0) or bool(segment.get("lowered",false)) or float(segment.get("hp",0))<=0 or String(segment.get("layer",current_layer))!=current_layer: continue
+			var axis := Vector2(segment["axis"])*float(segment["half_length"])
+			first=minf(first,FloorBoundaryScript.segment_hit(start,finish,Vector2(segment["pos"])-axis,Vector2(segment["pos"])+axis,radius+float(segment["thickness"])))
+	return first
+
 func _update_projectiles(dt: float) -> void:
 	var survivors: Array[Dictionary] = []
 	for projectile in projectiles:
@@ -9856,59 +9903,60 @@ func _update_projectiles(dt: float) -> void:
 			continue
 		var projectile_kind := String(projectile.get("kind", "arrow"))
 		var start: Vector2 = projectile["pos"]
-		var finish := start + Vector2(projectile["vel"]) * dt
-		projectile["pos"] = finish
-		projectile["travelled"] = float(projectile.get("travelled", 0.0)) + start.distance_to(finish)
+		var intended := start + Vector2(projectile["vel"]) * dt
+		var distance := start.distance_to(intended)
+		var previous_travel := float(projectile.get("travelled",0))
+		projectile["travelled"] = previous_travel + distance
 		projectile["elevation"] = _projectile_elevation(projectile)
-		# One faction rule for every shot in the game. An ordinary projectile passes
-		# through actors allied with its original source. Only a projectile explicitly
-		# marked misdirected -- currently by Gale -- may collide with that original side,
-		# including the source actor itself.
+		var grounded := float(projectile["elevation"]) <= PROJECTILE_GROUND_ELEVATION
+		# Clip to the first solid boundary before considering bodies. Even an airborne
+		# shot or a step whose endpoint re-enters valid floor must stop at the void.
+		var stop := _projectile_world_hit(start,intended,float(projectile["radius"]),grounded)
+		var remaining := float(projectile.get("max_range",INF))-previous_travel
+		if remaining<=distance: stop=minf(stop,maxf(0,remaining/maxf(0.000001,distance)))
+		var spent := stop != INF
+		var finish := start.lerp(intended,clampf(stop,0,1)) if spent else intended
+		projectile["pos"] = finish
+		projectile["travelled"] = previous_travel + start.distance_to(finish)
+		projectile["elevation"] = _projectile_elevation(projectile)
 		var source_id := int(projectile.get("source_id", -1))
 		var misdirected := bool(projectile["misdirected"])
-		var spent := not _inside_world(finish, float(projectile["radius"])) or _point_in_wall(finish) or float(projectile["travelled"]) >= float(projectile.get("max_range", INF))
 		var hit_ids: Array = projectile.get("hit_ids", [])
-		# Above the ground band it passes over everyone, which is the whole point of the
-		# javelin's arc and the reason the check is not conditioned on allegiance.
-		# A raised segment stops a shot at ground level. An arcing javelin sails over it,
-		# which is the same friend-blind elevation rule doing double duty.
-		if not spent and float(projectile["elevation"]) <= PROJECTILE_GROUND_ELEVATION and _segment_crosses_barrier(start, finish): spent = true
-		if not spent and float(projectile["elevation"]) <= PROJECTILE_GROUND_ELEVATION:
-			var nearest_enemy: Dictionary = {}
-			var nearest_order := INF
-			for enemy in _nearby_enemies(start, start.distance_to(finish) + 100.0):
-				if not _enemy_on_current_layer(enemy) or int(enemy.get("hp", 0)) <= 0: continue
-				var enemy_id := int(enemy.get("id", -1))
-				if hit_ids.has(enemy_id): continue
-				var same_side := not _opposes(source_id, enemy)
-				if same_side and not misdirected: continue
-				if _segment_distance_to_point(start, finish, Vector2(enemy["pos"])) > float(enemy["radius"]) + float(projectile["radius"]): continue
-				var order := start.distance_to(Vector2(enemy["pos"]))
-				if order < nearest_order:
-					nearest_order = order
-					nearest_enemy = enemy
-			var player_order := INF
-			var player_same_side := not _opposes(source_id, 0)
-			if (not player_same_side or misdirected) and _segment_distance_to_point(start, finish, player_pos) <= PLAYER_RADIUS + float(projectile["radius"]):
-				player_order = start.distance_to(player_pos)
-			# Whatever eligible body it reaches first along this step resolves the hit.
-			if player_order < nearest_order:
-				var hit_label := "fireball" if projectile_kind == "firebolt" else "frost lance" if projectile_kind == "frost_lance" else "javelin" if projectile_kind == "javelin" else "arrow"
-				if player_same_side: survey_misdirected_ally_hits += 1
-				_resolve_incoming_hit(source_id, int(projectile["damage"]), hit_label, -Vector2(projectile["vel"]).normalized(), Vector2.INF, float(projectile.get("posture", -1.0)))
-				continue
-			if not nearest_enemy.is_empty():
-				if projectile_kind == "firebomb":
-					spent = true
-				else:
-					hit_ids.append(int(nearest_enemy["id"]))
-					if not _opposes(source_id, nearest_enemy): _damage_enemy_from_stray_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
-					else: _damage_enemy_from_player_projectile(nearest_enemy, projectile, Vector2(nearest_enemy["pos"]))
-					if not bool(projectile.get("piercing", false)): spent = true
+		if grounded:
+			var hits: Array[Dictionary] = []
+			for enemy in _nearby_enemies(start,start.distance_to(finish)+100.0):
+				if not _enemy_on_current_layer(enemy) or int(enemy.get("hp",0))<=0: continue
+				var id := int(enemy.get("id",-1))
+				if hit_ids.has(id) or (not _opposes(source_id,enemy) and not misdirected): continue
+				var contact := FloorBoundaryScript.circle_hit(start,finish,Vector2(enemy["pos"]),float(enemy["radius"])+float(projectile["radius"]))
+				if contact!=INF and (not spent or contact<1.0-0.0001): hits.append({"fraction":contact,"id":id,"enemy":enemy})
+			var player_same_side := not _opposes(source_id,0)
+			if not player_same_side or misdirected:
+				var contact := FloorBoundaryScript.circle_hit(start,finish,player_pos,PLAYER_RADIUS+float(projectile["radius"]))
+				if contact!=INF and (not spent or contact<1.0-0.0001): hits.append({"fraction":contact,"id":0})
+			hits.sort_custom(func(a: Dictionary,b: Dictionary) -> bool: return int(a.id)<int(b.id) if is_equal_approx(float(a.fraction),float(b.fraction)) else float(a.fraction)<float(b.fraction))
+			for hit in hits:
+				var contact := start.lerp(finish,float(hit.fraction))
+				if int(hit.id)==0:
+					var label := "fireball" if projectile_kind=="firebolt" else "frost lance" if projectile_kind=="frost_lance" else "javelin" if projectile_kind=="javelin" else "arrow"
+					if player_same_side: survey_misdirected_ally_hits+=1
+					_resolve_incoming_hit(source_id,int(projectile["damage"]),label,-Vector2(projectile["vel"]).normalized(),Vector2.INF,float(projectile.get("posture",-1)))
+					spent=true
+					finish=contact
+					break
+				if projectile_kind=="firebomb":
+					spent=true
+					finish=contact
+					break
+				hit_ids.append(int(hit.id))
+				if not _opposes(source_id,hit.enemy): _damage_enemy_from_stray_projectile(hit.enemy,projectile,contact)
+				else: _damage_enemy_from_player_projectile(hit.enemy,projectile,contact)
+				if not bool(projectile.get("piercing",false)):
+					spent=true
+					break
 		projectile["hit_ids"] = hit_ids
-		if projectile_kind == "firebomb" and spent: _spawn_player_fire(finish if _inside_world(finish, 1.0) and not _point_in_wall(finish) else start)
-		if spent: continue
-		survivors.append(projectile)
+		if projectile_kind=="firebomb" and spent: _spawn_player_fire(finish if _point_on_floor(finish) and not _point_in_wall(finish) else start)
+		if not spent: survivors.append(projectile)
 	projectiles = survivors
 
 # A misdirected shot that reached its original side. The player takes the credit when
@@ -10687,16 +10735,33 @@ func _move_actor(origin: Vector2, delta: Vector2, radius: float, actor_id: int, 
 			if not ignored_body_kinds.has(String(body.get("kind", ""))): blocking_bodies.append(body)
 	var result := origin
 	var candidate := Vector2(origin.x + delta.x, origin.y)
-	if _can_move_with_overlap_recovery(origin, candidate, radius, actor_id, local_walls, blocking_bodies):
+	if _floor_boundary_hit(origin, candidate, radius * 0.72, true) == INF and _can_move_with_overlap_recovery(origin, candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.x = candidate.x
 	candidate = Vector2(result.x, origin.y + delta.y)
-	if _can_move_with_overlap_recovery(result, candidate, radius, actor_id, local_walls, blocking_bodies):
+	# The returned displacement is drawn as one straight segment. A safe L-shaped
+	# pair of axis probes must not turn that displayed path into a cut across void.
+	if _floor_boundary_hit(origin, candidate, radius * 0.72, true) == INF and _can_move_with_overlap_recovery(result, candidate, radius, actor_id, local_walls, blocking_bodies):
 		result.y = candidate.y
 	if actor_id == 0: _displace_light_bodies(result, radius, local_enemies)
 	return result
 
 func _position_blocked(position: Vector2, radius: float, actor_id: int) -> bool:
 	return not _can_occupy(position, radius, actor_id)
+
+# Cached derived geometry only; never serialized or included in deterministic state.
+func _floor_boundary_hit(start: Vector2, finish: Vector2, radius: float, recover_inward: bool = false) -> float:
+	if not _floor_boundaries.has(current_layer):
+		var shapes: Array = []
+		for shape in floor_shapes:
+			if String(shape.get("layer", current_layer)) == current_layer: shapes.append(shape)
+		if floor_shapes.is_empty():
+			for area in areas:
+				if String(area.get("layer", current_layer)) == current_layer: shapes.append({"kind":"rect", "rect":area["rect"]})
+			for connection in connections:
+				if String(connection.get("layer", current_layer)) == current_layer: shapes.append({"kind":"rect", "rect":connection["corridor"]})
+		_floor_boundaries[current_layer] = FloorBoundaryScript.new(shapes)
+	if recover_inward and _floor_boundaries[current_layer].sweep(start, finish, 0.0) != INF: return 0.0
+	return _floor_boundaries[current_layer].sweep(start, finish, radius, recover_inward)
 
 func _inside_world(position: Vector2, radius: float) -> bool:
 	return position.x >= radius and position.y >= radius and position.x <= world_size.x - radius and position.y <= world_size.y - radius

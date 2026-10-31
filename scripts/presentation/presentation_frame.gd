@@ -23,6 +23,7 @@ var _visible_revision := -1
 var _discovery_revision := -1
 var _visible_snapshot: Dictionary = {}
 var _discovered_snapshot: Dictionary = {}
+var _entity_fields: Dictionary = {}
 
 func capture(state: RunState) -> Dictionary:
 	var shared := StateFieldSchemaScript.capture_scalars(state, StateFieldSchemaScript.PRESENTATION)
@@ -121,8 +122,21 @@ func blend(current: PresentationFrame, following: PresentationFrame, weight: flo
 	return data
 
 func _copy_entity(source: Dictionary, target: Dictionary, entity: String) -> void:
-	var projected := StateFieldSchemaScript.project_entity(source, entity, StateFieldSchemaScript.PRESENTATION)
-	_copy_dictionary(projected, target)
+	# Schema descriptors are static. Reuse their selection and copy each mutable
+	# value once into the frame, preserving ownership without an intermediate copy.
+	target.clear()
+	for descriptor in _fields_for(entity):
+		var key := String(descriptor["key"])
+		if not source.has(key) and not descriptor.has("default"): continue
+		var value: Variant = source.get(key, descriptor.get("default"))
+		if value is Array: value = Array(value).duplicate(true)
+		elif value is Dictionary: value = Dictionary(value).duplicate(true)
+		target[key] = value
+
+func _fields_for(entity: String) -> Array[Dictionary]:
+	if not _entity_fields.has(entity):
+		_entity_fields[entity] = StateFieldSchemaScript.entity_descriptors(entity, StateFieldSchemaScript.PRESENTATION)
+	return _entity_fields[entity]
 
 func _blend_action(current: Dictionary, following: Dictionary, weight: float, target: Dictionary) -> void:
 	_copy_dictionary(following, target)
@@ -174,7 +188,7 @@ func _copy_dictionary(source: Dictionary, target: Dictionary, excluded: Array[St
 
 func _blend_entity(current: Dictionary, following: Dictionary, target: Dictionary, entity: String, weight: float, excluded: Array[String] = []) -> void:
 	target.clear()
-	for descriptor in StateFieldSchemaScript.entity_descriptors(entity, StateFieldSchemaScript.PRESENTATION):
+	for descriptor in _fields_for(entity):
 		var key := String(descriptor["key"])
 		if key in excluded or (not current.has(key) and not following.has(key)): continue
 		var current_value: Variant = current.get(key, descriptor.get("default"))

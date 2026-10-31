@@ -3,20 +3,28 @@ extends RefCounted
 const Catalog = preload("res://scripts/core/expedition_catalog.gd")
 const Coordinator = preload("res://scripts/core/expedition_coordinator.gd")
 
-static func safe(state) -> bool:
-	if state.expedition.is_empty() or not state.is_player_ready() or state.death_pending or state.trial_complete: return false
-	if not state.projectiles.is_empty(): return false
+static func safety_denial(state) -> String:
+	if state.expedition.is_empty(): return "No Expedition is active."
+	if state.death_pending or state.trial_complete: return "This Expedition has ended."
+	if not state.is_player_ready(): return "Finish your current action before trading or equipping."
+	if not state.projectiles.is_empty(): return "Wait for the projectiles to clear before trading or equipping."
 	for hazard in state.hazards:
-		if int(hazard.get("source_id",0))!=0: return false
+		if int(hazard.get("source_id",0))!=0: return "Leave the hostile hazards before trading or equipping."
 	for enemy in state.enemies:
-		# Unloaded, escaped groups retain awareness for a later return. Their
-		# frozen alert flag is not a current threat and must not become a room lock.
 		if bool(enemy.get("reserve",false)) or not state._enemy_is_streamed(enemy): continue
-		if String(enemy.get("awareness","idle"))=="alerted" or Vector2(enemy["pos"]).distance_to(state.player_pos)<650: return false
-	return true
+		if String(enemy.get("awareness","idle"))=="alerted" or Vector2(enemy["pos"]).distance_to(state.player_pos)<650: return "Nearby or alerted enemies prevent trading and equipping."
+	return ""
+
+static func safe(state) -> bool:
+	return safety_denial(state).is_empty()
+
+static func merchant_denial(state) -> String:
+	if state.expedition.is_empty() or not state.expedition_markers.has("merchant"): return "No merchant is available here."
+	if state.player_pos.distance_to(Vector2(state.expedition_markers["merchant"]))>=150: return "Move closer to trade with the merchant."
+	return safety_denial(state)
 
 static func at_merchant(state) -> bool:
-	return safe(state) and state.player_pos.distance_to(Vector2(state.expedition_markers["merchant"]))<150
+	return merchant_denial(state).is_empty()
 
 static func stock(state) -> Array:
 	if state.expedition.is_empty(): return []
@@ -55,7 +63,7 @@ static func comparison(state, item_id: String) -> String:
 static func equip(state, pickup_id: String) -> bool:
 	if not safe(state): return false
 	for pickup in state.world_pickups:
-		if pickup["id"]!=pickup_id or Vector2(pickup["pos"]).distance_to(state.player_pos)>112: continue
+		if pickup["id"]!=pickup_id or String(pickup.get("layer",state.current_layer))!=state.current_layer or Vector2(pickup["pos"]).distance_to(state.player_pos)>state.PICKUP_RANGE: continue
 		if int(pickup.get("guard_site",-1))>=0 and not state._area_is_clear(int(pickup["guard_site"])): return false
 		var item_id := String(pickup["item_id"])
 		if not Catalog.EQUIPMENT.has(item_id): return false
