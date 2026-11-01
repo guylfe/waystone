@@ -1150,6 +1150,54 @@ Soft lock follows the visible target at a finite turning rate but does not calcu
 
 The character is immobile while drawing. A second press during post-shot recovery may buffer the next draw; continuous hold is not required because release is the firing input.
 
+### 15.2a Isolated additional Commit Shot — 1 November 2026
+
+Status: implemented in the isolated phone correction successor to `e35ffd8`;
+combined independent review, build/device verification and Guy's feel acceptance
+remain open. This is an additional starting Sharpshooter/Bow action. Ordinary
+quick/partial/full hold-and-release, Take Aim, Piercing Shot and Fan Shot remain.
+
+Select **Commit Shot**, then confirm a living visible enemy on the current layer
+with clear line of sight. Selection/toggling/cancelling costs no time or Energy;
+invalid confirmation explains its refusal and neither moves nor shoots. A valid
+confirmation consumes the selection and prepays the ordinary full-shot raw cost
+**18** through `RunState._spend_energy`, retaining physical scaling, permitted
+overdraw and Recovery accounting. Zero-Energy/exhaustion follows the ordinary
+physical-action lock; there is no new requirement to possess the entire price.
+
+The shared Bow draw then completes automatically to 0.90 authored local seconds,
+using any earned 0.45 preload, and enters the ordinary full-shot release/recovery.
+No hold or release timing is needed. Physical releases cannot fire early, cancel,
+discount or repeat it. Ordinary poise, incoming interruption, death and subsequent
+exhaustion still apply. The same finite-rate visible-target aim and 12-degree
+manual adjustment are retained; target loss ends following and keeps the last
+valid aim, with ordinary projectile collision. A fresh touch drag or right-stick
+aim during the draw may lead the shot; lifting it cannot end the commitment.
+
+The lead's initial tuning grants **+25% projectile damage**, constructed once as
+`roundi(ordinary_full_damage * 1.25)` after existing Strength/rank construction
+and before target mitigation. The actual current full base is 13, or 16 at Bow
+rank III, plus Strength adjustment; the earlier calibration table above is design
+history. No other shot/art gets this bonus. Posture, velocity, range, hit rules,
+Quick Nock and full recovery are unchanged. Take Aim and earned full-hit follow-up
+use their existing owners. Follow-up consumption now travels with its action and
+arrow so a later draw or save/resume cannot reclassify the earlier arrow. Optional
+v39 save fields preserve earned preload readiness/consumption; old saves default
+false, and existing progression is retained without a schema/version bump.
+
+Controls and information live in [the controller owner](controller-controls.md)
+and Character → Combat. Existing menu/suspend policy is preserved: controller
+Start shows “Finishing current action” while normal processing serves the complete
+paid obligation; it does not cancel the shot. Busy map/Character inputs retain
+their ordinary gates. Focus/pause cleanup finishes the current obligation through
+the shared executor before saving; actual OS pause is not a promise of background
+processing. Expedition still refuses an in-progress save. The existing integrated
+Survey mid-obligation save policy retains the prepaid action and consumed preload.
+Tests distinguish this from ordinary ready-state progression saves.
+
+See [the cumulative repair ledger](phone-world-repair.md#cumulative-phone-correction--1-november-2026)
+for geometry/shop repairs, exact evidence boundaries and the lead-owned delivery.
+
 ### 15.3 Projectile range language
 
 Every projectile carries world-space velocity, collision geometry, and maximum travel distance. Reaching maximum distance causes a physical presentation such as an arrow dropping or embedding rather than invisible deletion.

@@ -97,6 +97,7 @@ var buttons: Dictionary = {}
 var consumable_rects: Dictionary = {}
 var interaction_rect := Rect2()
 var attack_rect := Rect2()
+var commit_shot_rect := Rect2()
 var loadout_rects: Dictionary = {}
 var upgrade_rects: Dictionary = {}
 var reset_rect := Rect2()
@@ -1110,6 +1111,9 @@ func _layout() -> void:
 	var attack_size := clampf(minf(layout_size.x, layout_size.y) * 0.092, 66.0, 92.0)
 	var attack_bottom_lift := 34.0 if portrait else 48.0
 	attack_rect = Rect2(Vector2(board_rect.end.x - attack_size - 14.0, board_rect.end.y - attack_size - attack_bottom_lift), Vector2(attack_size, attack_size))
+	# Model/unit tests may lay out an unattached board. Runtime uses its viewport.
+	var commit_unit := MenuMetrics.unit(self) if get_viewport()!=null else 1.0
+	commit_shot_rect = Rect2(Vector2(board_rect.position.x+8.0*commit_unit,board_rect.end.y-72.0*commit_unit),Vector2(156,64)*commit_unit) if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow" else Rect2()
 	var reset_size := Vector2(clampf(layout_size.x * 0.13, 68.0, 104.0), clampf(layout_size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
@@ -1686,7 +1690,13 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		_press_direct_attack(position, is_mouse)
 		return
 	if playing:
-		if board_rect.has_point(position) and state.mobile_cast_is_active():
+		if board_rect.has_point(position) and String(state.player_action.get("kind",""))=="bow_draw" and bool(state.player_action.get("commit_shot",false)):
+			pointer_down=true
+			pointer_is_mouse=is_mouse
+			pointer_intent="commit_aim"
+			touch_start=position
+			touch_current=position
+		elif board_rect.has_point(position) and state.mobile_cast_is_active():
 			pointer_down = true
 			pointer_is_mouse = is_mouse
 			pointer_intent = "cast_move"
@@ -1824,6 +1834,10 @@ func _pointer_dragged(position: Vector2) -> void:
 	if not pointer_down:
 		return
 	touch_current = position
+	if pointer_intent=="commit_aim":
+		state.set_bow_aim(_screen_to_world(position)-state.player_pos)
+		queue_redraw()
+		return
 	if pointer_intent == "cast_move":
 		state.set_mobile_cast_direction(_pointer_follow_direction(position))
 		queue_redraw()
@@ -1887,6 +1901,10 @@ func _pointer_released(position: Vector2) -> void:
 		return
 	pointer_down = false
 	pointer_is_mouse = false
+	if pointer_intent=="commit_aim":
+		pointer_intent=""
+		queue_redraw()
+		return
 	if pointer_intent == "cast_move":
 		state.set_mobile_cast_direction(Vector2.ZERO)
 		held_movement = false
@@ -1951,6 +1969,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			# sequence begins live and continues for as long as the key is held.
 			var began := state.request_direct_attack(attack_direction, false, true) if state.uses_energy_rules() else state.begin_bow_draw(attack_direction) if state.player_uses_ranged_basic_attack() else state.request_combo(attack_direction, false, true)
 			if began:
+				selected_action=""
 				attack_key_held = true
 				_begin_streamed_action(true)
 		else:
@@ -1960,6 +1979,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else: state.set_attack_hold(false)
 				queue_redraw()
 		return
+	if desktop_controls and state.run_active and event.pressed and not event.echo and not playing and not character_sheet_open and not map_open and not waystone_menu_open and not controller.modal(self):
+		if event.keycode==KEY_G:
+			_select_commit_shot()
+			return
+		if selected_action=="commit_shot" and event.keycode==KEY_TAB:
+			controller.cycle_target(self)
+			queue_redraw()
+			return
+		if selected_action=="commit_shot" and event.keycode in [KEY_ENTER,KEY_KP_ENTER]:
+			_confirm_commit_shot(controller.target_id)
+			return
 	if desktop_controls and _is_desktop_movement_key(event.keycode):
 		if event.echo: return
 		_set_desktop_movement_key(event.keycode, event.pressed)
@@ -2210,6 +2240,9 @@ func _handle_gesture(end_position: Vector2) -> void:
 	# Tested before the action row, because the spellbook sits directly above it and an
 	# overlap must not be swallowed by whichever dictionary happens to iterate first.
 	if _handle_spell_press(end_position): return
+	if commit_shot_rect.has_point(end_position):
+		_select_commit_shot()
+		return
 	for name in buttons:
 		if Rect2(buttons[name]).has_point(end_position):
 			_handle_button(String(name))
@@ -2218,6 +2251,10 @@ func _handle_gesture(end_position: Vector2) -> void:
 		_advance_or_wait()
 		return
 	if not board_rect.has_point(end_position): return
+	if selected_action=="commit_shot":
+		var target := _enemy_near(end_position,54.0)
+		_confirm_commit_shot(int(target.get("id",-1)))
+		return
 	if selected_action == "adopted":
 		selected_action = ""
 		_begin_streamed_action(state.request_adopted(_screen_to_world(end_position),false))
@@ -2328,6 +2365,27 @@ func _handle_button(name: String) -> void:
 				selected_action = "" if selected_action=="adopted" else "adopted"
 	queue_redraw()
 
+func _select_commit_shot() -> void:
+	if playing or not state.is_player_ready() or state.loadout_id!="rogue_sharpshooter" or state.player_weapon_frame!="bow": return
+	selected_action="" if selected_action=="commit_shot" else "commit_shot"
+	state.message="Commit Shot selected: tap a visible enemy. +25% full-shot damage; full draw/recovery, 18 base Energy. [G] cancel; [Tab] target, [Enter] commit." if selected_action!="" else "Commit Shot selection cancelled."
+	queue_redraw()
+
+func _confirm_commit_shot(target_id: int) -> bool:
+	if selected_action!="commit_shot": return false
+	var accepted := state.request_commit_shot(target_id,false)
+	if accepted:
+		selected_action=""
+		# A discrete commitment owns no repeat, held trigger or buffered action.
+		controller.pending_button=-1
+		controller.attack_held=false
+		attack_key_held=false
+		attack_pointer_held=false
+		queued_movement_after_attack=false
+		_begin_streamed_action(true)
+	queue_redraw()
+	return accepted
+
 func _handle_consumable(slot_id: String) -> void:
 	if slot_id == "healing":
 		_begin_streamed_action(state.request_potion(false))
@@ -2346,7 +2404,10 @@ func _handle_consumable(slot_id: String) -> void:
 	queue_redraw()
 
 func _commit_direction(direction: Vector2) -> void:
-	if selected_action == "defense":
+	if selected_action == "commit_shot":
+		state.message="Choose a visible enemy for Commit Shot; [Tab] target, [Enter] commit, [G] cancel."
+		queue_redraw()
+	elif selected_action == "defense":
 		selected_action = ""
 		_begin_streamed_action(state.request_defense(direction, false))
 	elif selected_action == "skill":
@@ -2650,7 +2711,12 @@ func _try_merchant_press(position: Vector2) -> bool:
 	return true
 
 func _expedition_panel(title_text: String) -> VBoxContainer:
-	if is_instance_valid(expedition_dialog): expedition_dialog.queue_free()
+	if is_instance_valid(expedition_dialog):
+		# Release the exclusive window before a transaction opens its successor.
+		# queue_free alone leaves the old modal owner alive until frame end.
+		expedition_dialog.hide()
+		expedition_dialog.exclusive = false
+		expedition_dialog.queue_free()
 	pointer_down = false
 	held_movement = false
 	held_movement_tracks_pointer = false
@@ -2699,6 +2765,7 @@ func _offer_equipment(pickup: Dictionary) -> bool:
 
 func _show_expedition_shop() -> void:
 	var content := _expedition_panel("Wayfarer's Exchange" if int(state.expedition["biome"])==1 else "Mountain outfitter")
+	var shop_owner: WeakRef = weakref(expedition_dialog)
 	_panel_text(content,"%d crowns · finite stock · purchases are placed beside you\nNo selling, refills or restocking." % int(state.expedition["crowns"]))
 	if not ExpeditionEconomyScript.at_merchant(state):
 		_panel_text(content,ExpeditionEconomyScript.merchant_denial(state))
@@ -2712,6 +2779,7 @@ func _show_expedition_shop() -> void:
 			content.add_child(train)
 			_panel_text(content,String(AbilityCatalogScript.ADOPTED_DISCIPLINES[discipline]["description"]))
 			train.pressed.connect(func():
+				if not is_instance_valid(expedition_dialog) or shop_owner.get_ref()!=expedition_dialog or not expedition_dialog.visible: return
 				if ExpeditionEconomyScript.adopt(state,discipline):
 					_mark_autosave(true)
 					visual = _presentation_snapshot()
@@ -2727,6 +2795,7 @@ func _show_expedition_shop() -> void:
 		content.add_child(buy)
 		if not equipment.is_empty(): _panel_text(content,ExpeditionEconomyScript.comparison(state,item_id))
 		buy.pressed.connect(func():
+			if not is_instance_valid(expedition_dialog) or shop_owner.get_ref()!=expedition_dialog or not expedition_dialog.visible: return
 			if ExpeditionEconomyScript.purchase(state,item_id):
 				_mark_autosave(true)
 				visual = _presentation_snapshot()
@@ -4937,6 +5006,7 @@ func _draw_hud() -> void:
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
 		for name in buttons: _draw_button(String(name), Rect2(buttons[name]))
+		_draw_commit_shot_control()
 		_draw_spell_row()
 		_draw_button("wait", interaction_rect)
 		if state.uses_energy_rules(): _draw_attack_button()
@@ -4971,6 +5041,20 @@ func _draw_hud() -> void:
 		if controller.active: prompt = "BELT FULL — D-PAD LEFT/RIGHT: SLOT · DOWN: REPLACE · A: LEAVE"
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x, board_rect.position.y + font * 2.7), prompt, HORIZONTAL_ALIGNMENT_CENTER, board_rect.size.x, font, Color("f0c66b"))
 
+func _draw_commit_shot_control() -> void:
+	if commit_shot_rect.size==Vector2.ZERO: return
+	var u := MenuMetrics.unit(self)
+	var committed := bool(state.player_action.get("commit_shot",false)) and String(state.player_action.get("kind","")) in ["bow_draw","bow_release"]
+	var selected := selected_action=="commit_shot"
+	draw_rect(commit_shot_rect,Color("28515d") if selected else Color("15232a"))
+	draw_rect(commit_shot_rect,Color("66e0ff") if selected else Color("d7aa58"),false,3*u if selected else 1.5*u)
+	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,"COMMIT SHOT",HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
+	var detail := "FULL SHOT COMMITTED" if committed else "CHOOSE ENEMY" if selected else "+25% damage · [G]" if desktop_controls and not controller.active else "+25% damage · LB+A" if controller.active else "+25% full-shot damage"
+	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,49)*u,detail,HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(12*u),Color("adc8d4"))
+	if selected:
+		var target: Dictionary=controller.locked_target(self)
+		if not target.is_empty(): draw_arc(_world_to_screen(Vector2(target["pos"])),24*u,0,TAU,32,Color("66e0ff"),2*u)
+
 func _draw_attack_button() -> void:
 	if attack_rect.size == Vector2.ZERO: return
 	var center := attack_rect.get_center()
@@ -4996,7 +5080,7 @@ func _draw_attack_button() -> void:
 		subtitle = "SEQUENCE ENDED"
 	elif attacking:
 		title = "ATTACKING"
-		subtitle = "HOLD TO FLOW" if action_kind == "combo" else "RELEASE TO FIRE" if action_kind == "bow_draw" else "COMMITTED"
+		subtitle = "HOLD TO FLOW" if action_kind == "combo" else "FULL SHOT COMMITTED" if bool(state.player_action.get("commit_shot",false)) else "RELEASE TO FIRE" if action_kind == "bow_draw" else "COMMITTED"
 	elif not available:
 		title = "BUSY"
 		subtitle = "COMMITTED"

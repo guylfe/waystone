@@ -19,6 +19,10 @@ const EXPEDITION_ACTION_FIELDS := ["ability_id", "shape", "origin", "travel", "a
 
 static func checkpoint(state: RunState) -> Dictionary:
 	var player := StateFieldSchemaScript.capture(state, StateFieldSchemaScript.DETERMINISM)
+	# Optional earned Bow flags were absent in historical checkpoints. False is
+	# the same semantic default, while an active benefit/consumption must hash.
+	for key in ["bow_followup_ready","bow_followup_consumed"]:
+		if not bool(player.get(key,false)): player.erase(key)
 	# An absent expedition must not change historical Survey fingerprints. The
 	# journal observes outcomes but never determines simulation behaviour.
 	if state.expedition.is_empty():
@@ -28,6 +32,8 @@ static func checkpoint(state: RunState) -> Dictionary:
 		player["expedition"] = state.expedition.duplicate(true)
 		player["expedition"].erase("events")
 	player["player_action"] = _selected(Dictionary(state.player_action), ACTION_FIELDS)
+	if bool(state.player_action.get("commit_shot",false)): player["player_action"]["commit_shot"]=true
+	if bool(state.player_action.get("bow_followup_consumed",false)): player["player_action"]["bow_followup_consumed"]=true
 	if String(state.player_action.get("kind",""))=="adopted":
 		player["player_action"].merge(_selected(state.player_action,["ability_id","rank","effect_done"]))
 	var enemies: Array = []

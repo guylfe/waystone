@@ -271,6 +271,10 @@ func combat(data: Dictionary) -> void:
 	var form := "DRAW › RELEASE" if frame=="bow" else "FOUR COMPACT CUTS" if frame=="knife" else "SIX ALTERNATING CUTS" if frame=="twin_knives" else "CUT › RETURN › DRIVING CUT" if frame=="sword" else str(board.state.AttackGeometryScript.technique(str(board.CombatCatalogScript.weapon_frame(frame).get("basic_technique",""))).get("label",""))
 	line(content,str(board.CombatCatalogScript.weapon_frame(frame).get("label",frame))+" · "+form)
 	line(content,"Defense · "+str(data.defense).capitalize())
+	if frame=="bow" and board.state.loadout_id=="rogue_sharpshooter":
+		var price := ("%.1f Energy, ordinary full-shot scaling" % board.state.energy_cost(18)) if board.state.uses_energy_rules() else "Recovery rules: no Energy debit"
+		line(content,"Commit Shot · +25% full-shot damage. Select, then confirm a visible enemy. "+price+". Automatically finish remaining full draw and ordinary recovery. No hold, early release or voluntary cancel; ordinary interruption still applies.")
+		line(content,"Touch: COMMIT SHOT, then enemy; tap selection again to cancel. Keyboard: G select/cancel, Tab enemy, Enter confirm. Controller: LB+A select, right-stick click enemy, A confirm / B cancel. Ordinary ATTACK / F / RT charging, Take Aim and learned arts remain separate.")
 	var equipped := str(data.equipped_art)
 	line(content,"ART · "+("LOCKED" if equipped.is_empty() else "EQUIPPED · "+str(board.CombatCatalogScript.weapon_art(equipped).get("label",equipped))))
 	for art in data.known_arts:

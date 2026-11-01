@@ -49,6 +49,7 @@ func sync_context(board) -> void:
 	if context != last_context:
 		if last_context != "": focus_memory[last_context] = focus_id
 		if last_context != "" and (modal(board) or last_context != "combat"): release_actions(board)
+		if targeting_action=="commit_shot": board.selected_action="commit_shot"
 		last_context = context
 		focus_id = str(focus_memory.get(context,""))
 		focus_index = 0
@@ -78,6 +79,12 @@ func step_menu(board, direction: Vector2) -> void:
 func menu_key(board, event: InputEvent) -> bool:
 	if not event is InputEventKey or not modal(board): return false
 	if not event.pressed: return false
+	if targeting_action=="commit_shot":
+		if event.keycode not in [KEY_ENTER,KEY_KP_ENTER,KEY_ESCAPE,KEY_G,KEY_TAB]: return false
+		if event.echo:return true
+		if event.keycode==KEY_TAB:cycle_target(board)
+		else:finish_targeting(board,event.keycode in [KEY_ENTER,KEY_KP_ENTER])
+		return true
 	var owner = board.get_viewport().gui_get_focus_owner()
 	if (owner is LineEdit or owner is TextEdit) and editing_text:
 		if event.keycode == KEY_ESCAPE: editing_text=false; return true
@@ -166,6 +173,14 @@ func set_palette(board, open: bool) -> void:
 
 func palette_button(board, button: int) -> void:
 	if board.playing or not board.state.is_player_ready(): return
+	if button==JOY_BUTTON_A and board.state.loadout_id=="rogue_sharpshooter" and board.state.player_weapon_frame=="bow":
+		if palette_open: set_palette(board,false)
+		release_actions(board)
+		board._select_commit_shot()
+		if board.selected_action=="commit_shot":
+			targeting_action="commit_shot"
+			if locked_target(board).is_empty(): cycle_target(board)
+		return
 	if board.state.loadout_id == "mage_elementalist":
 		for shortcut in spell_shortcuts(board):
 			if shortcut["button"] == button:
@@ -199,6 +214,7 @@ func use_adopted(board) -> void:
 	elif discipline == "trapper": board._begin_streamed_action(board.state.request_adopted(board.state.player_pos + direction(board, true) * 65.0, false))
 
 func targeting_range(board) -> float:
+	if targeting_action=="commit_shot": return 700.0
 	if targeting_action == "adopted": return float(board.state.AbilityCatalogScript.ADOPTED_DISCIPLINES["sapper"]["range"])
 	return board.state.spell_reach(targeting_action)
 
@@ -212,6 +228,11 @@ func begin_targeting(board, action: String) -> void:
 
 func finish_targeting(board, confirm: bool) -> void:
 	var action := targeting_action
+	if action=="commit_shot":
+		if confirm and not board._confirm_commit_shot(target_id): return
+		targeting_action=""
+		release_actions(board)
+		return
 	targeting_action = ""
 	release_actions(board)
 	if not confirm: return
@@ -322,6 +343,7 @@ func handle(board, event: InputEvent) -> bool:
 		return true
 	if targeting_action != "":
 		if event.button_index in [JOY_BUTTON_A, JOY_BUTTON_B]: finish_targeting(board, event.button_index == JOY_BUTTON_A)
+		elif targeting_action=="commit_shot" and event.button_index==JOY_BUTTON_RIGHT_STICK: cycle_target(board)
 		elif event.button_index == JOY_BUTTON_START:
 			finish_targeting(board, false)
 			paused = true
@@ -442,6 +464,7 @@ func update(board, delta: float) -> void:
 		if board.state.death_pending or board.state.trial_complete:
 			finish_targeting(board, false)
 			return
+		if targeting_action=="commit_shot": return
 		var stick_input := stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
 		# Full analog direction, proportional cursor speed; release holds its location.
 		var speed := clampf((stick_input.length() - DEADZONE) / (1.0 - DEADZONE), 0.0, 1.0)
@@ -468,6 +491,7 @@ func update(board, delta: float) -> void:
 		focus_native(entries)
 		return
 	if String(board.state.player_action.get("kind", "")) == "bow_draw" and attack_held: board.state.set_bow_aim(direction(board))
+	elif String(board.state.player_action.get("kind", ""))=="bow_draw" and bool(board.state.player_action.get("commit_shot",false)) and not pointing.is_zero_approx(): board.state.set_bow_aim(board._screen_delta_to_world_direction(pointing))
 	if String(board.state.player_action.get("kind", "")) == "block" and bool(held.get(JOY_BUTTON_B, false)): board.state.set_block_direction(direction(board, true))
 	if String(board.state.player_action.get("kind", "")) == "advance": board.state.set_advance_hold(bool(held.get(JOY_BUTTON_Y, false)))
 
@@ -660,17 +684,18 @@ func draw_overlay(board) -> void:
 		Prompts.draw_help(board, self)
 		return
 	if targeting_action != "":
-		var screen: Vector2 = board._world_to_screen(target_point)
+		var target := locked_target(board) if targeting_action=="commit_shot" else {}
+		var screen: Vector2 = board._world_to_screen(Vector2(target.get("pos",board.state.player_pos)) if targeting_action=="commit_shot" else target_point)
 		board.draw_arc(screen, 12, 0, TAU, 24, Color("66e0ff"), 2)
 		board.draw_line(screen - Vector2(17, 0), screen + Vector2(17, 0), Color("66e0ff"), 1)
 		board.draw_line(screen - Vector2(0, 17), screen + Vector2(0, 17), Color("66e0ff"), 1)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
 		board.draw_rect(bar, Color("101c24"))
-		var label: String = "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
+		var label: String = "Commit Shot · +25% full-shot damage" if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
 		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s · TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
-		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rs", "Place marker", scale)
-		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", "Use here", scale)
+		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rsc" if targeting_action=="commit_shot" else "rs", "Choose enemy" if targeting_action=="commit_shot" else "Place marker", scale)
+		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", "Commit full shot" if targeting_action=="commit_shot" else "Use here", scale)
 		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
 		return
 	if modal(board):

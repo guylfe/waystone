@@ -3,7 +3,84 @@
 Owner: Gameplay engineering. Bounded candidate based on `0e65cdfae5b662a9a8951a8ff082ff54c639a7e1`, prepared 2026-11-01. Dr. Stone owns integration, independent review and delivery. Guy owns experience and feel acceptance. This candidate does not change the installed game, build identity, schema, character sheet, Boar tuning or bow commitment rules.
 
 The opening scope statement above describes the frozen `1660a84` repair ancestor.
-Its isolated Character successor is recorded in [the menu/input owner](menu-input-correction.md#isolated-character-mobile-successor--1-november-2026); the repair implementations below are retained unchanged.
+Its isolated Character successor is recorded in [the menu/input owner](menu-input-correction.md#isolated-character-mobile-successor--1-november-2026). The cumulative successor below retains that Character work and makes the specified spatial/shop/combat corrections.
+
+## Cumulative phone correction — 1 November 2026
+
+Baseline: immutable `e35ffd851c79037deda485eba4dcbd7cf67d3ac3`, retaining parent
+`1660a84`. Status: isolated source/headless candidate; combined independent review,
+exports, installation, publication and physical-device verification remain open,
+owned by Dr. Stone. No live source, build, save or user data is replaced here.
+
+**R1, valid tangent departure:** the analyst's unchanged curved-U root ScreenTouch
+probe starts at `(1028.4,800)` beside the radius-150 circle at `(900,800)`, using
+the actual player ground radius 21.6. Both projections consume .133333 seconds and
+stay still on e35, whereas the baseline moves to `(993.7332,800)`. The successor
+matches that inward movement. Tangency is now a departing initial contact rather
+than a new collision when motion points inward. Only the initial contact root is
+ignored; a subsequent hit on the same edge still stops travel. Arc endpoint tests
+use the same linear tolerance before classifying an inward tangent as overlap.
+Legacy short inward recovery remains bounded; outward/deeper overlap, later void
+crossing, internal seams, actor radii and ordered projectile contacts remain gated.
+The radius-200 counterexample and the original inset controls are retained unchanged.
+
+**R2, existing shop refresh owner:** the old exclusive AcceptDialog is hidden and
+releases exclusivity before its replacement opens, then remains queued for deletion.
+Purchase/training callbacks capture a weak owner and reject a hidden, replaced or
+freed owner; deliberate fresh purchases remain valid while stock remains. The
+identical independent shop probe reports the exclusive-child error on e35 and no
+such error on the successor. Routed purchase/repeat/Back/world-input checks and a
+separately labelled stale-callback supplement verify payment, stock, goods and
+save/reload. This repairs a baseline-matched defect; it does not identify Guy's
+exact late-run merchant/supply refusal.
+
+**Boar pounce, initial lead tune:** selected actions now travel at **640** world
+units per enemy-local second and stop tracking at **0.45** of the existing .70
+wind-up. `BOAR_POUNCE_ENGAGEMENT_TRAVEL=288` preserves acquisition independently
+of launched speed: minimum 88 and existing LOS/contact allowances, maximum 378
+for the ordinary radius-42 Boar/player-30 fixture. Startup .70, active end 1.50,
+duration 1.95, cooldown 2.40, damage 25, shoulders/contact bonus 22, armor and
+interruption are unchanged. Hound and Ox tempo/speeds are unchanged. The body
+facing and existing directional pose use the frozen action bearing after lock.
+
+Actual selected actions are tested using public wait/movement and ordinary
+main-root touch/drag/release, standard loadouts and both rule profiles. Simulated
+choice delays and open/narrow geometry/ally/defense/interruption controls are
+labelled fixtures. The lead's earlier parameter-mutating open-arena study is
+directional evidence, not a normal-input or feel verdict; this implementation does
+not change acquisition to the faster body's larger travel allowance. Source/test
+results do not settle whether the tune feels fair or threatening on a phone.
+
+**Additional Commit Shot:** [the character framework](combat-character-framework.md#152a-isolated-additional-commit-shot--1-november-2026)
+owns the new select-then-target full-draw commitment and +25% damage, with one
+ordinary full-shot payment. [The input owner](controller-controls.md#isolated-additional-commit-shot--1-november-2026)
+records touch/G/Tab/Enter/LB+A mapping and the bounded captured F/Bow release
+correction. Ordinary charging, Take Aim, both arts, earned rank/preload benefits,
+interruption, physical-neutral safety and menu/suspend policy remain controls.
+
+The external combined handoff owns exact immutable SHA/tree, unchanged-probe hashes,
+paired observations, all log scans and measured desktop costs. Known defensive-choice
+and banner/version failures are retained separately; exit 0 alone is not acceptance.
+The existing telemetry suite's three slow-Boar retreat expectations are explicitly
+superseded by this specified tune: close straight retreat and a delayed committed
+strike at 220 may be caught; early distant retreat and early sideways answers remain
+controls. Hound expectations are unchanged. The exact ten-prompt count now allows
+the additional eligible Commit Shot entry while retaining all ten ordinary prompts.
+Golden gameplay fixtures remain unchanged: inactive optional Bow flags canonicalize
+to their historical absent/false default, while active benefits/consumption and an
+active committed shot participate in the semantic fingerprint. A positive-control
+test verifies that an earned benefit changes that fingerprint.
+Presentation-frame copy implementation/ownership and prior Character controls remain
+unchanged. Headless timing is not phone GPU/thermal/frame-rate evidence. Exact wall-lag,
+late-run refusal and attack-reset symptoms remain unresolved. No raw/wireless Android
+or host-window route is used. Eventual Android work requires the USB Phone Harness.
+
+Retained `phone_baseline_probe`, `phone_boundary_probe` and six `independent_*`
+probes are copied byte-for-byte from the analyst's authorized 1660 review artifacts.
+Their original baseline/SHA headers intentionally remain; execution receipts and
+probe hashes identify the actual tested checkout. Engineering reruns of those
+instruments are not a new independent review. The external handoff retains the
+original paths, exact hashes and unmodified before observations.
 
 ## Requirements and observed failures
 

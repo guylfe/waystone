@@ -59,6 +59,11 @@ func sweep(start: Vector2, finish: Vector2, radius: float, recover_inward: bool 
 			if seen.has(id): continue
 			seen[id]=true
 			var edge := edges[int(id)]
+			var contact_normal := (start-Vector2(edge.center)).normalized() if edge.kind=="arc" else Vector2(edge.normal)
+			var contact_distance := _arc_distance(edge,start) if edge.kind=="arc" else _distance(start,edge.a,edge.b)
+			# A valid tangent start may leave contact toward the floor interior.
+			# Ignore only its initial root, never a subsequent hit on this same edge.
+			var inward_tangent := absf(contact_distance-radius)<=EPS and (finish-start).dot(contact_normal)<-EPS
 			# Older saves use cardinal footprint probes. At a curved edge their
 			# accepted footprint may overlap this stricter disc boundary slightly.
 			# A short inward recovery may reduce that overlap; it cannot create one.
@@ -68,26 +73,31 @@ func sweep(start: Vector2, finish: Vector2, radius: float, recover_inward: bool 
 				var distance := _arc_distance(edge,start) if edge.kind=="arc" else _distance(start,edge.a,edge.b)
 				if distance<radius-EPS and (finish-start).dot(normal)<-EPS: continue
 			if edge.kind=="line":
-				result=minf(result,segment_hit(start,finish,edge.a,edge.b,radius))
+				result=minf(result,segment_hit(start,finish,edge.a,edge.b,radius,inward_tangent))
 			else:
 				var center := Vector2(edge.center)
 				var r := float(edge.radius)
 				if _arc_distance(edge,start)<maxf(0.0,radius-EPS): return 0.0
 				for expanded in [r+radius,maxf(0.0,r-radius)]:
 					for t in _circle_roots(start,finish,center,expanded):
+						if inward_tangent and t<=EPS: continue
 						var point := start.lerp(finish,t)
 						if _parameter(edge,point)>=-EPS and _parameter(edge,point)<=1.0+EPS: result=minf(result,t)
-				for end in [_point(edge,0.0),_point(edge,1.0)]: result=minf(result,circle_hit(start,finish,end,radius))
+				for end in [_point(edge,0.0),_point(edge,1.0)]: result=minf(result,circle_hit(start,finish,end,radius,inward_tangent))
 	return result
 
-static func circle_hit(start: Vector2, finish: Vector2, center: Vector2, radius: float) -> float:
-	if start.distance_squared_to(center)<radius*radius-EPS: return 0.0
+static func circle_hit(start: Vector2, finish: Vector2, center: Vector2, radius: float, depart: bool = false) -> float:
+	var tangent_departure := depart and absf(start.distance_to(center)-radius)<=EPS and (finish-start).dot(start-center)>0.0
+	if start.distance_squared_to(center)<radius*radius-EPS and not tangent_departure: return 0.0
 	var roots := _circle_roots(start,finish,center,radius)
-	return roots[0] if not roots.is_empty() else INF
+	for t in roots:
+		if depart and t<=EPS and (finish-start).dot(start-center)>0.0: continue
+		return t
+	return INF
 
-static func segment_hit(start: Vector2, finish: Vector2, a: Vector2, b: Vector2, radius: float) -> float:
+static func segment_hit(start: Vector2, finish: Vector2, a: Vector2, b: Vector2, radius: float, depart: bool = false) -> float:
 	if _distance(start,a,b)<maxf(0.0,radius-EPS): return 0.0
-	var result := minf(circle_hit(start,finish,a,radius),circle_hit(start,finish,b,radius))
+	var result := minf(circle_hit(start,finish,a,radius,depart),circle_hit(start,finish,b,radius,depart))
 	var axis := (b-a).normalized()
 	if axis.is_zero_approx(): return result
 	var normal := axis.orthogonal()
@@ -97,6 +107,7 @@ static func segment_hit(start: Vector2, finish: Vector2, a: Vector2, b: Vector2,
 	for side in [-1.0,1.0]:
 		var t: float = (radius*side-(start-a).dot(normal))/across
 		if t<0.0 or t>1.0: continue
+		if depart and t<=EPS: continue
 		var along := (start.lerp(finish,t)-a).dot(axis)
 		if along>=0.0 and along<=a.distance_to(b): result=minf(result,t)
 	return result

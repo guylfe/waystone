@@ -251,12 +251,12 @@ func test_the_ox_commits_from_beyond_any_other_reach() -> void:
 		"the Ox must commit a charge from 500 units, where no other melee kind can")
 
 func test_a_charge_always_offers_a_decision_to_a_free_player() -> void:
-	# Answering the telegraph immediately must work at every range, on both axes.
-	# Anything else means the wind-up is shorter than the player's commitment.
-	for kind in ["boar", "hound"]:
-		for gap in [90.0, 150.0, 220.0]:
-			check(charge_outcome("%s" % kind, 0.0, gap, Vector2.LEFT) == "miss",
-				"an immediate retreat from a %s charge at %.0f must escape" % [kind, gap])
+	# November's specified Boar tune makes close straight retreat punishable;
+	# an early sideways answer remains available. Hound keeps its prior contract.
+	for gap in [90.0,150.0,220.0]:
+		check(charge_outcome("hound",0.0,gap,Vector2.LEFT)=="miss","Hound immediate retreat still escapes at %.0f" % gap)
+		check(charge_outcome("boar",0.0,gap,Vector2.LEFT)==("contact" if gap<220 else "miss"),"Boar close retreat is caught while early distant retreat survives at %.0f" % gap)
+		check(charge_outcome("boar",0.0,gap,Vector2.UP)=="miss","early sideways Boar answer remains available at %.0f" % gap)
 
 func test_commitment_is_what_makes_you_late() -> void:
 	# The capture principle applied to charges: it is your own action lockout that
@@ -265,16 +265,11 @@ func test_commitment_is_what_makes_you_late() -> void:
 		"committing to a strike inside a Boar's range must be punished")
 	check(charge_outcome_while_committed("hound", 150.0, Vector2.LEFT) == "contact",
 		"committing to a strike inside a Hound's range must be punished")
-	# Distance buys out of it for BOTH animals. This used to assert that the Hound
-	# punished commitment at any range -- but that direction was explicitly rejected
-	# during E2 and the source records the reasoning at the Hound's charge gate:
-	# tracking_end was matched to the Boar's 0.70 precisely because at 0.55 "a committed
-	# player was caught even at 220", and "you can never be busy near a Hound" is a
-	# constraint rather than a decision. The test was preserving the direction the design
-	# threw out. Hound differentiation lives in damage, body width, speed and re-charge
-	# cadence, all of which are visible before you commit.
-	check(charge_outcome_while_committed("boar", 220.0, Vector2.LEFT) == "miss",
-		"range must let a committed player survive the slower charge")
+	# The faster Boar now punishes this already-committed strike at 220; the early
+	# free retreat at that distance still succeeds below. Hound's E2 direction and
+	# its distinct long-range commitment escape are deliberately unchanged.
+	check(charge_outcome_while_committed("boar", 220.0, Vector2.LEFT) == "contact",
+		"the specified faster Boar punishes this delayed committed-strike retreat")
 	check(charge_outcome_while_committed("hound", 220.0, Vector2.LEFT) == "miss",
 		"range must buy out of the Hound's charge too -- E2 rejected the alternative")
 

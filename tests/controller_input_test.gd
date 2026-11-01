@@ -294,7 +294,9 @@ func test_connected_prompts_and_guide() -> void:
 	for loadout in ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"]:
 		board = fixture(loadout)
 		var rows: Array = board.controller.Prompts.rows(board, board.controller)
-		check(rows.size() == 10, "all ten primary action prompts are present")
+		var extra: bool = loadout=="rogue_sharpshooter" and board.state.player_weapon_frame=="bow"
+		check(rows.size() == (11 if extra else 10), "all ten primary prompts plus the separate eligible Commit Shot entry")
+		if extra:check(rows[10]["label"].contains("Commit Shot") and rows[10]["detail"].contains("+25%"),"additional selection is named with its benefit")
 		for row in rows:
 			check(board.controller.Glyphs.KEYS.has(row["key"]), "each action references an authored button image")
 		check(rows[3]["label"] == board.controller.quick_label(board), "ability prompt names actual class ability")

@@ -879,6 +879,9 @@ func _observe_menu_input(event: InputEvent) -> void:
 			else:
 				lab_keys.erase(event.keycode)
 				if event.keycode in [KEY_F,KEY_ENTER]:
+					# Observe the captured Bow release before clearing its owner. The
+					# later key handler cannot release it after this flag is erased.
+					if attack_key_held and String(state.player_action.get("kind",""))=="bow_draw": state.release_bow_attack()
 					attack_key_held = false
 					state.set_attack_hold(false)
 	elif event is InputEventScreenTouch and not event.pressed and not _lab_ui_active():

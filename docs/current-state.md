@@ -28,7 +28,30 @@ The live source, installed game, personal data and immutable ancestor are preser
 Independent review, actual phone checks, version alignment, builds and delivery remain
 lead-owned; there is no new release or feel-acceptance claim.
 
-## Survey integration
+## Isolated cumulative phone successor — November 1
+
+The [cumulative repair ledger](phone-world-repair.md#cumulative-phone-correction--1-november-2026)
+records the successor to immutable `e35ffd8`, preserving its Character overview,
+complete subviews, touch capture and paid transaction owners. It repairs valid
+inward tangent departure and the baseline-matched exclusive shop refresh; applies
+the lead's Boar 640-speed/.45-aim-lock tune with unchanged engagement distance;
+and adds separate Sharpshooter Commit Shot (+25% full-shot damage, one upfront
+ordinary full-shot cost) alongside existing charging, Take Aim and learned arts.
+It also delivers a captured F/Bow release before clearing its owner and preserves
+earned follow-up consumption across arrows/save-resume. Optional save fields remain
+backward compatible within schema 39. No release/build version is stamped here.
+
+Normal-root routed/headless and kernel fixtures are engineering evidence. The
+unchanged analyst probes, before/after failures, regression log scans and CPU costs
+live in the external handoff. Combined independent review and final device/package
+verification remain lead-owned. No export, installation, live-source/save edit or
+publication occurred. Physical readability/controls, sustained phone performance,
+Guy's exact late-run refusal/reset and feel remain open. The USB Phone Harness is
+required for eventual Android work; no connection means device checks stay blocked,
+not that isolated engineering stops. The installed baseline above remains 0.3.5;
+provisional 0.3.6/306 alignment belongs to later lead-owned delivery.
+
+## Survey integration (released baseline)
 
 0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`
 (tree `cf81df775d5f305a60a8f7d24b2d446657c02f3b`) for the normal local game.

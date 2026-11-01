@@ -1,5 +1,43 @@
 # PC controller controls
 
+## Isolated additional Commit Shot — 1 November 2026
+
+The combined phone successor to frozen `e35ffd8` adds an explicit Sharpshooter
+Bow selection alongside ordinary Attack and learned art. It is not installed or
+device-verified. Guy explicitly requested this additive action; the initial +25%
+damage is the lead's tuning choice. Mechanics are owned by the
+[character framework](combat-character-framework.md#152a-isolated-additional-commit-shot--1-november-2026).
+
+| Input | Selection and confirmation |
+| --- | --- |
+| Touch | COMMIT SHOT (at least 48 client/density units), then tap a visible enemy. Tap the selection again to cancel. |
+| Keyboard | **G** selects/cancels; **Tab** cycles visible targets; **Enter** confirms. G was unused in both ordinary and lab handlers; K/J/T remain the lab controls. |
+| Controller | Hold **LB**, press **A** to select; right-stick click cycles visible enemies; **A** confirms, **B** cancels. The palette entry/help names the bonus. |
+
+Uncommitted selection is free and stationary. Invalid/no target gives a reason
+and leaves a deliberate selection available. Ordinary Attack/F replaces it.
+Successful confirmation consumes it and requires a fresh select/confirm for another
+shot. RT remains ordinary hold/release, RB remains learned art and Y remains Take
+Aim. Commit Shot is not an art purchase or a rebinding. During its committed draw,
+a fresh touch drag or right-stick aim uses the ordinary limited aim adjustment;
+release cannot fire early. Character → Combat describes cost, bonus and mappings.
+
+The retained release observer previously cleared captured keyboard ownership before
+F's ordinary Bow release handler. A matched main-root probe demonstrates an endless
+draw on frozen e35. The observer now delivers that captured release before clearing
+its owner. The prepaid action refuses early release through the same API. Frozen
+Sword F continuation and physical-neutral/menu protections remain required controls.
+This specific Bow defect is not a diagnosis of Guy's unidentified attack-reset report.
+
+Normal-root routed fixtures cover touch, keys and synthetic pad in both projections,
+plus menu, synthetic focus/disconnect, ordinary quick/partial/full charging and
+release/repress. Energy uses real Expedition entry; Recovery uses real Boss Lab
+entry because the generated Expedition intentionally remains Energy-only. Artificial
+open geography/inert targets are named fixtures, not naturally earned play. Headless
+geometry/input is not native pixels, physical controls, Android or feel acceptance.
+
+The dated sections below retain their original historical status.
+
 **Unpublished 22 October correction:** setting rows use Up/Down to choose and
 Left/Right to change values; grids follow visible neighbors; A/Enter activates
 and B/Escape returns to the invoker. Captured releases survive Character/menu

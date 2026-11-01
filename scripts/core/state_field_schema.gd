@@ -58,6 +58,10 @@ const FIELDS := [
 	{"key":"player_gale_velocity", "source":"player_gale_velocity", "audiences":[SNAPSHOT, PRESENTATION, SAVE, DETERMINISM], "interpolate":"vector"},
 	{"key":"player_exhaustion_remaining", "source":"player_exhaustion_remaining", "audiences":[SNAPSHOT, PRESENTATION, SAVE], "interpolate":"float"},
 	{"key":"aimed_enemy_id", "source":"aimed_enemy_id", "audiences":[SNAPSHOT, PRESENTATION, SAVE]},
+	# Optional v39 scalar extensions: old saves default false at hydration. Bow's
+	# earned preload survives save/resume; each arrow carries its own consumption.
+	{"key":"bow_followup_ready", "source":"bow_followup_ready", "audiences":[SAVE, DETERMINISM]},
+	{"key":"bow_followup_consumed", "source":"bow_followup_consumed", "audiences":[SAVE, DETERMINISM]},
 	{"key":"sensed_enemies", "source":"_sensed_enemy_presentations", "audiences":[SNAPSHOT, PRESENTATION], "copy":"method_array"},
 	{"key":"visibility_revision", "source":"visibility_revision", "audiences":[SNAPSHOT, PRESENTATION]},
 	{"key":"discovery_revision", "source":"discovery_revision", "audiences":[SNAPSHOT, PRESENTATION]},

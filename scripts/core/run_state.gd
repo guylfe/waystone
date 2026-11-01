@@ -126,6 +126,10 @@ const EXHAUSTION_DURATION := 2.0
 # combo strike) by design -- an elite that resolves inside your swing is the same
 # defect as a Boar that does.
 const OX_CHARGE_MIN_GAP := 40.0
+const BOAR_POUNCE_SPEED := 640.0
+const BOAR_POUNCE_TRACKING_END := 0.45
+# Acquisition retains the old 360 * .80 allowance; launched travel is faster.
+const BOAR_POUNCE_ENGAGEMENT_TRAVEL := 288.0
 const OX_CHARGE_STARTUP := 0.85
 const OX_CHARGE_SPEED := 520.0
 const OX_CHARGE_CAP := 900.0
@@ -3681,6 +3685,7 @@ func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
 		bow_followup_consumed = true
 	else:
 		bow_followup_consumed = false
+	player_action["bow_followup_consumed"]=bow_followup_consumed
 	_apply_action_poise(player_action)
 	_annotate_player_action("bow_draw")
 	_emit_sound(player_pos, 80.0)
@@ -3729,10 +3734,45 @@ func _update_bow_soft_aim(dt: float) -> void:
 
 func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	if String(player_action.get("kind", "")) != "bow_draw": return false
+	# The separate prepaid commitment cannot be released early by physical input,
+	# focus/menu cleanup, or an ordinary attack release.
+	if bool(player_action.get("commit_shot",false)): return false
 	if direction.length_squared() > 0.01: set_bow_aim(direction)
+	return _release_bow_shot()
+
+func commit_shot_refusal(target_id: int) -> String:
+	if loadout_id!="rogue_sharpshooter" or player_weapon_frame!="bow": return "Commit Shot requires the Sharpshooter's Bow."
+	if not is_player_ready() or trial_complete: return "Finish the current commitment first."
+	if not _can_start_basic_attack(): return "Commit Shot is unavailable while the ordinary Bow is locked or exhausted."
+	var target := _enemy_by_id(target_id)
+	if target.is_empty() or int(target.get("hp",0))<=0 or not _enemy_on_current_layer(target): return "Choose a living enemy on this layer for Commit Shot."
+	if not enemy_visible_to_player(target) or not is_visible(Vector2(target["pos"])): return "Choose a visible enemy for Commit Shot."
+	if not _has_line_of_sight(player_pos,Vector2(target["pos"])): return "Commit Shot needs a clear line of sight."
+	return ""
+
+func request_commit_shot(target_id: int, simulate_immediately: bool = true) -> bool:
+	var refusal := commit_shot_refusal(target_id)
+	if refusal!="":
+		_set_message(refusal)
+		return false
+	var direction := Vector2(_enemy_by_id(target_id)["pos"])-player_pos
+	# Reuse ordinary draw, earned preload consumption and action poise. Pay before
+	# the draw advances, while ordinary overdraw remains legal; release is prepaid.
+	if not begin_bow_draw(direction,target_id): return false
+	if not _spend_energy(18.0): return false
+	player_action["commit_shot"]=true
+	player_action["duration"]=0.90
+	_annotate_player_action("bow_commit_draw")
+	_set_message("Commit Shot: full draw and recovery committed; +25% shot damage.")
+	if simulate_immediately: _simulate_until_ready()
+	return true
+
+func _release_bow_shot() -> bool:
+	var committed := bool(player_action.get("commit_shot",false))
+	var used_followup := bool(player_action.get("bow_followup_consumed",bow_followup_consumed))
 	var draw_time := float(player_action.get("elapsed", 0.0))
-	var ratio := clampf(draw_time / 0.90, 0.0, 1.0)
-	if not _spend_energy(lerpf(7.0, 18.0, ratio)):
+	var ratio := 1.0 if committed else clampf(draw_time / 0.90, 0.0, 1.0)
+	if not committed and not _spend_energy(lerpf(7.0, 18.0, ratio)):
 		player_action = _idle_action()
 		return false
 	var strength_adjustment := int(player_attributes.get("strength", 4)) - 4
@@ -3745,6 +3785,7 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	var maximum_range := lerpf(loose_range, 700.0, ratio) * _aimed_projectile_range_multiplier()
 	var velocity := lerpf(480.0, 820.0, ratio)
 	var damage := roundi(lerpf(float(loose_damage), float(full_damage), ratio))
+	if committed: damage=roundi(float(damage)*1.25)
 	var posture := lerpf(0.0, 3.25 if has_track_rank("bow", 3) else 2.5, ratio)
 	var recovery := lerpf(0.70, 1.30, ratio)
 	if has_track_rank("bow", 4): recovery *= 0.80
@@ -3752,9 +3793,11 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	var aim := Vector2(player_action.get("aim_direction", player_facing)).normalized()
 	player_action = _action("bow_release", recovery, aim)
 	player_action.merge({"startup": 0.06, "shot_spawned": false, "projectile_damage": damage, "projectile_posture": posture, "projectile_speed": velocity, "projectile_range": maximum_range, "draw_ratio": ratio, "full_draw": ratio >= 0.995}, true)
+	player_action["commit_shot"]=committed
+	player_action["bow_followup_consumed"]=used_followup
 	_apply_action_poise(player_action)
-	_annotate_player_action("bow_shot")
-	_set_message("You release a %s shot." % ("Full" if ratio >= 0.995 else "Drawn" if ratio >= 0.42 else "Loose"))
+	_annotate_player_action("bow_commit_shot" if committed else "bow_shot")
+	_set_message("You release Commit Shot (+25% damage)." if committed else "You release a %s shot." % ("Full" if ratio >= 0.995 else "Drawn" if ratio >= 0.42 else "Loose"))
 	return true
 
 func _aimed_projectile_range_multiplier() -> float:
@@ -5680,7 +5723,7 @@ func _annotate_player_action(ability_id: String) -> void:
 	player_action["weapon_frame"] = player_weapon_frame
 	player_action["ability_id"] = ability_id
 	player_action["defense_id"] = defense_id
-	if is_measurement_mode() and ability_id != "bow_draw":
+	if is_measurement_mode() and ability_id not in ["bow_draw","bow_commit_draw"]:
 		survey_action_counts[ability_id] = int(survey_action_counts.get(ability_id, 0)) + 1
 
 func _is_committed_physical_action(action: Dictionary) -> bool:
@@ -6114,6 +6157,11 @@ func _update_player(dt: float) -> void:
 			if previous_draw < 0.995 and float(player_action["draw_ratio"]) >= 0.995:
 				_add_effect("full_draw", player_pos)
 				_set_message("The Bow reaches Full Draw.")
+			if bool(player_action.get("commit_shot",false)) and elapsed>=0.90:
+				_release_bow_shot()
+				# The new release/recovery has its own elapsed clock. Never complete
+				# it using the old draw clock (especially Quick Nock/Recovery rules).
+				return
 		"bow_release":
 			if elapsed >= float(player_action.get("startup", 0.06)) and not bool(player_action.get("shot_spawned", false)):
 				player_action["shot_spawned"] = true
@@ -7677,11 +7725,8 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			enemy["is_moving"] = false
 			enemy["last_motion"] = Vector2.ZERO
 		if kind == "charge":
-			# The aim follows the player through most of the wind-up and locks the
-			# instant the run begins. This penalises sidestepping without touching the
-			# retreat curve -- re-aiming at someone backing away does not help close a
-			# gap you have not started crossing. Deliberately short of the full wind-up
-			# so an early step is capped rather than erased.
+			# Track only until this action's authored lock. Facing and the directional
+			# tell share the frozen bearing after that point (Boar: .45 of .70 startup).
 			if elapsed < float(action.get("tracking_end", 0.0)):
 				var aim := player_pos - Vector2(enemy["pos"])
 				if aim.length_squared() > 0.01:
@@ -7917,59 +7962,17 @@ func _choose_enemy_action(enemy: Dictionary) -> void:
 		enemy["action"] = _enemy_move_action(enemy, _pursuit_target(enemy), 0.24)
 		return
 	if enemy_kind == "boar":
-		# A charge's travel happens inside its damaging window, not its wind-up, so
-		# Milestone C's forward travel never applied here. At the old 0.52s stationary
-		# wind-up that left the Boar unable to touch a walking player from ANY launch
-		# distance: the player banked 0.52 x 260 = 135 units for free, and the charge
-		# only closed 158 - 114 = 44 of them back, finishing 91 units further away
-		# than it started. Walking beat it unconditionally -- the exact failure
-		# Milestone C existed to remove, surviving in the one kind it did not touch.
-		#
-		# f = 0.50 means the charge reaches contact range against a player who answers
-		# at half the wind-up. Contact needs the gap to fall to the allowance (radius
-		# 31 + player 20 + 8 = 59), not merely to stop growing, and the nearest this
-		# may launch is 88 -- so the requirement is a 29-unit net close at the
-		# midpoint: 260(S + W) - 260(phi)S - V.W = -29, giving V = (130S + 143.4)/W.
-		# S = 0.40 with the 0.44s window kept intact yields V = 444.
-		#
-		# f varies with launch distance, because a charge commits anywhere it can
-		# reach rather than at one authored strike distance the way MELEE_ATTACK_PLANS
-		# entries do. 0.50 is therefore the value at the closest launch and it grows
-		# more forgiving further out; the survey records the spread.
-		# Genuinely large -- radius 42, rather than a 31-unit animal wearing a 40-unit
-		# invisible collar. Reach now follows the silhouette, which costs the Boar real
-		# denial (91 down to 70) and is worth it.
-		# Slow, heavy and wide, with a short telegraph -- a slow charge is trivially
-		# escaped if you also get a long look at it coming. 0.80s of travel at 360
-		# covers 288 units, which out-ranges a backpedal: retreating only works if
-		# begun in the first fraction of the wind-up. Sidestepping is the real answer,
-		# and stays available because the body is wide rather than because the run is
-		# short. Tracking below 1.0 so a step taken early is not simply erased.
-		# The wind-up must outlast a player commitment or it is not a decision, and the
-		# commitment is far longer than the 0.44s between combo strikes suggests:
-		# measured, a single strike locks control for 0.983s, a basic attack 0.800s, a
-		# held combo 2.475s. At the 0.30s this first shipped with, a charge that fired
-		# mid-swing resolved entirely before control returned and the outcome was set by
-		# when it happened to fire rather than by any read. 0.70 plus travel clears a
-		# single strike everywhere except point-blank, where standing inside a Boar's
-		# reach and committing anyway is a risk rather than an injustice.
-		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, 360.0, 0.70, 1.50):
-			enemy["action"] = _enemy_charge_action(enemy, 1.95, 0.70, 1.50, 360.0, 25, direction)
+		# Initial November tune: quicker launched body, earlier frozen bearing.
+		# Acquisition still uses 288 units of engagement travel, independent of
+		# the new 640-unit/local-second run. Startup, contact, armor, recovery and
+		# cooldown stay unchanged. Simulated response choices are not human feel.
+		if float(enemy.get("pounce_cooldown", 0.0)) <= 0.0 and distance >= 88.0 and _charge_can_contact(enemy, distance, BOAR_POUNCE_ENGAGEMENT_TRAVEL / 0.80, 0.70, 1.50):
+			enemy["action"] = _enemy_charge_action(enemy, 1.95, 0.70, 1.50, BOAR_POUNCE_SPEED, 25, direction)
 			enemy["action"]["label"] = "pounce"
-			# A charging body is wider than the circle it collides on: the shoulders carry
-			# past the centre line. Without this the Boar missed a sidestep begun at the
-			# instant its wind-up ended -- by 9.6 units of a 72-unit contact -- so the last
-			# possible read escaped a committed line, which is the one read the design says
-			# must not work. How late is late enough to survive is a tuning question and the
-			# surveys own it; that a late read is punished at all is not.
-			# 22 rather than the 14 that first looked sufficient: measured, a late sidestep
-			# still cleared the line by 1.9 units at 14, which is a knife-edge rather than a
-			# rule. At 22 the late read is caught by about 6 units and an EARLY sidestep still
-			# clears by 58 -- the two answers stay far apart, which is what makes the timing a
-			# decision rather than a coin toss.
+			# Preserve existing physical shoulders and momentum armor.
 			enemy["action"]["contact_bonus"] = 22.0
 			enemy["action"]["momentum_armour_start"] = 0.88
-			enemy["action"]["tracking_end"] = 0.70 * 0.95
+			enemy["action"]["tracking_end"] = BOAR_POUNCE_TRACKING_END
 			_attach_charge_capture(enemy["action"], 0.50, "pounce")
 			enemy["pounce_cooldown"] = 2.40
 		elif distance < 115.0:
@@ -9575,6 +9578,7 @@ func _spawn_bow_projectile(action: Dictionary) -> void:
 		"hit_ids": [],
 		"draw_ratio": float(action.get("draw_ratio", 0.0)),
 		"full_draw": bool(action.get("full_draw", false)),
+		"bow_followup_consumed": bool(action.get("bow_followup_consumed",bow_followup_consumed)),
 		"layer": current_layer,
 	})
 	survey_shots_fired += 1
@@ -10031,7 +10035,7 @@ func _damage_enemy_from_player_projectile(enemy: Dictionary, projectile: Diction
 	_register_enemy_hit_awareness(enemy, resolved, source_action)
 	_add_effect("hit", contact, damage, {"direction": (Vector2(enemy["pos"]) - contact).normalized(), "interrupted": reaction_applied})
 	_handle_player_contact_aftermath(enemy, resolved)
-	if bool(projectile.get("full_draw", false)) and has_track_rank("bow", 5) and not bow_followup_consumed:
+	if bool(projectile.get("full_draw", false)) and has_track_rank("bow", 5) and not bool(projectile.get("bow_followup_consumed",bow_followup_consumed)):
 		bow_followup_ready = true
 	var source_label := "projectile" if String(projectile.get("kind", "")) != "consumable" else "consumable"
 	_set_message("The %s is struck by the %s." % [String(enemy["kind"]), source_label])
@@ -11655,6 +11659,8 @@ func load_run(path: String = "user://waystone-expedition.save") -> bool:
 	turnabout_remaining = float(payload.get("turnabout_remaining", 0.0))
 	player_hit_protection_remaining = float(payload.get("player_hit_protection_remaining", 0.0))
 	aimed_enemy_id = int(payload.get("aimed_enemy_id", -1))
+	bow_followup_ready = bool(payload.get("bow_followup_ready",false))
+	bow_followup_consumed = bool(payload.get("bow_followup_consumed",false))
 	aimed_remaining = float(payload.get("aimed_remaining", 0.0))
 	player_condition_buildup = Dictionary(payload.get("player_condition_buildup", {})).duplicate(true)
 	player_conditions = Dictionary(payload.get("player_conditions", {})).duplicate(true)
