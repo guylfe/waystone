@@ -58,6 +58,7 @@ New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-
 $HeadlessSuite = @(
     'commit_shot_test',
     'commit_shot_input_test',
+    'commit_shot_help_input_test',
     'commit_shot_layout_probe',
     'bow_release_input_probe',
     'boar_pounce_test',
@@ -74,6 +75,7 @@ $HeadlessSuite = @(
     'feedback_root_layout_test',
     'menu_density_layout_test',
     'character_mobile_test',
+    'character_spatial_input_test',
     'character_information_test',
     'character_transaction_test',
     'menu_journey_test',

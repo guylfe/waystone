@@ -51,6 +51,19 @@ required for eventual Android work; no connection means device checks stay block
 not that isolated engineering stops. The installed baseline above remains 0.3.5;
 provisional 0.3.6/306 alignment belongs to later lead-owned delivery.
 
+## Isolated navigation and selection-help descendant — November 1
+
+The isolated navigation/help descendant of `fce23f5` repairs the independently
+reproduced Character N1 row/column mismatch and C1 selection hint. Character's
+native container rows preserve nested body/Upgrade lanes, disabled/absent commands,
+compact/paged layouts, directional clamping and visible focus. Commit Shot selection
+and Combat information share actual rule-aware cost wording, with selection-entry
+specific touch/key/pad guidance. See the [correction owner](menu-input-correction.md#n1--c1-bounded-successor--1-november-2026).
+Engineer paired routed checks are separate from the pending narrow independent
+successor review and ongoing immutable-fce combined review. The accepted e35 touch /
+transaction model evidence is preserved. No version/export/install/publication or
+device action occurs in this descendant; lead-owned delivery remains pending.
+
 ## Survey integration (released baseline)
 
 0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`

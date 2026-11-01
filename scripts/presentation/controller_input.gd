@@ -69,9 +69,10 @@ func step_menu(board, direction: Vector2) -> void:
 	var control = entries[focus_index].get("control")
 	if direction.x != 0 and is_instance_valid(control) and control.has_meta("menu_change"):
 		control.get_meta("menu_change").call(int(direction.x))
-	elif board.character_sheet_open and direction.y!=0:
-		# Authored order guarantees access through variable-width wrapped track rows.
-		focus_index=clampi(focus_index+int(direction.y),0,entries.size()-1)
+	elif board.character_sheet_open and is_instance_valid(control):
+		var neighbor:Control=board.character_menu.navigation_neighbor(control,direction)
+		for i in entries.size():
+			if entries[i].get("control")==neighbor: focus_index=i; break
 	else: focus_index=Navigation.neighbor(entries,focus_index,direction)
 	focus_id=Navigation.id(menu_entries(board)[focus_index])
 	focus_native(menu_entries(board))
@@ -176,7 +177,7 @@ func palette_button(board, button: int) -> void:
 	if button==JOY_BUTTON_A and board.state.loadout_id=="rogue_sharpshooter" and board.state.player_weapon_frame=="bow":
 		if palette_open: set_palette(board,false)
 		release_actions(board)
-		board._select_commit_shot()
+		board._select_commit_shot("controller")
 		if board.selected_action=="commit_shot":
 			targeting_action="commit_shot"
 			if locked_target(board).is_empty(): cycle_target(board)

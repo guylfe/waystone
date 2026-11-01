@@ -90,6 +90,47 @@ func command(parent: Node, id: String, text: String, action: Callable, height: f
 	button.pressed.connect(action); parent.add_child(button)
 	return button
 
+func navigation_rows(node: Node=self, left: float=0.0, width: float=1.0) -> Array:
+	# Follow the authored container topology, not button enumeration or distance
+	# across rows. Lanes retain nested grid cells and their body/Upgrade slots.
+	if node is Control and not node.is_visible_in_tree(): return []
+	if node is BaseButton:
+		return [] if node.disabled or node.get_meta("menu_skip",false) else [[{"control":node,"lane":left+width*0.5}]]
+	var rows:Array=[]
+	if node is GridContainer or node is HBoxContainer:
+		var columns:int=node.columns if node is GridContainer else maxi(node.get_child_count(),int(node.get_meta("navigation_slots",0)))
+		var children:=node.get_children()
+		for first in range(0,children.size(),maxi(1,columns)):
+			var band:Array=[]
+			for column in mini(columns,children.size()-first):
+				var cell:=navigation_rows(children[first+column],left+width*column/columns,width/columns)
+				for row in cell.size():
+					while band.size()<=row: band.append([])
+					band[row].append_array(cell[row])
+			for row in band:
+				if not row.is_empty(): rows.append(row)
+	else:
+		for child in node.get_children(): rows.append_array(navigation_rows(child,left,width))
+	return rows
+
+func navigation_neighbor(control: Control, direction: Vector2) -> Control:
+	var rows:=navigation_rows()
+	for y in rows.size():
+		for x in rows[y].size():
+			if rows[y][x].control!=control: continue
+			if direction.x!=0:
+				return rows[y][clampi(x+int(direction.x),0,rows[y].size()-1)].control
+			var next:int=clampi(y+int(direction.y),0,rows.size()-1)
+			if next==y: return control
+			var closest:Control=rows[next][0].control
+			var distance:=INF
+			for entry in rows[next]:
+				var delta:float=absf(float(entry.lane)-float(rows[y][x].lane))
+				# Equal missing-slot choices consistently prefer the left neighbor.
+				if delta<distance-0.0001: distance=delta; closest=entry.control
+			return closest
+	return control
+
 func sync(owner) -> void:
 	board=owner
 	if not board.character_sheet_open:
@@ -179,6 +220,7 @@ func track_status(data: Dictionary, track: Dictionary) -> String:
 
 func track_row(parent: Node, data: Dictionary, track: Dictionary) -> void:
 	var row := box(parent,true,8)
+	row.set_meta("navigation_slots",2) # Keep the body lane when Upgrade is absent.
 	var id := str(track.id)
 	command(row,"track:"+id,track_name(id,str(track.label))+" · Rank "+str(track.rank)+"\n"+track_status(data,track),func(): open_view({"kind":"track","track_id":id}),56)
 	if Array(data.level_up_options).has(id):
@@ -272,7 +314,7 @@ func combat(data: Dictionary) -> void:
 	line(content,str(board.CombatCatalogScript.weapon_frame(frame).get("label",frame))+" · "+form)
 	line(content,"Defense · "+str(data.defense).capitalize())
 	if frame=="bow" and board.state.loadout_id=="rogue_sharpshooter":
-		var price := ("%.1f Energy, ordinary full-shot scaling" % board.state.energy_cost(18)) if board.state.uses_energy_rules() else "Recovery rules: no Energy debit"
+		var price:String=board._commit_shot_price_text()
 		line(content,"Commit Shot · +25% full-shot damage. Select, then confirm a visible enemy. "+price+". Automatically finish remaining full draw and ordinary recovery. No hold, early release or voluntary cancel; ordinary interruption still applies.")
 		line(content,"Touch: COMMIT SHOT, then enemy; tap selection again to cancel. Keyboard: G select/cancel, Tab enemy, Enter confirm. Controller: LB+A select, right-stick click enemy, A confirm / B cancel. Ordinary ATTACK / F / RT charging, Take Aim and learned arts remain separate.")
 	var equipped := str(data.equipped_art)

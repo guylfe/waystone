@@ -60,12 +60,54 @@ cannot become gameplay input. Transient semantic view history retains per-view s
 and focus; resizing to a shorter range clamps display without discarding the saved
 scroll anchor for the return size. Top Back retains the original invoker.
 
-Character Up/Down follows authored command order so variable-width two-column rows
-cannot strand a track. Left/Right retains geometric navigation. During touch
+Character navigation follows the actual container rows: Up/Down selects the adjacent
+visible row in the nearest structural lane; Left/Right visits each enabled command
+in that row and clamps at its edge. Grid cells retain their nested body/Upgrade
+slots even when Upgrade is absent or disabled. Equal missing-slot choices prefer
+the left neighbor. This supersedes the original flat Up/Down enumeration, which
+the independent designer showed moving sideways. It also avoids the old global
+center-distance search that could skip commands. Header, compact/paged overview,
+single-column details and confirmation footer use the same row construction.
+During touch
 navigation, controller focus/repeat and hints do not pull the scroll; physical held
 inputs and neutral/repress gates remain observed. A fresh D-pad/button/key or a fresh
 left-stick departure from neutral resumes navigation. Existing controller, keyboard,
 Survey suspension and committed-action boundaries remain their owners.
+
+### N1 / C1 bounded successor — 1 November 2026
+
+The successor to immutable `fce23f5` changes only Character navigation and Commit
+Shot help formatting in production. The analyst's independent e35 mobile touch /
+payment result remains accepted within its model scope; the independent designer's
+N1 directional failures are a separate valid finding. This successor needs its own
+narrow independent directional check. Combined runtime review continues against fce.
+
+`character_spatial_input_test.gd` retains the designer's actual-root 840×720 Warrior
+XP0/147 cases and adds reverse/horizontal directions, grid transition, clamping,
+disabled Upgrade, 390×844, compact 720×480, paged 280×480 and detail/Back checks.
+Native Tab establishes a named start for directional assertions; a separate D-pad
+only row sweep proves enabled-command reachability and clipping-safe focus. No
+focus index, grab-focus or scroll assignment constructs a pass. XP and the disabled
+button are labelled synthetic fixtures. Paired logs preserve the unchanged-control
+failures and unchanged layout rectangles. Final evidence belongs in the external
+navigation/help handoff, including failed test instrumentation retained separately.
+
+Commit Shot selection and Character Combat now share current `energy_cost(18)` /
+Recovery no-debit wording. Selection help names touch, keyboard or pad controls
+according to the actual selection entry. `commit_shot_help_input_test.gd` routes all
+three inputs under both rules and checks free/frozen selection and cancellation.
+This is copy only: timing, price, interruption, targeting, damage and saved state
+are unchanged. No version, build, installation, phone, native-pixel or feel claim.
+
+Engineering result: the corrected paired regression has 505 spatial checks / 34
+directions and 42 selection-help checks / six input-rule cases, zero failures on
+the successor. The identical probes fail on frozen fce. All 11 affected inherited
+files pass, including 3,803 mobile, 377 transaction, 324 pause-input and 293 Commit
+Shot input checks. Structure audit retains the same five inherited release-version /
+README mismatches; version alignment remains a later delivery action. The external
+receipt freezes source identity, log scans, paired geometry, unchanged runtime
+guards and preservation evidence. These are engineering checks, not an independent
+successor verdict or physical-device acceptance.
 
 Verification: `character_mobile_test.gd` uses normal `scenes/main.tscn`, normal board
 processing and routed ScreenTouch/ScreenDrag through the real project-root transform.

@@ -1981,7 +1981,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if desktop_controls and state.run_active and event.pressed and not event.echo and not playing and not character_sheet_open and not map_open and not waystone_menu_open and not controller.modal(self):
 		if event.keycode==KEY_G:
-			_select_commit_shot()
+			_select_commit_shot("keyboard")
 			return
 		if selected_action=="commit_shot" and event.keycode==KEY_TAB:
 			controller.cycle_target(self)
@@ -2365,10 +2365,16 @@ func _handle_button(name: String) -> void:
 				selected_action = "" if selected_action=="adopted" else "adopted"
 	queue_redraw()
 
-func _select_commit_shot() -> void:
+func _commit_shot_price_text() -> String:
+	return ("%.1f Energy, ordinary full-shot scaling" % state.energy_cost(18)) if state.uses_energy_rules() else "Recovery rules: no Energy debit"
+
+func _select_commit_shot(input_method: String="pointer") -> void:
 	if playing or not state.is_player_ready() or state.loadout_id!="rogue_sharpshooter" or state.player_weapon_frame!="bow": return
 	selected_action="" if selected_action=="commit_shot" else "commit_shot"
-	state.message="Commit Shot selected: tap a visible enemy. +25% full-shot damage; full draw/recovery, 18 base Energy. [G] cancel; [Tab] target, [Enter] commit." if selected_action!="" else "Commit Shot selection cancelled."
+	var controls := "Tap a visible enemy; tap COMMIT SHOT again to cancel."
+	if input_method=="keyboard": controls="[Tab] choose visible enemy; [Enter] commit; [G] cancel."
+	elif input_method=="controller": controls="right-stick click chooses visible enemy; [A] commit / [B] cancel."
+	state.message="Commit Shot selected: +25% full-shot damage; full draw/recovery. "+_commit_shot_price_text()+". "+controls if selected_action!="" else "Commit Shot selection cancelled."
 	queue_redraw()
 
 func _confirm_commit_shot(target_id: int) -> bool:

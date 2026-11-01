@@ -21,6 +21,10 @@ shot. RT remains ordinary hold/release, RB remains learned art and Y remains Tak
 Aim. Commit Shot is not an art purchase or a rebinding. During its committed draw,
 a fresh touch drag or right-stick aim uses the ordinary limited aim adjustment;
 release cannot fire early. Character → Combat describes cost, bonus and mappings.
+Selection help uses the same actual Energy-cost owner as Character Combat, or
+explicitly says Recovery has no Energy debit. It shows the controls for the input
+that selected the action: touch selection/enemy, G/Tab/Enter, or pad RS-click/A/B.
+The bounded successor to `fce23f5` changes this formatting without changing rules.
 
 The retained release observer previously cleared captured keyboard ownership before
 F's ordinary Bow release handler. A matched main-root probe demonstrates an endless
