@@ -12,6 +12,99 @@ acceptance above. Physical controls, Android/foldable behavior, natural play,
 Guy's exact reset and subjective feel remain open. The [current-state owner](current-state.md)
 records the delivered baseline; unadopted proposals remain separate.
 
+## Isolated Character mobile successor — 1 November 2026
+
+Status: implementation candidate on frozen repair ancestor `1660a840da567062b3f0211e463f2bbf7fc2e23c`.
+This section supersedes the equipment-first Character layout described below for this
+isolated successor. Installed 0.3.5 and the ancestor remain unchanged. No new release
+version, export, installation, native rendering, phone measurement or Guy acceptance
+is implied. Dr. Stone owns independent review and integration.
+
+`character_menu.gd` now owns a no-scroll opening overview, fixed name/level/Back,
+HP/Energy, actual XP account/context/cost and a visible upgrade route. It initially
+lays out six authored track rows; measured wrapped container minima select compact
+Tracks & upgrades when those rows do not fit. Wide layouts use two track columns
+only in converted menu units. A measured compact-overflow fallback pages categories
+with explicit Previous/Next controls. Fonts stay 17 units and command targets at
+least 48 units; unsupported extreme geometry is flagged rather than shrunk.
+Panel padding, gaps, type and targets share the actual final-transform/density unit.
+The diagnostic density override defaults off and never enters saves.
+
+Equipment, Attributes, Combat and Belt open separate views. Equipment retains every
+slot and existing item inspection text; attributes retain all keys and max-health/
+Energy values. Combat retains all authored frame/form strings, defense and every
+known-art/equipped marker, with existing art-swap prohibition. Belt retains empty
+slots, counts, selection/deselection and the original no-level-up-context repack
+restriction, now explained while blocked. The same paid repack owner closes the
+sheet and consumes its pause/Survey return context. Track details retain descriptions,
+completed/future stage inspection and every branch label/description/chosen marker.
+Adopted discipline names come from Expedition state; mastery access uses the owning
+next-stage/options result even when the catalog history is empty. UI eligibility
+uses the next character level through RunState, without inventing history.
+
+Upgrade confirmations retain fixed Cancel/Spend below one detail scroll owner.
+Existing encoded `track|branch` choices and RunState transactions own debits, effects,
+permanent-for-run choices and critical autosave. Waystone shows spendable secured XP
+and separate carried XP, while the original transaction continues debiting both.
+Other contexts show carried XP. Current cost, stage identity and current options are
+rechecked before a confirmation can transact, including a stale ordinary-stage view.
+
+The Character input route runs after shared physical-contact observation and before
+native GUI/gameplay dispatch. It consumes actual touch events once, calls the same
+command callback as native buttons on a qualifying same-target release, and does
+not replay mouse events or change project emulation. A captured drag scrolls details
+from buttons, labels or blank content, suppressing taps. Additional contacts cancel
+the gesture; cancelled contacts remain consumed through their own release. View/data
+rebuild, resize/fold geometry, close and focus loss cancel activation. Old contacts
+cannot become gameplay input. Transient semantic view history retains per-view scroll
+and focus; resizing to a shorter range clamps display without discarding the saved
+scroll anchor for the return size. Top Back retains the original invoker.
+
+Character Up/Down follows authored command order so variable-width two-column rows
+cannot strand a track. Left/Right retains geometric navigation. During touch
+navigation, controller focus/repeat and hints do not pull the scroll; physical held
+inputs and neutral/repress gates remain observed. A fresh D-pad/button/key or a fresh
+left-stick departure from neutral resumes navigation. Existing controller, keyboard,
+Survey suspension and committed-action boundaries remain their owners.
+
+Verification: `character_mobile_test.gd` uses normal `scenes/main.tscn`, normal board
+processing and routed ScreenTouch/ScreenDrag through the real project-root transform.
+Synthetic fixtures cover four loadouts, affordable/unavailable/progressed states,
+Waystone secured100/carried147, Survey/Expedition, both resource rules, actual generated
+Expedition and legal adopted discipline fixtures, branch cancel/purchase/save, paid
+repack, touch cancellation, mixed held-controller return and measured font wrapping.
+The new mobile journey uses no wheel, programmatic reveal, direct opening callback or
+emitted button signal. The earlier information inventory still uses programmatic
+reveal and is labelled separately; it is not mobile-access proof. The retained
+specialist probe is included with only hierarchy/discovery adaptation and its obsolete
+wheel comparison removed. Exact commands, counts, revisions, raw rectangles and
+before/after records live in the external task handoff/evidence.
+
+Final engineering evidence: 3,803 checks with zero failures in the routed mobile
+matrix, plus 141 in the additional size-limit probe. All 13 focused regression
+files pass: Character information (79), transactions (377), menu journey (253),
+Survey pause (324), controller input, and the eight inherited repair suites (253).
+The retained specialist probe has three successful routed-entry records; at 720×480
+its detail swipe offsets progress 0 → 168 → 336 logical units. The taller equipment
+lists fit without needing scrolling. These are engineer checks, not independent QA.
+
+Main fit models are 390×844, 720×480 and 840×720, with all four loadouts and fresh/
+affordable states; purchases additionally cover all four in Waystone, Survey and
+actual Expedition under Energy and Recovery. Density models are 780×1688 at 2,
+1170×2532 at 3, 1440×960 at 2 and 2520×2160 at 3; the inset model removes 2.5% per
+edge at 390×844. A 390×600 compact opening and additional 390×500 compact opening
+fit; 280×480 in the Sharpshooter/Waystone/Recovery fixture selects four category
+pages and passes routed Next/Previous access. Explicit 720×360, 720×340, 720×320
+and 240×400 models remain unsupported by measured minima. No smaller font/target
+is used, and no continuous minimum-size range or untested loadout/size combination
+is certified by those isolated extra cases.
+
+The tested density/safe-area values are explicit headless models, not Android data.
+Actual phone rendering, DPI/font scaling, cutouts, physical touch, fold/rotation,
+comfort, GPU/input latency and Guy's acceptance remain open. Final integrated release
+must reconcile the existing 0.3.4 runtime constant with 0.3.5 packages and align all
+metadata/build identities; provisional 0.3.6/306 is lead-owned and not stamped here.
+
 ## Contract and ownership
 
 Frozen deliberation requires dependable input handover: releasing a captured

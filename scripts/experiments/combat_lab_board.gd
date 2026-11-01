@@ -834,6 +834,7 @@ func _suspend_lab() -> void:
 	visual = _presentation_snapshot()
 
 func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(character_menu): character_menu.cancel_touches()
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and state != null:
 		inspection_release_required=true
 	if state == null or not is_instance_valid(survey_overlay): return

@@ -61,12 +61,16 @@ func sync_context(board) -> void:
 	if not entries.is_empty(): focus_id = Navigation.id(entries[focus_index])
 
 func step_menu(board, direction: Vector2) -> void:
+	if board.character_sheet_open: board.character_menu.touch_navigation=false
 	sync_context(board)
 	var entries := menu_entries(board)
 	if entries.is_empty(): return
 	var control = entries[focus_index].get("control")
 	if direction.x != 0 and is_instance_valid(control) and control.has_meta("menu_change"):
 		control.get_meta("menu_change").call(int(direction.x))
+	elif board.character_sheet_open and direction.y!=0:
+		# Authored order guarantees access through variable-width wrapped track rows.
+		focus_index=clampi(focus_index+int(direction.y),0,entries.size()-1)
 	else: focus_index=Navigation.neighbor(entries,focus_index,direction)
 	focus_id=Navigation.id(menu_entries(board)[focus_index])
 	focus_native(menu_entries(board))
@@ -290,6 +294,8 @@ func handle(board, event: InputEvent) -> bool:
 		if board.map_open: board.state.map_presentation = "full"
 	device = event.device
 	if event is InputEventJoypadMotion:
+		if board.character_sheet_open and event.axis in [JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y] and stick(JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y).is_zero_approx() and absf(event.axis_value)>=0.55:
+			board.character_menu.touch_navigation=false
 		axes[event.axis] = event.axis_value
 		if event.axis == JOY_AXIS_TRIGGER_LEFT and board.state.combat_lab:
 			var was_down := bool(held.get("lab_lt",false))
@@ -443,6 +449,7 @@ func update(board, delta: float) -> void:
 		target_point = board.state.player_pos + (target_point - board.state.player_pos).limit_length(targeting_range(board))
 		return
 	if modal(board):
+		if board.character_sheet_open and board.character_menu.touch_navigation: return
 		var entries := menu_entries(board)
 		focus_index = clampi(focus_index, 0, maxi(0, entries.size() - 1))
 		var nav := stick(JOY_AXIS_LEFT_X,JOY_AXIS_LEFT_Y)
@@ -479,6 +486,7 @@ func context_id(board) -> String:
 	return "combat"
 
 func menu_button(board, button: int) -> void:
+	if board.character_sheet_open: board.character_menu.touch_navigation=false
 	sync_context(board)
 	if button in [JOY_BUTTON_B,JOY_BUTTON_START,JOY_BUTTON_BACK]:
 		if editing_text: editing_text=false
@@ -517,7 +525,7 @@ func back(board) -> void:
 		if abandon_confirm: abandon_confirm = false
 		else: paused = false
 	elif board.character_sheet_open:
-		if not board.sheet_detail.is_empty(): board.sheet_detail.clear()
+		if not board.sheet_detail.is_empty(): board.character_menu.back_view()
 		else:
 			board.character_sheet_open = false
 			if sheet_return_pause: paused=true; sheet_return_pause=false
@@ -666,6 +674,7 @@ func draw_overlay(board) -> void:
 		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
 		return
 	if modal(board):
+		if board.character_sheet_open and board.character_menu.touch_navigation: return
 		var entries := menu_entries(board)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		if paused:

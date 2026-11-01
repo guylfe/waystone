@@ -314,6 +314,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _input(event: InputEvent) -> void:
 	if state != null: _observe_menu_input(event)
+	if is_instance_valid(character_menu) and character_menu.route_touch(event):
+		get_viewport().set_input_as_handled(); return
 	# Real native Survey overlay touch taps and swipes share one captured route.
 	# Pointer IDs stay cancelled across closing/rebuilding/resizing until release.
 	if overlay_replaying: return

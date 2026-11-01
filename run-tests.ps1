@@ -66,6 +66,7 @@ $HeadlessSuite = @(
     'presentation_copy_parity_test',
     'feedback_root_layout_test',
     'menu_density_layout_test',
+    'character_mobile_test',
     'character_information_test',
     'character_transaction_test',
     'menu_journey_test',
@@ -143,7 +144,10 @@ foreach ($name in $Selected) {
     # whether they are all documented. So the rule is quiescence: a run that has already
     # failed and has produced nothing further for a while is hung, and there is nothing left
     # to wait for.
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    # The routed mobile matrix covers 24 purchases plus cold/root/density/detail cases.
+    # Keep an explicit caller timeout authoritative; only its default budget differs.
+    $suiteTimeoutSeconds = if ($name -eq 'character_mobile_test' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { 900 } else { $TimeoutSeconds }
+    $deadline = (Get-Date).AddSeconds($suiteTimeoutSeconds)
     $lastSize = -1
     $idleSince = Get-Date
     $hungAfterFailure = $false

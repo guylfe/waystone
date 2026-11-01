@@ -45,6 +45,16 @@ func seek(target: String, by_label: bool = false) -> bool:
 	check(false,"sequential controller reach: "+target+" from "+id()+" context "+board.controller.context_id(board)+" paused "+str(board.controller.paused)+" overlay "+str(board.survey_overlay.visible))
 	return false
 func activate(target: String):
+	# Deliberate hierarchy: traverse native categories/track before the retained command.
+	if target.begins_with("stage:"):
+		var track=target.split(":")[1]
+		if str(board.sheet_detail.get("kind",""))!="track" or str(board.sheet_detail.get("track_id",""))!=track:
+			while not board.sheet_detail.is_empty(): await tap(JOY_BUTTON_B)
+			var found:=false
+			for c in board.character_menu.find_children("*","Button",true,false):
+				if str(c.get_meta("menu_id",""))=="track:"+track: found=true
+			if not found: await activate("category:tracks")
+			await activate("track:"+track)
 	if await seek(target): await tap(JOY_BUTTON_A)
 func progression(state) -> Dictionary:
 	return {"xp":state.carried_xp,"secured":state.secured_xp,"count":state.upgrade_count,"ranks":state.track_ranks.duplicate(true),"upgrade_ranks":state.upgrade_ranks.duplicate(true),"choices":state.track_choices.duplicate(true),"upgrades":state.upgrades.duplicate(true),"attributes":state.player_attributes.duplicate(true),"max_hp":state.player_max_hp,"max_energy":state.player_max_energy,"art":state.player_equipped_weapon_art,"arts":state.player_weapon_art_library.duplicate(),"spells":state.player_spells.duplicate()}
@@ -91,7 +101,7 @@ func branch(mode: String, track: String, option: String):
 	check(progression(state)==before,"selection alone has no progression mutation "+encoded)
 	# Cancel via routed B and verify both memory and persisted progression.
 	await tap(JOY_BUTTON_B)
-	check(board.sheet_detail.is_empty() and board.character_sheet_open,"cancel returns to summary")
+	check(board.sheet_detail.get("kind")=="track" and board.character_sheet_open,"cancel returns to invoking track")
 	check(progression(state)==before,"cancel has no mutation "+encoded)
 	state.save_run()
 	var cancelled=State.new(false)
@@ -105,7 +115,7 @@ func branch(mode: String, track: String, option: String):
 	check(state.upgrade_count==int(before.count)+1 and state.track_total(track)==1,"exactly one rank/count "+encoded)
 	check(state.track_choices.get(stage.id)==option,"chosen branch stored under stage "+encoded)
 	check(state.upgrades.size()==Array(before.upgrades).size()+1,"one upgrade history entry "+encoded)
-	check(board.sheet_detail.is_empty() and board.character_sheet_open,"successful purchase returns to summary "+encoded)
+	check(board.sheet_detail.get("kind")=="track" and board.character_sheet_open,"successful purchase returns to invoking track "+encoded)
 	var loaded=State.new(false)
 	check(loaded.load_run() and progression(loaded)==after,"native confirm autosave reload "+mode+" "+encoded)
 	check(progression(loaded)==progression(reference),"persisted XP rank choice and effects match reference "+mode+" "+encoded)
@@ -125,7 +135,7 @@ func branch(mode: String, track: String, option: String):
 	var duplicate_before=progression(duplicate)
 	check(not duplicate.choose_upgrade(encoded) and progression(duplicate)==duplicate_before,"old branch rejected even with sufficient XP "+encoded)
 	records.append({"fixture":"synthetic progression","mode":mode,"track":track,"branch":option,"selected_by_native_control":selected,"before":before,"after":after,"saved":progression(loaded)})
-	await tap(JOY_BUTTON_B); await tap(JOY_BUTTON_B)
+	while board.character_sheet_open: await tap(JOY_BUTTON_B)
 	check(not board.character_sheet_open and board.controller.paused,"Character returns to invoking pause")
 	await finish()
 func ordinary(mode: String):
@@ -160,7 +170,11 @@ func gated_and_stale():
 	# Explicit concurrent-eligibility fixture, not gameplay earnings.
 	board.state.carried_xp=0; await frames()
 	before=progression(board.state)
-	await activate("character:confirm")
+	var stale_confirm: Button
+	for c in board.character_menu.find_children("*","Button",true,false):
+		if str(c.get_meta("menu_id",""))=="character:confirm": stale_confirm=c
+	check(stale_confirm!=null and stale_confirm.disabled,"stale confirmation visibly disabled")
+	await tap(JOY_BUTTON_A)
 	check(progression(board.state)==before and board.sheet_detail.get("kind")=="track_choice","stale confirmation rechecks current eligibility without mutation")
 	await finish()
 func art_and_belt(experimental: bool = false):
@@ -169,12 +183,14 @@ func art_and_belt(experimental: bool = false):
 	board.state.player_weapon_art_library.assign(["prototype_sweeping_cut","prototype_drawing_cut"])
 	board.state.player_equipped_weapon_art="prototype_sweeping_cut"
 	await frames(8)
+	await activate("category:combat")
 	var art_count := 0
 	for control in board.character_menu.find_children("*","Button",true,false):
 		if str(control.get_meta("menu_id","")).begins_with("art:"):
 			art_count+=1; check(control.disabled,"existing no-art-swap policy disables native art")
 	check(art_count==2 and not board.state.equip_weapon_art("prototype_drawing_cut"),"art swap eligibility retained")
 	check(board.state.player_equipped_weapon_art=="prototype_sweeping_cut","ineligible art leaves equipment intact")
+	await tap(JOY_BUTTON_B); await activate("category:belt")
 	# Distinct labelled belt contents; native selection must pay the ordinary action.
 	board.state.consumable_slots.assign([{"id":"trail_ration","count":1},{"id":"firebomb","count":2},{}])
 	await frames(8)

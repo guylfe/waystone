@@ -19,10 +19,19 @@ func command(id: String):
 	for control in board.character_menu.find_children("*","Button",true,false):
 		if str(control.get_meta("menu_id",""))==id: return control
 	return null
+func click_id(id: String):
+	if id.begins_with("stage:"):
+		var track=id.split(":")[1]
+		if str(board.sheet_detail.get("kind",""))!="track" or str(board.sheet_detail.get("track_id",""))!=track:
+			while not board.sheet_detail.is_empty(): await back()
+			if command("track:"+track)==null: await click_id("category:tracks")
+			await click_id("track:"+track)
+	await click(command(id))
 func click(control):
 	check(control!=null,"native control exists")
 	if control==null:return
-	board.character_menu.scroll.ensure_control_visible(control); await frames()
+	if is_instance_valid(board.character_menu.scroll) and board.character_menu.scroll.is_ancestor_of(control): board.character_menu.scroll.ensure_control_visible(control)
+	await frames()
 	var point: Vector2=control.get_global_rect().get_center()
 	for down in [true,false]:
 		var e:=InputEventMouseButton.new(); e.button_index=MOUSE_BUTTON_LEFT; e.pressed=down
@@ -53,23 +62,30 @@ func balance_case(mode: String):
 	var header=text()
 	check(header.contains("LEVEL UP") and header.contains("WAYSTONE" if context=="waystone" else "COMBAT SURVEY" if context=="survey" else "EXPEDITION"),"actual level-up source "+mode)
 	check(header.contains("SPENDABLE "+source+" XP · "+str(amount)),"actual spendable balance "+mode)
-	check(header.contains("ART · LOCKED"),"initial art explicitly locked")
-	check(header.contains("DISCIPLINE NOT YET FOUND"),"empty adopted track explanation")
+	check(header.contains("Art · Locked".to_upper()),"initial art explicitly locked")
+	if command("category:tracks")!=null: await click_id("category:tracks")
+	check(text().contains("DISCIPLINE NOT YET FOUND"),"empty adopted track explanation")
+	if command("stage:swordsmanship:0")==null:
+		await click_id("track:swordsmanship")
 	check(command("stage:swordsmanship:0").text.to_upper().contains("AVAILABLE"),"purchasable stage status")
 	if mode=="campaign_lab": check(header.contains("CARRIED XP · 147"),"carried XP separately labelled at Waystone")
-	await click(command("stage:swordsmanship:0"))
+	await click_id("stage:swordsmanship:0")
 	var detail=text()
 	check(detail.contains("REMAINING "+str(amount-6)+" XP"),"projected remainder "+mode)
 	check(detail.contains("SPENDABLE "+source+" XP · "+str(amount)),"confirmation uses correct balance "+mode)
-	await click(command("choice:prototype_sweeping_cut")); await click(command("character:confirm"))
+	await click_id("choice:prototype_sweeping_cut"); await click_id("character:confirm")
 	check(board.state.track_total("swordsmanship")==1 and board.state.carried_xp==141 and board.state.secured_xp==(94 if mode=="campaign_lab" else 100),"unchanged native purchase accounts "+mode)
+	await back()
+	await click_id("category:combat")
 	var after=text()
 	check(after.contains("ART · EQUIPPED · SWEEPING CUT"),"equipped art summary")
 	check(command("art:prototype_sweeping_cut").disabled and command("art:prototype_sweeping_cut").text.to_upper().contains("EQUIPPED"),"equipped marker and art swap prohibition")
-	check(command("stage:swordsmanship:0").text.to_upper().contains("COMPLETED"),"completed overview status")
-	await click(command("stage:swordsmanship:0"))
+	await back()
+	await click_id("track:swordsmanship")
+	check(command("stage:swordsmanship:0").text.to_upper().contains("COMPLETED"),"completed track status")
+	await click_id("stage:swordsmanship:0")
 	check(text().contains("COMPLETED"),"completed status in stage detail")
-	await back(); await click(command("stage:evasion:1"))
+	await back(); await click_id("stage:evasion:1")
 	check(text().contains("AVAILABLE FROM LEVEL 5"),"future-stage detail availability")
 	records.append({"fixture":"synthetic XP secured100 carried147","mode":mode,"context":context,"summary_before":header,"detail_before":detail,"summary_after":after,"stage_detail":text(),"xp_after":board.state.carried_xp,"secured_after":board.state.secured_xp})
 	await finish()
@@ -79,6 +95,7 @@ func run():
 	for mode in ["campaign_lab","combat_survey","expedition"]: await balance_case(mode)
 	for pair in [["warrior","CUT › RETURN › DRIVING CUT"],["rogue_acrobat","FOUR COMPACT CUTS"],["rogue_sharpshooter","DRAW › RELEASE"],["mage_elementalist","STAFF THRUST"]]:
 		await fixture("expedition",pair[0])
+		await click_id("category:combat")
 		check(text().contains(pair[1]),"authored weapon form "+pair[0])
 		records.append({"fixture":"synthetic loadout summary","loadout":pair[0],"text":text()})
 		await finish()
@@ -87,6 +104,7 @@ func run():
 	board.state.player_equipped_weapon_art="prototype_sweeping_cut"
 	board.state.player_weapon_frame="twin_knives" # Labelled legacy form inspection.
 	await frames(12)
+	await click_id("category:combat")
 	check(command("art:prototype_sweeping_cut").text.to_upper().contains("EQUIPPED") and command("art:sword_thrust").text.to_upper().contains("NOT EQUIPPED"),"legacy library distinguishes equipped and other known art")
 	check(command("art:prototype_sweeping_cut").disabled and command("art:sword_thrust").disabled,"all legacy library swapping stays prohibited")
 	check(text().contains("SIX ALTERNATING CUTS"),"authored twin-knife form")

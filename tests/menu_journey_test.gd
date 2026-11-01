@@ -101,19 +101,20 @@ func run():
 			check(board.inspection_scroll.visible,"fresh Start opens Survey menu")
 			await seek("Character"); await tap(JOY_BUTTON_A)
 			check(board.character_sheet_open,"Character opens through real menu A")
-			await seek("Slot 1")
-			await tap(JOY_BUTTON_DPAD_DOWN)
-			# Find an actual stage by its semantic ID, travelling through the visible
-			# controls. No test writes a focus index or neutral flag.
-			for i in range(80):
-				var focused=view.gui_get_focus_owner()
-				if focused!=null and str(focused.get_meta("menu_id","")).begins_with("stage:"): break
-				await tap(JOY_BUTTON_DPAD_DOWN)
+			await seek("Belt"); await tap(JOY_BUTTON_A)
+			await seek("Slot 1"); await tap(JOY_BUTTON_B)
+			if board.character_menu.variant>0: await seek("Tracks & upgrades")
+			else: await seek("Swordsmanship")
+			await tap(JOY_BUTTON_A)
+			if board.sheet_detail.get("kind")=="tracks":
+				await seek("Swordsmanship"); await tap(JOY_BUTTON_A)
+			await seek("Weapon Art")
 			var invoker: String = board.controller.focus_id
 			await tap(JOY_BUTTON_A)
 			check(not board.sheet_detail.is_empty(),"stage A opens its detail")
 			await tap(JOY_BUTTON_B)
-			check(board.sheet_detail.is_empty() and board.controller.focus_id==invoker,"detail Back restores stage invoker")
+			check(board.sheet_detail.get("kind")=="track" and board.controller.focus_id==invoker,"detail Back restores stage invoker")
+			while not board.sheet_detail.is_empty(): await tap(JOY_BUTTON_B)
 			await tap(JOY_BUTTON_B)
 			check(not board.character_sheet_open and not board.character_menu.visible and board.inspection_scroll.visible and focus_text().begins_with("Character"),"Character Back restores invoking menu control and hides closed panel")
 			await tap(JOY_BUTTON_B); await frames(12)

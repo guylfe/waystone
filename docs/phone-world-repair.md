@@ -2,6 +2,9 @@
 
 Owner: Gameplay engineering. Bounded candidate based on `0e65cdfae5b662a9a8951a8ff082ff54c639a7e1`, prepared 2026-11-01. Dr. Stone owns integration, independent review and delivery. Guy owns experience and feel acceptance. This candidate does not change the installed game, build identity, schema, character sheet, Boar tuning or bow commitment rules.
 
+The opening scope statement above describes the frozen `1660a84` repair ancestor.
+Its isolated Character successor is recorded in [the menu/input owner](menu-input-correction.md#isolated-character-mobile-successor--1-november-2026); the repair implementations below are retained unchanged.
+
 ## Requirements and observed failures
 
 Design Foundations requires clear interactables, consequential actions, shared spatial rules and faithful contact. Guy reports supplies refusing nearby collection, merchant access trouble, shots crossing concave map void and phone slowdown around Earth walls. His exact supply location/seed is unknown.

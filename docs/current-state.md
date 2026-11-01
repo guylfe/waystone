@@ -16,6 +16,18 @@ installed software and personal saves alone. Real-phone rendering/touch/performa
 independent acceptance, integration and destination delivery remain lead-owned.
 The exact late-run supply refusal and original attack-reset report remain unresolved.
 
+## Isolated Character mobile successor — November 1
+
+The [Character/input owner](menu-input-correction.md#isolated-character-mobile-successor--1-november-2026)
+records the successor to frozen `1660a84`: measured no-scroll opening overview,
+visible XP/upgrade access, tap-open categories and complete track/action details,
+captured touch swipes, per-view return state and preserved transaction owners.
+Normal-root headless input/layout/transaction checks and prior repair regressions
+are retained externally. Explicit density/safe-area models do not certify Android.
+The live source, installed game, personal data and immutable ancestor are preserved.
+Independent review, actual phone checks, version alignment, builds and delivery remain
+lead-owned; there is no new release or feel-acceptance claim.
+
 ## Survey integration
 
 0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`

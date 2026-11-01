@@ -1456,6 +1456,8 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 	return result
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(character_menu) and character_menu.route_touch(event):
+		get_viewport().set_input_as_handled(); return
 	if controller.menu_key(self,event):
 		get_viewport().set_input_as_handled()
 		return
@@ -2156,6 +2158,7 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	return false
 
 func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(character_menu): character_menu.cancel_touches()
 	if lab_session and state != null and what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
 		state.lab_suspend()
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
@@ -5046,6 +5049,7 @@ func _close_character_for_action() -> void:
 	controller.sheet_return_pause = false
 
 func _open_character_sheet() -> void:
+	if is_instance_valid(character_menu): character_menu.reset()
 	sheet_repack_slot = -1
 	character_sheet_open = true
 	map_open = false
