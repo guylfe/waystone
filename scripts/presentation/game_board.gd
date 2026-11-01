@@ -1,7 +1,10 @@
 extends Control
 
 const ControllerInputScript = preload("res://scripts/presentation/controller_input.gd")
+const CommitHudLayout = preload("res://scripts/presentation/commit_hud_layout.gd")
 var controller = ControllerInputScript.new()
+var commit_hud_cache:Dictionary={}
+var commit_hud_key:=""
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
@@ -1113,7 +1116,8 @@ func _layout() -> void:
 	attack_rect = Rect2(Vector2(board_rect.end.x - attack_size - 14.0, board_rect.end.y - attack_size - attack_bottom_lift), Vector2(attack_size, attack_size))
 	# Model/unit tests may lay out an unattached board. Runtime uses its viewport.
 	var commit_unit := MenuMetrics.unit(self) if get_viewport()!=null else 1.0
-	commit_shot_rect = Rect2(Vector2(board_rect.position.x+8.0*commit_unit,board_rect.end.y-72.0*commit_unit),Vector2(156,64)*commit_unit) if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow" else Rect2()
+	commit_shot_rect=Rect2()
+	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud(commit_unit)
 	var reset_size := Vector2(clampf(layout_size.x * 0.13, 68.0, 104.0), clampf(layout_size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
@@ -1230,6 +1234,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(survey_overlay) and survey_overlay.visible: MenuMetrics.apply(self,survey_overlay)
 	controller.sync_context(self) # Bind native focus for touch/keyboard handover too.
 	controller.update(self, delta)
+	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud()
 	frame_metric_elapsed += delta
 	frame_metric_worst_ms = maxf(frame_metric_worst_ms, delta * 1000.0)
 	if frame_metric_elapsed >= 2.0:
@@ -2368,13 +2373,23 @@ func _handle_button(name: String) -> void:
 func _commit_shot_price_text() -> String:
 	return ("%.1f Energy, ordinary full-shot scaling" % state.energy_cost(18)) if state.uses_energy_rules() else "Recovery rules: no Energy debit"
 
-func _select_commit_shot(input_method: String="pointer") -> void:
-	if playing or not state.is_player_ready() or state.loadout_id!="rogue_sharpshooter" or state.player_weapon_frame!="bow": return
-	selected_action="" if selected_action=="commit_shot" else "commit_shot"
+func _commit_shot_selection_text(input_method: String) -> String:
 	var controls := "Tap a visible enemy; tap COMMIT SHOT again to cancel."
 	if input_method=="keyboard": controls="[Tab] choose visible enemy; [Enter] commit; [G] cancel."
 	elif input_method=="controller": controls="right-stick click chooses visible enemy; [A] commit / [B] cancel."
-	state.message="Commit Shot selected: +25% full-shot damage; full draw/recovery. "+_commit_shot_price_text()+". "+controls if selected_action!="" else "Commit Shot selection cancelled."
+	return "Commit Shot selected: +25% full-shot damage; full draw/recovery. "+_commit_shot_price_text()+". "+controls
+
+func _cancel_commit_shot_selection() -> void:
+	if selected_action!="commit_shot": return
+	selected_action=""
+	state.message="Commit Shot selection cancelled."
+	queue_redraw()
+
+func _select_commit_shot(input_method: String="pointer") -> void:
+	if playing or not state.is_player_ready() or state.loadout_id!="rogue_sharpshooter" or state.player_weapon_frame!="bow": return
+	if selected_action=="commit_shot": _cancel_commit_shot_selection(); return
+	selected_action="commit_shot"
+	state.message=_commit_shot_selection_text(input_method)
 	queue_redraw()
 
 func _confirm_commit_shot(target_id: int) -> bool:
@@ -5007,6 +5022,30 @@ func _phase(action: Dictionary) -> String:
 	if kind == "move": return "MOVING" if bool(action.get("moving", false)) else ""
 	return ""
 
+func _hud_location_text() -> String:
+	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
+	if not state.expedition.is_empty(): hp_text = "XP %d/%d  •  %s" % [state.carried_xp,state.next_upgrade_cost(),state.current_area_name().to_upper()]
+	if state.mode_id == "combat_survey": hp_text = "ROOM %d" % state.survey_room_number
+	elif state.mode_id == "boss_lab": hp_text = "BOSS LAB"
+	elif state.mode_id == "campaign_lab":
+		var safe := int(visual.get("secured_xp", state.secured_xp))
+		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
+		hp_text = "INT %d  •  RISK %d" % [safe, risk]
+	if float(visual.get("strength_remaining", 0.0)) > 0.0: hp_text += "  STR ACTIVE"
+	return hp_text
+
+func _hud_log_text() -> String:
+	return String(visual.get("message",state.message))
+
+func _sync_commit_hud(explicit_unit: float=0.0) -> Dictionary:
+	var u:=explicit_unit if explicit_unit>0 else MenuMetrics.unit(self) if get_viewport()!=null else 1.0
+	var key:=str([board_rect,u,attack_rect.size,_hud_location_text(),_hud_log_text(),_commit_shot_price_text(),controller.palette_open,controller.targeting_action])
+	if key!=commit_hud_key:
+		commit_hud_key=key; commit_hud_cache=CommitHudLayout.build(self,u)
+	commit_shot_rect=commit_hud_cache.commit
+	attack_rect=commit_hud_cache.attack
+	return commit_hud_cache
+
 func _draw_hud() -> void:
 	if waystone_menu_open: _draw_waystone_menu()
 	else:
@@ -5018,21 +5057,15 @@ func _draw_hud() -> void:
 		if state.uses_energy_rules(): _draw_attack_button()
 		if controller.active: controller.draw_hud(self)
 	var font := maxi(11, int(minf(size.x, size.y) * 0.022))
-	var hp_text := "XP %d/%d  •  EXPEDITION" % [int(visual.get("carried_xp", state.carried_xp)), state.next_upgrade_cost()]
-	if not state.expedition.is_empty(): hp_text = "XP %d/%d  •  %s" % [state.carried_xp,state.next_upgrade_cost(),state.current_area_name().to_upper()]
-	if state.mode_id == "combat_survey":
-		hp_text = "ROOM %d" % state.survey_room_number
-	elif state.mode_id == "boss_lab":
-		hp_text = "BOSS LAB"
-	if state.mode_id == "campaign_lab":
-		var safe := int(visual.get("secured_xp", state.secured_xp))
-		var risk := maxi(0, int(visual.get("carried_xp", state.carried_xp)) - safe)
-		hp_text = "INT %d  •  RISK %d" % [safe, risk]
-	if float(visual.get("strength_remaining", 0.0)) > 0.0:
-		hp_text += "  STR ACTIVE"
-	var text := String(visual.get("message", state.message))
+	var hp_text := _hud_location_text()
+	var text := _hud_log_text()
 	var y := board_rect.end.y - font * 0.7
-	if size.y >= size.x and desktop_controls:
+	if commit_shot_rect.size!=Vector2.ZERO:
+		var hud:=_sync_commit_hud()
+		draw_rect(Rect2(hud.xp.position-Vector2(0,4)*hud.unit,Vector2(hud.xp.size.x,hud.log.end.y-hud.xp.position.y+8*hud.unit)),Color(0.04,0.08,0.10,0.94))
+		hud.xp_paragraph.draw(get_canvas_item(),hud.xp.position,Color("f0ddd7"))
+		hud.log_paragraph.draw(get_canvas_item(),hud.log.position,Color("d9ded8"))
+	elif size.y >= size.x and desktop_controls:
 		draw_string(ThemeDB.fallback_font, Vector2(board_rect.position.x + 10, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x * 0.25, font, Color("f0ddd7"))
 		_draw_log_line(text, Vector2(board_rect.position.x + board_rect.size.x * 0.26, y), board_rect.size.x * 0.7, font)
 	else:

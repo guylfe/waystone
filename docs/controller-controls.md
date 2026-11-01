@@ -26,6 +26,23 @@ explicitly says Recovery has no Energy debit. It shows the controls for the inpu
 that selected the action: touch selection/enemy, G/Tab/Enter, or pad RS-click/A/B.
 The bounded successor to `fce23f5` changes this formatting without changing rules.
 
+The next isolated descendant of `30c1900` gives the Sharpshooter a shared measured
+HUD allocation: XP/location and the complete wrapped log below the action row;
+Commit Shot and unchanged-size Attack side by side; contextual pad guidance between
+that row and XP/log. Titles/hints wrap inside their own panel rather than covering the action
+or XP. Layout, drawing and input consume the same rectangles. Other loadouts keep
+their existing HUD. Type/targets are retained; no world/camera projection changes.
+The allocation reserves the longest current-input selection hint, avoiding target
+movement through ordinary select/refuse/cancel states. Explicit density formulas
+support headless models but do not simulate Android DPI or final compositing.
+
+B, Escape/G targeting cancellation, pause, focus/disconnect and input handover now
+publish the same truthful cancelled guidance as touch toggling. The uncommitted
+selection remains free and frozen. Entering the new pad targeting context preserves
+its selected help; a successful paid confirmation retains its action message and
+ordinary release/neutral ownership. Paid actions cannot be cancelled by this copy
+repair. Source/headless evidence and independent rechecks remain separate gates.
+
 The retained release observer previously cleared captured keyboard ownership before
 F's ordinary Bow release handler. A matched main-root probe demonstrates an endless
 draw on frozen e35. The observer now delivers that captured release before clearing

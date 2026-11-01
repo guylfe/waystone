@@ -1185,6 +1185,20 @@ arrow so a later draw or save/resume cannot reclassify the earlier arrow. Option
 v39 save fields preserve earned preload readiness/consumption; old saves default
 false, and existing progression is retained without a schema/version bump.
 
+The bounded descendant of `30c1900` repairs deterministic verification of this
+ownership. A projectile-only DETERMINISM descriptor registers the saved raw flag;
+the semantic checkpoint resolves the existing `arrow.get(flag, global)` fallback
+for friendly full shots. Active Bow draw/release actions resolve the same fallback.
+Effective true consumption hashes explicitly; effective false is omitted to retain
+genuinely equivalent historical defaults. With global true, an absent field hashes
+like explicit true, while explicit false hashes differently. With global false,
+absent and explicit false remain equivalent. Inactive non-full/enemy projectile
+ownership is omitted. The projection never mutates the action/projectile, changes
+save dictionaries or adds rendering state. Real-arrow contact and old-format model
+saves exercise all six combinations and action→projectile inheritance. Unchanged
+ordinary goldens remain the historical compatibility control. Combat/save logic,
+schema version, tuning and earned-perk rules are unchanged.
+
 Controls and information live in [the controller owner](controller-controls.md)
 and Character → Combat. Existing menu/suspend policy is preserved: controller
 Start shows “Finishing current action” while normal processing serves the complete

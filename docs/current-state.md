@@ -64,6 +64,27 @@ successor review and ongoing immutable-fce combined review. The accepted e35 tou
 transaction model evidence is preserved. No version/export/install/publication or
 device action occurs in this descendant; lead-owned delivery remains pending.
 
+## Isolated checkpoint and HUD descendant — November 1
+
+The successor to immutable `30c1900` addresses the returned independent D1/C2/C3
+findings: effective per-arrow/action Bow follow-up ownership participates in semantic
+checkpoints; a shared measured Sharpshooter HUD separates full XP/log text, Commit
+Shot/Attack and contextual pad panels; cancelled uncommitted selection reports
+cancelled guidance. Combat/save/tuning/version owners stay unchanged. See the
+[character framework](combat-character-framework.md#152a-isolated-additional-commit-shot--1-november-2026)
+and [controller owner](controller-controls.md). Character N1 container navigation
+and C1 current-rule/input selected hints are preserved.
+
+The independent fce reviews support the bounded runtime repairs while identifying
+these verification/presentation defects. Engineer original positive-defect probes,
+new passing regressions, unchanged goldens and paid-resume/input/neutral checks are
+retained externally with exact identities and honest failed-instrument logs. A
+positive defect-reproduction exit0 is not product acceptance. Narrow independent
+successor rechecks and subsequent builds/destinations remain lead-owned. No new
+version, export, installation, publication, native window or phone action occurs
+in this phase. Device pixels/performance/feel and exact historical symptoms remain
+open; the delivered baseline above is unchanged.
+
 ## Survey integration (released baseline)
 
 0.3.5 packages the accepted runtime `d797b01f337ee4ca36781687d27e907c41dbb143`

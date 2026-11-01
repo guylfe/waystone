@@ -179,6 +179,9 @@ const WORLD_FIELDS := [
 	{"key":"elevation_profile", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM], "default":"flat"},
 	{"key":"misdirected", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM], "default":false},
 	{"key":"piercing", "entities":["projectile"], "audiences":[PRESENTATION, DETERMINISM]},
+	# Ownership affects full-shot contact rewards, not rendering. The semantic
+	# projection resolves its legacy global fallback; saves retain raw dictionaries.
+	{"key":"bow_followup_consumed", "entities":["projectile"], "audiences":[DETERMINISM]},
 	{"key":"amount", "entities":["pickup", "effect"], "audiences":[PRESENTATION, DETERMINISM]},
 	{"key":"strength", "entities":["effect"], "audiences":[PRESENTATION, DETERMINISM]},
 	{"key":"origin", "entities":["effect"], "audiences":[PRESENTATION, DETERMINISM], "interpolate":"vector"},

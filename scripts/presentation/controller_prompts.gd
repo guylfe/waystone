@@ -89,6 +89,13 @@ static func draw_hud(board, controller) -> void:
 	# The incumbent touch controls draw their own contents and these slot badges.
 	# Only the contextual instruction sits on the playfield; no replacement rail.
 	if controller.targeting_action != "": return
+	if board.commit_shot_rect.size!=Vector2.ZERO:
+		var hud:Dictionary=board._sync_commit_hud()
+		var r:Rect2=hud.idle;var u:float=hud.unit
+		board.draw_rect(r,Color("101c24"))
+		Glyphs.draw(board,"lb",Rect2(r.position+Vector2(8,8)*u,Vector2.ONE*30*u))
+		hud.idle_paragraph.draw(board.get_canvas_item(),r.position+Vector2(48,8)*u,INK)
+		return
 	var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 	var point: Vector2 = Vector2(board.board_rect.position.x + 10 * scale, board.board_rect.end.y - 120 * scale)
 	var width := minf(board.board_rect.size.x - 20 * scale, 610 * scale)

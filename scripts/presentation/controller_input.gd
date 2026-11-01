@@ -48,7 +48,7 @@ func sync_context(board) -> void:
 	var entries := menu_entries(board)
 	if context != last_context:
 		if last_context != "": focus_memory[last_context] = focus_id
-		if last_context != "" and (modal(board) or last_context != "combat"): release_actions(board)
+		if last_context != "" and (modal(board) or last_context != "combat"): release_actions(board,targeting_action=="commit_shot")
 		if targeting_action=="commit_shot": board.selected_action="commit_shot"
 		last_context = context
 		focus_id = str(focus_memory.get(context,""))
@@ -269,7 +269,7 @@ func native_panel(board) -> Node:
 	if board.character_sheet_open and is_instance_valid(board.character_menu) and board.character_menu.visible: return board.character_menu
 	return null
 
-func release_actions(board) -> void:
+func release_actions(board, preserve_commit_selection: bool=false) -> void:
 	attack_held = false
 	pending_button = -1
 	neutral_required = true
@@ -285,6 +285,7 @@ func release_actions(board) -> void:
 	board.attack_key_held = false
 	board.wait_pointer_held = false
 	board.queued_movement_after_attack = false
+	if not preserve_commit_selection: board._cancel_commit_shot_selection()
 	board.selected_action = ""
 
 func disconnected(board, disconnected_device: int) -> void:
@@ -690,6 +691,18 @@ func draw_overlay(board) -> void:
 		board.draw_arc(screen, 12, 0, TAU, 24, Color("66e0ff"), 2)
 		board.draw_line(screen - Vector2(17, 0), screen + Vector2(17, 0), Color("66e0ff"), 1)
 		board.draw_line(screen - Vector2(0, 17), screen + Vector2(0, 17), Color("66e0ff"), 1)
+		if board.commit_shot_rect.size!=Vector2.ZERO:
+			var hud:Dictionary=board._sync_commit_hud()
+			var r:Rect2=hud.targeting;var u:float=hud.unit
+			board.draw_rect(r,Color("101c24"))
+			hud.title_paragraph.draw(board.get_canvas_item(),r.position+Vector2(8,8)*u,Color.WHITE)
+			var hint_y:float=r.position.y+16*u+hud.title_paragraph.get_size().y
+			var keys:Array=hud.hint_keys
+			for i in keys.size():
+				var x:float=r.position.x+8*u+i*(hud.hint_column+8*u)
+				Glyphs.draw(board,keys[i],Rect2(Vector2(x,hint_y),Vector2.ONE*22*u))
+				hud.hint_paragraphs[i].draw(board.get_canvas_item(),Vector2(x,hint_y+26*u),Color("adc8d4"))
+			return
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
 		board.draw_rect(bar, Color("101c24"))

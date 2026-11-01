@@ -33,7 +33,8 @@ static func checkpoint(state: RunState) -> Dictionary:
 		player["expedition"].erase("events")
 	player["player_action"] = _selected(Dictionary(state.player_action), ACTION_FIELDS)
 	if bool(state.player_action.get("commit_shot",false)): player["player_action"]["commit_shot"]=true
-	if bool(state.player_action.get("bow_followup_consumed",false)): player["player_action"]["bow_followup_consumed"]=true
+	if String(state.player_action.get("kind","")) in ["bow_draw","bow_release"] and bool(state.player_action.get("bow_followup_consumed",state.bow_followup_consumed)):
+		player["player_action"]["bow_followup_consumed"]=true
 	if String(state.player_action.get("kind",""))=="adopted":
 		player["player_action"].merge(_selected(state.player_action,["ability_id","rank","effect_done"]))
 	var enemies: Array = []
@@ -48,7 +49,7 @@ static func checkpoint(state: RunState) -> Dictionary:
 		enemies.append(projected)
 	enemies.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("id", -1)) < int(b.get("id", -1)))
 	var world := {
-		"projectiles": _project_collection(state.projectiles, "projectile"),
+		"projectiles": _project_collection(state.projectiles, "projectile",state.bow_followup_consumed),
 		"hazards": _project_collection(state.hazards, "hazard"),
 		"barriers": _project_collection(state.barriers, "barrier"),
 		"effects": _project_collection(state.effects, "effect"),
@@ -73,10 +74,17 @@ static func checkpoint(state: RunState) -> Dictionary:
 static func hash_value(value: Variant) -> String:
 	return _canonical(value).sha256_text()
 
-static func _project_collection(source: Array, entity: String) -> Array:
+static func _project_collection(source: Array, entity: String, bow_consumed: bool=false) -> Array:
 	var result: Array = []
 	for value in source:
-		result.append(StateFieldSchemaScript.project_entity(Dictionary(value), entity, StateFieldSchemaScript.DETERMINISM))
+		var projected:=StateFieldSchemaScript.project_entity(Dictionary(value), entity, StateFieldSchemaScript.DETERMINISM)
+		if entity=="projectile":
+			# False/absent were historically omitted. Only a friendly full-shot
+			# contact reads this ownership; resolve .get(flag,global) exactly.
+			projected.erase("bow_followup_consumed")
+			if bool(value.get("friendly",false)) and bool(value.get("full_draw",false)) and bool(value.get("bow_followup_consumed",bow_consumed)):
+				projected["bow_followup_consumed"]=true
+		result.append(projected)
 	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var a_id := int(a.get("id", -1))
 		var b_id := int(b.get("id", -1))
