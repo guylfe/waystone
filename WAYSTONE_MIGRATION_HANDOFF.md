@@ -1,25 +1,20 @@
-## Current0.3.6 / Android306 release preparation — 1 November 2026
+## Current0.3.6 / Android306 delivery — 1 November 2026
 
-This unpublished release corrects built3b7a763's stale frozen log and explicit
-density3 targeting-panel occlusion and4e90's initial idle-to-selection target jump.
-Runtime changes are presentation-only;
-schema39 / Survey37, combat and progression owners remain unchanged. Character,
-input/navigation, floor/shop/pickup, Boar and additive Commit Shot implementations
-are recorded in the current-state owner. Prior independent runtime/Character/N1/C1
-passes are retained; D1 independent acceptance carries through unchanged owners.
-Independent4e90 P1/P2 review passes within scope; R3 action stability and affected
-geometry are corrected here and await independent narrow successor review at freeze.
-Actual rebuilt package, focused affected release tests, signing, packaged startup /
-save and resource-pack verdicts are bound to the final clean release SHA/tree in
-the external phone-stable-hud-20261101 correction receipt. Prior3b7/4e90 artifacts
-remain retained superseded evidence and must not be installed as the final repair.
+Windows/source and GitHub main are delivered and verified. Runtime source is
+`e0a255a38375d7006a5b064d87527d87cee9797e`, tree
+`e03924febaa6c6e663bcb73c77164f16a042380f`; subsequent documentation-only commits
+record delivery without changing embedded package identity. Final independent
+P1/P2/R3 source/headless review passed. The actual installed Windows executable
+passed isolated startup/Survey/archive/save smoke, and destination hashes, personal
+data, launch routes and unrelated local work were verified. Prepared rollback
+files remain intact. Earlier3b7/4e90 artifacts are superseded, not final packages.
 
-The last delivered normal Windows/GitHub/Android release remains0.3.5 /305 until
-lead-owned destination delivery. No local replacement, push, phone or native-window
-action occurs during this preparation. Preserve normal dirty current-state docs,
-audits/prototypes, personal saves and launch routes. USB Phone Harness is required
-for eventual Android actions; phone availability does not block builds. GPU/device
-performance/physical feel and exact historical reset/refusal remain open.
+Android306 is built, signing-compatible and locally staged, but phone installation
+and Android execution remain pending USB access. No GPU/phone rendering or physical
+acceptance is claimed. Host computer-access consent was pending at delivery.
+Sustained phone performance and exact historical reset/refusal remain open.
+Dr. Stone retains device/rendered verification and delivery; Guy decides feel.
+See [current state](docs/current-state.md) and the [delivery record](docs/releases/0.3.6-delivery.md).
 
 ## Historical0.3.4 accepted Survey integration — 21 October 2026
 

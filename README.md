@@ -17,15 +17,13 @@ guidance and fixed responsive docking clear the explicit high-density target cue
 without reducing fonts or action targets. Initial idle action positions remain
 stable through selection, refusal, cancellation and full-shot commitment.
 
-This release source aligns GAME_VERSION, Windows metadata, Android306 and this
-banner. Save schema39 and Survey format37 remain unchanged. Prior independent
-runtime/Character/N1/C1,D1 and bounded4e90 P1/P2 checks passed within their scope;
-R3 initial action stability and affected geometry await narrow independent successor
-review at source freeze. Earlier3b7/4e90 packages are superseded. Exact rebuilt
-identities/verdicts live in the external phone-stable-hud-20261101 correction
-receipt. No installation or publication is claimed by this source update. Device
-pixels, sustained phone performance, physical feel and exact historical reset /
-late supply-refusal symptoms remain open; lead owns destination delivery.
+Windows0.3.6 is installed and independently verified at the normal launch location;
+the matching runtime source is published to GitHub. Final P1/P2/R3 independent
+source/headless checks pass. Save schema39 and Survey format37 remain unchanged.
+Android0.3.6/306 is built and package-validated but awaits phone installation.
+Actual GPU/phone rendering, sustained phone performance, physical feel and the
+exact historical reset/late-supply-refusal symptoms remain unverified. See
+[current status](docs/current-state.md) and [delivery identities](docs/releases/0.3.6-delivery.md).
 
 ## v0.3.5 — dependable menus and frozen-Sword continuation
 

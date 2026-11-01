@@ -1,58 +1,52 @@
 # Waystone current state
 
-**Reviewed:** 2026-11-01 (R3 action stability correction; narrow independent successor review pending)
-**Delivered baseline:** `0.3.5` (`versionCode 305`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
-**Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
+**Reviewed:** 2026-11-01 (final independent source/headless acceptance and verified Windows/GitHub delivery).
+**Delivered Windows/source release:** `0.3.6`, built from `e0a255a38375d7006a5b064d87527d87cee9797e`.
+**Android package:** `0.3.6 / 306` built and validated; phone installation pending. Last verified phone installation is `0.3.5 / 305` on 22 October.
+**Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
+**Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-**Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
+## November repair release delivered to Windows and GitHub
 
-## November cumulative release preparation
+The normal Windows executable, source and GitHub main contain the six-finding repair
+batch. The installed executable matches the reviewed package and passed an isolated
+headless normal-entry startup, Survey, feedback/archive and save check. The existing
+Start shortcut still targets `builds/windows/Waystone.exe`. All59 personal-data files,
+three launch files and unrelated documentation/audits/prototypes were preserved.
 
-Prepared source: **0.3.6 / Android306**, isolated successor of built
-`4e90ee380cb5310387f9c268fe9d67fa64168f06`. Earlier3b7/4e90 packages remain
-superseded evidence. Independent4e90 review accepted the P1/P2 correction but found
-initial idle-to-selection action movement. This successor keeps initial action
-origins while retaining complete current feedback, fonts and target visibility.
-Frozen free UI feedback reaches the drawn
-log, while streamed/precomputed playback retains its displayed-frame message;
-concise guidance and a fixed responsive allocation clear the high-density target
-cue. Fonts, action hit targets, world/camera rules, gameplay and save/report schemas
-are unchanged. Release identity owners remain aligned. Exact clean source/tree,
-focused release checks, rebuilt Windows/APK hashes, signing/resource/startup/save
-evidence and reused verified rollback preparation live in the external
-`phone-stable-hud-20261101/correction-receipt.md`. The prior full55-file
-release verdict remains historical evidence; changed consumers receive focused
-checks. Source freezes before export; execution receipts do not change its identity.
+The [0.3.6 delivery record](releases/0.3.6-delivery.md) lists exact runtime/package
+identities, evidence and unresolved outcomes. Later documentation-only commits do
+not change the embedded runtime source identity or require new packages.
 
-| User outcome | Implemented / independently supported | Remaining boundary |
+| User outcome | Implemented and tested | Remaining boundary |
 | --- | --- | --- |
-| Mobile Character | Measured no-scroll overview, upgrade access, full tap-open detail/actions, captured touch; independent e35 touch/payment and30c N1/C1 direction/help passes | Final GPU/Fold/physical comfort |
-| Boar |640 movement/.45 aim lock; unchanged acquisition/timing/damage; independent runtime/tell checks | Guy's encounter/feel acceptance |
-| Supplies / merchant | Identity, truthful denial, marker arbitration, refresh ownership, payment/persistence independently supported | Exact historical late-run refusal |
-| Phone lag | Presentation-copy optimization with desktop CPU/parity evidence; floor costs retained | Sustained Android frame/input/thermal profiling; no phone-speed claim |
-| Map voids | Continuous blocking, valid tangent departure and consumer tests independently supported | Physical generated journey |
-| Additive Commit Shot | One prepaid full shot, +25% initial damage; ordinary charging/arts/Take Aim retained; D1 and bounded4e90 P1/P2 independently supported | R3 stable initial action origin plus affected P1/P2 geometry independent successor recheck, then device pixels/feel |
+| Mobile Character | No-scroll overview where readable, visible upgrades, full tap-open detail/actions, touch swipes and spatial navigation; independent model/input/payment passes | Actual Fold rendering/touch and comfort |
+| Faster Boar |640 movement/.45 aim lock; independent retreat-threat and alternative-response cases | Guy's encounter/feel acceptance |
+| Supply/merchant refusal | Identity, truthful denial, tap arbitration, refresh, payment and persistence repairs; bounded independent passes | Exact historical late-run refusal remains unreproduced |
+| Wall/general lag | Measured desktop presentation-copy optimization and parity checks | Sustained Android frame/input/thermal profiling; added floor-check cost prevents a phone-speed claim |
+| Map edges | Continuous shot/actor blocking and valid inward tangent departure; independent checks | Physical generated journey confirmation |
+| Additional Commit Shot | One prepaid full draw/release/recovery shot with+25% initial damage tuning; ordinary charging/arts retained. Hashing, current drawn feedback, dense target visibility and initial action stability independently pass | GPU/phone rendering and physical feel |
 
-Engineering b129 has11 frozen focused passing files plus safe-inset supplement.
-The lead verified their source/log evidence; this is distinct from fresh independent
-execution. Independent fce runtime checks and e35/30c Character/navigation/help
-results carry where owners are unchanged. Independent D1 hashing is accepted;
-ordinary C2 regions and C3 free cancellation passed, but the reviewer found stale
-drawn feedback and density3 target occlusion;4e90's independent recheck closed both
-within source/headless scope. It found R3: actions moved after initial selection.
-This successor reserves coexisting text/context space and retains initial action
-positions, with fixed dense-isometric action docking. The narrow independent R3 /
-affected geometry recheck is pending at source freeze. The dated owning
-implementation ledgers preserve original evidence boundaries; accepted prior
-isolated steps are not separate unfinished implementation tasks.
+The full release suite at3b7 passed54 files with one exact documented pre-existing
+Bandit assertion. The final presentation successor passed all9 affected release
+files; no new exception or altered golden was introduced. Exact Windows and Android
+resource-pack checks passed6326 assertions each; these are desktop-hosted package
+checks, not Android execution. The final independent designer review at e0a255
+accepted P1/P2/R3 within source/headless scope. Earlier Character, gameplay and D1
+acceptance carries through unchanged owners. Overlapping assertion counts are not
+unique player journeys or evidence of subjective quality.
 
-Normal source/builds, Start launch target, unrelated dirty documentation/audits /
-prototypes and personal data remain untouched during preparation. This source
-does not claim installation/publication. Dr. Stone reconciles final reviews and
-owns Windows/GitHub delivery, then USB Phone Harness device installation/checks
-when connected. No phone/native window or raw/wireless ADB action is part of this
-preparation. The exact historical attack-reset and late refusal stay unresolved;
-physical readability, folding, performance and human feel remain open.
+Android306 is staged locally but not phone-installed. The USB device check found no
+device. The host visual review was not performed because computer-access consent
+was still pending; no screen action or alternate graphical route occurred. Actual
+Fold DPI/insets/folding, GPU compositing, sustained phone performance and physical
+controls remain unverified. The exact historical attack-reset symptom is also open.
+
+Dr. Stone owns phone installation and remaining device/rendered verification after
+access is available, and follow-up on reproduced defects. Guy owns comfort and combat
+feel acceptance. Windows/GitHub delivery is complete; this does not close the phone
+lag or historical-symptom investigations. Superseded3b7/4e90 packages and all reviewed
+ancestors remain preserved.
 
 Owners: [world repairs](phone-world-repair.md), [Character/input](menu-input-correction.md),
 [controller/HUD](controller-controls.md), [combat framework](combat-character-framework.md).
