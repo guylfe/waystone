@@ -695,13 +695,13 @@ func draw_overlay(board) -> void:
 			var hud:Dictionary=board._sync_commit_hud()
 			var r:Rect2=hud.targeting;var u:float=hud.unit
 			board.draw_rect(r,Color("101c24"))
-			hud.title_paragraph.draw(board.get_canvas_item(),r.position+Vector2(8,8)*u,Color.WHITE)
-			var hint_y:float=r.position.y+16*u+hud.title_paragraph.get_size().y
+			hud.title_paragraph.draw(board.get_canvas_item(),r.position+Vector2(8,hud.title_inset)*u,Color.WHITE)
+			var hint_y:float=r.position.y+hud.hint_offset*u+hud.title_paragraph.get_size().y
 			var keys:Array=hud.hint_keys
 			for i in keys.size():
 				var x:float=r.position.x+8*u+i*(hud.hint_column+8*u)
 				Glyphs.draw(board,keys[i],Rect2(Vector2(x,hint_y),Vector2.ONE*22*u))
-				hud.hint_paragraphs[i].draw(board.get_canvas_item(),Vector2(x,hint_y+26*u),Color("adc8d4"))
+				hud.hint_paragraphs[i].draw(board.get_canvas_item(),Vector2(x,hint_y+hud.hint_label_offset*u),Color("adc8d4"))
 			return
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)

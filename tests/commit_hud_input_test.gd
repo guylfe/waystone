@@ -30,9 +30,9 @@ func surface(label:String,explicit_unit:float=0.0):
 	if regions.has("panel"):
 		var panel:Rect2=regions.panel
 		if board.controller.targeting_action!="":
-			var title_rect=Rect2(panel.position+Vector2(8,8)*u,h.title_paragraph.get_size())
+			var title_rect=Rect2(panel.position+Vector2(8,h.title_inset)*u,h.title_paragraph.get_size())
 			check(panel.encloses(title_rect),"target panel shaped title fits")
-			var y:float=panel.position.y+16*u+h.title_paragraph.get_size().y+26*u
+			var y:float=panel.position.y+(h.hint_offset+h.hint_label_offset)*u+h.title_paragraph.get_size().y
 			for i in 3:
 				var hint=Rect2(Vector2(panel.position.x+8*u+i*(h.hint_column+8*u),y),h.hint_paragraphs[i].get_size())
 				check(panel.encloses(hint) and not hint.intersects(title_rect),"target hint wraps within panel")
@@ -57,7 +57,7 @@ func hud_journey(route:String,rules:String,projection:String,dims:Vector2i,inset
 	var s=board.state;var time=s.simulation_time;var spent=s.energy_spent_total
 	await surface(route+" idle")
 	await select(route);await surface(route+" selected")
-	check(s.message.begins_with("Commit Shot selected:"),"context entry keeps C1 selection hint")
+	check(s.message.begins_with("Full shot +25%:"),"context entry keeps concise selection hint")
 	var armed_rect:Rect2=board.commit_shot_rect
 	await cancel(route);await frames(60);await surface(route+" cancelled settled")
 	check(board.selected_action=="" and board.controller.targeting_action=="" and s.message=="Commit Shot selection cancelled.","truthful settled cancellation "+route)
@@ -88,7 +88,7 @@ func exits():
 			# A fresh unrelated key switches input and discards the armed pad selection.
 			await keytap(KEY_SHIFT)
 		await frames(60)
-		check(board.selected_action=="" and board.controller.targeting_action=="" and not s.message.begins_with("Commit Shot selected:"),"exit cancels guidance "+kind)
+		check(board.selected_action=="" and board.controller.targeting_action=="" and not s.message.begins_with("Full shot +25%:"),"exit cancels guidance "+kind)
 		check(s.simulation_time==time and s.energy_spent_total==spent and s.survey_shots_fired==0,"exit no time/cost/shot "+kind)
 		records.append({"exit":kind,"message":s.message,"selection":board.selected_action,"targeting":board.controller.targeting_action})
 		await finish()

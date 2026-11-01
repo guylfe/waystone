@@ -24,7 +24,10 @@ release cannot fire early. Character → Combat describes cost, bonus and mappin
 Selection help uses the same actual Energy-cost owner as Character Combat, or
 explicitly says Recovery has no Energy debit. It shows the controls for the input
 that selected the action: touch selection/enemy, G/Tab/Enter, or pad RS-click/A/B.
-The bounded successor to `fce23f5` changes this formatting without changing rules.
+The shared price text remains current-profile based. Compact selection copy uses
+`Full shot +25%`, actual Energy cost or `Recovery: 0 Energy`, and tap/G/Tab/Enter /
+RS-click/A/B commands. Character retains the full draw/recovery and interruption
+explanation. This concise equivalent replaces the earlier long C1 strings.
 
 The next isolated descendant of `30c1900` gives the Sharpshooter a shared measured
 HUD allocation: XP/location and the complete wrapped log below the action row;
@@ -35,6 +38,25 @@ their existing HUD. Type/targets are retained; no world/camera projection change
 The allocation reserves the longest current-input selection hint, avoiding target
 movement through ordinary select/refuse/cancel states. Explicit density formulas
 support headless models but do not simulate Android DPI or final compositing.
+
+P1/P2 correction of unpublished3b7: `_hud_log_text` reads current scalar feedback
+while frozen; streamed/precomputed actions still read the displayed visual frame.
+Free UI feedback never recaptures the whole world or mutates old frames. The same
+consumer keys the cached paragraph and actual draw call. Routed checks inspect
+cached glyphs after selection/refusal/cancellation and60 automatic frames, plus
+paid commitment and negative future-message/playback controls.
+
+At less than300 available horizontal density units, contextual guidance uses
+four-unit inner vertical padding while retaining17/14-unit fonts and22-unit pad
+glyphs. Dense isometric guidance docks below the existing fixed top toolbar;
+dense top-down guidance stays below the action row. The remaining fixed action /
+XP/log allocation clears the original target and adjacent samples. Docking is
+space/projection based, never target-position based; camera and Sapper placement
+semantics do not change. Ordinary-density layout keeps its existing padding.
+The allocator supplies the draw offsets as well as the rectangles. Original
+390x844 and780x1688 density reproductions remain retained separately from passing
+acceptance probes. These are source/headless shaping and geometry checks, not
+final GPU/phone readability or lag acceptance.
 
 B, Escape/G targeting cancellation, pause, focus/disconnect and input handover now
 publish the same truthful cancelled guidance as touch toggling. The uncommitted

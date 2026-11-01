@@ -1117,13 +1117,13 @@ func _layout() -> void:
 	# Model/unit tests may lay out an unattached board. Runtime uses its viewport.
 	var commit_unit := MenuMetrics.unit(self) if get_viewport()!=null else 1.0
 	commit_shot_rect=Rect2()
-	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud(commit_unit)
 	var reset_size := Vector2(clampf(layout_size.x * 0.13, 68.0, 104.0), clampf(layout_size.y * 0.035, 36.0, 52.0))
 	reset_rect = Rect2(board_rect.end - reset_size - Vector2(8.0, board_rect.size.y - reset_size.y - 8.0), reset_size)
 	view_rect = Rect2(reset_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	sheet_button_rect = Rect2(map_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	survey_end_rect = Rect2(sheet_button_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
+	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud(commit_unit)
 	var sheet_size := Vector2(minf(layout_size.x - 30.0, 1080.0), minf(layout_size.y - 34.0, 790.0))
 	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
@@ -2371,13 +2371,13 @@ func _handle_button(name: String) -> void:
 	queue_redraw()
 
 func _commit_shot_price_text() -> String:
-	return ("%.1f Energy, ordinary full-shot scaling" % state.energy_cost(18)) if state.uses_energy_rules() else "Recovery rules: no Energy debit"
+	return ("%.1f Energy" % state.energy_cost(18)) if state.uses_energy_rules() else "Recovery: 0 Energy"
 
 func _commit_shot_selection_text(input_method: String) -> String:
-	var controls := "Tap a visible enemy; tap COMMIT SHOT again to cancel."
-	if input_method=="keyboard": controls="[Tab] choose visible enemy; [Enter] commit; [G] cancel."
-	elif input_method=="controller": controls="right-stick click chooses visible enemy; [A] commit / [B] cancel."
-	return "Commit Shot selected: +25% full-shot damage; full draw/recovery. "+_commit_shot_price_text()+". "+controls
+	var controls := "tap enemy; tap COMMIT SHOT to cancel."
+	if input_method=="keyboard": controls="[Tab] choose; [Enter] commit; [G] cancel."
+	elif input_method=="controller": controls="RS-click choose; [A] commit; [B] cancel."
+	return "Full shot +25%: "+_commit_shot_price_text()+". "+controls
 
 func _cancel_commit_shot_selection() -> void:
 	if selected_action!="commit_shot": return
@@ -5035,11 +5035,14 @@ func _hud_location_text() -> String:
 	return hp_text
 
 func _hud_log_text() -> String:
-	return String(visual.get("message",state.message))
+	# Paid playback owns its displayed frame, which may precede precomputed state.
+	# At rest, free selection/refusal/cancellation owns current feedback. Read only
+	# that scalar: never recapture the world or mutate retained presentation frames.
+	return String(visual.get("message",state.message)) if playing or streaming_action else state.message
 
 func _sync_commit_hud(explicit_unit: float=0.0) -> Dictionary:
 	var u:=explicit_unit if explicit_unit>0 else MenuMetrics.unit(self) if get_viewport()!=null else 1.0
-	var key:=str([board_rect,u,attack_rect.size,_hud_location_text(),_hud_log_text(),_commit_shot_price_text(),controller.palette_open,controller.targeting_action])
+	var key:=str([board_rect,u,attack_rect.size,view_mode,sheet_button_rect,view_rect,map_rect,reset_rect,survey_end_rect,_hud_location_text(),_hud_log_text(),_commit_shot_price_text(),controller.palette_open,controller.targeting_action])
 	if key!=commit_hud_key:
 		commit_hud_key=key; commit_hud_cache=CommitHudLayout.build(self,u)
 	commit_shot_rect=commit_hud_cache.commit

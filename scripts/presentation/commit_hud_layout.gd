@@ -33,14 +33,21 @@ static func build(board, u: float) -> Dictionary:
 	var idle_rect:=Rect2(Vector2(area.position.x+gap,row_top-gap-idle_height),Vector2(width,idle_height))
 	var action:String=board.controller.targeting_action
 	var committed_target:=action in ["","commit_shot"]
-	var label:String="Commit Shot · +25% full-shot damage" if committed_target else "Concussion flask" if action=="adopted" else board.state.spell_label(action)
-	var title:=paragraph(label+" · TIME STOPPED",width-16*u,roundi(17*u))
+	# Full commitment/price/input remain in the log and Character help. The pad
+	# panel repeats only the benefit and commands, keeping the central field clear
+	# at supported high-density portrait sizes without reducing font/target minima.
+	var label:String="Full shot +25%" if committed_target else "Concussion flask" if action=="adopted" else board.state.spell_label(action)
+	var title:=paragraph(label if committed_target else label+" · TIME STOPPED",width-16*u,roundi(17*u))
 	var column:=(width-32*u)/3
 	var hints:Array=[]
 	var hint_height:=0.0
-	for text in ["Choose enemy" if committed_target else "Place marker","Commit full shot" if committed_target else "Use here","Cancel"]:
+	for text in ["Choose" if committed_target else "Place marker","Commit" if committed_target else "Use here","Cancel"]:
 		var p:=paragraph(text,column,roundi(14*u));hints.append(p);hint_height=maxf(hint_height,p.get_size().y)
-	var target_height:=title.get_size().y+hint_height+22*u+32*u
+	var dense:=width/u<300
+	var title_inset:=4.0 if dense else 8.0
+	var hint_offset:=8.0 if dense else 16.0
+	var hint_label_offset:=24.0 if dense else 26.0
+	var target_height:=title.get_size().y+hint_height+(36 if dense else 54)*u
 	var target_rect:=Rect2(Vector2(area.position.x+gap,row_top-gap-target_height),Vector2(width,target_height))
 	# Put the opaque guidance below the action row, away from the ordinary central
 	# target marker. Reserve its tallest state so arming/cancelling cannot move input.
@@ -50,5 +57,17 @@ static func build(board, u: float) -> Dictionary:
 	attack.position.y=row_top+(row_height-attack_size.y)*0.5
 	idle_rect.position.y=xp_rect.position.y-gap-idle_height
 	target_rect.position.y=xp_rect.position.y-gap-target_height
+	# A narrow client measured in density units has insufficient room to stack a
+	# second opaque guidance panel under the buttons. Dock guidance to the fixed
+	# top edge instead, leaving the central field between it and the bottom HUD.
+	# This depends only on available space, never on a selected target's position.
+	if dense and board.view_mode=="isometric":
+		commit.position.y=xp_rect.position.y-gap-row_height
+		attack.position.y=commit.position.y+(row_height-attack_size.y)*0.5
+		var toolbar_bottom:=area.position.y
+		for name in ["sheet_button_rect","view_rect","map_rect","reset_rect","survey_end_rect"]:
+			toolbar_bottom=maxf(toolbar_bottom,Rect2(board.get(name)).end.y)
+		idle_rect.position.y=toolbar_bottom+gap
+		target_rect.position.y=toolbar_bottom+gap
 	return {"unit":u,"font":font,"commit":commit,"attack":attack,"xp":xp_rect,"log":log_rect,"xp_paragraph":xp,"log_paragraph":log,
-		"idle":idle_rect,"idle_paragraph":idle,"targeting":target_rect,"title_paragraph":title,"hint_paragraphs":hints,"hint_column":column,"hint_keys":["rsc" if committed_target else "rs","a","b"]}
+		"idle":idle_rect,"idle_paragraph":idle,"targeting":target_rect,"title_paragraph":title,"hint_paragraphs":hints,"hint_column":column,"hint_keys":["rsc" if committed_target else "rs","a","b"],"title_inset":title_inset,"hint_offset":hint_offset,"hint_label_offset":hint_label_offset}

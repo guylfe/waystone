@@ -9,10 +9,10 @@ func help_case(route:String,rules:String):
 	var hint:String=s.message
 	check(board.selected_action=="commit_shot","routed selection "+route)
 	if rules=="energy":check(hint.contains("%.1f Energy" % cost),"actual scaled price "+route+str(cost)+" "+hint)
-	else:check(hint.contains("no Energy debit") and not hint.contains("18 base Energy"),"Recovery price truth "+route+hint)
+	else:check(hint.contains("Recovery: 0 Energy") and not hint.contains("18 base Energy"),"Recovery price truth "+route+hint)
 	if route=="keyboard":check(hint.contains("[G]") and hint.contains("[Tab]") and hint.contains("[Enter]") and not hint.contains("tap a"),"keyboard-specific controls")
 	elif route=="touch":check(hint.contains("tap") and not hint.contains("[G]") and not hint.contains("[Enter]"),"touch-specific controls")
-	else:check(hint.contains("[A]") and hint.contains("[B]") and hint.contains("right-stick click") and not hint.contains("[G]") and not hint.contains("tap a"),"pad-specific controls")
+	else:check(hint.contains("[A]") and hint.contains("[B]") and hint.contains("RS-click") and not hint.contains("[G]") and not hint.contains("tap a"),"pad-specific controls")
 	check(s.simulation_time==time and s.energy_spent_total==spent,"copy selection remains free/frozen")
 	if route=="keyboard":await keytap(KEY_G)
 	elif route=="touch":await tap(board.commit_shot_rect.get_center())
