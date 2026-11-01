@@ -56,9 +56,11 @@ func hud_journey(route:String,rules:String,projection:String,dims:Vector2i,inset
 	if route=="pad":await pad(JOY_BUTTON_RIGHT_STICK)
 	var s=board.state;var time=s.simulation_time;var spent=s.energy_spent_total
 	await surface(route+" idle")
-	await select(route);await surface(route+" selected")
-	check(s.message.begins_with("Full shot +25%:"),"context entry keeps concise selection hint")
 	var armed_rect:Rect2=board.commit_shot_rect
+	var idle_attack:Rect2=board.attack_rect
+	await select(route);await surface(route+" selected")
+	check(armed_rect==board.commit_shot_rect and idle_attack==board.attack_rect,"initial idle action origins retained on select")
+	check(s.message.begins_with("Full shot +25%:"),"context entry keeps concise selection hint")
 	await cancel(route);await frames(60);await surface(route+" cancelled settled")
 	check(board.selected_action=="" and board.controller.targeting_action=="" and s.message=="Commit Shot selection cancelled.","truthful settled cancellation "+route)
 	check(s.simulation_time==time and s.energy_spent_total==spent and s.survey_shots_fired==0 and not board.playing,"cancel free frozen and no shot/queue")
@@ -72,6 +74,7 @@ func hud_journey(route:String,rules:String,projection:String,dims:Vector2i,inset
 	if route=="pad":await pad(JOY_BUTTON_RIGHT_STICK)
 	await confirm(route);check(s.player_action.get("commit_shot",false),"fresh confirmation after cancel succeeds")
 	await surface(route+" committed");await ready()
+	check(armed_rect==board.commit_shot_rect and idle_attack==board.attack_rect,"initial idle action origins retained through completion")
 	check(s.survey_shots_fired==1 and is_equal_approx(s.energy_spent_total-spent,s.energy_cost(18) if rules=="energy" else 0),"one shot/ordinary full debit after fresh confirm")
 	await finish()
 func exits():

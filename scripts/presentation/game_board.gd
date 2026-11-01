@@ -5,6 +5,7 @@ const CommitHudLayout = preload("res://scripts/presentation/commit_hud_layout.gd
 var controller = ControllerInputScript.new()
 var commit_hud_cache:Dictionary={}
 var commit_hud_key:=""
+var commit_hud_row_reserves:Dictionary={}
 
 const RunStateScript = preload("res://scripts/core/run_state.gd")
 const AttackGeometryScript = preload("res://scripts/core/attack_geometry.gd")
@@ -2584,6 +2585,8 @@ func _handle_custom_room_press(position: Vector2) -> void:
 		custom_room_open = false
 		_layout()
 func _start_run() -> void:
+	commit_hud_row_reserves.clear()
+	commit_hud_key=""
 	var entered_seed := seed_input.text.strip_edges()
 	var chosen_seed := -1
 	if entered_seed != "":

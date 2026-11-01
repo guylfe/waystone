@@ -14,14 +14,15 @@ Ordinary charging, arts, Take Aim and earned follow-up remain separate. Effectiv
 follow-up ownership is hashed. Frozen selection/refusal/cancellation reaches the
 actual drawn log; paid playback keeps the displayed frame's message. Concise
 guidance and fixed responsive docking clear the explicit high-density target cue
-without reducing fonts or action targets.
+without reducing fonts or action targets. Initial idle action positions remain
+stable through selection, refusal, cancellation and full-shot commitment.
 
 This release source aligns GAME_VERSION, Windows metadata, Android306 and this
 banner. Save schema39 and Survey format37 remain unchanged. Prior independent
-runtime/Character/N1/C1 and D1 checks passed within their scope; the P1/P2 drawn-log /
-targeting correction awaits narrow independent presentation review at source freeze.
-The earlier3b7 packages are superseded. Exact rebuilt identities/verdicts live in
-the external phone-feedback-target-20261101 correction
+runtime/Character/N1/C1,D1 and bounded4e90 P1/P2 checks passed within their scope;
+R3 initial action stability and affected geometry await narrow independent successor
+review at source freeze. Earlier3b7/4e90 packages are superseded. Exact rebuilt
+identities/verdicts live in the external phone-stable-hud-20261101 correction
 receipt. No installation or publication is claimed by this source update. Device
 pixels, sustained phone performance, physical feel and exact historical reset /
 late supply-refusal symptoms remain open; lead owns destination delivery.

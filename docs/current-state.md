@@ -1,6 +1,6 @@
 # Waystone current state
 
-**Reviewed:** 2026-11-01 (P1/P2 release correction; narrow independent presentation review pending)
+**Reviewed:** 2026-11-01 (R3 action stability correction; narrow independent successor review pending)
 **Delivered baseline:** `0.3.5` (`versionCode 305`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
@@ -9,15 +9,18 @@
 ## November cumulative release preparation
 
 Prepared source: **0.3.6 / Android306**, isolated successor of built
-`3b7a7635515d421625b16271e2a33620b1ed393b`. That unpublished package is superseded
-by P1/P2 presentation corrections: frozen free UI feedback now reaches the drawn
+`4e90ee380cb5310387f9c268fe9d67fa64168f06`. Earlier3b7/4e90 packages remain
+superseded evidence. Independent4e90 review accepted the P1/P2 correction but found
+initial idle-to-selection action movement. This successor keeps initial action
+origins while retaining complete current feedback, fonts and target visibility.
+Frozen free UI feedback reaches the drawn
 log, while streamed/precomputed playback retains its displayed-frame message;
 concise guidance and a fixed responsive allocation clear the high-density target
 cue. Fonts, action hit targets, world/camera rules, gameplay and save/report schemas
 are unchanged. Release identity owners remain aligned. Exact clean source/tree,
 focused release checks, rebuilt Windows/APK hashes, signing/resource/startup/save
 evidence and reused verified rollback preparation live in the external
-`phone-feedback-target-20261101/correction-receipt.md`. The prior full55-file
+`phone-stable-hud-20261101/correction-receipt.md`. The prior full55-file
 release verdict remains historical evidence; changed consumers receive focused
 checks. Source freezes before export; execution receipts do not change its identity.
 
@@ -28,15 +31,18 @@ checks. Source freezes before export; execution receipts do not change its ident
 | Supplies / merchant | Identity, truthful denial, marker arbitration, refresh ownership, payment/persistence independently supported | Exact historical late-run refusal |
 | Phone lag | Presentation-copy optimization with desktop CPU/parity evidence; floor costs retained | Sustained Android frame/input/thermal profiling; no phone-speed claim |
 | Map voids | Continuous blocking, valid tangent departure and consumer tests independently supported | Physical generated journey |
-| Additive Commit Shot | One prepaid full shot, +25% initial damage; ordinary charging/arts/Take Aim retained; D1 effective follow-up hashing independently accepted | P1 current drawn feedback / P2 density targeting correction narrow independent review, then device pixels/feel |
+| Additive Commit Shot | One prepaid full shot, +25% initial damage; ordinary charging/arts/Take Aim retained; D1 and bounded4e90 P1/P2 independently supported | R3 stable initial action origin plus affected P1/P2 geometry independent successor recheck, then device pixels/feel |
 
 Engineering b129 has11 frozen focused passing files plus safe-inset supplement.
 The lead verified their source/log evidence; this is distinct from fresh independent
 execution. Independent fce runtime checks and e35/30c Character/navigation/help
 results carry where owners are unchanged. Independent D1 hashing is accepted;
 ordinary C2 regions and C3 free cancellation passed, but the reviewer found stale
-drawn feedback and density3 target occlusion. This successor corrects those owners;
-their independent narrow recheck is pending at source freeze. The dated owning
+drawn feedback and density3 target occlusion;4e90's independent recheck closed both
+within source/headless scope. It found R3: actions moved after initial selection.
+This successor reserves coexisting text/context space and retains initial action
+positions, with fixed dense-isometric action docking. The narrow independent R3 /
+affected geometry recheck is pending at source freeze. The dated owning
 implementation ledgers preserve original evidence boundaries; accepted prior
 isolated steps are not separate unfinished implementation tasks.
 

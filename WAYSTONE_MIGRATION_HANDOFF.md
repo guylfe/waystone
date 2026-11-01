@@ -1,15 +1,17 @@
 ## Current0.3.6 / Android306 release preparation — 1 November 2026
 
 This unpublished release corrects built3b7a763's stale frozen log and explicit
-density3 targeting-panel occlusion. Runtime changes are presentation-only;
+density3 targeting-panel occlusion and4e90's initial idle-to-selection target jump.
+Runtime changes are presentation-only;
 schema39 / Survey37, combat and progression owners remain unchanged. Character,
 input/navigation, floor/shop/pickup, Boar and additive Commit Shot implementations
 are recorded in the current-state owner. Prior independent runtime/Character/N1/C1
 passes are retained; D1 independent acceptance carries through unchanged owners.
-The P1/P2 presentation correction's independent narrow review is pending at freeze.
+Independent4e90 P1/P2 review passes within scope; R3 action stability and affected
+geometry are corrected here and await independent narrow successor review at freeze.
 Actual rebuilt package, focused affected release tests, signing, packaged startup /
 save and resource-pack verdicts are bound to the final clean release SHA/tree in
-the external phone-feedback-target-20261101 correction receipt. Prior3b7 artifacts
+the external phone-stable-hud-20261101 correction receipt. Prior3b7/4e90 artifacts
 remain retained superseded evidence and must not be installed as the final repair.
 
 The last delivered normal Windows/GitHub/Android release remains0.3.5 /305 until

@@ -17,9 +17,10 @@ static func build(board, u: float) -> Dictionary:
 	var log:=paragraph(board._hud_log_text(),width,font)
 	# Reserve all three ordinary selection hints, so selecting/cancelling/refusing
 	# does not move the action under a finger. Longer unrelated logs still wrap.
-	var log_height:=log.get_size().y
+	var selection_height:=0.0
 	for method in ["pointer","keyboard","controller"]:
-		log_height=maxf(log_height,paragraph(board._commit_shot_selection_text(method),width,font).get_size().y)
+		selection_height=maxf(selection_height,paragraph(board._commit_shot_selection_text(method),width,font).get_size().y)
+	var log_height:=maxf(log.get_size().y,selection_height)
 	var log_rect:=Rect2(Vector2(area.position.x+gap,area.end.y-gap-log_height),Vector2(width,log_height))
 	var xp_rect:=Rect2(Vector2(log_rect.position.x,log_rect.position.y-gap-xp.get_size().y),Vector2(width,xp.get_size().y))
 	var attack_size:Vector2=board.attack_rect.size
@@ -27,7 +28,7 @@ static func build(board, u: float) -> Dictionary:
 	var row_top:=xp_rect.position.y-gap-row_height
 	var commit:=Rect2(Vector2(area.position.x+gap,row_top),Vector2(156,64)*u)
 	var attack:=Rect2(Vector2(area.end.x-attack_size.x-gap,row_top+(row_height-attack_size.y)*0.5),attack_size)
-	var idle_text:="Held: press a labelled button to use it" if board.controller.palette_open else "Hold for spell / item shortcuts"
+	var idle_text:="LB held: choose shortcut" if board.controller.palette_open else "Hold LB for shortcuts"
 	var idle:=paragraph(idle_text,width-48*u,roundi(16*u))
 	var idle_height:=maxf(30*u,idle.get_size().y)+16*u
 	var idle_rect:=Rect2(Vector2(area.position.x+gap,row_top-gap-idle_height),Vector2(width,idle_height))
@@ -49,25 +50,30 @@ static func build(board, u: float) -> Dictionary:
 	var hint_label_offset:=24.0 if dense else 26.0
 	var target_height:=title.get_size().y+hint_height+(36 if dense else 54)*u
 	var target_rect:=Rect2(Vector2(area.position.x+gap,row_top-gap-target_height),Vector2(width,target_height))
-	# Put the opaque guidance below the action row, away from the ordinary central
-	# target marker. Reserve its tallest state so arming/cancelling cannot move input.
-	var context_height:=maxf(idle_height,target_height)
-	row_top=xp_rect.position.y-2*gap-context_height-row_height
+	# Reserve complete *coexisting* log/context states. Reserving each independent
+	# maximum would unnecessarily combine startup text with an inactive target panel.
+	# Keep the initial idle/ordinary-log budget through later free/paid transitions,
+	# so shortening a current message can never move an advertised action target.
+	var context_height:=target_height if action!="" else idle_height
+	var required:=log_height+xp.get_size().y+context_height+3*gap
+	var standard:=selection_height+xp.get_size().y+maxf(idle_height,target_height)+3*gap
+	var reserve_key:=str([area,u,attack_size,board.view_mode,board.state.combat_rules])
+	var reserved:=maxf(float(board.commit_hud_row_reserves.get(reserve_key,0)),maxf(required,standard))
+	board.commit_hud_row_reserves[reserve_key]=reserved
+	row_top=area.end.y-gap-reserved-row_height
 	commit.position.y=row_top
 	attack.position.y=row_top+(row_height-attack_size.y)*0.5
 	idle_rect.position.y=xp_rect.position.y-gap-idle_height
 	target_rect.position.y=xp_rect.position.y-gap-target_height
-	# A narrow client measured in density units has insufficient room to stack a
-	# second opaque guidance panel under the buttons. Dock guidance to the fixed
-	# top edge instead, leaving the central field between it and the bottom HUD.
-	# This depends only on available space, never on a selected target's position.
+	# In dense isometric portrait, dock the fixed action row below the toolbar and
+	# keep variable-height guidance/logs at the bottom. This preserves both stable
+	# input and the central target gap even when the startup log is taller. Layout
+	# depends on available space/projection, never on a selected target's position.
 	if dense and board.view_mode=="isometric":
-		commit.position.y=xp_rect.position.y-gap-row_height
-		attack.position.y=commit.position.y+(row_height-attack_size.y)*0.5
 		var toolbar_bottom:=area.position.y
 		for name in ["sheet_button_rect","view_rect","map_rect","reset_rect","survey_end_rect"]:
 			toolbar_bottom=maxf(toolbar_bottom,Rect2(board.get(name)).end.y)
-		idle_rect.position.y=toolbar_bottom+gap
-		target_rect.position.y=toolbar_bottom+gap
+		commit.position.y=toolbar_bottom+gap
+		attack.position.y=commit.position.y+(row_height-attack_size.y)*0.5
 	return {"unit":u,"font":font,"commit":commit,"attack":attack,"xp":xp_rect,"log":log_rect,"xp_paragraph":xp,"log_paragraph":log,
 		"idle":idle_rect,"idle_paragraph":idle,"targeting":target_rect,"title_paragraph":title,"hint_paragraphs":hints,"hint_column":column,"hint_keys":["rsc" if committed_target else "rs","a","b"],"title_inset":title_inset,"hint_offset":hint_offset,"hint_label_offset":hint_label_offset}

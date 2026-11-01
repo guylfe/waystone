@@ -48,8 +48,9 @@ paid commitment and negative future-message/playback controls.
 
 At less than300 available horizontal density units, contextual guidance uses
 four-unit inner vertical padding while retaining17/14-unit fonts and22-unit pad
-glyphs. Dense isometric guidance docks below the existing fixed top toolbar;
-dense top-down guidance stays below the action row. The remaining fixed action /
+glyphs. Dense isometric actions dock below the existing fixed top toolbar, with
+guidance/XP/log at the bottom; dense top-down guidance stays below the action row.
+The remaining fixed action /
 XP/log allocation clears the original target and adjacent samples. Docking is
 space/projection based, never target-position based; camera and Sapper placement
 semantics do not change. Ordinary-density layout keeps its existing padding.
@@ -57,6 +58,19 @@ The allocator supplies the draw offsets as well as the rectangles. Original
 390x844 and780x1688 density reproductions remain retained separately from passing
 acceptance probes. These are source/headless shaping and geometry checks, not
 final GPU/phone readability or lag acceptance.
+
+Independent4e90 review closed P1/P2 but found R3: initial startup text was taller
+than concise selection text, moving the buttons on the first tap. The successor
+reserves complete coexisting log/context states (startup+idle versus selection+
+targeting), then retains that action-row budget for each layout through shorter
+messages and completed commitments. Reservation stores only UI heights, never old
+message content or simulation frames; a new run clears it. Complete current XP/log
+and active guidance still reflow in their own space. Dense isometric actions use
+the fixed top row to keep both stable input and a central target gap despite long
+startup text. Concise `Hold LB for shortcuts` keeps the actual idle instruction
+readable without reserving a redundant multi-line explanation. The exact repeated
+upper-edge tap and idle-origin comparisons now cover initial selection, refusal,
+cancel, paid commitment and completion; the independent successor gate remains open.
 
 B, Escape/G targeting cancellation, pause, focus/disconnect and input handover now
 publish the same truthful cancelled guidance as touch toggling. The uncommitted
