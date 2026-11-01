@@ -1,6 +1,25 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.5` (Android version code `305`).
+Current prototype version: `0.3.6` (Android version code `306`).
+
+## v0.3.6 — mobile Character access and committed Bow option
+
+Character opens on a measured overview with upgrades and complete tap-open details;
+touch scrolling, spatial key/pad navigation and transaction owners are retained.
+Continuous floor blocking/tangent departure, pickup identity and merchant refresh
+repairs accompany measured presentation-copy optimization. Boar pounces use640
+movement and .45 aim lock. Sharpshooter gains separate Commit Shot: select an enemy,
+prepay one full-shot cost, then finish full draw/release/recovery for +25% damage.
+Ordinary charging, arts, Take Aim and earned follow-up remain separate. Effective
+follow-up ownership is hashed; HUD regions and cancelled-selection help agree.
+
+This release source aligns GAME_VERSION, Windows metadata, Android306 and this
+banner. Save schema39 and Survey format37 remain unchanged. Prior independent
+runtime/Character/N1/C1 checks passed within their scope; final D1/C2/C3 independent
+rechecks are pending. Exact build/test/package hashes live in the external release
+receipt. No installation or publication is claimed by this source update. Device
+pixels, sustained phone performance, physical feel and exact historical reset /
+late supply-refusal symptoms remain open; lead owns destination delivery.
 
 ## v0.3.5 — dependable menus and frozen-Sword continuation
 

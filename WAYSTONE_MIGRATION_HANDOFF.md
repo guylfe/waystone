@@ -1,4 +1,21 @@
-## 0.3.4 accepted Survey integration — 21 October 2026
+## Current0.3.6 / Android306 release preparation — 1 November 2026
+
+The cumulative runtime is frozen at b12925e; this numbered successor changes only
+identity/docs, preserving schema39 / Survey37 and accepted gameplay. Character,
+input/navigation, floor/shop/pickup, Boar and additive Commit Shot implementations
+are recorded in the current-state owner. Prior independent runtime/Character/N1/C1
+passes are retained; final D1/C2/C3 b129 rechecks remain pending. Actual build,
+default-suite, signing, packaged startup/save and resource-pack verdicts are bound
+to the final clean release SHA/tree in the external phone-release-20261101 receipt.
+
+The last delivered normal Windows/GitHub/Android release remains0.3.5 /305 until
+lead-owned destination delivery. No local replacement, push, phone or native-window
+action occurs during this preparation. Preserve normal dirty current-state docs,
+audits/prototypes, personal saves and launch routes. USB Phone Harness is required
+for eventual Android actions; phone availability does not block builds. GPU/device
+performance/physical feel and exact historical reset/refusal remain open.
+
+## Historical0.3.4 accepted Survey integration — 21 October 2026
 
 21 October archive correction: one scroll owner contains wrapping >=48-unit
 record rows and archive actions. Report/detail summaries wrap; shared controller
@@ -28,8 +45,8 @@ remains documented and is not a newly passing test.
 
 # Waystone migration and development handoff
 
-**Updated:** 2026-10-21
-**Release baseline:** `0.3.4` (`versionCode 304`, save schema `39`, expedition generator `1`, Combat Survey generator `3`, presentation `20`, Survey format `37`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
+**Updated:** 2026-11-01
+**Prepared release:** `0.3.6` (`versionCode 306`, save schema `39`, expedition generator `1`, Combat Survey generator `3`, presentation `20`, Survey format `37`). Read `docs/current-state.md`, `docs/controller-controls.md` and `docs/expedition-0.3.0-implementation.md` for current scope and verification limits.
 
 0.3.3 restores the incumbent ability/item bars with controller badges and held-LB
 direct shortcuts, replacing the 0.3.2 rail/selection modal. Melee follows movement;

@@ -1,89 +1,50 @@
 # Waystone current state
 
-**Reviewed:** 2026-10-22 (accepted menu/input correction and local delivery)
-**Release baseline:** `0.3.5` (`versionCode 305`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
+**Reviewed:** 2026-11-01 (cumulative release preparation; final narrow reviews pending)
+**Delivered baseline:** `0.3.5` (`versionCode 305`, save schema `39`, Combat Survey generator `3`, expedition generator `1`, presentation `20`, Combat Survey format `37`). Human play acceptance remains open; see the controller ledger for verification.
 **Authority:** current source and tests define implemented behaviour; this file is the concise operational map. `README.md` remains the release history. Design Foundations describes the game; subject documents own detailed systems, evidence, scope, and proposals.
 
 **Documentation organization:** updated 2026-10-19. This documentation change does not alter the release baseline or its verification status.
 
-## Isolated phone world repair candidate — November 1
+## November cumulative release preparation
 
-The [gameplay repair ledger](phone-world-repair.md) owns the bounded candidate for
-pickup identity/denials, merchant marker input, continuous floor-boundary collision
-and measured presentation-copy optimization. Baseline failures and successor results
-are retained in isolated headless evidence. This candidate leaves release identity,
-installed software and personal saves alone. Real-phone rendering/touch/performance,
-independent acceptance, integration and destination delivery remain lead-owned.
-The exact late-run supply refusal and original attack-reset report remain unresolved.
+Prepared source: **0.3.6 / Android306**, successor of frozen gameplay
+`b12925ef9a90f3ada4277cc1e9511af802e7a295` (tree
+`b40a5301a4f47629f7044f3d96cc454388d88325`). The release changes identity/docs only;
+GAME_VERSION's inherited0.3.4 drift is corrected to match all0.3.6 package owners.
+Save schema39, Survey format37, generators and gameplay remain unchanged. Exact
+release SHA/tree, full required-suite verdict, Windows/APK hashes, signing checks,
+packaged-resource/startup/save evidence and preservation/rollback preparation live
+in the external `phone-release-20261101/release-receipt.md`. Source is frozen before
+building, so that receipt records completed execution without changing build identity.
 
-## Isolated Character mobile successor — November 1
+| User outcome | Implemented / independently supported | Remaining boundary |
+| --- | --- | --- |
+| Mobile Character | Measured no-scroll overview, upgrade access, full tap-open detail/actions, captured touch; independent e35 touch/payment and30c N1/C1 direction/help passes | Final GPU/Fold/physical comfort |
+| Boar |640 movement/.45 aim lock; unchanged acquisition/timing/damage; independent runtime/tell checks | Guy's encounter/feel acceptance |
+| Supplies / merchant | Identity, truthful denial, marker arbitration, refresh ownership, payment/persistence independently supported | Exact historical late-run refusal |
+| Phone lag | Presentation-copy optimization with desktop CPU/parity evidence; floor costs retained | Sustained Android frame/input/thermal profiling; no phone-speed claim |
+| Map voids | Continuous blocking, valid tangent departure and consumer tests independently supported | Physical generated journey |
+| Additive Commit Shot | One prepaid full shot, +25% initial damage; normal charging/arts/Take Aim retained; follow-up ownership, contained HUD and truthful cancellation implemented | D1/C2/C3 final independent b129 rechecks, then device pixels/feel |
 
-The [Character/input owner](menu-input-correction.md#isolated-character-mobile-successor--1-november-2026)
-records the successor to frozen `1660a84`: measured no-scroll opening overview,
-visible XP/upgrade access, tap-open categories and complete track/action details,
-captured touch swipes, per-view return state and preserved transaction owners.
-Normal-root headless input/layout/transaction checks and prior repair regressions
-are retained externally. Explicit density/safe-area models do not certify Android.
-The live source, installed game, personal data and immutable ancestor are preserved.
-Independent review, actual phone checks, version alignment, builds and delivery remain
-lead-owned; there is no new release or feel-acceptance claim.
+Engineering b129 has11 frozen focused passing files plus safe-inset supplement.
+The lead verified their source/log evidence; this is distinct from fresh independent
+execution. Independent fce runtime checks and e35/30c Character/navigation/help
+results carry where owners are unchanged. Final D1 hashing and C2/C3 presentation
+rechecks are still pending in parallel with release preparation. The dated owning
+implementation ledgers preserve original evidence boundaries; accepted prior
+isolated steps are not separate unfinished implementation tasks.
 
-## Isolated cumulative phone successor — November 1
+Normal source/builds, Start launch target, unrelated dirty documentation/audits /
+prototypes and personal data remain untouched during preparation. This source
+does not claim installation/publication. Dr. Stone reconciles final reviews and
+owns Windows/GitHub delivery, then USB Phone Harness device installation/checks
+when connected. No phone/native window or raw/wireless ADB action is part of this
+preparation. The exact historical attack-reset and late refusal stay unresolved;
+physical readability, folding, performance and human feel remain open.
 
-The [cumulative repair ledger](phone-world-repair.md#cumulative-phone-correction--1-november-2026)
-records the successor to immutable `e35ffd8`, preserving its Character overview,
-complete subviews, touch capture and paid transaction owners. It repairs valid
-inward tangent departure and the baseline-matched exclusive shop refresh; applies
-the lead's Boar 640-speed/.45-aim-lock tune with unchanged engagement distance;
-and adds separate Sharpshooter Commit Shot (+25% full-shot damage, one upfront
-ordinary full-shot cost) alongside existing charging, Take Aim and learned arts.
-It also delivers a captured F/Bow release before clearing its owner and preserves
-earned follow-up consumption across arrows/save-resume. Optional save fields remain
-backward compatible within schema 39. No release/build version is stamped here.
-
-Normal-root routed/headless and kernel fixtures are engineering evidence. The
-unchanged analyst probes, before/after failures, regression log scans and CPU costs
-live in the external handoff. Combined independent review and final device/package
-verification remain lead-owned. No export, installation, live-source/save edit or
-publication occurred. Physical readability/controls, sustained phone performance,
-Guy's exact late-run refusal/reset and feel remain open. The USB Phone Harness is
-required for eventual Android work; no connection means device checks stay blocked,
-not that isolated engineering stops. The installed baseline above remains 0.3.5;
-provisional 0.3.6/306 alignment belongs to later lead-owned delivery.
-
-## Isolated navigation and selection-help descendant — November 1
-
-The isolated navigation/help descendant of `fce23f5` repairs the independently
-reproduced Character N1 row/column mismatch and C1 selection hint. Character's
-native container rows preserve nested body/Upgrade lanes, disabled/absent commands,
-compact/paged layouts, directional clamping and visible focus. Commit Shot selection
-and Combat information share actual rule-aware cost wording, with selection-entry
-specific touch/key/pad guidance. See the [correction owner](menu-input-correction.md#n1--c1-bounded-successor--1-november-2026).
-Engineer paired routed checks are separate from the pending narrow independent
-successor review and ongoing immutable-fce combined review. The accepted e35 touch /
-transaction model evidence is preserved. No version/export/install/publication or
-device action occurs in this descendant; lead-owned delivery remains pending.
-
-## Isolated checkpoint and HUD descendant — November 1
-
-The successor to immutable `30c1900` addresses the returned independent D1/C2/C3
-findings: effective per-arrow/action Bow follow-up ownership participates in semantic
-checkpoints; a shared measured Sharpshooter HUD separates full XP/log text, Commit
-Shot/Attack and contextual pad panels; cancelled uncommitted selection reports
-cancelled guidance. Combat/save/tuning/version owners stay unchanged. See the
-[character framework](combat-character-framework.md#152a-isolated-additional-commit-shot--1-november-2026)
-and [controller owner](controller-controls.md). Character N1 container navigation
-and C1 current-rule/input selected hints are preserved.
-
-The independent fce reviews support the bounded runtime repairs while identifying
-these verification/presentation defects. Engineer original positive-defect probes,
-new passing regressions, unchanged goldens and paid-resume/input/neutral checks are
-retained externally with exact identities and honest failed-instrument logs. A
-positive defect-reproduction exit0 is not product acceptance. Narrow independent
-successor rechecks and subsequent builds/destinations remain lead-owned. No new
-version, export, installation, publication, native window or phone action occurs
-in this phase. Device pixels/performance/feel and exact historical symptoms remain
-open; the delivered baseline above is unchanged.
+Owners: [world repairs](phone-world-repair.md), [Character/input](menu-input-correction.md),
+[controller/HUD](controller-controls.md), [combat framework](combat-character-framework.md).
 
 ## Survey integration (released baseline)
 
@@ -107,8 +68,8 @@ and foldable behavior, natural gameplay and subjective feel remain unverified.
 The local delivery uses the existing `builds/windows/Waystone.exe` launch target,
 with unchanged shortcut arguments/icon. Exact release-source, embedded build,
 package smoke, installed destination, rollback and personal-data preservation
-receipts live in the external `local-delivery-20261022` task folder. Remote
-publication and Android device installation are outside this local update.
+receipts live in the external `local-delivery-20261022` task folder. Subsequent22 October receipts verified GitHub publication and Android305
+installation as well; the original local-only receipt retains its historical scope.
 The equipment-effects and manual-end wording proposals remain unadopted.
 
 0.3.4 integrates the accepted frozen-Sword/Commit experiment into the normal
