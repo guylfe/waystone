@@ -206,3 +206,5 @@ the identical test fails on the preserved control. Exact boundary pixels and
 input/restoration regression evidence accompany the handoff. This is engineering
 verification awaiting focused independent acceptance; physical input and human
 feel remain unverified.
+
+Mage drawer source/package receipt: [0.3.7 Mage correction](releases/0.3.7-mage-drawer-correction.md).

@@ -63,3 +63,5 @@ sizes, guidance fit, free selection/refusal and stable open/close geometry. The 
 is part of the default suite. `mage_drawer_capture.gd` provides the bounded GPU
 recheck; engineering headless results do not establish rendered or physical feel
 acceptance. See the external Mage drawer handoff for exact source/build receipts.
+
+Mage drawer source/package receipt: [0.3.7 Mage correction](releases/0.3.7-mage-drawer-correction.md).
