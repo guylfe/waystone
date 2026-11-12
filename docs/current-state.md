@@ -1,16 +1,37 @@
-> **Mage drawer successor:** landscape drawer allocation now uses a reserved column beside final Commit/Attack geometry. Actual-root chip routing and coexistence checks cover 390x844, 720x600 and 1280x800. Export provenance and independent rendered acceptance are tracked in the Mage drawer handoff; no publication or installation.
-
-> **12 November 2026 candidate:** normal gameplay now uses single-cut ordinary melee, explicit prepaid full combos, fixed automatic ordinary Bow, and universal 1.25× playback at unchanged 120 Hz. Explicit Survey comparisons retain their grammar. This candidate is not published or installed. Normal movement now commits full 34-unit strides including nearby ground taps; interaction ranges and collision remain intact. The bounded Duellist guidance correction is implemented using existing uncertainty; corrected independent rendered review remains pending. Commit/Attack/guidance now occupy a stable dock outside the tactical viewport. [Scope and verification](combat-decision-update.md).
-
 # Waystone current state
 
-**Reviewed:** 2026-11-01 (final independent source/headless acceptance and verified Windows/GitHub delivery).
-**Delivered Windows/source release:** `0.3.6`, built from `e0a255a38375d7006a5b064d87527d87cee9797e`.
-**Android package:** `0.3.6 / 306` built and validated; phone installation pending. Last verified phone installation is `0.3.5 / 305` on 22 October.
+**Reviewed:** 2026-11-12 (independent combat/readability acceptance and verified Windows delivery).
+**Delivered Windows/source release:** `0.3.7`, runtime `fc0b57b3e4dfdb77fac6ba75b74ffda972732bf0`.
+**Android package:** `0.3.7 / 307` built, signature-verified and staged; Fold installation pending (no USB device detected). Last verified phone installation is `0.3.5 / 305` on 22 October.
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-## November repair release delivered to Windows and GitHub
+## Combat commitment update — 0.3.7
+
+Normal melee commits one complete cut; Commit Combo prepays and executes the full
+weapon sequence. Bow uses fixed automatic ordinary shots and explicit Commit Shot.
+Ground taps commit the full 34-unit stride, including nearby taps. Universal 1.25×
+playback preserves the 120 Hz simulation and shared actor clocks. Explicit historical
+Survey comparisons retain their grammar. Save schema and normal saves are preserved.
+
+Commit/Attack and guidance occupy a stable dock outside the battlefield. Mage spell
+chips share final allocation and stay separate from both actions. Existing Duellist
+intent/weights/timing/damage remain; qualitative guidance exposes current parry,
+commitment and recovery without promising a safe full combo.
+
+Independent source/rendered reviews accepted the bounded corrections, including the
+final Mage review (93 checks, zero failures; 27 PNGs at three sizes). Fresh Windows
+installed normal-entry smoke passed startup, Survey, feedback/archive provenance and
+save with isolated data. Reviewed packages retain runtime fc0b57b; later documentation
+commits require no rebuild. [Delivery identities and evidence](releases/0.3.7-delivery.md)
+and [mechanic scope](combat-decision-update.md) record limits and provenance.
+
+The unchanged exact Bandit expected failure and Android `desktop_controls` Joypad gate
+remain documented. No new GPU review is claimed by engineering; independent frames
+are source-rendered. Fold installation/touch/insets/performance, physical controller
+and Guy's combat/animation feel remain unverified. No 3D demo has begun.
+
+## Previous release — November 0.3.6 repairs
 
 The normal Windows executable, source and GitHub main contain the six-finding repair
 batch. The installed executable matches the reviewed package and passed an isolated

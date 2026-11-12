@@ -1,6 +1,6 @@
 # Combat decision update candidate
 
-Status: implementation candidate, 12 November 2026, based on c4703699b9895cf46069334a15bc5d962f390a80. Current state owns delivery status; combat framework owns mechanics; controller controls owns bindings. This document records the bounded delta and remaining design questions.
+Status: delivered 0.3.7, 12 November 2026, based on c4703699b9895cf46069334a15bc5d962f390a80. [Final delivery receipt](releases/0.3.7-delivery.md) supersedes the earlier candidate/publication/review-pending boundaries below. Current state owns delivery status; combat framework owns mechanics; controller controls owns bindings. This document records the bounded delta and remaining design questions.
 
 Normal gameplay commits one complete ordinary melee cut with its authored recovery. Holding may repeat complete actions after readiness, but never buys a cut at a live combo link. Commit Combo uses the existing touch action, keyboard G or controller LB+left-stick-click to arm (Bow retains LB+A); a visible enemy confirms facing and the whole authored Sword, Knife, Twin Knives or Staff sequence. Repeating selection cancels freely before confirmation. The complete existing phase cost is prepaid (including the existing allowed overdraw); release cannot truncate or debit later cuts. Poise, interruption, geometry, earned ranks, finisher effects and weapon sequence cooldowns remain owned by the original executors. No experimental finisher bonus is added.
 

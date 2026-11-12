@@ -1,12 +1,12 @@
 # Waystone Prototype
 
 Current prototype version: `0.3.7` (Android version code `307`).
-Candidate only; last delivered release remains `0.3.6`.
+Windows installed and verified; matching source published to GitHub. Android 307 is staged; Fold installation awaits a USB connection.
 
 Normal attacks commit a single melee cut or automatic Bow draw/release/recovery.
 Commit Combo selects the full weapon sequence before confirming a target. World
 execution plays at 1.25× with unchanged 120 Hz simulation. Ground taps commit a full 34-unit stride, including nearer taps.
-Duellist guidance reuses existing uncertainty; corrected rendered review remains pending; see [candidate scope](docs/combat-decision-update.md).
+Duellist guidance reuses existing uncertainty. Independent bounded rendered review passed; physical feel remains unverified. See [scope](docs/combat-decision-update.md) and [delivery receipt](docs/releases/0.3.7-delivery.md).
 
 ## v0.3.6 — mobile Character access and committed Bow option
 
