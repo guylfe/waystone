@@ -2324,6 +2324,16 @@ func _handle_gesture(end_position: Vector2) -> void:
 		var target := _screen_to_world(end_position)
 		_begin_streamed_move(target - state.player_pos, minf(target.distance_to(state.player_pos), state.MOVE_RANGE))
 
+# The held indicator shows the nominal committed stride, not an exact ground
+# destination. Collision can clip travel; it does not shrink the action clock.
+func _movement_hint_segment() -> PackedVector2Array:
+	if not state.uses_decision_commitments(): return PackedVector2Array([touch_start,touch_current])
+	var action: Dictionary = visual.get("player_action",state.player_action)
+	var moving := String(action.get("kind",""))=="move"
+	var origin := Vector2(action.get("move_origin",state.player_pos)) if moving else state.player_pos
+	var direction := Vector2(action.get("direction",held_direction)) if moving else held_direction
+	return PackedVector2Array([_world_to_screen(origin),_world_to_screen(origin+direction.normalized()*state.MOVE_RANGE)])
+
 func _touch_move_threshold() -> float:
 	return maxf(TOUCH_MOVE_SLOP_MIN, minf(size.x, size.y) * TOUCH_MOVE_SLOP_SCALE)
 
@@ -5079,8 +5089,9 @@ func _draw_hud() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(left, board_rect.end.y - font * 3.0), hp_text, HORIZONTAL_ALIGNMENT_LEFT, board_rect.size.x - 20.0, font, Color("f0ddd7"))
 		_draw_log_line(text, Vector2(left, board_rect.end.y - font * 0.40), board_rect.size.x - 20.0, maxi(10, font - 2))
 	if held_movement and pointer_down:
-		draw_line(touch_start, touch_current, Color(DODGE_COLOR, 0.55), 4.0)
-		draw_circle(touch_current, 8.0, DODGE_COLOR)
+		var stride_hint := _movement_hint_segment()
+		draw_line(stride_hint[0], stride_hint[1], Color(DODGE_COLOR, 0.55), 4.0)
+		draw_circle(stride_hint[1], 8.0, DODGE_COLOR)
 	if state.has_pending_pickup():
 		var prompt := "BELT FULL — TAP A SLOT TO REPLACE  •  CONTEXT TO LEAVE"
 		if controller.active: prompt = "BELT FULL — D-PAD LEFT/RIGHT: SLOT · DOWN: REPLACE · A: LEAVE"

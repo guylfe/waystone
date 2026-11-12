@@ -59,6 +59,8 @@ $HeadlessSuite = @(
     'decision_commit_test',
     'decision_commit_input_test',
     'execution_playback_test',
+    'stride_commitment_test',
+    'stride_input_test',
     'hud_target_stability_test',
     'feedback_target_input_test',
     'commit_shot_test',

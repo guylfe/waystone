@@ -313,6 +313,8 @@ func combat(data: Dictionary) -> void:
 	var form := "DRAW › RELEASE" if frame=="bow" else "FOUR COMPACT CUTS" if frame=="knife" else "SIX ALTERNATING CUTS" if frame=="twin_knives" else "CUT › RETURN › DRIVING CUT" if frame=="sword" else str(board.state.AttackGeometryScript.technique(str(board.CombatCatalogScript.weapon_frame(frame).get("basic_technique",""))).get("label",""))
 	line(content,str(board.CombatCatalogScript.weapon_frame(frame).get("label",frame))+" · "+form)
 	line(content,"Defense · "+str(data.defense).capitalize())
+	if board.state.uses_decision_commitments():
+		line(content,"Ground taps choose a direction and commit one full stride, even nearby. Hold repeats strides. The movement cue shows the stride; terrain may stop travel. Tap a supply or interactable to use it within reach.")
 	if frame=="bow" and board.state.loadout_id=="rogue_sharpshooter":
 		var price:String=board._commit_shot_price_text()
 		line(content,"Commit Shot · +25% full-shot damage. Select, then confirm a visible enemy. "+price+". Automatically finish remaining full draw and ordinary recovery. No hold, early release or voluntary cancel; ordinary interruption still applies.")

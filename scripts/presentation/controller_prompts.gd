@@ -112,7 +112,7 @@ static func draw_help(board, controller) -> void:
 	Glyphs.text(board, box.position + Vector2(24, 70) * scale, "Think for as long as you need. Aiming and choosing do not advance time.", 950 * scale, int(17 * scale), SECONDARY)
 	var all_rows := rows(board, controller)
 	all_rows.append_array([
-		{"key": "ls", "label": "Move", "detail": "Tilt to move · release finishes the current step"},
+		{"key": "ls", "label": "Move", "detail": "Tilt chains full strides · release finishes the current stride" if board.state.uses_decision_commitments() else "Tilt to move · release finishes the current step"},
 		{"key": "rs", "label": "Ranged direction / ground placement", "detail": "Placed ability: move marker, A uses it, B cancels"},
 		{"key": "lsc", "label": "Wait", "detail": "Click the left stick for one deliberate time step"},
 		{"key": "rsc", "label": "Cycle ranged target", "detail": "Bow / Mage only; manual aim clears the target"},

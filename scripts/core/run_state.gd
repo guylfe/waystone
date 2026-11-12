@@ -3563,12 +3563,17 @@ func request_move(direction: Vector2, distance: float = MOVE_RANGE, simulate_imm
 	if simulate_immediately: _simulate_until_ready()
 	return true
 
+# Normal ground input commits a stride, including a point nearer than its end.
+# Explicit historical Survey comparisons retain their recorded distance grammar.
+func committed_move_distance(requested: float = MOVE_RANGE) -> float:
+	return MOVE_RANGE if uses_decision_commitments() else clampf(requested, 4.0, MOVE_RANGE)
+
 func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bool:
 	if lab_junction(): return lab_recover("move", direction, distance)
 	if not is_player_ready() or trial_complete or direction.length_squared() < 0.01:
 		return false
 	_break_player_combo()
-	var travel := clampf(distance, 4.0, MOVE_RANGE)
+	var travel := committed_move_distance(distance)
 	var normalized := direction.normalized()
 	player_facing = normalized
 	var speed := current_move_speed()
@@ -3577,7 +3582,7 @@ func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bo
 	player_action["speed"] = speed
 	player_action["move_origin"] = player_pos
 	_emit_sound(player_pos, 130.0)
-	_set_message("You commit to a step.")
+	_set_message("Full stride committed; terrain can stop travel." if uses_decision_commitments() else "You commit to a step.")
 	_streamed_action_cpu_usec = 0
 	return true
 

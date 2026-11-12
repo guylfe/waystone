@@ -140,6 +140,7 @@ func test_projection_families_change_their_component() -> void:
 func _init() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("warrior", "combat_survey", 424242, "encounter", "recovery")
+	state.combat_lab=true;state.lab_variant="A" # Preserve the recorded short-step comparison.
 	record("started", state)
 	check(state.request_move(Vector2.RIGHT, false), "the golden move must start")
 	advance_until_ready(state)
