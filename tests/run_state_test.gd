@@ -295,7 +295,7 @@ func test_original_attack_swipe_keeps_combo_held() -> void:
 	board.touch_start = Vector2(250.0, 250.0)
 	board._pointer_dragged(Vector2(330.0, 250.0))
 	assert(board.attack_pointer_held and board.attack_touch_is_original)
-	assert(bool(board.state.player_action.get("continue_held", false)))
+	assert(not bool(board.state.player_action.get("continue_held", false))) # drift preserves the cut, never authorizes a later link
 	assert(not board.queued_movement_after_attack)
 	board.free()
 
