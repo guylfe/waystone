@@ -42,6 +42,19 @@ func run():
 			enemy.action.elapsed=float(option.active_end)+(float(option.duration)-float(option.active_end))*fraction if fraction>0 else 0.0
 			board.visual=board._presentation_snapshot();await capture("duellist-"+str(option.technique)+"-"+str(fraction))
 	board.inspected_enemy_id=int(enemy.id);await capture("duellist-inspection-warning")
+	board.inspected_enemy_id=-1
+	var ref_area=Rect2(Vector2.ZERO,Vector2(720,1558*0.735))
+	var ref_scale=maxf(ref_area.size.x/1050.0,ref_area.size.y/1000.0)*1.38
+	var ref_anchor=ref_area.get_center()+Vector2(0,ref_area.size.y*0.075)
+	var previous_surfaces=[Vector2(158.7692,754.2838),Vector2(672.11,754.2838),Vector2(360,930)]
+	for index in previous_surfaces.size():
+		var projected=(previous_surfaces[index]-ref_anchor)/ref_scale
+		enemy.pos=s.player_pos+Vector2(projected.x+2*projected.y,2*projected.y-projected.x)
+		enemy.action=s._idle_action();enemy.parry_cooldown=0.0;s._update_exploration(true)
+		board.visual=board._presentation_snapshot()
+		await select("touch");await capture("old-surface-world-position-"+str(index))
+		check(board.board_rect.has_point(target_point()) and not board.commit_dock_rect.has_point(target_point()),"review world position remains in battlefield")
+		await tap(board.commit_shot_rect.get_center())
 	FileAccess.open(output+"/records.json",FileAccess.WRITE).store_string(JSON.stringify({"checks":checks,"failures":failures,"records":records},"\t"))
 	print("CORRECTED CAPTURES ",checks," checks ",failures.size()," failures; renderer ",RenderingServer.get_video_adapter_name(),"; output ",output)
 	quit(0 if failures.is_empty() else 1)
