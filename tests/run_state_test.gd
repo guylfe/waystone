@@ -181,6 +181,7 @@ func test_attacks_are_long_commitments() -> void:
 func test_sword_combo_uses_distinct_geometry_and_resets() -> void:
 	var state: RunState = RunStateScript.new(false)
 	state.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
+	state.combat_lab=true; state.lab_variant="A" # recorded held comparison
 	state.enemies.clear()
 	# Held throughout so all three phases are actually reached and their authored
 	# geometry can be compared.
@@ -214,6 +215,7 @@ func test_combo_hold_commits_each_strike() -> void:
 	# sequence commits is decided by how long the input stays live.
 	var single: RunState = RunStateScript.new(false)
 	single.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
+	single.combat_lab=true; single.lab_variant="A" # recorded held comparison
 	single.enemies.clear()
 	assert(single.request_combo(Vector2.UP, false))
 	single.set_attack_hold(false)
@@ -225,6 +227,7 @@ func test_combo_hold_commits_each_strike() -> void:
 
 	var double: RunState = RunStateScript.new(false)
 	double.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
+	double.combat_lab=true; double.lab_variant="A" # recorded held comparison
 	double.enemies.clear()
 	assert(double.request_combo(Vector2.UP, false, true))
 	assert(advance_until_elapsed(double, 0.90))
@@ -235,6 +238,7 @@ func test_combo_hold_commits_each_strike() -> void:
 
 	var full: RunState = RunStateScript.new(false)
 	full.start_run("warrior", "expedition", 739391, "encounter", "recovery", true)
+	full.combat_lab=true; full.lab_variant="A" # recorded held comparison
 	full.enemies.clear()
 	assert(full.request_combo(Vector2.UP, false, true))
 	while full.advance_streamed_action_tick(): pass
@@ -242,6 +246,7 @@ func test_combo_hold_commits_each_strike() -> void:
 
 func test_combo_retouch_resumes_the_held_chain() -> void:
 	var retouched: RunState = RunStateScript.new()
+	retouched.combat_lab=true; retouched.lab_variant="A" # recorded held comparison
 	retouched.enemies.clear()
 	# Begins from a tap, with no live input, then renews the touch before each
 	# link. Each renewal restores a live input for the sample at that link.
