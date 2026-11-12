@@ -51,7 +51,7 @@ func select(route:String):
 	if route=="touch":await tap(board.commit_shot_rect.get_center())
 	elif route=="keyboard":await keytap(KEY_G)
 	else:
-		await joy(JOY_BUTTON_LEFT_SHOULDER,true);await pad(JOY_BUTTON_A);await joy(JOY_BUTTON_LEFT_SHOULDER,false);await frames()
+		await joy(JOY_BUTTON_LEFT_SHOULDER,true);await pad(JOY_BUTTON_A if board.state.player_weapon_frame=="bow" else JOY_BUTTON_LEFT_STICK);await joy(JOY_BUTTON_LEFT_SHOULDER,false);await frames()
 func confirm(route:String):
 	if route=="touch":await tap(target_point())
 	elif route=="keyboard":
@@ -105,34 +105,21 @@ func lifecycle(kind:String,rules:String):
 	records.append({"lifecycle":kind,"rules":rules,"shots":s.survey_shots_fired,"time":time,"paused":board.controller.paused,"fixture":"synthetic app-focus/joy-disconnect notification; no host/device action"})
 	await finish()
 func ordinary_controls(rules:String):
-	await setup(rules,"top_down")
-	var s=board.state
-	await select("touch");await key(KEY_F,true)
-	check(board.selected_action=="" and s.player_action.kind=="bow_draw" and not s.player_action.get("commit_shot",false),"ordinary F replaces uncommitted selection")
-	await key(KEY_F,false);await ready();check(s.survey_shots_fired==1,"ordinary quick release still fires")
-	s.player_energy=s.player_max_energy # labelled resource reset between independent controls
-	await key(KEY_F,true)
-	for i in 600:
-		if float(s.player_action.get("draw_ratio",0))>=0.995:break
-		await frames(1)
-	check(s.player_action.kind=="bow_draw" and not s.player_action.get("commit_shot",false),"ordinary full holds without auto release")
-	await key(KEY_F,false);check(s.player_action.kind=="bow_release" and not s.player_action.commit_shot,"ordinary full has no bonus")
-	await ready();check(s.survey_shots_fired==2,"ordinary full adds one shot")
-	s.player_energy=s.player_max_energy
-	await touch(target_point(),true);await create_timer(0.48).timeout;await frames()
-	print("PARTIAL BEFORE RELEASE ",JSON.stringify({"kind":s.player_action.kind,"elapsed":s.player_action.elapsed,"pointer":board.pointer_down,"attack_held":board.attack_pointer_held,"controller":board.controller.active,"map":board.map_open,"character":board.character_sheet_open,"position":str(target_point())}))
-	check(s.player_action.kind=="bow_draw" and not s.player_action.get("commit_shot",false),"ordinary target touch still holds partial draw")
-	await touch(target_point(),false);print("PARTIAL AFTER RELEASE ",JSON.stringify({"kind":s.player_action.kind,"elapsed":s.player_action.elapsed,"pointer":board.pointer_down,"attack_held":board.attack_pointer_held}));check(s.player_action.kind=="bow_release" and s.player_action.draw_ratio<0.995,"partial touch release remains partial")
-	await ready();check(s.survey_shots_fired==3,"partial touch adds one ordinary shot")
-	s.player_energy=s.player_max_energy
-	await trigger(1.0)
-	for i in 600:
-		if float(s.player_action.get("draw_ratio",0))>=0.995:break
-		await frames(1)
-	check(s.player_action.kind=="bow_draw" and not s.player_action.get("commit_shot",false),"RT still holds ordinary full draw")
-	await trigger(0.0);await ready();check(s.survey_shots_fired==4,"RT release fires once")
-	records.append({"ordinary_controls":rules,"shots":s.survey_shots_fired,"routes":["F quick","F full hold/release","touch partial hold/release","RT full hold/release"]})
-	await finish()
+	for route in ["keyboard","touch","pad"]:
+		await setup(rules,"top_down")
+		var s=board.state
+		if route=="keyboard":await key(KEY_F,true)
+		elif route=="touch":await touch(target_point(),true);await create_timer(0.20).timeout
+		else:await trigger(1.0)
+		check(s.player_action.kind=="bow_draw" and s.player_action.get("automatic_draw",false),"ordinary fixed draw begins "+route)
+		if route=="keyboard":await key(KEY_F,false)
+		elif route=="touch":await touch(target_point(),false)
+		else:await trigger(0.0)
+		check(s.player_action.kind=="bow_draw","release cannot fire early "+route)
+		await ready()
+		check(s.survey_shots_fired==1,"ordinary automatic release once "+route)
+		check(s.simulation_time>0.45 and s.simulation_time<1.6,"bounded ordinary draw plus recovery "+route)
+		await finish()
 func manual_aim(rules:String):
 	await setup(rules,"isometric")
 	await select("touch");await confirm("touch")
@@ -141,7 +128,7 @@ func manual_aim(rules:String):
 	await touch(point,true)
 	var drag=InputEventScreenDrag.new();drag.index=31;drag.position=board._world_to_screen(s.player_pos+Vector2(200,0));drag.relative=drag.position-point;send(drag);await frames(2)
 	var angle=absf(before.angle_to(s.player_action.aim_direction))
-	check(angle>0 and angle<=deg_to_rad(12.01),"new touch drag uses ordinary limited aim adjustment "+rules)
+	check(is_zero_approx(angle),"touch drag cannot steer committed Bow "+rules)
 	await touch(drag.position,false)
 	check(s.player_action.kind=="bow_draw" and s.survey_shots_fired==0,"aim finger release cannot trigger early shot")
 	await ready();check(s.survey_shots_fired==1,"manually led commitment still completes one full shot")

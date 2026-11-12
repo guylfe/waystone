@@ -1,3 +1,5 @@
+> **12 November 2026 candidate:** normal gameplay now uses single-cut ordinary melee, explicit prepaid full combos, fixed automatic ordinary Bow, and universal 1.25× playback at unchanged 120 Hz. Explicit Survey comparisons retain their grammar. This candidate is not published or installed. Movement endpoint and enemy-uncertainty decisions remain open. [Scope and verification](combat-decision-update.md).
+
 # Waystone current state
 
 **Reviewed:** 2026-11-01 (final independent source/headless acceptance and verified Windows/GitHub delivery).

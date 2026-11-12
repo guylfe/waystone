@@ -30,7 +30,7 @@ static func rows(board, controller) -> Array:
 	if state.defense_id == "block": defense_detail = "Hold to block · left stick chooses facing"
 	elif state.defense_id == "endure": defense_detail = "Press to endure"
 	var result := [
-		{"key": "rt", "label": "Draw bow" if state.player_weapon_frame == "bow" else "Attack", "detail": "Hold to draw · release to fire" if state.player_weapon_frame == "bow" else "Hold to chain · release to stop"},
+		{"key": "rt", "label": "Draw bow" if state.player_weapon_frame == "bow" else "Attack", "detail": ("Automatic draw + recovery" if state.player_weapon_frame == "bow" else "Single cut + recovery; hold repeats") if state.uses_decision_commitments() else "Hold to draw · release to fire" if state.player_weapon_frame == "bow" else "Hold to chain · release to stop"},
 		{"key": "b", "label": String(state.defense_id).capitalize(), "detail": defense_detail, "cooldown": board._defense_cooldown()},
 		{"key": "rb", "label": String(art.get("label", "Weapon art locked")), "detail": "Learn an art through upgrades" if art.is_empty() else "Press to use weapon art", "locked": art.is_empty(), "cooldown": state.skill_cooldown},
 		{"key": "y", "label": controller.quick_label(board), "detail": quick_detail, "cooldown": quick_cooldown},
@@ -41,7 +41,7 @@ static func rows(board, controller) -> Array:
 		{"key": "lr", "label": item_name, "detail": "Select item · slot %d / 3 · %d left" % [controller.utility_slot + 1, int(item.get("count", 0))]},
 		{"key": "down", "label": "Replace selected slot" if state.has_pending_pickup() else "Use selected item", "detail": "Take the nearby pickup" if state.has_pending_pickup() else "Aim, then press to use", "locked": item_id == "" and not state.has_pending_pickup()},
 	]
-	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": result.append({"key":"lb","label":"LB + A · Commit Shot","detail":"+25% full-shot damage · RS click target, A confirm"})
+	if state.commit_available(): result.append({"key":"lb","label":"LB + A · Commit Shot" if state.player_weapon_frame=="bow" else "LB + LS click · Commit Combo","detail":"+25% full-shot damage · RS click target, A confirm" if state.player_weapon_frame=="bow" else "All cuts + recovery · RS click target, A confirm"})
 	return result
 
 static func draw_row(board, rect: Rect2, row: Dictionary, scale: float) -> void:

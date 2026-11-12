@@ -32,6 +32,10 @@ static func checkpoint(state: RunState) -> Dictionary:
 		player["expedition"] = state.expedition.duplicate(true)
 		player["expedition"].erase("events")
 	player["player_action"] = _selected(Dictionary(state.player_action), ACTION_FIELDS)
+	for key in ["automatic_draw", "full_combo_commit"]:
+		if bool(state.player_action.get(key,false)): player["player_action"][key]=true
+	if bool(state.player_action.get("full_combo_commit",false)):
+		player["player_action"].merge(_selected(state.player_action,["commit_paid_cost", "phases", "committed_phase", "terminal_recovery_locked"]))
 	if bool(state.player_action.get("commit_shot",false)): player["player_action"]["commit_shot"]=true
 	if String(state.player_action.get("kind","")) in ["bow_draw","bow_release"] and bool(state.player_action.get("bow_followup_consumed",state.bow_followup_consumed)):
 		player["player_action"]["bow_followup_consumed"]=true

@@ -316,7 +316,9 @@ func combat(data: Dictionary) -> void:
 	if frame=="bow" and board.state.loadout_id=="rogue_sharpshooter":
 		var price:String=board._commit_shot_price_text()
 		line(content,"Commit Shot · +25% full-shot damage. Select, then confirm a visible enemy. "+price+". Automatically finish remaining full draw and ordinary recovery. No hold, early release or voluntary cancel; ordinary interruption still applies.")
-		line(content,"Touch: COMMIT SHOT, then enemy; tap selection again to cancel. Keyboard: G select/cancel, Tab enemy, Enter confirm. Controller: LB+A select, right-stick click enemy, A confirm / B cancel. Ordinary ATTACK / F / RT charging, Take Aim and learned arts remain separate.")
+		line(content,"Touch: COMMIT SHOT, then enemy; tap selection again to cancel. Keyboard: G select/cancel, Tab enemy, Enter confirm. Controller: LB+A select, right-stick click enemy, A confirm / B cancel. Ordinary ATTACK / F / RT automatically draws, releases and recovers. Take Aim and learned arts remain separate.")
+	if frame!="bow" and board.state.uses_decision_commitments():
+		line(content,"Ordinary attack commits one cut and recovery. COMMIT COMBO / G / LB+left-stick-click selects the entire authored combo, then confirm a visible enemy. All cuts are prepaid; release cannot cancel. Normal interruption still applies.")
 	var equipped := str(data.equipped_art)
 	line(content,"ART · "+("LOCKED" if equipped.is_empty() else "EQUIPPED · "+str(board.CombatCatalogScript.weapon_art(equipped).get("label",equipped))))
 	for art in data.known_arts:

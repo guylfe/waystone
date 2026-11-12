@@ -21,6 +21,8 @@ signal changed
 signal message_changed(text: String)
 
 const WORLD_SIZE := Vector2(15600.0, 7000.0)
+const EXECUTION_PLAYBACK_RATE := 1.25
+const ORDINARY_BOW_DRAW := 0.45
 const SIM_DT := 1.0 / 120.0
 const FRAME_DT := 1.0 / 60.0
 const PLAYER_RADIUS := 30.0
@@ -455,7 +457,7 @@ const PLAYER_ATTACK_ACTION_KINDS := AbilityCatalogScript.PLAYER_ATTACK_ACTION_KI
 const ENEMY_ATTACK_ACTION_KINDS := AbilityCatalogScript.ENEMY_ATTACK_ACTION_KINDS
 const ENERGY_REGEN_ACTIONS := AbilityCatalogScript.ENERGY_REGEN_ACTION_KINDS
 const SAVE_VERSION := 39
-const GAME_VERSION := "0.3.6"
+const GAME_VERSION := "0.3.7"
 const SURVEY_GENERATOR_VERSION := 3
 const PRESENTATION_VERSION := 20
 const SWORD_ARTS := ["prototype_sweeping_cut", "prototype_drawing_cut"]
@@ -3441,7 +3443,7 @@ func lab_input_neutral() -> void:
 func lab_forced_replacement() -> void:
 	if not combat_lab: return
 	lab_armed = false
-	var paid := bool(player_action.get("lab_prepaid",false))
+	var paid := (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false)))
 	if paid: lab_neutral_required = true
 	lab_notice = "Interrupted · Commit ended. No refund." if paid else "Interrupted · Sequence ended."
 	if player_action.has("lab_exit_request"): lab_notice += " Queued %s cleared." % String(player_action["lab_exit_request"]["kind"]).capitalize()
@@ -3536,7 +3538,7 @@ func lab_suspend() -> void:
 # A stopped frame precedes the complete tick that would cross the link.
 func lab_tick_blocked(dt: float) -> bool:
 	if combat_lab and String(player_action.get("kind","")) == "idle": return true
-	if not lab_frozen_rules() or String(player_action.get("kind","")) != "combo" or bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("terminal_recovery_locked",false)): return false
+	if not lab_frozen_rules() or String(player_action.get("kind","")) != "combo" or (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))) or bool(player_action.get("terminal_recovery_locked",false)): return false
 	var phases: Array = player_action["phases"]
 	var index := int(player_action["committed_phase"])
 	if index >= phases.size()-1: return false
@@ -3602,7 +3604,7 @@ func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
 	if not _can_start_basic_attack(): return false
 	if player_weapon_frame == "bow":
 		if not begin_bow_draw(target - player_pos, _enemy_id_near_position(target)): return false
-		release_bow_attack(target - player_pos)
+		if not uses_decision_commitments(): release_bow_attack(target - player_pos)
 		if simulate_immediately: _simulate_until_ready()
 		return true
 	_break_player_combo()
@@ -3649,6 +3651,39 @@ func request_skill(direction: Vector2, simulate_immediately: bool = true) -> boo
 # sampled again at every authored link point, so a sustained hold continues the
 # sequence for as long as it lasts while a tap commits exactly one strike. It must
 # never be assumed: an action begun from a released input has no continuation.
+# Explicit Survey comparisons retain their recorded input grammar.
+func uses_decision_commitments() -> bool:
+	return not combat_lab and survey_experiment.is_empty()
+
+func commit_available() -> bool:
+	return player_weapon_frame in ["sword", "knife", "twin_knives", "staff"] and uses_decision_commitments() or (loadout_id == "rogue_sharpshooter" and player_weapon_frame == "bow")
+
+func full_combo_raw_cost() -> float:
+	match player_weapon_frame:
+		"staff": return 56.0
+		"knife": return 35.0
+		"twin_knives": return 40.0
+	return 36.0
+
+func request_commit_combo(target_id: int, simulate_immediately: bool = true) -> bool:
+	if not uses_decision_commitments() or player_weapon_frame == "bow" or not _can_start_basic_attack(): return false
+	var target := _enemy_by_id(target_id)
+	if target.is_empty() or int(target.get("hp", 0)) <= 0 or not _enemy_on_current_layer(target) or not enemy_visible_to_player(target) or not is_visible(Vector2(target["pos"])): return false
+	# Pay the complete sequence once, including permitted overdraw. Reuse authored
+	# constructors without charging their opener; subsequent links cannot debit.
+	if not _spend_energy(full_combo_raw_cost()): return false
+	var paid := _last_energy_spend
+	var direction := Vector2(target["pos"]) - player_pos
+	if direction.is_zero_approx(): direction = player_facing
+	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, false, true)
+	elif player_weapon_frame == "staff": _begin_staff_combo(direction, false, true)
+	else: _begin_sword_combo(direction, false, false, true)
+	player_action["full_combo_commit"] = true
+	player_action["commit_paid_cost"] = paid
+	_set_message("Full combo committed: all cuts and recovery owed.")
+	if simulate_immediately: _simulate_until_ready()
+	return true
+
 func request_combo(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
 	if lab_junction():
 		var accepted := lab_continue(held)
@@ -3657,10 +3692,10 @@ func request_combo(direction: Vector2, simulate_immediately: bool = true, held: 
 	if combat_lab and (lab_armed or lab_neutral_required): return false
 	if direction.length_squared() < 0.01 or not _can_start_basic_attack(): return false
 	_break_player_combo()
-	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held)
-	elif player_weapon_frame == "staff": _begin_staff_combo(direction, held)
+	if player_weapon_frame in ["knife", "twin_knives"]: _begin_knife_combo(direction, held if not uses_decision_commitments() else false)
+	elif player_weapon_frame == "staff": _begin_staff_combo(direction, held if not uses_decision_commitments() else false)
 	elif player_weapon_frame == "bow": return false
-	else: _begin_sword_combo(direction, held, false)
+	else: _begin_sword_combo(direction, held if not uses_decision_commitments() else false, false)
 	if simulate_immediately: _simulate_until_ready()
 	else: _streamed_action_cpu_usec = 0
 	return true
@@ -3673,12 +3708,18 @@ func request_direct_attack(direction: Vector2, simulate_immediately: bool = true
 	if simulate_immediately and player_weapon_frame != "bow": _simulate_until_ready()
 	return true
 
-func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
+func begin_bow_draw(direction: Vector2, soft_target_id: int = -1, strong_commit: bool = false) -> bool:
 	if not is_player_ready() or trial_complete or player_weapon_frame != "bow" or not _can_commit_physical_action(): return false
 	if direction.length_squared() < 0.01: direction = player_facing
 	player_facing = direction.normalized()
 	player_action = _action("bow_draw", 999.0, player_facing)
 	player_action.merge({"aim_direction": player_facing, "draw_ratio": 0.0, "shot_spawned": false, "soft_target_id": soft_target_id, "manual_aim": false}, true)
+	if uses_decision_commitments():
+		player_action["automatic_draw"] = true
+		player_action["duration"] = 0.90 if strong_commit else ORDINARY_BOW_DRAW
+		if not strong_commit and not _spend_energy(lerpf(7.0,18.0,ORDINARY_BOW_DRAW/0.90)):
+			player_action = _idle_action()
+			return false
 	if bow_followup_ready:
 		player_action["elapsed"] = 0.45
 		bow_followup_ready = false
@@ -3689,11 +3730,12 @@ func begin_bow_draw(direction: Vector2, soft_target_id: int = -1) -> bool:
 	_apply_action_poise(player_action)
 	_annotate_player_action("bow_draw")
 	_emit_sound(player_pos, 80.0)
-	_set_message("You begin drawing the Bow. Release to fire.")
+	_set_message("Bow committed: draw, release and recovery.") if uses_decision_commitments() else _set_message("You begin drawing the Bow. Release to fire.")
 	_streamed_action_cpu_usec = 0
 	return true
 
 func set_bow_aim(direction: Vector2) -> void:
+	if bool(player_action.get("automatic_draw",false)): return
 	if String(player_action.get("kind", "")) != "bow_draw" or direction.length_squared() < 0.01: return
 	var desired := direction.normalized()
 	var current := Vector2(player_action.get("aim_direction", player_facing)).normalized()
@@ -3736,7 +3778,7 @@ func release_bow_attack(direction: Vector2 = Vector2.ZERO) -> bool:
 	if String(player_action.get("kind", "")) != "bow_draw": return false
 	# The separate prepaid commitment cannot be released early by physical input,
 	# focus/menu cleanup, or an ordinary attack release.
-	if bool(player_action.get("commit_shot",false)): return false
+	if bool(player_action.get("commit_shot",false)) or bool(player_action.get("automatic_draw",false)): return false
 	if direction.length_squared() > 0.01: set_bow_aim(direction)
 	return _release_bow_shot()
 
@@ -3758,7 +3800,7 @@ func request_commit_shot(target_id: int, simulate_immediately: bool = true) -> b
 	var direction := Vector2(_enemy_by_id(target_id)["pos"])-player_pos
 	# Reuse ordinary draw, earned preload consumption and action poise. Pay before
 	# the draw advances, while ordinary overdraw remains legal; release is prepaid.
-	if not begin_bow_draw(direction,target_id): return false
+	if not begin_bow_draw(direction,target_id, true): return false
 	if not _spend_energy(18.0): return false
 	player_action["commit_shot"]=true
 	player_action["duration"]=0.90
@@ -3767,12 +3809,17 @@ func request_commit_shot(target_id: int, simulate_immediately: bool = true) -> b
 	if simulate_immediately: _simulate_until_ready()
 	return true
 
+func _bow_recovery(ratio: float) -> float:
+	var recovery := lerpf(0.70, 1.30, ratio)
+	if has_track_rank("bow", 4): recovery *= 0.80
+	return _shorten_recovery(recovery, 0.06, 0.65)
+
 func _release_bow_shot() -> bool:
 	var committed := bool(player_action.get("commit_shot",false))
 	var used_followup := bool(player_action.get("bow_followup_consumed",bow_followup_consumed))
 	var draw_time := float(player_action.get("elapsed", 0.0))
 	var ratio := 1.0 if committed else clampf(draw_time / 0.90, 0.0, 1.0)
-	if not committed and not _spend_energy(lerpf(7.0, 18.0, ratio)):
+	if not committed and not bool(player_action.get("automatic_draw",false)) and not _spend_energy(lerpf(7.0, 18.0, ratio)):
 		player_action = _idle_action()
 		return false
 	var strength_adjustment := int(player_attributes.get("strength", 4)) - 4
@@ -3787,9 +3834,7 @@ func _release_bow_shot() -> bool:
 	var damage := roundi(lerpf(float(loose_damage), float(full_damage), ratio))
 	if committed: damage=roundi(float(damage)*1.25)
 	var posture := lerpf(0.0, 3.25 if has_track_rank("bow", 3) else 2.5, ratio)
-	var recovery := lerpf(0.70, 1.30, ratio)
-	if has_track_rank("bow", 4): recovery *= 0.80
-	recovery = _shorten_recovery(recovery, 0.06, 0.65)
+	var recovery := _bow_recovery(ratio)
 	var aim := Vector2(player_action.get("aim_direction", player_facing)).normalized()
 	player_action = _action("bow_release", recovery, aim)
 	player_action.merge({"startup": 0.06, "shot_spawned": false, "projectile_damage": damage, "projectile_posture": posture, "projectile_speed": velocity, "projectile_range": maximum_range, "draw_ratio": ratio, "full_draw": ratio >= 0.995}, true)
@@ -3807,7 +3852,7 @@ func _aimed_projectile_range_multiplier() -> float:
 # everything around you rather than that it hits harder -- the staff's growth is in ground
 # covered, which is why Flowing Form widens the middle hit at the same duration instead of
 # speeding anything up.
-func _begin_staff_combo(direction: Vector2, held: bool) -> void:
+func _begin_staff_combo(direction: Vector2, held: bool, prepaid: bool = false) -> void:
 	player_facing = direction.normalized()
 	var reach_bonus := 18.0 if has_track_rank("staff", 2) else 0.0
 	var wide_middle := has_track_rank("staff", 3)
@@ -3817,10 +3862,11 @@ func _begin_staff_combo(direction: Vector2, held: bool) -> void:
 		{"startup": 1.94, "active_end": 2.22, "end": 2.86, "reach": 146.0 + reach_bonus, "damage_min": _player_physical_damage(5), "damage_max": _player_physical_damage(5), "posture": 3.6, "technique": "staff_spin", "energy_cost": 22.0},
 	]
 	phases = _linked_combo_phases(phases, 0.25)
-	if not _spend_energy(float(phases[0]["energy_cost"])): return
+	if not prepaid and not _spend_energy(float(phases[0]["energy_cost"])): return
 	player_action = _action("combo", float(phases[-1]["end"]), player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = phases.size()
+	if uses_decision_commitments() and not prepaid: player_action["duration"] = float(phases[0]["end"])
 	player_action["combo_instance_id"] = _next_combo_instance_id
 	_next_combo_instance_id += 1
 	player_action["phase_index"] = -1
@@ -3832,9 +3878,9 @@ func _begin_staff_combo(direction: Vector2, held: bool) -> void:
 	_apply_action_poise(player_action)
 	_annotate_player_action("staff_combo")
 	_emit_sound(player_pos, 300.0)
-	_set_message("The staff comes up. Hold to carry the form through.")
+	_set_message("Staff attack: cut and recovery committed." if uses_decision_commitments() else "The staff comes up. Hold to carry the form through.")
 
-func _begin_knife_combo(direction: Vector2, held: bool) -> void:
+func _begin_knife_combo(direction: Vector2, held: bool, prepaid: bool = false) -> void:
 	player_facing = direction.normalized()
 	var twin := player_weapon_frame == "twin_knives"
 	var speed_scale := 0.92 if has_track_rank("knife", 3) else 1.0
@@ -3859,10 +3905,11 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 		})
 	phases = _linked_combo_phases(phases, 0.20)
 	total = float(phases[-1]["end"])
-	if not _spend_energy(float(energy_costs[0])): return
+	if not prepaid and not _spend_energy(float(energy_costs[0])): return
 	player_action = _action("combo", total, player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = phases.size()
+	if uses_decision_commitments() and not prepaid: player_action["duration"] = float(phases[0]["end"])
 	player_action["combo_instance_id"] = _next_combo_instance_id
 	_next_combo_instance_id += 1
 	player_action["phase_index"] = -1
@@ -3876,7 +3923,7 @@ func _begin_knife_combo(direction: Vector2, held: bool) -> void:
 	_apply_action_poise(player_action)
 	_annotate_player_action("knife_sequence")
 	_emit_sound(player_pos, 260.0)
-	_set_message("The Knife sequence begins. Hold to continue cutting.")
+	_set_message("Knife attack: cut and recovery committed." if uses_decision_commitments() else "The Knife sequence begins. Hold to continue cutting.")
 
 func request_execution(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or (skill_cooldown > 0.0001 and not uses_energy_rules()) or direction.length_squared() < 0.01 or not _spend_energy(EXECUTION_ENERGY): return false
@@ -4147,6 +4194,7 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool, prep
 	player_action = _action("combo", duration, player_facing)
 	player_action["phases"] = phases
 	player_action["combo_length"] = 3
+	if uses_decision_commitments() and not prepaid: player_action["duration"] = float(phases[0]["end"])
 	player_action["combo_instance_id"] = _next_combo_instance_id
 	_next_combo_instance_id += 1
 	player_action["phase_index"] = -1
@@ -4161,16 +4209,18 @@ func _begin_sword_combo(direction: Vector2, held: bool, from_advance: bool, prep
 	_apply_action_poise(player_action)
 	_annotate_player_action("sword_combo")
 	_emit_sound(player_pos, 470.0)
-	_set_message("The opening cut begins. Hold to commit the next strike.")
+	_set_message("Sword attack: cut and recovery committed." if uses_decision_commitments() else "The opening cut begins. Hold to commit the next strike.")
 
 func set_attack_hold(held: bool) -> void:
-	if bool(player_action.get("lab_prepaid",false)): return
+	if uses_decision_commitments(): return
+	if (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))): return
 	if String(player_action.get("kind", "idle")) != "combo": return
 	player_action["continue_held"] = held
 	if not held:
 		_set_message("Release noted. Finish the current cut, then time freezes.")
 
 func resume_combo_hold() -> bool:
+	if uses_decision_commitments(): return false
 	if lab_junction(): return lab_continue(true)
 	if String(player_action.get("kind", "idle")) != "combo": return false
 	var phases: Array = player_action.get("phases", [])
@@ -6157,7 +6207,7 @@ func _update_player(dt: float) -> void:
 			if previous_draw < 0.995 and float(player_action["draw_ratio"]) >= 0.995:
 				_add_effect("full_draw", player_pos)
 				_set_message("The Bow reaches Full Draw.")
-			if bool(player_action.get("commit_shot",false)) and elapsed>=0.90:
+			if (bool(player_action.get("commit_shot",false)) and elapsed>=0.90) or (bool(player_action.get("automatic_draw",false)) and elapsed>=float(player_action["duration"])):
 				_release_bow_shot()
 				# The new release/recovery has its own elapsed clock. Never complete
 				# it using the old draw clock (especially Quick Nock/Recovery rules).
@@ -6329,14 +6379,14 @@ func _update_player_combo(elapsed: float) -> void:
 	var phase: Dictionary = phases[committed_phase]
 	var link := float(phase.get("link", phase["active_end"]))
 	if not bool(player_action.get("terminal_recovery_locked", false)) and elapsed >= link:
-		if committed_phase >= phases.size() - 1 or not (bool(player_action.get("continue_held", false)) or (lab_frozen_rules() and bool(player_action.get("lab_continue_token",false))) or bool(player_action.get("lab_prepaid",false))):
+		if (uses_decision_commitments() and not bool(player_action.get("full_combo_commit",false))) or committed_phase >= phases.size() - 1 or not (bool(player_action.get("continue_held", false)) or (lab_frozen_rules() and bool(player_action.get("lab_continue_token",false))) or (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false)))):
 			_lock_combo_terminal_recovery(phase)
-		elif not bool(player_action.get("lab_prepaid",false)) and not _can_commit_physical_action():
+		elif not (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))) and not _can_commit_physical_action():
 			energy_blocked_continuations += 1
 			_lock_combo_terminal_recovery(phase)
 		else:
 			var next_phase := committed_phase + 1
-			if not bool(player_action.get("lab_prepaid",false)) and not _spend_energy(float(Dictionary(phases[next_phase]).get("energy_cost", 0.0))):
+			if not (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))) and not _spend_energy(float(Dictionary(phases[next_phase]).get("energy_cost", 0.0))):
 				energy_blocked_continuations += 1
 				_lock_combo_terminal_recovery(phase)
 			else:
@@ -6382,7 +6432,7 @@ func _break_player_combo() -> void:
 	# state to preserve. Keeping this boundary makes interruption call sites clear.
 	if combat_lab:
 		lab_armed = false
-		if bool(player_action.get("lab_prepaid",false)): lab_neutral_required = true
+		if (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))): lab_neutral_required = true
 
 func _follow_the_opening(phase_index: int) -> void:
 	var phases: Array = player_action.get("phases", [])
@@ -8867,7 +8917,7 @@ func _player_commitment_remaining() -> float:
 # Only the paid, committed combo phase is irrevocable. The catalogue's full
 # sequence duration includes optional future choices and is not an answer budget.
 func player_commitment_world_remaining() -> float:
-	if combat_lab and bool(player_action.get("lab_prepaid",false)):
+	if combat_lab and (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false))):
 		return maxf(0.0,float(player_action["duration"])-float(player_action["elapsed"]))/maxf(0.01,_player_personal_tempo())
 	return player_control_world_remaining()
 
@@ -8877,9 +8927,12 @@ func player_control_world_remaining() -> float:
 	if String(action["kind"])=="idle": return 0.0
 	var end := float(action["duration"])
 	var phases: Array = action.get("phases",[])
-	if not phases.is_empty(): end = float(phases[clampi(int(action.get("committed_phase",0)),0,phases.size()-1)]["end"])
+	if not phases.is_empty() and not bool(action.get("full_combo_commit",false)): end = float(phases[clampi(int(action.get("committed_phase",0)),0,phases.size()-1)]["end"])
 	var tempo := 1.0 if String(action["kind"]) in ["hit_reaction","stagger"] else _player_personal_tempo()
-	return maxf(0.0,end-float(action["elapsed"]))/maxf(0.01,tempo)
+	var remaining := maxf(0.0,end-float(action["elapsed"]))
+	if String(action["kind"])=="bow_draw" and bool(action.get("automatic_draw",false)):
+		remaining += _bow_recovery(1.0 if bool(action.get("commit_shot",false)) else ORDINARY_BOW_DRAW/0.90)
+	return remaining/maxf(0.01,tempo)
 
 # A screen strikes because the player is LATE, not because the player is near.
 #

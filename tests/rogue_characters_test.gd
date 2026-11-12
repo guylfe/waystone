@@ -80,6 +80,7 @@ func test_combo_presentation_and_sequence_recovery() -> void:
 	knife.player_action = knife._idle_action()
 	assert(knife.choose_upgrade("knife|knife_twin_fang"))
 	knife.player_energy = knife.player_max_energy
+	knife.combat_lab=true;knife.lab_variant="A" # historical held sequence control
 	# Held throughout: the sequence-completion cooldown only arms when all six
 	# cuts are actually committed, and continuation is sampled at each link.
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
@@ -210,6 +211,7 @@ func test_lethal_hits_alert_unless_explicitly_silent() -> void:
 
 func test_bow_draw_release_and_arts() -> void:
 	var state := fresh("rogue_sharpshooter")
+	state.combat_lab=true;state.lab_variant="A" # historical manual Bow control
 	assert(state.begin_bow_draw(Vector2.RIGHT))
 	for _tick in range(108): state.advance_streamed_action_tick()
 	assert(float(state.player_action["draw_ratio"]) > 0.70)

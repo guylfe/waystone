@@ -1124,7 +1124,7 @@ func _layout() -> void:
 	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	sheet_button_rect = Rect2(map_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	survey_end_rect = Rect2(sheet_button_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
-	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud(commit_unit)
+	if state.commit_available(): _sync_commit_hud(commit_unit)
 	var sheet_size := Vector2(minf(layout_size.x - 30.0, 1080.0), minf(layout_size.y - 34.0, 790.0))
 	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
@@ -1235,7 +1235,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(survey_overlay) and survey_overlay.visible: MenuMetrics.apply(self,survey_overlay)
 	controller.sync_context(self) # Bind native focus for touch/keyboard handover too.
 	controller.update(self, delta)
-	if state.loadout_id=="rogue_sharpshooter" and state.player_weapon_frame=="bow": _sync_commit_hud()
+	if state.commit_available(): _sync_commit_hud()
 	frame_metric_elapsed += delta
 	frame_metric_worst_ms = maxf(frame_metric_worst_ms, delta * 1000.0)
 	if frame_metric_elapsed >= 2.0:
@@ -1275,7 +1275,7 @@ func _process(delta: float) -> void:
 			var held_advance_direction := _desktop_held_direction()
 			var advance_direction := Vector2(state.player_action.get("direction", state.player_facing))
 			state.set_advance_hold(not held_advance_direction.is_zero_approx() and held_advance_direction.dot(advance_direction) > 0.80)
-		var requested_accumulator := stream_accumulator + minf(delta, 0.10)
+		var requested_accumulator := stream_accumulator + minf(delta, 0.10) * state.EXECUTION_PLAYBACK_RATE
 		var maximum_accumulator := state.SIM_DT * float(MAX_SIM_TICKS_PER_FRAME)
 		if requested_accumulator > maximum_accumulator:
 			state.performance_metrics["dropped_realtime_ms"] = float(state.performance_metrics.get("dropped_realtime_ms", 0.0)) + (requested_accumulator - maximum_accumulator) * 1000.0
@@ -1307,7 +1307,7 @@ func _process(delta: float) -> void:
 			visual = stream_blended_frame.blend(stream_previous_frame, stream_current_frame, stream_accumulator / state.SIM_DT)
 		needs_redraw = true
 	elif playing:
-		playback_accumulator += delta
+		playback_accumulator += delta * state.EXECUTION_PLAYBACK_RATE
 		while playback_accumulator >= state.FRAME_DT and playback_index < timeline.size() - 1:
 			playback_accumulator -= state.FRAME_DT
 			playback_index += 1
@@ -2372,13 +2372,13 @@ func _handle_button(name: String) -> void:
 	queue_redraw()
 
 func _commit_shot_price_text() -> String:
-	return ("%.1f Energy" % state.energy_cost(18)) if state.uses_energy_rules() else "Recovery: 0 Energy"
+	return ("%.1f Energy" % state.energy_cost(18 if state.player_weapon_frame=="bow" else state.full_combo_raw_cost())) if state.uses_energy_rules() else "Recovery: 0 Energy"
 
 func _commit_shot_selection_text(input_method: String) -> String:
 	var controls := "tap enemy; tap COMMIT SHOT to cancel."
 	if input_method=="keyboard": controls="[Tab] choose; [Enter] commit; [G] cancel."
 	elif input_method=="controller": controls="RS-click choose; [A] commit; [B] cancel."
-	return "Full shot +25%: "+_commit_shot_price_text()+". "+controls
+	return ("Full shot +25%: " if state.player_weapon_frame=="bow" else "Full combo + recovery: ")+_commit_shot_price_text()+". "+controls
 
 func _cancel_commit_shot_selection() -> void:
 	if selected_action!="commit_shot": return
@@ -2387,7 +2387,7 @@ func _cancel_commit_shot_selection() -> void:
 	queue_redraw()
 
 func _select_commit_shot(input_method: String="pointer") -> void:
-	if playing or not state.is_player_ready() or state.loadout_id!="rogue_sharpshooter" or state.player_weapon_frame!="bow": return
+	if playing or not state.is_player_ready() or not state.commit_available(): return
 	if selected_action=="commit_shot": _cancel_commit_shot_selection(); return
 	selected_action="commit_shot"
 	state.message=_commit_shot_selection_text(input_method)
@@ -2395,7 +2395,7 @@ func _select_commit_shot(input_method: String="pointer") -> void:
 
 func _confirm_commit_shot(target_id: int) -> bool:
 	if selected_action!="commit_shot": return false
-	var accepted := state.request_commit_shot(target_id,false)
+	var accepted := state.request_commit_shot(target_id,false) if state.player_weapon_frame=="bow" else state.request_commit_combo(target_id,false)
 	if accepted:
 		selected_action=""
 		# A discrete commitment owns no repeat, held trigger or buffered action.
@@ -3887,7 +3887,7 @@ func _draw_warrior_status(pos: Vector2, radius: float, action: Dictionary) -> vo
 func _draw_combo_commitment(pos: Vector2, radius: float, action: Dictionary) -> void:
 	var active_index := int(action.get("phase_index", 0))
 	var committed_index := int(action.get("committed_phase", 0))
-	var holding := bool(action.get("continue_held", false))
+	var holding := bool(action.get("full_combo_commit",false)) or (not state.uses_decision_commitments() and bool(action.get("continue_held", false)))
 	var spacing := maxf(8.0, radius * 0.48)
 	var origin := pos + Vector2(-spacing, -radius * 2.85)
 	var count := int(action.get("combo_length", Array(action.get("phases", [])).size()))
@@ -5093,8 +5093,9 @@ func _draw_commit_shot_control() -> void:
 	var selected := selected_action=="commit_shot"
 	draw_rect(commit_shot_rect,Color("28515d") if selected else Color("15232a"))
 	draw_rect(commit_shot_rect,Color("66e0ff") if selected else Color("d7aa58"),false,3*u if selected else 1.5*u)
-	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,"COMMIT SHOT",HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
+	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,("COMMIT SHOT" if state.player_weapon_frame=="bow" else "COMMIT COMBO"),HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
 	var detail := "FULL SHOT COMMITTED" if committed else "CHOOSE ENEMY" if selected else "+25% damage · [G]" if desktop_controls and not controller.active else "+25% damage · LB+A" if controller.active else "+25% full-shot damage"
+	if state.player_weapon_frame!="bow": detail="ALL CUTS + RECOVERY" if bool(state.player_action.get("full_combo_commit",false)) else "CHOOSE ENEMY" if selected else "Full combo · [G]" if desktop_controls else "LB + LS click" if controller.active else "Full combo + recovery"
 	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,49)*u,detail,HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(12*u),Color("adc8d4"))
 	if selected:
 		var target: Dictionary=controller.locked_target(self)
@@ -5125,7 +5126,7 @@ func _draw_attack_button() -> void:
 		subtitle = "SEQUENCE ENDED"
 	elif attacking:
 		title = "ATTACKING"
-		subtitle = "HOLD TO FLOW" if action_kind == "combo" else "FULL SHOT COMMITTED" if bool(state.player_action.get("commit_shot",false)) else "RELEASE TO FIRE" if action_kind == "bow_draw" else "COMMITTED"
+		subtitle = ("FULL COMBO COMMITTED" if bool(state.player_action.get("full_combo_commit",false)) else "CUT + RECOVERY" if state.uses_decision_commitments() else "HOLD TO FLOW") if action_kind == "combo" else "FULL SHOT COMMITTED" if bool(state.player_action.get("commit_shot",false)) else ("DRAW + RECOVERY" if state.uses_decision_commitments() else "RELEASE TO FIRE") if action_kind == "bow_draw" else "COMMITTED"
 	elif not available:
 		title = "BUSY"
 		subtitle = "COMMITTED"

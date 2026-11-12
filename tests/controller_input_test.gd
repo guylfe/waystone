@@ -75,7 +75,7 @@ func test_attack_defense_and_bow() -> void:
 		check(board.state.player_action["kind"] == expected, "%s uses shared weapon action" % loadout)
 		axis(board, JOY_AXIS_TRIGGER_RIGHT, 0.1)
 		check(not board.controller.attack_held, "RT release clears held continuation")
-		if loadout == "rogue_sharpshooter": check(board.state.player_action["kind"] != "bow_draw", "bow release fires without a world tap")
+		if loadout == "rogue_sharpshooter": check(board.state.player_action["kind"] == "bow_draw", "bow release retains fixed automatic draw")
 		finish(board)
 		board.free()
 	var board = fixture()
@@ -294,14 +294,14 @@ func test_connected_prompts_and_guide() -> void:
 	for loadout in ["warrior", "rogue_acrobat", "rogue_sharpshooter", "mage_elementalist"]:
 		board = fixture(loadout)
 		var rows: Array = board.controller.Prompts.rows(board, board.controller)
-		var extra: bool = loadout=="rogue_sharpshooter" and board.state.player_weapon_frame=="bow"
+		var extra: bool = board.state.commit_available()
 		check(rows.size() == (11 if extra else 10), "all ten primary prompts plus the separate eligible Commit Shot entry")
-		if extra:check(rows[10]["label"].contains("Commit Shot") and rows[10]["detail"].contains("+25%"),"additional selection is named with its benefit")
+		if extra and loadout=="rogue_sharpshooter":check(rows[10]["label"].contains("Commit Shot") and rows[10]["detail"].contains("+25%"),"additional selection is named with its benefit")
 		for row in rows:
 			check(board.controller.Glyphs.KEYS.has(row["key"]), "each action references an authored button image")
 		check(rows[3]["label"] == board.controller.quick_label(board), "ability prompt names actual class ability")
 		check(rows[5]["detail"].contains("5 / 5"), "healing prompt reports remaining charges")
-		if loadout == "rogue_sharpshooter": check(rows[0]["detail"].contains("release to fire"), "Bow explains release-to-fire")
+		if loadout == "rogue_sharpshooter": check(rows[0]["detail"].contains("Automatic draw"), "Bow explains automatic commitment")
 		board.free()
 	var glyphs = preload("res://scripts/presentation/controller_glyphs.gd")
 	var regions: Array = []

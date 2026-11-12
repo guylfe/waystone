@@ -56,6 +56,8 @@ New-Item -ItemType Directory -Force -Path $env:APPDATA, $env:LOCALAPPDATA | Out-
 
 # Verified to run clean under --headless. Keep this list in sync when adding tests.
 $HeadlessSuite = @(
+    'decision_commit_test',
+    'decision_commit_input_test',
     'hud_target_stability_test',
     'feedback_target_input_test',
     'commit_shot_test',

@@ -1,6 +1,12 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.6` (Android version code `306`).
+Current prototype version: `0.3.7` (Android version code `307`).
+Candidate only; last delivered release remains `0.3.6`.
+
+Normal attacks commit a single melee cut or automatic Bow draw/release/recovery.
+Commit Combo selects the full weapon sequence before confirming a target. World
+execution plays at 1.25× with unchanged 120 Hz simulation. Movement endpoint policy
+and bounded uncertainty review remain pending; see [candidate scope](docs/combat-decision-update.md).
 
 ## v0.3.6 — mobile Character access and committed Bow option
 

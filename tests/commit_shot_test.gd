@@ -11,6 +11,8 @@ func check(ok:bool,why:String):
 	if not ok: failures.append(why);printerr("FAILED: ",why)
 func fresh(rules:String="energy",rank:int=0,integrated:bool=false):
 	var s=State.new(false);s.start_run("rogue_sharpshooter","combat_survey",101010,"encounter",rules,false,load("res://scripts/core/survey_experiment.gd").defaults() if integrated else {})
+	if not integrated:
+		s.combat_lab=true;s.lab_variant="A"
 	s.walls.clear();s.barriers.clear();s.hazards.clear();s.projectiles.clear();s._build_wall_spatial_index()
 	s.player_pos=Vector2(900,800);s.world_size=Vector2(2400,1700)
 	s.floor_shapes.assign([{"kind":"rect","rect":Rect2(100,100,2200,1500),"layer":s.current_layer,"part_id":0}]);s._loaded_floor_shapes.assign(s.floor_shapes);s._build_shape_spatial_index()
@@ -110,6 +112,7 @@ func controls(rules:String):
 	denied.enemies[0].layer="elsewhere";check(not denied.request_commit_shot(target_id(denied),false),"wrong layer rejected")
 	check(denied.energy_spent_total==cost and denied.simulation_time==0,"invalid confirmation never spends or simulates")
 	var persisted=fresh(rules,3);persisted.carried_xp=800;persisted.player_weapon_art_library.assign(["bow_fan_shot"]);persisted.player_equipped_weapon_art="bow_fan_shot"
+	persisted.combat_lab=false
 	check(persisted.save_run("user://commit-progression.save"),"ready progression saved")
 	var loaded=State.new(false);check(loaded.load_run("user://commit-progression.save"),"saved progression loads")
 	check(loaded.track_ranks.bow==3 and loaded.player_equipped_weapon_art=="bow_fan_shot" and loaded.carried_xp==800,"loaded bow progression/art/balance retained")

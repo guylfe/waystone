@@ -37,7 +37,7 @@ static func build(board, u: float) -> Dictionary:
 	# Full commitment/price/input remain in the log and Character help. The pad
 	# panel repeats only the benefit and commands, keeping the central field clear
 	# at supported high-density portrait sizes without reducing font/target minima.
-	var label:String="Full shot +25%" if committed_target else "Concussion flask" if action=="adopted" else board.state.spell_label(action)
+	var label:String=("Full shot +25%" if board.state.player_weapon_frame=="bow" else "Full combo + recovery") if committed_target else "Concussion flask" if action=="adopted" else board.state.spell_label(action)
 	var title:=paragraph(label if committed_target else label+" · TIME STOPPED",width-16*u,roundi(17*u))
 	var column:=(width-32*u)/3
 	var hints:Array=[]

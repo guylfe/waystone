@@ -54,15 +54,18 @@ func test_new_combo_costs() -> void:
 	# held input the sequence stops after its opening strike and only that strike
 	# is paid for. See WAYSTONE_MIGRATION_HANDOFF.md section 5.3.
 	var sword := fresh_state()
+	sword.combat_lab=true; sword.lab_variant="A" # historical held comparison
 	assert(sword.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(sword)
 	assert(is_equal_approx(sword.player_energy, 100.0 - sword.energy_cost(12.0 + 10.0 + 14.0)))
 	var knife := fresh_state("rogue_acrobat")
+	knife.combat_lab=true; knife.lab_variant="A"
 	assert(knife.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(knife)
 	assert(is_equal_approx(knife.player_energy, 100.0 - knife.energy_cost(9.0 + 8.0 + 8.0 + 10.0)))
 	var twin := fresh_state("rogue_acrobat")
 	twin.player_weapon_frame = "twin_knives"
+	twin.combat_lab=true; twin.lab_variant="A"
 	assert(twin.request_combo(Vector2.RIGHT, false, true))
 	advance_until_ready(twin)
 	assert(is_equal_approx(twin.player_energy, 100.0 - twin.energy_cost(8.0 + 6.0 + 6.0 + 6.0 + 6.0 + 8.0)))

@@ -25,6 +25,9 @@ func fresh_state(loadout: String = "warrior", rules: String = "energy") -> RunSt
 	# setup defaults to Recovery, which would make these names lie.
 	var state: RunState = RunStateScript.new(false)
 	state.start_run(loadout, "combat_survey", 4242, "encounter", rules)
+	# Historical comparison grammar; normal commitments have their own suite.
+	state.combat_lab = true
+	state.lab_variant = "A"
 	state.enemies.clear()
 	return state
 

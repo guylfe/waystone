@@ -174,7 +174,7 @@ func set_palette(board, open: bool) -> void:
 
 func palette_button(board, button: int) -> void:
 	if board.playing or not board.state.is_player_ready(): return
-	if button==JOY_BUTTON_A and board.state.loadout_id=="rogue_sharpshooter" and board.state.player_weapon_frame=="bow":
+	if button==(JOY_BUTTON_A if board.state.player_weapon_frame=="bow" else JOY_BUTTON_LEFT_STICK) and board.state.commit_available():
 		if palette_open: set_palette(board,false)
 		release_actions(board)
 		board._select_commit_shot("controller")
@@ -215,7 +215,7 @@ func use_adopted(board) -> void:
 	elif discipline == "trapper": board._begin_streamed_action(board.state.request_adopted(board.state.player_pos + direction(board, true) * 65.0, false))
 
 func targeting_range(board) -> float:
-	if targeting_action=="commit_shot": return 700.0
+	if targeting_action=="commit_shot": return 700.0 if board.state.player_weapon_frame=="bow" else 180.0
 	if targeting_action == "adopted": return float(board.state.AbilityCatalogScript.ADOPTED_DISCIPLINES["sapper"]["range"])
 	return board.state.spell_reach(targeting_action)
 
@@ -706,10 +706,10 @@ func draw_overlay(board) -> void:
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
 		board.draw_rect(bar, Color("101c24"))
-		var label: String = "Commit Shot · +25% full-shot damage" if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
+		var label: String = ("Commit Shot · +25% full-shot damage" if board.state.player_weapon_frame=="bow" else "Commit Combo · all cuts + recovery") if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
 		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s · TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
 		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rsc" if targeting_action=="commit_shot" else "rs", "Choose enemy" if targeting_action=="commit_shot" else "Place marker", scale)
-		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", "Commit full shot" if targeting_action=="commit_shot" else "Use here", scale)
+		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", ("Commit full shot" if board.state.player_weapon_frame=="bow" else "Commit full combo") if targeting_action=="commit_shot" else "Use here", scale)
 		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
 		return
 	if modal(board):
