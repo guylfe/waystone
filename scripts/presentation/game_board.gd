@@ -1142,9 +1142,19 @@ func _layout() -> void:
 			dock_bottom-=drawer_action+drawer_gap*0.8+drawer_gap*0.55
 		var dock_height := CommitHudLayout.dock_height(commit_unit)
 		commit_dock_rect=Rect2(Vector2(board_area.position.x,dock_bottom-dock_height),Vector2(board_area.size.x,dock_height))
+		# Reserve the landscape drawer column while closed as well as open.
+		# Primary actions/guidance use the remainder; the camera keeps its width.
+		if not portrait and not _spell_row().is_empty():
+			commit_dock_rect.size.x-=minf(layout_size.x*0.30,260.0)+16*commit_unit
 		board_area.size.y=commit_dock_rect.position.y-board_area.position.y
 		_update_projection()
 	if state.commit_available(): _sync_commit_hud(commit_unit)
+	# Use final allocation for both chip ink and hit areas, after actions settle.
+	if not portrait and commit_dock_rect.has_area() and spellbook_panel.has_area():
+		var drawer_origin:=Vector2(commit_dock_rect.end.x+8*commit_unit,commit_dock_rect.position.y+8*commit_unit)
+		var drawer_shift:=drawer_origin-spellbook_panel.position
+		spellbook_panel.position=drawer_origin
+		for spell in spell_rects: spell_rects[spell]=Rect2(Rect2(spell_rects[spell]).position+drawer_shift,Rect2(spell_rects[spell]).size)
 	var sheet_size := Vector2(minf(layout_size.x - 30.0, 1080.0), minf(layout_size.y - 34.0, 790.0))
 	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))

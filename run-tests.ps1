@@ -59,6 +59,7 @@ $HeadlessSuite = @(
     'combat_readout_test',
     'duellist_draw_test',
     'combat_dock_test',
+    'mage_drawer_routing_test',
     'combat_dock_density_test',
     'decision_commit_test',
     'decision_commit_input_test',

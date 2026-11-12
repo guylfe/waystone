@@ -43,3 +43,23 @@ Parry cooldown was already simulation/save/determinism state but was missing fro
 Checks and package provenance for this successor are in its correction receipt. The Windows-headless input/font/layout/draw-dispatch checks are separate from GPU frames, Android execution and human acceptance. The pre-existing Android Joypad `desktop_controls` gate remains outside this correction; successful desktop synthetic pad routes do not establish mobile controller support. Publication/device delivery and corrected independent rendered review remain with Dr. Stone. The queued 3D demo remains gated on actual combat completion and verified rollback.
 
 Independent-review correction receipt and recheck instructions: [0.3.7 readability correction](releases/0.3.7-readability-correction.md).
+
+
+## Mage drawer coexistence correction
+
+The independent rendered review of 3dc7594 found the landscape spell drawer using
+legacy Attack geometry while the final dock moved Attack over Lightning Bolt/locked
+Fire. Normal Mage landscape now reserves a drawer column alongside the final dock,
+even while closed. Final layout translates the existing panel and every chip hit
+rectangle into that column after action allocation. Primary controls and guidance
+use the remaining dock width; battlefield dimensions/camera remain stable. Portrait
+allocation, combat, spells, refusals, saves and routing precedence are unchanged.
+
+`mage_drawer_routing_test` exercises actual transformed main-root touch at every
+visible available/locked chip center, inset corners/edges and right-half regions
+that previously intersected Attack, at 390x844, 720x600 and 1280x800. It checks final
+coexisting chip/action/battlefield separation, safe bounds, retained chip and primary
+sizes, guidance fit, free selection/refusal and stable open/close geometry. The test
+is part of the default suite. `mage_drawer_capture.gd` provides the bounded GPU
+recheck; engineering headless results do not establish rendered or physical feel
+acceptance. See the external Mage drawer handoff for exact source/build receipts.

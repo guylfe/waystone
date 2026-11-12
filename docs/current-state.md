@@ -1,3 +1,5 @@
+> **Mage drawer successor:** landscape drawer allocation now uses a reserved column beside final Commit/Attack geometry. Actual-root chip routing and coexistence checks cover 390x844, 720x600 and 1280x800. Export provenance and independent rendered acceptance are tracked in the Mage drawer handoff; no publication or installation.
+
 > **12 November 2026 candidate:** normal gameplay now uses single-cut ordinary melee, explicit prepaid full combos, fixed automatic ordinary Bow, and universal 1.25× playback at unchanged 120 Hz. Explicit Survey comparisons retain their grammar. This candidate is not published or installed. Normal movement now commits full 34-unit strides including nearby ground taps; interaction ranges and collision remain intact. The bounded Duellist guidance correction is implemented using existing uncertainty; corrected independent rendered review remains pending. Commit/Attack/guidance now occupy a stable dock outside the tactical viewport. [Scope and verification](combat-decision-update.md).
 
 # Waystone current state
