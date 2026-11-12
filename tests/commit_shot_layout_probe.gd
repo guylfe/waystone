@@ -6,7 +6,7 @@ func run():
 			await setup("energy",projection,dims)
 			var rect=board.commit_shot_rect;var u=board.MenuMetrics.unit(board)
 			check(rect.size.x>=48*u and rect.size.y>=48*u,"client-unit hit minimum "+str(dims))
-			check(board.board_rect.encloses(rect) and board._display_safe_layout_rect().encloses(rect),"safe reachable new action "+str(dims))
+			check(not board.board_rect.intersects(rect) and board._display_safe_layout_rect().encloses(rect),"safe reachable new action "+str(dims))
 			check(not rect.intersects(board.attack_rect),"new action remains separate from ordinary Attack "+str(dims))
 			for label in ["COMMIT SHOT","CHOOSE ENEMY","FULL SHOT COMMITTED","+25% damage · [G]"]:
 				var font=roundi((17 if label=="COMMIT SHOT" else 12)*u)

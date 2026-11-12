@@ -62,7 +62,7 @@ func journey(route:String,rules:String,projection:String):
 	var s=board.state;var pos=s.player_pos;var time=s.simulation_time;var spent=s.energy_spent_total
 	var u=board.MenuMetrics.unit(board)
 	check(board.commit_shot_rect.size.x>=48*u and board.commit_shot_rect.size.y>=48*u,"measured Commit Shot target minimum")
-	check(board.board_rect.encloses(board.commit_shot_rect),"Commit Shot lies inside available battlefield")
+	check(board._display_safe_layout_rect().encloses(board.commit_shot_rect) and not board.board_rect.intersects(board.commit_shot_rect),"Commit Shot lies outside the tactical viewport")
 	check(not board.commit_shot_rect.intersects(board.attack_rect),"separate action never overlaps ordinary Attack")
 	await select(route)
 	check(board.selected_action=="commit_shot","routed selection arms "+route)

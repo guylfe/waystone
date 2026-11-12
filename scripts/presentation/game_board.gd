@@ -1,6 +1,7 @@
 extends Control
 
 const ControllerInputScript = preload("res://scripts/presentation/controller_input.gd")
+const EnemyCombatReadout = preload("res://scripts/presentation/enemy_combat_readout.gd")
 const CommitHudLayout = preload("res://scripts/presentation/commit_hud_layout.gd")
 var controller = ControllerInputScript.new()
 var commit_hud_cache:Dictionary={}
@@ -102,6 +103,8 @@ var consumable_rects: Dictionary = {}
 var interaction_rect := Rect2()
 var attack_rect := Rect2()
 var commit_shot_rect := Rect2()
+var commit_dock_rect := Rect2()
+var camera_full_area := Rect2()
 var loadout_rects: Dictionary = {}
 var upgrade_rects: Dictionary = {}
 var reset_rect := Rect2()
@@ -1016,6 +1019,8 @@ func _layout() -> void:
 	var layout_origin := safe_layout_rect.position
 	var portrait := layout_size.y >= layout_size.x
 	board_area = Rect2(layout_origin, Vector2(layout_size.x, layout_size.y * 0.735)) if portrait else Rect2(layout_origin, Vector2(layout_size.x * 0.74, layout_size.y))
+	commit_dock_rect=Rect2()
+	camera_full_area=board_area
 	_update_projection()
 	buttons.clear()
 	consumable_rects.clear()
@@ -1124,6 +1129,21 @@ func _layout() -> void:
 	map_rect = Rect2(view_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	sheet_button_rect = Rect2(map_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
 	survey_end_rect = Rect2(sheet_button_rect.position - Vector2(reset_size.x + 8.0, 0.0), reset_size)
+	commit_dock_rect=Rect2()
+	if state.commit_available() and state.uses_decision_commitments():
+		# A fixed dock outside the tactical viewport. Its allocation depends on
+		# size, not selected action, feedback, target position or a held finger.
+		var dock_bottom := interaction_rect.position.y-8*commit_unit if portrait else board_area.end.y
+		if portrait and not _spell_row().is_empty() and not spellbook_open:
+			# Reserve the existing drawer even when closed, so opening LB/the
+			# spellbook cannot move primary actions under an existing contact.
+			var drawer_gap:=layout_size.x*0.025
+			var drawer_action:=clampf(layout_size.y*0.058,46.0,78.0)
+			dock_bottom-=drawer_action+drawer_gap*0.8+drawer_gap*0.55
+		var dock_height := CommitHudLayout.dock_height(commit_unit)
+		commit_dock_rect=Rect2(Vector2(board_area.position.x,dock_bottom-dock_height),Vector2(board_area.size.x,dock_height))
+		board_area.size.y=commit_dock_rect.position.y-board_area.position.y
+		_update_projection()
 	if state.commit_available(): _sync_commit_hud(commit_unit)
 	var sheet_size := Vector2(minf(layout_size.x - 30.0, 1080.0), minf(layout_size.y - 34.0, 790.0))
 	sheet_panel_rect = Rect2(layout_origin + (layout_size - sheet_size) * 0.5, sheet_size)
@@ -1225,8 +1245,12 @@ func _display_safe_layout_rect() -> Rect2:
 	return clipped if clipped.size.x > 0.0 and clipped.size.y > 0.0 else viewport_rect
 
 func _update_projection() -> void:
-	var base_scale := clampf(maxf(board_area.size.x / CAMERA_WORLD_WIDTH, board_area.size.y / CAMERA_WORLD_HEIGHT), 0.9, 2.0)
+	var projection_area := camera_full_area if commit_dock_rect.size!=Vector2.ZERO else board_area
+	var base_scale := clampf(maxf(projection_area.size.x / CAMERA_WORLD_WIDTH, projection_area.size.y / CAMERA_WORLD_HEIGHT), 0.9, 2.0)
 	world_scale = base_scale * ISO_ZOOM if view_mode == "isometric" else base_scale
+	# Reframe the same vertical world extent into the smaller tactical viewport.
+	# No enemy is culled/moved to make room for controls.
+	if commit_dock_rect.size!=Vector2.ZERO: world_scale*=board_area.size.y/projection_area.size.y
 	board_rect = board_area
 	iso_origin = Vector2.ZERO
 
@@ -2381,11 +2405,18 @@ func _handle_button(name: String) -> void:
 				selected_action = "" if selected_action=="adopted" else "adopted"
 	queue_redraw()
 
+func _commit_action_name() -> String:
+	return "Commit Shot" if state.player_weapon_frame=="bow" else "Commit Combo"
+
+func _ordinary_attack_text() -> Dictionary:
+	if not state.uses_decision_commitments(): return {"title":"ATTACK","subtitle":"HOLD: COMBO"}
+	return {"title":"AUTO SHOT" if state.player_weapon_frame=="bow" else "ATTACK","subtitle":"HOLD: REPEAT"}
+
 func _commit_shot_price_text() -> String:
 	return ("%.1f Energy" % state.energy_cost(18 if state.player_weapon_frame=="bow" else state.full_combo_raw_cost())) if state.uses_energy_rules() else "Recovery: 0 Energy"
 
 func _commit_shot_selection_text(input_method: String) -> String:
-	var controls := "tap enemy; tap COMMIT SHOT to cancel."
+	var controls := "tap enemy; tap "+_commit_action_name().to_upper()+" to cancel."
 	if input_method=="keyboard": controls="[Tab] choose; [Enter] commit; [G] cancel."
 	elif input_method=="controller": controls="RS-click choose; [A] commit; [B] cancel."
 	return ("Full shot +25%: " if state.player_weapon_frame=="bow" else "Full combo + recovery: ")+_commit_shot_price_text()+". "+controls
@@ -2393,7 +2424,7 @@ func _commit_shot_selection_text(input_method: String) -> String:
 func _cancel_commit_shot_selection() -> void:
 	if selected_action!="commit_shot": return
 	selected_action=""
-	state.message="Commit Shot selection cancelled."
+	state.message=_commit_action_name()+" selection cancelled."
 	queue_redraw()
 
 func _select_commit_shot(input_method: String="pointer") -> void:
@@ -2415,6 +2446,7 @@ func _confirm_commit_shot(target_id: int) -> bool:
 		attack_pointer_held=false
 		queued_movement_after_attack=false
 		_begin_streamed_action(true)
+	if not accepted and state.player_weapon_frame!="bow": state.message="Choose a living visible enemy for "+_commit_action_name()+"."
 	queue_redraw()
 	return accepted
 
@@ -2437,7 +2469,7 @@ func _handle_consumable(slot_id: String) -> void:
 
 func _commit_direction(direction: Vector2) -> void:
 	if selected_action == "commit_shot":
-		state.message="Choose a visible enemy for Commit Shot; [Tab] target, [Enter] commit, [G] cancel."
+		state.message="Choose a visible enemy for "+_commit_action_name()+"; [Tab] target, [Enter] commit, [G] cancel."
 		queue_redraw()
 	elif selected_action == "defense":
 		selected_action = ""
@@ -3983,12 +4015,12 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	# is free. That distinction is the whole loop, so it cannot live only in the
 	# simulation -- an enemy which reads your commitment without a tell is unfair
 	# rather than difficult. Two ticks on the guard side, present only while ready.
-	# A Duellist still holding its parry takes your turn if you swing at it; one that
-	# has spent it is free to attack. That is the entire loop, and in 0.2.33 it was
+	# Parry readiness is only one constraint: current commitment prevents a new
+	# parry, and a short recovery can end before a player swing reaches contact. That is the entire loop, and in 0.2.33 it was
 	# invisible -- the Bandit got a ready-tell and this did not, so the cooldown that
 	# was already there read as "it parries whenever it likes". A raised guard in front,
 	# distinct from the Bandit's two side ticks.
-	if kind == "duellist" and float(enemy.get("parry_cooldown", 0.0)) <= 0.0 and String(action["kind"]) not in ["hit_reaction", "stagger"]:
+	if kind == "duellist" and EnemyCombatReadout.duellist(enemy).parry in ["PARRY AVAILABLE","PARRY ACTIVE"]:
 		var guard_side := facing.rotated(PI * 0.5)
 		var guard := pos + facing * radius * 0.92
 		draw_polyline(PackedVector2Array([
@@ -4064,7 +4096,15 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var phase := _phase(action)
 	# Width was radius x 4.4, which clipped "DRAWING BREATH" to "DRAWING BREAT". A telegraph
 	# that cannot finish its own word is not a telegraph.
-	_draw_actor_phase(pos, radius, phase, false)
+	if kind=="duellist":
+		var guidance:=EnemyCombatReadout.duellist(enemy)
+		var u:=MenuMetrics.unit(self)
+		var width:=minf(board_rect.size.x-16*u,260*u)
+		var font:=roundi(11*u)
+		var baseline:=pos+Vector2(-width/2,radius*2.1)
+		draw_string(ThemeDB.fallback_font,baseline,guidance.tell,HORIZONTAL_ALIGNMENT_CENTER,width,font,Color("d8ddd8"))
+		draw_string(ThemeDB.fallback_font,baseline+Vector2(0,15*u),guidance.parry,HORIZONTAL_ALIGNMENT_CENTER,width,font,Color("bfe8ff"))
+	else: _draw_actor_phase(pos, radius, phase, false)
 
 # The lab moves redundant actor captions into reserved information regions.
 # Normal-game placement, sizes and colours retain their existing behavior.
@@ -5055,7 +5095,7 @@ func _hud_log_text() -> String:
 
 func _sync_commit_hud(explicit_unit: float=0.0) -> Dictionary:
 	var u:=explicit_unit if explicit_unit>0 else MenuMetrics.unit(self) if get_viewport()!=null else 1.0
-	var key:=str([board_rect,u,attack_rect.size,view_mode,sheet_button_rect,view_rect,map_rect,reset_rect,survey_end_rect,_hud_location_text(),_hud_log_text(),_commit_shot_price_text(),controller.palette_open,controller.targeting_action])
+	var key:=str([board_rect,commit_dock_rect,u,attack_rect.size,view_mode,sheet_button_rect,view_rect,map_rect,reset_rect,survey_end_rect,_hud_location_text(),_hud_log_text(),_commit_shot_price_text(),controller.palette_open,controller.targeting_action])
 	if key!=commit_hud_key:
 		commit_hud_key=key; commit_hud_cache=CommitHudLayout.build(self,u)
 	commit_shot_rect=commit_hud_cache.commit
@@ -5063,6 +5103,7 @@ func _sync_commit_hud(explicit_unit: float=0.0) -> Dictionary:
 	return commit_hud_cache
 
 func _draw_hud() -> void:
+	if commit_dock_rect.size!=Vector2.ZERO: draw_rect(commit_dock_rect,BG)
 	if waystone_menu_open: _draw_waystone_menu()
 	else:
 		for slot_id in consumable_rects: _draw_consumable(String(slot_id), Rect2(consumable_rects[slot_id]))
@@ -5104,7 +5145,7 @@ func _draw_commit_shot_control() -> void:
 	var selected := selected_action=="commit_shot"
 	draw_rect(commit_shot_rect,Color("28515d") if selected else Color("15232a"))
 	draw_rect(commit_shot_rect,Color("66e0ff") if selected else Color("d7aa58"),false,3*u if selected else 1.5*u)
-	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,("COMMIT SHOT" if state.player_weapon_frame=="bow" else "COMMIT COMBO"),HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
+	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,_commit_action_name().to_upper(),HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
 	var detail := "FULL SHOT COMMITTED" if committed else "CHOOSE ENEMY" if selected else "+25% damage · [G]" if desktop_controls and not controller.active else "+25% damage · LB+A" if controller.active else "+25% full-shot damage"
 	if state.player_weapon_frame!="bow": detail="ALL CUTS + RECOVERY" if bool(state.player_action.get("full_combo_commit",false)) else "CHOOSE ENEMY" if selected else "Full combo · [G]" if desktop_controls else "LB + LS click" if controller.active else "Full combo + recovery"
 	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,49)*u,detail,HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(12*u),Color("adc8d4"))
@@ -5127,24 +5168,27 @@ func _draw_attack_button() -> void:
 	draw_arc(center, radius - 2.0, 0.0, TAU, 48, border, 4.0 if attacking or attack_button_pointer_held else 2.5)
 	if attack_button_pointer_held:
 		draw_circle(center, radius * 0.82, Color(accent, 0.18))
-	var title := "ATTACK"
-	var subtitle := "HOLD: COMBO"
+	var idle_text := _ordinary_attack_text()
+	var title := String(idle_text.title)
+	var subtitle := String(idle_text.subtitle)
 	if exhausted:
 		title = "EXHAUSTED"
 		subtitle = "PHYSICAL LOCK"
 	elif terminal_recovery:
 		title = "RECOVERING"
-		subtitle = "SEQUENCE ENDED"
+		subtitle = "CUT RECOVERY" if state.uses_decision_commitments() else "SEQUENCE ENDED"
 	elif attacking:
 		title = "ATTACKING"
 		subtitle = ("FULL COMBO COMMITTED" if bool(state.player_action.get("full_combo_commit",false)) else "CUT + RECOVERY" if state.uses_decision_commitments() else "HOLD TO FLOW") if action_kind == "combo" else "FULL SHOT COMMITTED" if bool(state.player_action.get("commit_shot",false)) else ("DRAW + RECOVERY" if state.uses_decision_commitments() else "RELEASE TO FIRE") if action_kind == "bow_draw" else "COMMITTED"
+		if state.uses_decision_commitments():
+			subtitle="FULL COMBO" if bool(state.player_action.get("full_combo_commit",false)) else "ONE CUT" if action_kind=="combo" else "FULL SHOT" if bool(state.player_action.get("commit_shot",false)) else "AUTO DRAW" if action_kind=="bow_draw" else "RECOVERY"
 	elif not available:
 		title = "BUSY"
 		subtitle = "COMMITTED"
-	var title_font := maxi(10, int(radius * 0.27))
+	var title_font := maxi(roundi(11*MenuMetrics.unit(self)), int(radius * 0.27)) if state.uses_decision_commitments() else maxi(10, int(radius * 0.27))
 	var text_color := Color("f4eee3") if available or attacking else Color("778388")
 	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, -2.0), title, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, title_font, text_color)
-	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.31), subtitle, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, maxi(7, int(title_font * 0.55)), border)
+	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, radius * 0.31), subtitle, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, (roundi(8*MenuMetrics.unit(self)) if state.uses_decision_commitments() else maxi(7, int(title_font * 0.55))), border)
 	if controller.active:
 		var badge_size := radius * 0.50
 		ControllerInputScript.Prompts.badge(self, Rect2(center + Vector2(-badge_size * 0.5, radius * 0.40), Vector2.ONE * badge_size), ["rt"] if not controller.palette_open and controller.targeting_action == "" else [])
@@ -5928,6 +5972,21 @@ func _draw_inspection() -> void:
 			break
 	if enemy.is_empty(): return
 	var kind := String(enemy["kind"])
+	if kind=="duellist":
+		var guidance:=EnemyCombatReadout.duellist(enemy)
+		var u:=MenuMetrics.unit(self)
+		var width:=minf(board_rect.size.x-16*u,520*u)
+		var paragraphs:Array=[]
+		var height:=16*u
+		for text in ["DUELLIST · "+guidance.tell,guidance.detail,guidance.warning]:
+			var paragraph:=CommitHudLayout.paragraph(text,width-20*u,roundi(13*u))
+			paragraphs.append(paragraph);height+=paragraph.get_size().y+8*u
+		var panel:=Rect2(Vector2(board_rect.get_center().x-width/2,board_rect.end.y-height-8*u),Vector2(width,height))
+		draw_rect(panel,Color("101c24"));draw_rect(panel,Color("9fb2b7"),false,1.5*u)
+		var cursor:=panel.position+Vector2(10,8)*u
+		for paragraph in paragraphs:
+			paragraph.draw(get_canvas_item(),cursor,Color("eef0e9"));cursor.y+=paragraph.get_size().y+8*u
+		return
 	var presentation := CombatCatalogScript.presentation(kind)
 	var action_text := _phase(Dictionary(enemy["action"]))
 	if action_text == "": action_text = "READY"

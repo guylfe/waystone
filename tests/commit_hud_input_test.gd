@@ -10,7 +10,7 @@ func surface(label:String,explicit_unit:float=0.0):
 	if board.state.uses_energy_rules():regions.attack=h.attack
 	if board.controller.active:regions.panel=h.targeting if board.controller.targeting_action!="" else h.idle
 	for id in regions:
-		check(board.board_rect.encloses(regions[id]),"HUD safe "+label+id)
+		check((board.commit_dock_rect if board.commit_dock_rect.size!=Vector2.ZERO else board.board_rect).encloses(regions[id]),"HUD safe "+label+id)
 		for other in regions:
 			if str(id)<str(other):check(not Rect2(regions[id]).intersects(regions[other]),"regions disjoint "+label+id+"/"+other)
 	check(r.size.x>=156*u-0.1 and r.size.y>=64*u-0.1,"readable target retained")
@@ -129,7 +129,15 @@ func run():
 	await setup("energy","isometric",Vector2i(780,1688));await select("pad")
 	board.layout_safe_area_override=Rect2(board.size*0.025,board.size*0.95);board._layout();await frames(12)
 	var t=root.get_final_transform()
-	for density in [1.0,2.0,3.0]:await surface("analytical density "+str(density),density/minf(t.x.length(),t.y.length()))
+	var dock_bottom=board.commit_dock_rect.end.y
+	for density in [1.0,2.0,3.0]:
+		var u=density/minf(t.x.length(),t.y.length())
+		# Model the dock reservation as well as font/hit units; keeping the old
+		# low-density dock height would not describe production layout at this DPI.
+		board.commit_dock_rect.size.y=board.CommitHudLayout.dock_height(u)
+		board.commit_dock_rect.position.y=dock_bottom-board.commit_dock_rect.size.y
+		board.board_rect.size.y=board.commit_dock_rect.position.y-board.board_rect.position.y
+		await surface("analytical density "+str(density),u)
 	await finish()
 	FileAccess.open("user://commit-hud-results.json",FileAccess.WRITE).store_string(JSON.stringify({"checks":checks,"failures":failures,"records":records,"method":"actual-root normal processing routed events and independent ink/overlap checks; explicit density formulas separate; no GPU/native/phone"},"\t"))
 	print("COMMIT HUD INPUT ",checks," checks / ",records.size()," records / ",failures.size()," failures")

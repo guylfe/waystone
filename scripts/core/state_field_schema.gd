@@ -121,7 +121,7 @@ const ENEMY_FIELDS := [
 	{"key":"ward_lost_time", "audiences":[DETERMINISM], "default":0.0, "interpolate":"float"},
 	{"key":"gale_velocity", "audiences":[PRESENTATION, DETERMINISM], "interpolate":"vector", "default":Vector2.ZERO},
 	{"key":"pounce_cooldown", "audiences":[DETERMINISM]},
-	{"key":"parry_cooldown", "audiences":[DETERMINISM]},
+	{"key":"parry_cooldown", "audiences":[PRESENTATION,DETERMINISM]},
 	{"key":"dodge_cooldown", "audiences":[DETERMINISM]},
 	{"key":"neutral_cooldown", "audiences":[DETERMINISM]},
 	{"key":"knife_flank_side", "audiences":[DETERMINISM], "default":0},

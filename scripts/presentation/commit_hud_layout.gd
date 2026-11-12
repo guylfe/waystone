@@ -9,6 +9,7 @@ static func paragraph(text: String, width: float, font_size: int) -> TextParagra
 	return p
 
 static func build(board, u: float) -> Dictionary:
+	if board.commit_dock_rect.size!=Vector2.ZERO: return dock(board,u)
 	var area:Rect2=board.board_rect
 	var gap:=8*u
 	var width:=maxf(1,area.size.x-2*gap)
@@ -77,3 +78,33 @@ static func build(board, u: float) -> Dictionary:
 		attack.position.y=commit.position.y+(row_height-attack_size.y)*0.5
 	return {"unit":u,"font":font,"commit":commit,"attack":attack,"xp":xp_rect,"log":log_rect,"xp_paragraph":xp,"log_paragraph":log,
 		"idle":idle_rect,"idle_paragraph":idle,"targeting":target_rect,"title_paragraph":title,"hint_paragraphs":hints,"hint_column":column,"hint_keys":["rsc" if committed_target else "rs","a","b"],"title_inset":title_inset,"hint_offset":hint_offset,"hint_label_offset":hint_label_offset}
+# Readability correction dock metrics are fixed across idle/armed/paid/refusal states.
+static func dock_height(u: float) -> float:
+	return 270*u
+
+static func dock(board,u:float) -> Dictionary:
+	var area:Rect2=board.commit_dock_rect
+	var gap:=8*u
+	var width:=maxf(1,area.size.x-2*gap)
+	var font:=roundi(12*u)
+	var commit:=Rect2(area.position+Vector2(gap,gap),Vector2(156,64)*u)
+	var attack_size:=maxf(66*u,board.attack_rect.size.x)
+	var attack:=Rect2(Vector2(area.end.x-gap-attack_size,area.position.y+gap),Vector2.ONE*attack_size)
+	var log_rect:=Rect2(Vector2(area.position.x+gap,area.end.y-gap-52*u),Vector2(width,52*u))
+	var xp_rect:=Rect2(Vector2(area.position.x+gap,log_rect.position.y-gap-30*u),Vector2(width,30*u))
+	var xp:=paragraph(board._hud_location_text(),width,font)
+	var log:=paragraph(board._hud_log_text(),width,font)
+	xp.max_lines_visible=2;log.max_lines_visible=3
+	var context_top:=maxf(commit.end.y,attack.end.y)+gap
+	var idle:=paragraph("LB held: choose shortcut" if board.controller.palette_open else "Hold LB for shortcuts",width-48*u,roundi(16*u))
+	var idle_rect:=Rect2(Vector2(area.position.x+gap,context_top),Vector2(width,46*u))
+	var action:String=board.controller.targeting_action
+	var committed:=action in ["","commit_shot"]
+	var label:String=("Full shot +25%" if board.state.player_weapon_frame=="bow" else "Full combo + recovery") if committed else "Concussion flask" if action=="adopted" else board.state.spell_label(action)
+	var title:=paragraph(label if committed else label+" · TIME STOPPED",width-16*u,roundi(17*u))
+	var column:=(width-32*u)/3
+	var hints:Array=[]
+	for text in ["Choose" if committed else "Place marker","Commit" if committed else "Use here","Cancel"]:hints.append(paragraph(text,column,roundi(14*u)))
+	var target:=Rect2(Vector2(area.position.x+gap,context_top),Vector2(width,xp_rect.position.y-gap-context_top))
+	return {"unit":u,"font":font,"commit":commit,"attack":attack,"xp":xp_rect,"log":log_rect,"xp_paragraph":xp,"log_paragraph":log,
+		"idle":idle_rect,"idle_paragraph":idle,"targeting":target,"title_paragraph":title,"hint_paragraphs":hints,"hint_column":column,"hint_keys":["rsc" if committed else "rs","a","b"],"title_inset":4.0,"hint_offset":8.0,"hint_label_offset":24.0}
