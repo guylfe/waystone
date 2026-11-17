@@ -1,5 +1,5 @@
 extends "res://scripts/presentation/game_board.gd"
-# Renderer-only adaptation: all actions, collision, timing and input remain in 0.3.7.
+# The terrain renderer uses the shared board for actions, timing and input.
 const CampaignState = preload("res://scripts/campaign/campaign_state.gd")
 
 const U := 100.0
