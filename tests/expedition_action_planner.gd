@@ -20,7 +20,7 @@ func copy_from(state) -> void:
 		if value is RandomNumberGenerator:
 			probe.rng.state = state.rng.state
 		elif value is Dictionary:
-			if key=="expedition":
+			if key=="expedition" and not value.is_empty():
 				var progress: Dictionary = value.duplicate(false)
 				progress["events"] = []
 				probe.set(key,progress.duplicate(true))
@@ -82,7 +82,7 @@ func choose(state, target: Dictionary) -> bool:
 	if state.loadout_id=="mage_elementalist":
 		for spell in state.player_spells: candidates.append(["spell",spell])
 	if state.loadout_id=="warrior": candidates.append(["advance"])
-	if state.expedition["discipline"]!="": candidates.append(["adopted"])
+	if String(state.expedition.get("discipline", ""))!="": candidates.append(["adopted"])
 	for slot in range(3):
 		if state.consumable_slot(slot)["id"]=="trail_ration": candidates.append(["ration",slot])
 	for index in range(8):

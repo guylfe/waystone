@@ -1,7 +1,10 @@
 extends "res://scripts/experiments/combat_lab_board.gd"
 
+const CampaignSave = preload("res://scripts/campaign/campaign_state.gd")
 const Experiment = preload("res://scripts/core/survey_experiment.gd")
 var inspection_return := false
+var session_entry := ""
+var persistent_session := false
 var survey_choices := Experiment.defaults()
 var survey_setup_confirmed := false
 var overlay_pointers: Dictionary = {}
@@ -42,6 +45,76 @@ func _choice_row(parent: Node, button: Button, id: String, change: Callable) -> 
 	next.custom_minimum_size.x=48; next.set_meta("menu_skip",true)
 	row.add_child(next)
 
+func _mode_select_enabled() -> bool:
+	return true
+
+func _initial_run_state() -> RunState:
+	var request := ModeSession.take_request(get_tree())
+	persistent_session = get_tree().current_scene == self or not request.is_empty()
+	if not persistent_session: return super._initial_run_state()
+	session_entry = String(request.get("entry", ModeSession.launch_entry()))
+	setup_notice = String(request.get("notice", ""))
+	var run := RunStateScript.new(false)
+	if session_entry in [ModeSession.MODE_SELECT, ModeSession.REGIONAL]: return run
+	if session_entry in _setup_modes():
+		if not run.load_run(ModeSession.regular_resume_path(session_entry)):
+			setup_notice = "The saved run could not be opened. The file was preserved."
+			return RunStateScript.new(false)
+	elif not run.load_run():
+		return run
+	run.session_save_path = ModeSession.regular_save_path(run.mode_id)
+	if run.run_active and not request.is_empty(): ModeSession.remember_entry(run.mode_id)
+	return run
+
+func _setup_modes() -> Array[String]:
+	return ["expedition", ModeSession.REGIONAL, "combat_survey", "boss_lab", "campaign_lab"]
+
+func _setup_mode_title(mode: String) -> String:
+	match mode:
+		ModeSession.REGIONAL: return "Campaign"
+		"campaign_lab": return "Campaign Lab"
+		_: return super._setup_mode_title(mode)
+
+func _setup_mode_subtitle(mode: String) -> String:
+	if mode == ModeSession.REGIONAL: return "Explore four connected regions"
+	return super._setup_mode_subtitle(mode)
+
+func _setup_resume_label() -> String:
+	if setup_mode == ModeSession.REGIONAL:
+		return "Resume Campaign" if FileAccess.file_exists(CampaignSave.SAVE_PATH) else ""
+	var path := ModeSession.regular_resume_path(setup_mode)
+	return "Resume run" if ModeSession.has_active_save(path, setup_mode) else ""
+
+func _setup_start_label() -> String:
+	if setup_mode == ModeSession.REGIONAL:
+		return "New Campaign…" if not setup_resume_text.is_empty() else "Start Campaign"
+	return "New run" if not setup_resume_text.is_empty() else super._setup_start_label()
+
+func _resume_selected_mode() -> void:
+	if setup_mode == ModeSession.REGIONAL:
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.REGIONAL})
+	else:
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.MAIN_SCENE, {"entry": setup_mode})
+
+func _open_new_campaign(seed: int) -> void:
+	ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE,
+		{"entry": ModeSession.REGIONAL, "loadout": setup_loadout, "seed": seed})
+
+func _confirm_new_campaign(seed: int) -> void:
+	_clear_survey_overlay()
+	survey_overlay.set_meta("kind", "replace_campaign")
+	survey_overlay.show()
+	seed_input.hide()
+	var content := VBoxContainer.new()
+	survey_overlay.add_child(content)
+	var title := Label.new()
+	title.text = "Replace the saved Campaign?"
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(title)
+	content.add_child(_survey_action_button("KEEP SAVED CAMPAIGN", _close_experiment_setup))
+	content.add_child(_survey_action_button("REPLACE AND START CAMPAIGN", _open_new_campaign.bind(seed)))
+	_reflow_survey_menu()
+
 func _restart() -> void:
 	super._restart()
 	survey_choices = Experiment.defaults()
@@ -58,8 +131,11 @@ func _ready() -> void:
 	_lab_button(selector_panel,"Map · M",func(): inspection_return=true; _close_inspection(); suspended=false; map_open=true)
 	_lab_button(selector_panel,"End Survey / rate",func(): inspection_return=true; _close_inspection(); suspended=false; _build_survey_end_confirmation())
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
+	_lab_button(selector_panel,"Save and choose mode",_save_and_leave)
 	_load_survey_identity()
 	_layout()
+	if session_entry == ModeSession.REGIONAL:
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.REGIONAL})
 	if OS.get_cmdline_user_args().has("--survey-smoke"):
 		load("res://scripts/core/survey_export_probe.gd").call_deferred("run",self)
 
@@ -77,12 +153,20 @@ func _load_survey_identity() -> void:
 	previous_notice = ""
 
 func _start_run() -> void:
+	if setup_mode == ModeSession.REGIONAL:
+		var seed := _setup_seed()
+		if seed == -2: return
+		if FileAccess.file_exists(CampaignSave.SAVE_PATH): _confirm_new_campaign(seed)
+		else: _open_new_campaign(seed)
+		return
 	if setup_mode == "combat_survey" and not survey_setup_confirmed:
 		_build_experiment_setup()
 		return
 	survey_setup_confirmed = false
 	state.combat_lab = false
+	if persistent_session: state.session_save_path = ModeSession.regular_save_path(setup_mode)
 	super._start_run()
+	if persistent_session and state.run_active: ModeSession.remember_entry(state.mode_id)
 	_load_survey_identity()
 	suspended = false
 	_close_inspection()
@@ -108,6 +192,8 @@ func _build_experiment_setup() -> void:
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.add_theme_font_size_override("font_size",22)
 	content.add_child(title)
+	if not _setup_resume_label().is_empty():
+		content.add_child(_survey_action_button("RESUME SAVED SURVEY", _resume_selected_mode))
 	_add_choice(content,"behavior",Experiment.BEHAVIORS,"Behavior")
 	_add_choice(content,"scenario",Experiment.SCENARIOS,"Encounter")
 	_add_choice(content,"arrival",{"full":"Full resources","low":"Diagnostic · 60% HP / 35% Energy","sweep":"Warrior · earned level-two Sweep"},"Preset arrival")
@@ -204,7 +290,7 @@ func _close_experiment_setup() -> void:
 	_sync_setup_controls()
 
 func _sync_survey_overlay() -> void:
-	if survey_overlay != null and survey_overlay.visible and survey_overlay.get_meta("kind","") == "experiment_setup": return
+	if survey_overlay != null and survey_overlay.visible and survey_overlay.get_meta("kind","") in ["experiment_setup", "replace_campaign"]: return
 	super._sync_survey_overlay()
 	if is_instance_valid(lab_panel): lab_panel.visible = _lab_ui_active() and not state.survey_feedback_pending and not state.trial_complete and not survey_overlay.visible
 
@@ -303,7 +389,7 @@ func _enemy_readout_tag(actor_id: int) -> String:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if survey_overlay.visible:
-		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and survey_overlay.get_meta("kind","") == "experiment_setup": _close_experiment_setup()
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and survey_overlay.get_meta("kind","") in ["experiment_setup", "replace_campaign"]: _close_experiment_setup()
 		return
 	if _lab_ui_active() and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		_suspend_lab()

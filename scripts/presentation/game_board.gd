@@ -165,6 +165,9 @@ var boss_arena_rect := Rect2()
 # handler, which runs first, swallowed every tap meant for the rows beneath it. Splitting
 # the screen removes the collision by construction rather than by arithmetic.
 var setup_stage := "root"
+var setup_resume_rect := Rect2()
+var setup_resume_text := ""
+var setup_notice := ""
 var setup_back_rect := Rect2()
 var setup_class_rects: Dictionary = {}
 var setup_dev_section := "survey"
@@ -294,7 +297,7 @@ var character_menu: PanelContainer
 const MenuMetrics = preload("res://scripts/presentation/menu_metrics.gd")
 
 func _ready() -> void:
-	character_menu=preload("res://scripts/presentation/character_menu.gd").new()
+	character_menu = _create_character_menu()
 	character_menu.z_index=100
 	character_menu.hide()
 	add_child(character_menu)
@@ -306,9 +309,7 @@ func _ready() -> void:
 	if desktop_controls and DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_min_size(Vector2i(360, 480) if lab_session else Vector2i(720, 480))
 	Input.emulate_mouse_from_touch = false
-	state = RunStateScript.new(false)
-	state.combat_lab = lab_session
-	if not lab_session: state.load_run()
+	state = _initial_run_state()
 	if state.run_active: state.prewarm_expedition_navigation()
 	_create_seed_input()
 	_create_survey_overlay()
@@ -328,6 +329,74 @@ func _ready() -> void:
 	_sync_setup_controls()
 	state.record_survey_view_mode(view_mode, false)
 	for device_id in Input.get_connected_joypads(): controller.connected(self, device_id)
+
+const ModeSession = preload("res://scripts/core/mode_session.gd")
+
+func _mode_select_enabled() -> bool:
+	return false
+
+func _can_abandon_from_menu() -> bool:
+	return true
+
+func _setup_modes() -> Array[String]:
+	return ["expedition", "campaign_lab", "combat_survey", "boss_lab"]
+
+func _select_setup_mode(mode: String) -> void:
+	setup_mode = mode
+	if setup_mode not in ["combat_survey", "boss_lab"]: setup_combat_rules = "energy"
+	setup_stage = "options"
+	_layout()
+
+func _setup_mode_title(mode: String) -> String:
+	match mode:
+		"expedition": return "Expedition"
+		"campaign_lab": return "Campaign"
+		"boss_lab": return "Boss Lab"
+		_: return "Dev"
+
+func _setup_mode_subtitle(mode: String) -> String:
+	match mode:
+		"expedition": return "Three biomes • Permadeath"
+		"campaign_lab": return "Respawn • Stone levels"
+		"boss_lab": return "Repeatable boss tests"
+		_: return "Testing instruments"
+
+func _setup_resume_label() -> String:
+	return ""
+
+func _setup_start_label() -> String:
+	return "Start run"
+
+func _resume_selected_mode() -> void:
+	pass
+
+func _open_run_menu() -> void:
+	controller.release_actions(self)
+	desktop_movement_keys.clear()
+	controller.paused = true
+	queue_redraw()
+
+func _save_and_leave(quit_app: bool = false) -> void:
+	if playing: return
+	if not state.save_run():
+		state.message = "Could not save this run. Your previous save is preserved."
+		controller.paused = false
+		queue_redraw()
+		return
+	if quit_app:
+		get_tree().quit()
+	else:
+		ModeSession.remember_entry(ModeSession.MODE_SELECT)
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.MAIN_SCENE, {"entry": ModeSession.MODE_SELECT})
+
+func _create_character_menu() -> PanelContainer:
+	return preload("res://scripts/presentation/character_menu.gd").new()
+
+func _initial_run_state() -> RunState:
+	var run := RunStateScript.new(false)
+	run.combat_lab = lab_session
+	if not lab_session: run.load_run()
+	return run
 
 func _add_controller_hints(content: VBoxContainer, allow_back: bool = true) -> void:
 	var hints := ControllerInputScript.Glyphs.MenuHints.new()
@@ -1162,19 +1231,21 @@ func _layout() -> void:
 	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.52, 620.0)
 	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5
 	setup_class_rects.clear()
+	setup_resume_rect = Rect2()
+	setup_resume_text = ""
+	progression_rects.clear()
 	boss_arena_rect = Rect2()
 	if setup_stage == "root" or custom_room_open:
-		# Four buttons and nothing else. Any additional control on this screen is another
-		# chance to overlap something.
 		seed_input.visible = false
 		setup_back_rect = Rect2()
 		custom_open_rect = Rect2()
 		start_rect = Rect2()
-		var button_height := clampf(layout_size.y * 0.105, 64.0, 106.0)
-		var stack_height := button_height * 4.0 + setup_gap * 3.0
+		var modes := _setup_modes()
+		var button_height := clampf(layout_size.y * (0.09 if modes.size() > 4 else 0.105), 54.0 if modes.size() > 4 else 64.0, 106.0)
+		var stack_height := button_height * modes.size() + setup_gap * (modes.size() - 1)
 		var stack_top := layout_origin.y + (layout_size.y - stack_height) * 0.5
-		for index in range(4):
-			var mode_id: String = ["expedition", "campaign_lab", "combat_survey", "boss_lab"][index]
+		for index in range(modes.size()):
+			var mode_id := modes[index]
 			progression_rects[mode_id] = Rect2(setup_left, stack_top + float(index) * (button_height + setup_gap), setup_width, button_height)
 	else:
 		# _sync_setup_controls already decides this correctly; _layout used to overrule it
@@ -1217,6 +1288,11 @@ func _layout() -> void:
 		seed_input.size = Vector2(setup_width, clampf(layout_size.y * 0.05, 44.0, 56.0))
 		row += seed_input.size.y + 10.0
 		start_rect = Rect2(setup_left, row, setup_width, clampf(minf(layout_size.y * 0.07, safe_layout_rect.end.y - row - 8.0), 44.0, 72.0))
+		setup_resume_text = _setup_resume_label() if not state.run_active else ""
+		if not setup_resume_text.is_empty():
+			setup_resume_rect = Rect2(start_rect.position, Vector2(half, start_rect.size.y))
+			start_rect.position.x += half + setup_gap
+			start_rect.size.x = half
 	_layout_custom_room_panel()
 	archive_button_rect = Rect2(Vector2(safe_layout_rect.end.x - 174.0, layout_origin.y + 18.0), Vector2(156.0, 44.0))
 	if survey_overlay != null:
@@ -1514,7 +1590,7 @@ func _input(event: InputEvent) -> void:
 		controller.device = -1
 		controller.axes.clear()
 		controller.held.clear()
-		controller.paused = false
+		if not _mode_select_enabled(): controller.paused = false
 		controller.palette_open = false
 		controller.help_open = false
 		queue_redraw()
@@ -1534,7 +1610,7 @@ func _gui_input(event: InputEvent) -> void:
 		else: _pointer_released(event.position)
 	elif event is InputEventScreenDrag:
 		_pointer_dragged(event.position)
-	elif event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+	elif event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed and not controller.paused:
 		var inspected := _enemy_near(event.position, 28.0)
 		inspected_enemy_id = -1 if inspected.is_empty() else int(inspected["id"])
 		queue_redraw()
@@ -1545,6 +1621,9 @@ func _gui_input(event: InputEvent) -> void:
 		_pointer_dragged(event.position)
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
+	if _mode_select_enabled() and controller.paused:
+		controller.press_pause_row(self, position)
+		return
 	var menu_entries: Array=controller.menu_entries(self)
 	for index in menu_entries.size():
 		if menu_entries[index].has("rect") and Rect2(menu_entries[index].rect).has_point(position):
@@ -1562,20 +1641,18 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			_build_survey_archive_overlay()
 			return
 		if setup_stage == "root":
-			# Four buttons, and nothing else can be hit. Choosing a path is the only
-			# decision this screen offers.
 			for mode in progression_rects:
 				if Rect2(progression_rects[mode]).has_point(position):
-					setup_mode = String(mode)
-					if setup_mode not in ["combat_survey", "boss_lab"]: setup_combat_rules = "energy"
-					setup_stage = "options"
-					_layout()
+					_select_setup_mode(String(mode))
 					return
 			return
 		if setup_back_rect.has_point(position):
 			setup_stage = "root"
 			seed_input.release_focus()
 			_layout()
+			return
+		if setup_resume_rect.has_point(position):
+			_resume_selected_mode()
 			return
 		for choice in CombatCatalogScript.loadout_ids():
 			if _setup_class_rect(choice).has_point(position):
@@ -1711,7 +1788,8 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 		elif not state.expedition.is_empty() and _map_action_rect(3).has_point(position): _show_expedition_report()
 		return
 	if reset_rect.has_point(position):
-		_restart()
+		if _mode_select_enabled(): _open_run_menu()
+		else: _restart()
 		return
 	if state.death_pending:
 		state.return_after_death()
@@ -1852,9 +1930,12 @@ func _handle_sheet_detail_press(position: Vector2) -> void:
 		sheet_detail.clear()
 		queue_redraw()
 
+func _can_preview_upgrade(upgrade_id: String) -> bool:
+	return state.available_level_up_options().has(upgrade_id)
+
 func _open_sheet_upgrade_confirmation(upgrade_id: String) -> void:
 	var cost := state.next_upgrade_cost()
-	if not state.available_level_up_options().has(upgrade_id): return
+	if not _can_preview_upgrade(upgrade_id): return
 	var track := CombatCatalogScript.character_track(upgrade_id)
 	var stage := state.next_track_stage(upgrade_id)
 	if track.is_empty() or stage.is_empty(): return
@@ -2053,12 +2134,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if setup_stage == "root":
 			match event.keycode:
 				KEY_TAB:
-					var modes := ["expedition", "campaign_lab", "combat_survey", "boss_lab"]
+					var modes := _setup_modes()
 					setup_mode = String(modes[(modes.find(setup_mode) + 1) % modes.size()])
 					if setup_mode not in ["combat_survey", "boss_lab"]: setup_combat_rules = "energy"
 				KEY_ENTER:
-					setup_stage = "options"
-					_layout()
+					_select_setup_mode(setup_mode)
 				_: return
 			queue_redraw()
 			return
@@ -2139,7 +2219,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_7: _handle_consumable("slot_0")
 		KEY_8: _handle_consumable("slot_1")
 		KEY_9: _handle_consumable("slot_2")
-		KEY_R: _restart()
+		KEY_R:
+			if _mode_select_enabled(): _open_run_menu()
+			else: _restart()
 
 func _desktop_direction_for_key(keycode: Key) -> Vector2:
 	var screen_direction := Vector2.ZERO
@@ -2170,7 +2252,7 @@ func _can_repeat_primary_action() -> bool:
 	if state.combat_lab and state.lab_neutral_required: return false
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return false
 	if is_instance_valid(survey_overlay) and survey_overlay.visible: return false
-	if controller.active and controller.modal(self): return false
+	if controller.paused or (controller.active and controller.modal(self)): return false
 	if not state.run_active or not state.is_player_ready() or state.trial_complete or state.survey_feedback_pending: return false
 	if waystone_menu_open or state.death_pending or character_sheet_open: return false
 	return not (map_open and state.map_presentation == "full")
@@ -2231,7 +2313,7 @@ func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(character_menu): character_menu.cancel_touches()
 	if lab_session and state != null and what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
 		state.lab_suspend()
-	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED] or (what == NOTIFICATION_WM_CLOSE_REQUEST and _mode_select_enabled()):
 		if controller != null and controller.active:
 			if controller.palette_open: controller.set_palette(self, false)
 			controller.targeting_action = ""
@@ -2262,7 +2344,7 @@ func _notification(what: int) -> void:
 			playing = false
 			stream_accumulator = 0.0
 			visual = _presentation_snapshot()
-		if state != null: _mark_autosave(true)
+		if state != null and state.run_active: _mark_autosave(true)
 
 func _toggle_fullscreen() -> void:
 	if not desktop_controls: return
@@ -2636,19 +2718,24 @@ func _handle_custom_room_press(position: Vector2) -> void:
 	if custom_done_rect.has_point(position) or not custom_panel_rect.has_point(position):
 		custom_room_open = false
 		_layout()
-func _start_run() -> void:
-	commit_hud_row_reserves.clear()
-	commit_hud_key=""
+func _setup_seed() -> int:
 	var entered_seed := seed_input.text.strip_edges()
 	var chosen_seed := -1
 	if entered_seed != "":
 		if not entered_seed.is_valid_int() or entered_seed.begins_with("-"):
 			setup_seed_error = "Enter a positive whole number, or leave this blank."
 			queue_redraw()
-			return
+			return -2
 		chosen_seed = int(entered_seed)
 	setup_seed_error = ""
 	seed_input.release_focus()
+	return chosen_seed
+
+func _start_run() -> void:
+	commit_hud_row_reserves.clear()
+	commit_hud_key=""
+	var chosen_seed := _setup_seed()
+	if chosen_seed == -2: return
 	# Written before start_run, because the first room is generated inside it.
 	var roster: Array[String] = []
 	if _custom_section_active(): roster.assign(custom_room_roster)
@@ -3025,6 +3112,32 @@ func _draw_world() -> void:
 		if String(hazard.get("layer", state.current_layer)) != state.current_layer: continue
 		if not _world_point_on_camera(Vector2(hazard["pos"]), float(hazard.get("radius", 100.0))): continue
 		if state.is_visible(Vector2(hazard["pos"]), visible): _draw_hazard(hazard)
+	_draw_field_magic()
+	if view_mode == "isometric":
+		_draw_isometric_solids(visible, discovered)
+	else:
+		for enemy in Array(visual.get("enemies", [])):
+			# `touch_revealed` draws a body the player has physically walked into even when
+			# the fog says they cannot see it. Being stopped by nothing is worse than seeing
+			# something you technically should not.
+			if String(enemy.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5) and (state.is_visible(Vector2(enemy["pos"]), visible) or bool(enemy.get("touch_revealed", false))): _draw_enemy(enemy)
+		_draw_player()
+	# Supplies deliberately render after solid world geometry in both views.
+	# They are a readable interaction affordance, not scenery that foliage may hide.
+	_draw_world_pickups(discovered)
+	_draw_shortcut_gate_labels(discovered)
+	for effect in Array(visual.get("effects", [])):
+		if String(effect.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(effect["pos"]), 80.0) and state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
+	_draw_shadow_guidance()
+	_draw_temporal_tint()
+	_draw_isometric_focus_overlay(visible)
+	_draw_player_damage_overlay()
+	_draw_selected_action_hint()
+	_draw_area_title()
+	_draw_room_clear_banner()
+	_draw_world_header()
+
+func _draw_field_magic() -> void:
 	# The Circle. Drawn on the ground as a ring with a faint fill, and brighter while the
 	# player is standing in it, because "am I still on my ground" is the question the
 	# ability exists to ask and it must be answerable at a glance.
@@ -3102,29 +3215,6 @@ func _draw_world() -> void:
 			draw_line(a, b, base_color, thickness * 1.1)
 			draw_line(a + lift, b + lift, Color(body_color, (0.72 if mine else 0.98) * integrity), thickness)
 			draw_line(a + lift * 1.7, b + lift * 1.7, Color(cap_color, 0.95 * integrity), maxf(2.0, thickness * 0.34))
-	if view_mode == "isometric":
-		_draw_isometric_solids(visible, discovered)
-	else:
-		for enemy in Array(visual.get("enemies", [])):
-			# `touch_revealed` draws a body the player has physically walked into even when
-			# the fog says they cannot see it. Being stopped by nothing is worse than seeing
-			# something you technically should not.
-			if String(enemy.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(enemy["pos"]), float(enemy.get("radius", 30.0)) * 2.5) and (state.is_visible(Vector2(enemy["pos"]), visible) or bool(enemy.get("touch_revealed", false))): _draw_enemy(enemy)
-		_draw_player()
-	# Supplies deliberately render after solid world geometry in both views.
-	# They are a readable interaction affordance, not scenery that foliage may hide.
-	_draw_world_pickups(discovered)
-	_draw_shortcut_gate_labels(discovered)
-	for effect in Array(visual.get("effects", [])):
-		if String(effect.get("layer", state.current_layer)) == state.current_layer and _world_point_on_camera(Vector2(effect["pos"]), 80.0) and state.is_visible(Vector2(effect["pos"]), visible): _draw_effect(effect)
-	_draw_shadow_guidance()
-	_draw_temporal_tint()
-	_draw_isometric_focus_overlay(visible)
-	_draw_player_damage_overlay()
-	_draw_selected_action_hint()
-	_draw_area_title()
-	_draw_room_clear_banner()
-	_draw_world_header()
 
 func _draw_world_header() -> void:
 	var label := "TIME FLOWING" if playing else "TIME FROZEN"
@@ -5213,7 +5303,7 @@ func _draw_reset_button() -> void:
 	draw_rect(reset_rect, Color("718087"), false, 1.5)
 	var font := maxi(9, int(reset_rect.size.y * 0.30))
 	var label := "RESET [R]" if desktop_controls else "RESET"
-	if controller.active: label = "MENU"
+	if _mode_select_enabled(): label = "MENU"
 	draw_string(ThemeDB.fallback_font, reset_rect.position + Vector2(0.0, reset_rect.size.y * 0.61), label, HORIZONTAL_ALIGNMENT_CENTER, reset_rect.size.x, font, Color("b7c0c2"))
 
 func _draw_map_button() -> void:
@@ -5716,10 +5806,13 @@ func _draw_setup() -> void:
 	if setup_stage == "root":
 		draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.16 if portrait else 0.10)), "WAYSTONE", HORIZONTAL_ALIGNMENT_CENTER, heading_width, title_font, Color("f2e7c8"))
 		draw_string(ThemeDB.fallback_font, Vector2(heading_x, layout.position.y + layout.size.y * (0.23 if portrait else 0.17)), "Choose a path", HORIZONTAL_ALIGNMENT_CENTER, heading_width, body_font, Color("9fb2b7"))
+		if not setup_notice.is_empty():
+			draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.end.y - 26.0), setup_notice, HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, body_font, Color("e6ab81"))
 		if desktop_controls and portrait:
 			draw_string(ThemeDB.fallback_font, Vector2(layout.position.x, layout.position.y + layout.size.y * 0.275), "1–3 character  •  Tab mode  •  Enter start  •  F11 fullscreen", HORIZONTAL_ALIGNMENT_CENTER, layout.size.x, maxi(10, int(body_font * 0.72)), Color("718087"))
 	else:
-		var heading := "EXPEDITION" if setup_mode == "expedition" else "CAMPAIGN" if setup_mode == "campaign_lab" else "BOSS LAB" if setup_mode == "boss_lab" else ("DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS")
+		var heading := _setup_mode_title(setup_mode).to_upper()
+		if setup_mode == "combat_survey": heading = "DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS"
 		draw_rect(setup_back_rect, Color("17272d"))
 		draw_rect(setup_back_rect, Color("718087"), false, 2.0)
 		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, 14, Color("d7dddd"))
@@ -5735,8 +5828,8 @@ func _draw_setup() -> void:
 		var selected: bool = setup_mode == String(mode)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("d7aa58") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		var label := "EXPEDITION" if String(mode) == "expedition" else "CAMPAIGN" if String(mode) == "campaign_lab" else "BOSS LAB" if String(mode) == "boss_lab" else "DEV"
-		var subtitle := "THREE BIOMES • PERMADEATH" if String(mode) == "expedition" else "RESPAWN • STONE LEVELS" if String(mode) == "campaign_lab" else "REPEATABLE BOSS TESTS" if String(mode) == "boss_lab" else "TESTING INSTRUMENTS"
+		var label := _setup_mode_title(String(mode)).to_upper()
+		var subtitle := _setup_mode_subtitle(String(mode)).to_upper()
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.40), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(5, rect.size.y * 0.70), subtitle, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 10, maxi(9, int(body_font * 0.62)), Color("9fb2b7"))
 	if setup_mode == "combat_survey":
@@ -5781,11 +5874,15 @@ func _draw_setup() -> void:
 	draw_rect(archive_button_rect, Color("718087"), false, 2.0)
 	draw_string(ThemeDB.fallback_font, archive_button_rect.position + Vector2(0, archive_button_rect.size.y * 0.62), "SURVEY ARCHIVE", HORIZONTAL_ALIGNMENT_CENTER, archive_button_rect.size.x, 12, Color("d7dddd"))
 	if setup_stage == "root": return
-	draw_rect(start_rect, Color("24433f"))
-	draw_rect(start_rect, Color("58d2cf"), false, 3.0)
-	draw_string(ThemeDB.fallback_font, start_rect.position + Vector2(0, start_rect.size.y * 0.60), "START RUN", HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(18, body_font), Color("f3f2e8"))
+	if not setup_resume_text.is_empty(): _draw_setup_action(setup_resume_rect, setup_resume_text, body_font)
+	_draw_setup_action(start_rect, _setup_start_label(), body_font)
 	if setup_seed_error != "":
 		draw_string(ThemeDB.fallback_font, Vector2(start_rect.position.x, start_rect.end.y + 24.0), setup_seed_error, HORIZONTAL_ALIGNMENT_CENTER, start_rect.size.x, maxi(12, int(body_font * 0.8)), Color("e46c63"))
+
+func _draw_setup_action(rect: Rect2, label: String, body_font: int) -> void:
+	draw_rect(rect, Color("24433f"))
+	draw_rect(rect, Color("58d2cf"), false, 3.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.60), label.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, maxi(16, body_font), Color("f3f2e8"))
 
 func _draw_survey_end_button() -> void:
 	draw_rect(survey_end_rect, Color(0.10, 0.055, 0.055, 0.92))

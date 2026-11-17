@@ -3,18 +3,23 @@ extends RefCounted
 # Internal seams are removed before swept-disc queries. No timestep ray marching.
 const EPS := 0.0001
 const CELL := 256.0
+# Vector2 stores single-precision coordinates. At regional world distances,
+# EPS is smaller than one representable step and cannot pad a line's bounds.
+const BOUNDS_PADDING := 0.02
 var shapes: Array[Dictionary] = []
 var edges: Array[Dictionary] = []
 var buckets: Dictionary = {}
 
-func _init(source: Array = []):
+func _init(source: Array = [], regional_precision: bool = false):
+	var bounds_padding := BOUNDS_PADDING if regional_precision else EPS
+	var seam_padding := BOUNDS_PADDING if regional_precision else 0.001
 	shapes.assign(source)
 	var raw: Array[Dictionary] = []
 	for shape in shapes: _primitives(shape, raw)
 	for edge in raw:
 		var cuts: Array[float] = [0.0, 1.0]
 		for other in raw:
-			if edge == other or not Rect2(edge.bounds).grow(EPS).intersects(Rect2(other.bounds).grow(EPS)): continue
+			if edge == other or not Rect2(edge.bounds).grow(bounds_padding).intersects(Rect2(other.bounds).grow(bounds_padding)): continue
 			for point in _intersections(edge, other):
 				var amount := _parameter(edge, point)
 				if amount > EPS and amount < 1.0-EPS: cuts.append(amount)
@@ -24,7 +29,7 @@ func _init(source: Array = []):
 			var midpoint := _point(edge,(cuts[i]+cuts[i+1])*0.5)
 			var normal := (midpoint-Vector2(edge.center)).normalized() if edge.kind=="arc" else Vector2(edge.normal)
 			# A union seam has floor on its outward side too. It cannot stop travel.
-			if contains(midpoint+normal*0.001): continue
+			if contains(midpoint+normal*seam_padding): continue
 			var part := edge.duplicate()
 			if edge.kind=="arc":
 				part.angle=float(edge.angle)+float(edge.span)*cuts[i]

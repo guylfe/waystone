@@ -545,7 +545,7 @@ func back(board) -> void:
 		elif kind == "end_confirm":
 			board.survey_overlay.hide()
 			if board.has_method("_return_inspection_view"): board._return_inspection_view()
-		elif kind == "experiment_setup": board._close_experiment_setup()
+		elif kind in ["experiment_setup", "replace_campaign"]: board._close_experiment_setup()
 		# Ratings and outcomes must be deliberately submitted, not silently skipped.
 	elif paused:
 		if abandon_confirm: abandon_confirm = false
@@ -582,11 +582,17 @@ func menu_entries(board) -> Array:
 			return entries
 		entries.append({"label": "Resume", "activate": func(): paused = false})
 		entries.append({"label": "Character & upgrades", "activate": func(): sheet_return_pause=true; paused = false; board._open_character_sheet()})
-		entries.append({"label": "Controller guide", "activate": func(): help_open = true})
-		entries.append({"label": "Change view", "activate": func(): board._toggle_view()})
+		if active: entries.append({"label": "Controller guide", "activate": func(): help_open = true})
+		if board._can_abandon_from_menu():
+			entries.append({"label": "Change view", "activate": func(): board._toggle_view()})
 		if board.state.is_measurement_mode(): entries.append({"label": "End test / report", "activate": func(): paused = false; board._build_survey_end_confirmation()})
-		entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
-		entries.append({"label": "Abandon run…", "activate": func(): abandon_confirm = true})
+		if board._mode_select_enabled():
+			entries.append({"label": "Save and choose mode", "activate": func(): board._save_and_leave()})
+			entries.append({"label": "Save and quit", "activate": func(): board._save_and_leave(true)})
+		else:
+			entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
+		if board._can_abandon_from_menu():
+			entries.append({"label": "Abandon run…", "activate": func(): abandon_confirm = true})
 	elif not board.state.run_active:
 		if board.custom_room_open:
 			if board.custom_page == "kind": add_rects(board, entries, board.custom_kind_rects)
@@ -607,6 +613,7 @@ func menu_entries(board) -> Array:
 				add_rects(board, entries, board.boss_choice_rects)
 				add_rects(board, entries, board.combat_rule_rects)
 				add_rect(board, entries, board.boss_arena_rect)
+			add_rect(board, entries, board.setup_resume_rect)
 			add_rect(board, entries, board.start_rect)
 			add_rect(board, entries, board.setup_back_rect)
 	elif board.character_sheet_open:
@@ -641,7 +648,7 @@ func add_rect(board, entries: Array, rect: Rect2) -> void:
 	for collection in ["progression_rects","custom_slot_rects","custom_remove_rects","custom_formation_rects","custom_hp_rects","custom_level_rects","custom_kind_rects","survey_profile_rects","combat_rule_rects","boss_choice_rects","map_layer_rects"]:
 		for key in board.get(collection):
 			if board.get(collection)[key] is Rect2 and board.get(collection)[key]==rect: id=collection+":"+str(key); break
-	for command in ["start_rect","setup_back_rect","archive_button_rect","custom_open_rect","custom_done_rect","custom_start_rect","custom_add_rect","custom_repeat_rect","custom_clear_rect","boss_arena_rect","seed_copy_rect","map_layer_previous_rect","map_layer_next_rect"]:
+	for command in ["start_rect","setup_resume_rect","setup_back_rect","archive_button_rect","custom_open_rect","custom_done_rect","custom_start_rect","custom_add_rect","custom_repeat_rect","custom_clear_rect","boss_arena_rect","seed_copy_rect","map_layer_previous_rect","map_layer_next_rect"]:
 		if board.get(command)==rect: id=command; break
 	entries.append({"id":id if id!="" else str(rect),"rect": rect, "activate": func(): board._pointer_pressed(rect.get_center())})
 
@@ -680,8 +687,27 @@ func quick_label(board) -> String:
 func draw_hud(board) -> void:
 	Prompts.draw_hud(board, self)
 
+func _pause_box(board) -> Rect2:
+	var safe: Rect2 = board.safe_layout_rect
+	var unit := minf(safe.size.x / 530.0, safe.size.y / 480.0)
+	var panel_size := Vector2(480, 440) * minf(unit, 1.35)
+	return Rect2(safe.get_center() - panel_size * 0.5, panel_size)
+
+func _pause_row(panel: Rect2, index: int) -> Rect2:
+	var scale := panel.size.x / 480.0
+	return Rect2(panel.position + Vector2(16, 56 + index * 42) * scale, Vector2(448, 38) * scale)
+
+func press_pause_row(board, point: Vector2) -> void:
+	var panel := _pause_box(board)
+	var entries := menu_entries(board)
+	for index in entries.size():
+		if not _pause_row(panel, index).has_point(point): continue
+		entries[index].activate.call()
+		board.queue_redraw()
+		return
+
 func draw_overlay(board) -> void:
-	if not active: return
+	if not active and not paused: return
 	if help_open:
 		Prompts.draw_help(board, self)
 		return
@@ -717,15 +743,16 @@ func draw_overlay(board) -> void:
 		var entries := menu_entries(board)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		if paused:
-			var box := Rect2(board.size * 0.5 - Vector2(240, 220) * scale, Vector2(480, 440) * scale)
+			var box := _pause_box(board)
+			scale = box.size.x / 480.0
 			board.draw_rect(Rect2(Vector2.ZERO, board.size), Color(0.02, 0.04, 0.06, 0.88))
 			board.draw_rect(box, Color("152831"))
-			var heading := "Finishing current action…" if paused and board.playing else "Controller menu" if paused else "Choose ability"
+			var heading := "Finishing current action…" if board.playing else "Run menu"
 			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 36) * scale, heading, HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(22 * scale), Color("ffffff"))
 			for i in entries.size():
-				var row := Rect2(box.position + Vector2(16, 56 + i * 42) * scale, Vector2(448, 38) * scale)
+				var row := _pause_row(box, i)
 				if i == focus_index: board.draw_rect(row, Color("28515d"))
-				if i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(6, 3) * scale, Vector2.ONE * 32 * scale))
+				if active and i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(6, 3) * scale, Vector2.ONE * 32 * scale))
 				Glyphs.text(board, row.position + Vector2(46, 26) * scale, entries[i]["label"], 394 * scale, int(18 * scale), Color("d5e4e9"))
 			Glyphs.hint(board, box.position + Vector2(22, 380) * scale, "dpad", "Choose", scale)
 			Glyphs.hint(board, box.position + Vector2(170, 380) * scale, "a", "Confirm", scale)

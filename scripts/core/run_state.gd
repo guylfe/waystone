@@ -5268,7 +5268,7 @@ func _build_shape_spatial_index() -> void:
 			if not buckets.has(cell): buckets[cell] = []
 			buckets[cell].append(shape)
 	# Build at map installation, outside the first committed action's CPU budget.
-	for layer in by_layer: _floor_boundaries[layer] = FloorBoundaryScript.new(by_layer[layer])
+	for layer in by_layer: _floor_boundaries[layer] = _create_floor_boundary(by_layer[layer])
 
 func _build_wall_spatial_index() -> void:
 	_wall_buckets.clear()
@@ -10811,6 +10811,9 @@ func _position_blocked(position: Vector2, radius: float, actor_id: int) -> bool:
 	return not _can_occupy(position, radius, actor_id)
 
 # Cached derived geometry only; never serialized or included in deterministic state.
+func _create_floor_boundary(shapes: Array) -> RefCounted:
+	return FloorBoundaryScript.new(shapes)
+
 func _floor_boundary_hit(start: Vector2, finish: Vector2, radius: float, recover_inward: bool = false) -> float:
 	if not _floor_boundaries.has(current_layer):
 		var shapes: Array = []
@@ -10821,7 +10824,7 @@ func _floor_boundary_hit(start: Vector2, finish: Vector2, radius: float, recover
 				if String(area.get("layer", current_layer)) == current_layer: shapes.append({"kind":"rect", "rect":area["rect"]})
 			for connection in connections:
 				if String(connection.get("layer", current_layer)) == current_layer: shapes.append({"kind":"rect", "rect":connection["corridor"]})
-		_floor_boundaries[current_layer] = FloorBoundaryScript.new(shapes)
+		_floor_boundaries[current_layer] = _create_floor_boundary(shapes)
 	if recover_inward and _floor_boundaries[current_layer].sweep(start, finish, 0.0) != INF: return 0.0
 	return _floor_boundaries[current_layer].sweep(start, finish, radius, recover_inward)
 
@@ -11302,7 +11305,11 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 	if not result.has("layer"): result["layer"] = current_layer
 	return result
 
-func save_run(path: String = "user://waystone-expedition.save") -> bool:
+const LEGACY_SAVE_PATH := "user://waystone-expedition.save"
+var session_save_path := LEGACY_SAVE_PATH
+
+func save_run(path: String = "") -> bool:
+	if path.is_empty(): path = session_save_path
 	if combat_lab and survey_experiment.is_empty(): return false
 	# The app finishes the existing player commitment before suspending. Refuse
 	# a premature new-expedition save rather than silently deleting that action.
@@ -11534,7 +11541,8 @@ func _build_save_payload() -> Dictionary:
 	for error in SaveMigrationsScript.validate_current(result, SAVE_VERSION): push_error(String(error))
 	return result
 
-func load_run(path: String = "user://waystone-expedition.save") -> bool:
+func load_run(path: String = "") -> bool:
+	if path.is_empty(): path = session_save_path
 	if combat_lab and survey_experiment.is_empty(): return false
 	if not FileAccess.file_exists(path): return false
 	var file := FileAccess.open(path, FileAccess.READ)

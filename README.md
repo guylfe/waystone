@@ -1,7 +1,7 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.7` (Android version code `307`).
-Windows installed and verified; matching source published to GitHub. Android 307 is staged; Fold installation awaits a USB connection.
+Prototype candidate: `0.3.8` (Android version code `308`).
+The candidate adds the [four-region Campaign](docs/campaign-regions.md) to the regular mode selector. The last delivered build is 0.3.7.
 
 Normal attacks commit a single melee cut or automatic Bow draw/release/recovery.
 Commit Combo selects the full weapon sequence before confirming a target. World

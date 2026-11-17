@@ -6,6 +6,27 @@
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
+## Regional Campaign integration — 0.3.8 candidate
+
+Regular Waystone's mode selector includes **Campaign** alongside Expedition,
+Dev (including Survey), Boss Lab, and the original Campaign Lab. Campaign runs
+the four-region Dawn Forest, Millrace, Bell Road and Hollow Tower layout through
+the shared combat and controls with its angled 3D terrain. Each supported
+starting character is selectable. Return through **Menu → Save and choose mode**.
+The last selected run resumes after relaunch. Campaign replacement requires
+confirmation.
+
+Campaign writes `user://waystone-regional-campaign.save`. The other modes each
+write a mode-specific slot and can resume the last matching pre-upgrade shared
+slot when their new slot has yet to be created. Survey archives retain their
+existing path and schema. The regular application ID and signing lineage
+carry forward. See [Regional Campaign](campaign-regions.md) for routes,
+progression and reproduction.
+
+The delivery lead owns publication, installation and Fold verification. The
+delivered Windows/source and Android installation statuses at the top of this
+document remain the last destination evidence.
+
 ## Combat commitment update — 0.3.7
 
 Normal melee commits one complete cut; Commit Combo prepays and executes the full
@@ -29,7 +50,7 @@ and [mechanic scope](combat-decision-update.md) record limits and provenance.
 The unchanged exact Bandit expected failure and Android `desktop_controls` Joypad gate
 remain documented. No new GPU review is claimed by engineering; independent frames
 are source-rendered. Fold installation/touch/insets/performance, physical controller
-and Guy's combat/animation feel remain unverified. No 3D demo has begun.
+and Guy's combat/animation feel remain unverified for 0.3.7.
 
 ## Previous release — November 0.3.6 repairs
 

@@ -2,6 +2,8 @@
 
 **Status:** detailed design target, not an implementation claim. Organized 2026-10-19 from the Campaign material in Design Foundations. Regeneration and anchoring details below remain unresolved. [Current state](current-state.md) owns implementation and work order; [Development scope](development-scope.md#mode-scale-and-staging) owns proposed Campaign stages.
 
+The shipped-layout candidate is documented in [Regional Campaign](campaign-regions.md).
+
 ## Geography and traversal
 
 Campaign geography uses discrete stacked 2D layers in a shared coordinate space. Collision, combat, awareness, line of sight, projectiles, hazards, navigation, and discovery operate within a layer. Stairs, ladders, lifts, and tunnels form explicit bidirectional connections between layers.

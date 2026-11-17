@@ -29,7 +29,8 @@ static func choose(state, enemy: Dictionary) -> bool:
 			return true
 		target = Vector2(enemy.get("gong_pos", position))
 	var distant := position.distance_to(target) > float(kit["engage"])
-	var ranged_id := String(Array(kit["attacks"])[-1])
+	var attacks: Array = kit.get("phase_attacks", kit["attacks"]) if int(enemy.get("boss_phase", 1)) == 2 else kit["attacks"]
+	var ranged_id := String(attacks[-1])
 	var ranged_reach := float(Abilities.ENEMY_ABILITIES[ranged_id]["reach"])
 	if not distant: enemy["expedition_approaching"] = false
 	if (distant and (not boss or position.distance_to(target)>ranged_reach or bool(enemy.get("expedition_approaching",false)))) or not state._has_line_of_sight(position, target):
@@ -41,7 +42,6 @@ static func choose(state, enemy: Dictionary) -> bool:
 			enemy["action"]["label"] = "CLOSING"
 		return true
 	var cycle := int(enemy.get("expedition_attack_index", 0))
-	var attacks: Array = kit["attacks"]
 	var ability_id := String(attacks[cycle % attacks.size()])
 	if boss and distant:
 		ability_id = ranged_id
@@ -92,6 +92,11 @@ static func tick(state, enemy: Dictionary, action: Dictionary, previous: float, 
 		var active_dt := maxf(0.0,minf(elapsed,active_end)-maxf(previous,startup))
 		var motion: Dictionary = state._move_charging_actor(enemy,Vector2(enemy["pos"]),direction*float(action["speed"])*active_dt,action,elapsed>=active_end)
 		state._set_enemy_position(enemy,Vector2(motion["position"]))
+		if action.has("wall_recovery") and String(Dictionary(motion.collision).get("cause", "")) in ["wall", "barrier"]:
+			action["active_end"] = elapsed - 0.001
+			action["duration"] = elapsed + float(action["wall_recovery"])
+			state._add_effect("slam", Vector2(enemy["pos"]))
+			return
 	state._observe_capture(enemy,action,elapsed)
 	if elapsed >= startup and elapsed <= active_end and shape in ["hook","sweep","drive","flight","cone"]:
 		var offset: Vector2 = state.player_pos-Vector2(enemy["pos"])
