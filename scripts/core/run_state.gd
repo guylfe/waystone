@@ -1245,7 +1245,7 @@ func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int =
 				"entry_potions": potions,
 			}
 			survey_session["initial_setup"] = boss_lab_initial_setup.duplicate(true)
-		SurveyReportScript.save_current(survey_session)
+		if not _restoring_run: SurveyReportScript.save_current(survey_session)
 		message = ("Boss Lab: %s. " % boss_lab_boss_kind.replace("_", " ").capitalize() if mode_id == ModeRulesScript.BOSS_LAB else "Combat Survey room 1. ") + _combat_rules_intro()
 	elif bool(mode_config["waystone_available"]):
 		_capture_anchor_history()
@@ -11307,6 +11307,7 @@ func _enemy_presentation(enemy: Dictionary) -> Dictionary:
 
 const LEGACY_SAVE_PATH := "user://waystone-expedition.save"
 var session_save_path := LEGACY_SAVE_PATH
+var _restoring_run := false
 
 func save_run(path: String = "") -> bool:
 	if path.is_empty(): path = session_save_path
@@ -11617,7 +11618,10 @@ func load_run(path: String = "") -> bool:
 	# A previously configured object must not carry rules into an old/non-Survey save.
 	combat_lab = false
 	var saved_expedition := Dictionary(payload["expedition"]).duplicate(true)
+	# Rebuilding the saved room must leave the current report on disk intact.
+	_restoring_run = true
 	start_run(loadout_id, mode_id, run_seed, String(payload.get("survey_profile", "encounter")), String(payload.get("combat_rules", "energy")), saved_expedition.is_empty(), saved_experiment)
+	_restoring_run = false
 	if not saved_expedition.is_empty():
 		expedition = saved_expedition
 		_install_layout(ExpeditionGeneratorScript.generate(run_seed, int(expedition["biome"])))

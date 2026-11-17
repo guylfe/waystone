@@ -10,7 +10,9 @@ var old_mode := "expedition"
 var session
 var campaign_save := "user://waystone-regional-campaign.save"
 var legacy_save := "user://waystone-expedition.save"
-var archive := "user://combat-survey-archive.json"
+const SURVEY_ARCHIVE := "user://combat-survey-archive.json"
+const SURVEY_CURRENT := "user://combat-survey-current.json"
+const SURVEY_REPORT_DIR := "user://combat-survey-reports"
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -113,11 +115,23 @@ func resume(mode: String) -> bool:
 		await tap(board.setup_resume_rect.get_center())
 	return await ready_scene("res://scenes/regional_campaign.tscn" if mode == "regional_campaign" else "res://scenes/main.tscn")
 
+func survey_files() -> Dictionary:
+	var hashes := {}
+	for file in [SURVEY_ARCHIVE, SURVEY_CURRENT]:
+		if FileAccess.file_exists(file): hashes[file] = FileAccess.get_sha256(file)
+	if DirAccess.dir_exists_absolute(SURVEY_REPORT_DIR):
+		for file in DirAccess.get_files_at(SURVEY_REPORT_DIR):
+			var path := SURVEY_REPORT_DIR.path_join(file)
+			hashes[path] = FileAccess.get_sha256(path)
+	return hashes
+
 func journey() -> void:
 	var original := FileAccess.get_sha256(legacy_save)
-	var archive_hash := FileAccess.get_sha256(archive) if FileAccess.file_exists(archive) else ""
+	var survey_hashes := survey_files()
 	if not await ready_scene("res://scenes/main.tscn"): return
 	check(not original.is_empty(), "prior executable wrote a real save")
+	if old_mode == "combat_survey":
+		check(survey_hashes.has(SURVEY_ARCHIVE) and survey_hashes.has(SURVEY_CURRENT) and survey_hashes.size() >= 3, "prior executable wrote Survey archive and reports")
 	check(board.state.run_active and board.state.mode_id == old_mode and board.state.run_seed == 17031, "normal launch resumes the prior save")
 	check(session.launch_entry() == old_mode, "upgraded run becomes the next launch entry")
 	if not board.state.run_active: return
@@ -172,8 +186,7 @@ func journey() -> void:
 	check(board.state.loadout_id == "mage_elementalist" and board.state.player_pos.is_equal_approx(saved_position) and board.state.run_seed == saved_seed, "Campaign resumes character, position and seed")
 	check(FileAccess.get_sha256(campaign_save) == campaign_hash, "resuming does not rewrite Campaign")
 	check(FileAccess.get_sha256(legacy_save) == original, "previous-version shared slot is byte-identical")
-	if not archive_hash.is_empty():
-		check(FileAccess.get_sha256(archive) == archive_hash, "Survey archive is byte-identical")
+	check(survey_files() == survey_hashes, "Survey archive, current report and report files are byte-identical")
 	var receipt := FileAccess.open("user://test-campaign-resume.json", FileAccess.WRITE)
 	receipt.store_string(JSON.stringify({"seed": saved_seed, "position": [saved_position.x, saved_position.y]}))
 
@@ -183,6 +196,36 @@ func relaunch() -> void:
 	check(board.state.loadout_id == "mage_elementalist" and board.state.run_seed == int(receipt.seed), "fresh process resumes Campaign")
 	var position := Vector2(float(receipt.position[0]), float(receipt.position[1]))
 	check(board.state.player_pos.is_equal_approx(position), "fresh process restores Campaign position")
+
+func replace_and_check_other_modes() -> void:
+	if not await ready_scene("res://scenes/regional_campaign.tscn"): return
+	var regular_slot: String = session.regular_save_path("expedition")
+	var regular_hash := FileAccess.get_sha256(regular_slot)
+	var campaign_hash := FileAccess.get_sha256(campaign_save)
+	if not await mode_select(): return
+	await choose("regional_campaign")
+	await tap(board._setup_class_rect("rogue_acrobat").get_center())
+	board.seed_input.text = "135721"
+	await tap(board.start_rect.get_center())
+	var confirm := find_button(board.survey_overlay, "REPLACE AND START CAMPAIGN")
+	check(is_instance_valid(confirm), "replacement is an explicit action")
+	if not is_instance_valid(confirm): return
+	await tap(confirm.get_global_rect().get_center())
+	if not await ready_scene("res://scenes/regional_campaign.tscn"): return
+	check(board.state.loadout_id == "rogue_acrobat" and board.state.run_seed == 135721, "replacement starts the selected class and seed")
+	check(FileAccess.get_sha256(campaign_save) != campaign_hash, "replacement updates the Campaign slot")
+	check(FileAccess.get_sha256(regular_slot) == regular_hash, "replacement preserves Expedition")
+	if not await mode_select(): return
+	for mode in ["boss_lab", "campaign_lab"]:
+		await choose(mode)
+		await tap(board.start_rect.get_center())
+		await frames()
+		check(board.state.run_active and board.state.mode_id == mode, "regular setup still starts " + mode)
+		if not await mode_select(): return
+		if not await resume(mode): return
+		check(board.state.run_active and board.state.mode_id == mode, "regular setup resumes " + mode)
+		if not await mode_select(): return
+	check(FileAccess.get_sha256(regular_slot) == regular_hash, "Boss Lab and Campaign Lab preserve Expedition")
 
 func run() -> void:
 	var user_dir := OS.get_user_data_dir().replace("\\", "/")
@@ -207,6 +250,7 @@ func run() -> void:
 		quit(2)
 		return
 	if args.has("relaunch"): await relaunch()
+	elif args.has("replace-and-other-modes"): await replace_and_check_other_modes()
 	else: await journey()
 	print("REGULAR CAMPAIGN ENTRY ", checks, " checks ", failures.size(), " failures ", failures)
 	quit(0 if failures.is_empty() else 1)

@@ -65,12 +65,9 @@ func run() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
 	DisplayServer.window_set_min_size(Vector2i.ONE)
 	output = ProjectSettings.globalize_path(OS.get_cmdline_user_args()[0])
-	var data_root := output.path_join("isolated-user-data")
-	DirAccess.make_dir_recursive_absolute(data_root)
-	OS.set_environment("APPDATA", data_root)
-	OS.set_environment("LOCALAPPDATA", data_root)
+	var data_root := OS.get_environment("APPDATA").replace("\\", "/").simplify_path()
 	var actual_data := OS.get_user_data_dir().replace("\\", "/").simplify_path()
-	if not actual_data.begins_with(data_root.replace("\\", "/").simplify_path() + "/"):
+	if not data_root.contains("/.runtime/") or not actual_data.begins_with(data_root + "/"):
 		push_error("Capture refused: user data was not isolated: " + actual_data)
 		quit(2)
 		return
