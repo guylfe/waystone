@@ -14,7 +14,7 @@ func _initialize() -> void:
 	board.state.abandon_run()
 	board.setup_stage = "root"
 	board._layout()
-	assert(board.progression_rects.size() == 4 and board.progression_rects.has("boss_lab"))
+	assert(board.progression_rects.keys() == ["expedition", "regional_campaign", "combat_survey", "boss_lab", "campaign_lab"])
 	board._pointer_pressed(Rect2(board.progression_rects["boss_lab"]).get_center())
 	assert(board.setup_stage == "options" and board.setup_mode == "boss_lab")
 	assert(board.boss_choice_rects.has("werewolf") and board.boss_choice_rects.has("warden"))
