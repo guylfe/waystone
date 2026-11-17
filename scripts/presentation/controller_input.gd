@@ -592,7 +592,7 @@ func menu_entries(board) -> Array:
 		else:
 			entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
 		if board._can_abandon_from_menu():
-			entries.append({"label": "Abandon run…", "activate": func(): abandon_confirm = true})
+			entries.append({"label": "Abandon runâ€¦", "activate": func(): abandon_confirm = true})
 	elif not board.state.run_active:
 		if board.custom_room_open:
 			if board.custom_page == "kind": add_rects(board, entries, board.custom_kind_rects)
@@ -657,7 +657,7 @@ func collect_buttons(node: Node, entries: Array) -> void:
 		if not node.has_meta("menu_edit_bound"):
 			node.set_meta("menu_edit_bound",true)
 			node.focus_entered.connect(func(): focus_id=Navigation.id({"control":node}))
-			node.tooltip_text="Optional text · use a keyboard to edit; Escape returns to navigation."
+			node.tooltip_text="Optional text Â· use a keyboard to edit; Escape returns to navigation."
 			node.gui_input.connect(func(event):
 				if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed: editing_text=true)
 		entries.append({"control":node,"activate":func(): node.grab_focus()})
@@ -687,19 +687,23 @@ func quick_label(board) -> String:
 func draw_hud(board) -> void:
 	Prompts.draw_hud(board, self)
 
-func _pause_box(board) -> Rect2:
+const PAUSE_ROW_STEP := 66.0
+const PAUSE_HEADER := 56.0
+
+func _pause_box(board, row_count: int) -> Rect2:
 	var safe: Rect2 = board.safe_layout_rect
-	var unit := minf(safe.size.x / 530.0, safe.size.y / 480.0)
-	var panel_size := Vector2(480, 440) * minf(unit, 1.35)
+	var height := PAUSE_HEADER + maxi(1, row_count) * PAUSE_ROW_STEP + (52.0 if active else 10.0)
+	var unit := minf(safe.size.x / 520.0, safe.size.y / (height + 40.0))
+	var panel_size := Vector2(480, height) * minf(unit, 1.45)
 	return Rect2(safe.get_center() - panel_size * 0.5, panel_size)
 
 func _pause_row(panel: Rect2, index: int) -> Rect2:
 	var scale := panel.size.x / 480.0
-	return Rect2(panel.position + Vector2(16, 56 + index * 42) * scale, Vector2(448, 38) * scale)
+	return Rect2(panel.position + Vector2(16, PAUSE_HEADER + index * PAUSE_ROW_STEP) * scale, Vector2(448, 60) * scale)
 
 func press_pause_row(board, point: Vector2) -> void:
-	var panel := _pause_box(board)
 	var entries := menu_entries(board)
+	var panel := _pause_box(board, entries.size())
 	for index in entries.size():
 		if not _pause_row(panel, index).has_point(point): continue
 		entries[index].activate.call()
@@ -732,8 +736,8 @@ func draw_overlay(board) -> void:
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
 		board.draw_rect(bar, Color("101c24"))
-		var label: String = ("Commit Shot · +25% full-shot damage" if board.state.player_weapon_frame=="bow" else "Commit Combo · all cuts + recovery") if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
-		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s · TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
+		var label: String = ("Commit Shot Â· +25% full-shot damage" if board.state.player_weapon_frame=="bow" else "Commit Combo Â· all cuts + recovery") if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
+		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s Â· TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
 		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rsc" if targeting_action=="commit_shot" else "rs", "Choose enemy" if targeting_action=="commit_shot" else "Place marker", scale)
 		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", ("Commit full shot" if board.state.player_weapon_frame=="bow" else "Commit full combo") if targeting_action=="commit_shot" else "Use here", scale)
 		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
@@ -743,21 +747,22 @@ func draw_overlay(board) -> void:
 		var entries := menu_entries(board)
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		if paused:
-			var box := _pause_box(board)
+			var box := _pause_box(board, entries.size())
 			scale = box.size.x / 480.0
 			board.draw_rect(Rect2(Vector2.ZERO, board.size), Color(0.02, 0.04, 0.06, 0.88))
 			board.draw_rect(box, Color("152831"))
-			var heading := "Finishing current action…" if board.playing else "Run menu"
+			var heading := "Finishing current actionâ€¦" if board.playing else "Run menu"
 			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 36) * scale, heading, HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(22 * scale), Color("ffffff"))
 			for i in entries.size():
 				var row := _pause_row(box, i)
 				board.draw_rect(row, Color("28515d") if i == focus_index else Color("1c333d"))
-				if active and i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(6, 3) * scale, Vector2.ONE * 32 * scale))
-				Glyphs.text(board, row.position + Vector2(46, 26) * scale, entries[i]["label"], 394 * scale, int(18 * scale), Color("d5e4e9"))
+				if active and i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(8, 14) * scale, Vector2.ONE * 32 * scale))
+				Glyphs.text(board, row.position + Vector2(46 if active else 18, 36) * scale, entries[i]["label"], 394 * scale, int(18 * scale), Color("d5e4e9"))
 			if active:
-				Glyphs.hint(board, box.position + Vector2(22, 391) * scale, "dpad", "Choose", scale)
-				Glyphs.hint(board, box.position + Vector2(170, 391) * scale, "a", "Confirm", scale)
-				Glyphs.hint(board, box.position + Vector2(318, 391) * scale, "b", "Back", scale)
+				var prompt_y := box.end.y - 39.0 * scale
+				Glyphs.hint(board, Vector2(box.position.x + 22 * scale, prompt_y), "dpad", "Choose", scale)
+				Glyphs.hint(board, Vector2(box.position.x + 170 * scale, prompt_y), "a", "Confirm", scale)
+				Glyphs.hint(board, Vector2(box.position.x + 318 * scale, prompt_y), "b", "Back", scale)
 		elif not entries.is_empty() and entries[clampi(focus_index, 0, entries.size()-1)].has("rect"):
 			board.draw_rect(Rect2(entries[clampi(focus_index, 0, entries.size()-1)]["rect"]).grow(3), Color("66e0ff"), false, 3)
 		if active and not paused and native_panel(board) == null:

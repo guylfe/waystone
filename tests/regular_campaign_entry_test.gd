@@ -61,6 +61,7 @@ func ready_scene(expected: String) -> bool:
 				board.desktop_controls = false
 				root.min_size = Vector2i(360, 480)
 				root.size = Vector2i(390, 844)
+				board.queue_redraw()
 			await frames()
 			return true
 	check(false, "scene reached: " + expected)
@@ -68,7 +69,7 @@ func ready_scene(expected: String) -> bool:
 
 func mode_select() -> bool:
 	if board.state.mode_id == "combat_survey" and board._lab_ui_active():
-		var compare := find_button(board.utility_row, "Compare / Retry\nStart")
+		var compare := find_button(board.utility_row, "Survey menu\nStart / Esc")
 		check(is_instance_valid(compare), "Survey inspection is reachable by pointer")
 		if not is_instance_valid(compare): return false
 		await tap(compare.get_global_rect().get_center())
@@ -87,7 +88,7 @@ func mode_select() -> bool:
 			if entries[index].label == "Save and choose mode": row = index
 		check(row >= 0, "run menu offers save and mode return")
 		if row < 0: return false
-		await tap(board.controller._pause_row(board.controller._pause_box(board), row).get_center())
+		await tap(board.controller._pause_row(board.controller._pause_box(board, entries.size()), row).get_center())
 	if not await ready_scene("res://scenes/main.tscn"): return false
 	check(not board.state.run_active and board.setup_stage == "root", "returned to mode selector")
 	return not board.state.run_active
