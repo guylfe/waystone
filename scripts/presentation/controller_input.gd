@@ -751,15 +751,16 @@ func draw_overlay(board) -> void:
 			board.draw_string(ThemeDB.fallback_font, box.position + Vector2(22, 36) * scale, heading, HORIZONTAL_ALIGNMENT_LEFT, 436 * scale, int(22 * scale), Color("ffffff"))
 			for i in entries.size():
 				var row := _pause_row(box, i)
-				if i == focus_index: board.draw_rect(row, Color("28515d"))
+				board.draw_rect(row, Color("28515d") if i == focus_index else Color("1c333d"))
 				if active and i == focus_index: Glyphs.draw(board, "a", Rect2(row.position + Vector2(6, 3) * scale, Vector2.ONE * 32 * scale))
 				Glyphs.text(board, row.position + Vector2(46, 26) * scale, entries[i]["label"], 394 * scale, int(18 * scale), Color("d5e4e9"))
-			Glyphs.hint(board, box.position + Vector2(22, 380) * scale, "dpad", "Choose", scale)
-			Glyphs.hint(board, box.position + Vector2(170, 380) * scale, "a", "Confirm", scale)
-			Glyphs.hint(board, box.position + Vector2(318, 380) * scale, "b", "Back", scale)
+			if active:
+				Glyphs.hint(board, box.position + Vector2(22, 391) * scale, "dpad", "Choose", scale)
+				Glyphs.hint(board, box.position + Vector2(170, 391) * scale, "a", "Confirm", scale)
+				Glyphs.hint(board, box.position + Vector2(318, 391) * scale, "b", "Back", scale)
 		elif not entries.is_empty() and entries[clampi(focus_index, 0, entries.size()-1)].has("rect"):
 			board.draw_rect(Rect2(entries[clampi(focus_index, 0, entries.size()-1)]["rect"]).grow(3), Color("66e0ff"), false, 3)
-		if native_panel(board) == null:
+		if active and not paused and native_panel(board) == null:
 			board.draw_rect(Rect2(0, board.size.y - 40 * scale, board.size.x, 40 * scale), Color("101c24"))
 			Glyphs.hint(board, Vector2(16 * scale, board.size.y - 35 * scale), "dpad", "Choose", scale)
 			Glyphs.hint(board, Vector2(174 * scale, board.size.y - 35 * scale), "a", "Confirm", scale)

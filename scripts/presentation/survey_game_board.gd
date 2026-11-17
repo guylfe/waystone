@@ -57,13 +57,14 @@ func _initial_run_state() -> RunState:
 	var run := RunStateScript.new(false)
 	if session_entry in [ModeSession.MODE_SELECT, ModeSession.REGIONAL]: return run
 	if session_entry in _setup_modes():
-		if not run.load_run(ModeSession.regular_resume_path(session_entry)):
+		if not run.load_run(ModeSession.regular_resume_path(session_entry)) or run.mode_id != session_entry:
 			setup_notice = "The saved run could not be opened. The file was preserved."
 			return RunStateScript.new(false)
 	elif not run.load_run():
 		return run
 	run.session_save_path = ModeSession.regular_save_path(run.mode_id)
-	if run.run_active and not request.is_empty(): ModeSession.remember_entry(run.mode_id)
+	if run.run_active and (not request.is_empty() or session_entry != run.mode_id):
+		ModeSession.remember_entry(run.mode_id)
 	return run
 
 func _setup_modes() -> Array[String]:

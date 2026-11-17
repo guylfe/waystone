@@ -57,7 +57,10 @@ func ready_scene(expected: String) -> bool:
 		await process_frame
 		if current_scene != null and current_scene.scene_file_path == expected:
 			board = current_scene
-			if touch: board.desktop_controls = false
+			if touch:
+				board.desktop_controls = false
+				root.min_size = Vector2i(360, 480)
+				root.size = Vector2i(390, 844)
 			await frames()
 			return true
 	check(false, "scene reached: " + expected)
@@ -65,12 +68,10 @@ func ready_scene(expected: String) -> bool:
 
 func mode_select() -> bool:
 	if board.state.mode_id == "combat_survey" and board._lab_ui_active():
-		var key := InputEventKey.new()
-		key.keycode = KEY_ESCAPE
-		key.pressed = true
-		root.push_input(key, true)
-		key.pressed = false
-		root.push_input(key, true)
+		var compare := find_button(board.utility_row, "Compare / Retry\nStart")
+		check(is_instance_valid(compare), "Survey inspection is reachable by pointer")
+		if not is_instance_valid(compare): return false
+		await tap(compare.get_global_rect().get_center())
 		await frames()
 		var button := find_button(board.selector_panel, "Save and choose mode")
 		check(is_instance_valid(button) and button.is_visible_in_tree(), "Survey inspection offers mode return")
@@ -79,7 +80,7 @@ func mode_select() -> bool:
 	else:
 		await tap(board.reset_rect.get_center())
 		check(board.controller.paused, "toolbar opens run menu")
-		await capture("run-menu")
+		await capture("campaign-run-menu" if board.scene_file_path.ends_with("regional_campaign.tscn") else "regular-run-menu")
 		var entries: Array = board.controller.menu_entries(board)
 		var row := -1
 		for index in entries.size():
@@ -117,6 +118,7 @@ func journey() -> void:
 	if not await ready_scene("res://scenes/main.tscn"): return
 	check(not original.is_empty(), "prior executable wrote a real save")
 	check(board.state.run_active and board.state.mode_id == old_mode and board.state.run_seed == 17031, "normal launch resumes the prior save")
+	check(session.launch_entry() == old_mode, "upgraded run becomes the next launch entry")
 	if not board.state.run_active: return
 	var old_time: float = board.state.simulation_time
 	if not await mode_select(): return
