@@ -1,12 +1,12 @@
 # Waystone current state
 
-**Reviewed:** 2026-11-12 (independent combat/readability acceptance and verified Windows delivery).
-**Delivered Windows/source release:** `0.3.7`, runtime `fc0b57b3e4dfdb77fac6ba75b74ffda972732bf0`.
-**Android package:** `0.3.7 / 307` built, signature-verified and staged; Fold installation pending (no USB device detected). Last verified phone installation is `0.3.5 / 305` on 22 October.
+**Release reviewed and packaged on 2026-11-18.** Regular Waystone 0.3.8 includes the four-region Campaign. The exported runtime is `64875ccef06e730398eb78064e7d4476e8c3cc55`.
+**Windows.** The delivered executable has SHA256 `0627936f3f3bf27326ee309df611f9ac0a056269f87476a6dffa8e3fced6eaba`. The previous normal Windows installation was verified at 0.3.7.
+**Android.** The signed regular APK is version 0.3.8, code 308, SHA256 `714ae3a520631ad9e32fc22dd1611a8e3e92afb5b70e2e72c0f66fa0235967af`. Fold installation and device execution are pending.
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-## Regional Campaign integration — 0.3.8 candidate
+## Regional Campaign integration — 0.3.8
 
 Regular Waystone's mode selector includes **Campaign** alongside Expedition,
 Dev (including Survey), Boss Lab, and the original Campaign Lab. Campaign runs
@@ -23,7 +23,6 @@ existing path and schema. Loading a saved Survey leaves the current report,
 archive and report files intact. Starting a new measurement session still
 updates the current report through its normal flow.
 
-The candidate exports embed runtime `64875ccef06e730398eb78064e7d4476e8c3cc55`.
 Android is `com.waystone.prototype / 308` with the regular signing certificate.
 The Windows resources passed routed mouse and portrait-touch start, move,
 Character, mode return, alternate-mode and fresh-process resume checks.
@@ -34,9 +33,8 @@ GPU captures cover the main navigation and regional landmarks at 1280 × 800
 and 390 × 844. See [Regional Campaign](campaign-regions.md) for routes,
 progression and reproduction.
 
-The delivery lead owns publication, installation and Fold verification. The
-delivered Windows/source and Android installation statuses at the top of this
-document remain the last destination evidence.
+The headless suite passed 63 of 67 test files. The other four reproduced baseline
+results in the Bandit assertion, two HUD density probes and the Survey UI log check.
 
 ## Combat commitment update — 0.3.7
 
