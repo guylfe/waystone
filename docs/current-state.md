@@ -19,8 +19,19 @@ confirmation.
 Campaign writes `user://waystone-regional-campaign.save`. The other modes each
 write a mode-specific slot and can resume the last matching pre-upgrade shared
 slot when their new slot has yet to be created. Survey archives retain their
-existing path and schema. The regular application ID and signing lineage
-carry forward. See [Regional Campaign](campaign-regions.md) for routes,
+existing path and schema. Loading a saved Survey leaves the current report,
+archive and report files intact. Starting a new measurement session still
+updates the current report through its normal flow.
+
+The candidate exports embed runtime `64875ccef06e730398eb78064e7d4476e8c3cc55`.
+Android is `com.waystone.prototype / 308` with the regular signing certificate.
+The Windows resources passed routed mouse and portrait-touch start, move,
+Character, mode return, alternate-mode and fresh-process resume checks.
+Desktop-hosted APK resources passed the same Expedition and Survey round trips.
+The previous regular build generated disposable save and report fixtures.
+Their original file hashes survived the exercised switches. Exact Windows
+GPU captures cover the main navigation and regional landmarks at 1280 × 800
+and 390 × 844. See [Regional Campaign](campaign-regions.md) for routes,
 progression and reproduction.
 
 The delivery lead owns publication, installation and Fold verification. The
