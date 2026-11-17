@@ -1,6 +1,6 @@
 # Waystone Prototype
 
-Prototype candidate: `0.3.8` (Android version code `308`).
+Current prototype version: `0.3.8` (Android version code `308`).
 The candidate adds the [four-region Campaign](docs/campaign-regions.md) to the regular mode selector. The last delivered build is 0.3.7.
 
 Normal attacks commit a single melee cut or automatic Bow draw/release/recovery.
