@@ -1,6 +1,6 @@
 # Mid-run comments
 
-Status as of 2026-11-22. Local capture candidate based on regular Waystone 0.3.8
+Status as of 2026-11-22. Delivery client candidate based on regular Waystone 0.3.8
 at `83e4087`. [Current state](current-state.md) owns release and device status.
 
 ## Capture and input
@@ -24,8 +24,9 @@ opening snapshot and ID for another attempt.
 
 ## Local records
 
-Each successful save creates `user://run-comments/<id>.json`. The UI confirms
-the local save. Notes remain available across game exits and mode changes, even
+Each successful save creates `user://run-comments/<id>.json`. The editor reports
+queued and delivered counts. **Delivery** shows a copyable GitHub receipt
+reference after the relay confirms the comment. Notes remain available across game exits and mode changes, even
 when the corresponding run is abandoned. The game stores the note separately
 from all run saves and Survey reports.
 
@@ -42,13 +43,30 @@ credentials, and serialized saves.
 
 ## Delivery integration
 
-This candidate saves locally. Production sending requires an approved destination
-and authentication. The optional client transport posts the original JSON bytes
+The client starts with delivery off and can capture notes offline. In the
+comment editor, choose **Delivery**, enter the approved HTTPS relay address and
+a player-scoped bearer token issued by that relay, then choose **Apply**.
+Use a plain HTTPS URL with a path and optional port. Applying a new address
+requires that address's token. Leaving the token blank for the same address
+keeps the existing credential. Clear both fields and apply to disable delivery.
+The client stores the endpoint and token in the platform's per-user app data
+at `user://run-comment-delivery.cfg`. That file is readable on the device by
+anyone with access to its app data. Use a revocable relay credential with
+submission-only access. Keep GitHub credentials entirely on the relay.
+
+Save returns to play as soon as the local write completes. The background
+worker checks persisted notes at launch and after a save. On failure it backs
+off from two seconds to at most sixty seconds between attempts while the app
+is running. An acknowledged note keeps its local record and receipt.
+
+The client sends the original JSON bytes
 with the note ID in the `Idempotency-Key` header over HTTPS, with redirects
-disabled. A success requires HTTP 200 or 201 and a JSON receipt containing the
+disabled, and the token in `Authorization: Bearer <token>`. A success requires
+HTTP 200 or 201 and a JSON receipt containing the
 same `id`, the SHA-256 digest of those bytes as `sha256`, and a nonempty
-`reference`. The reference should identify the verified GitHub record. The
-client stores the matching receipt beside the immutable note, excludes it from
+`reference`. The reference must be a GitHub HTTPS URL to the verified file,
+issue or commit. The relay verifies the GitHub readback before acknowledging.
+The client stores the matching receipt beside the immutable note, excludes it from
 the pending list, and can safely retry a missing or mismatched receipt.
 
 For a private GitHub inbox, the smallest deterministic receiver can create
@@ -62,12 +80,11 @@ own durable deduplication and readback. See
 [GitHub's Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents)
 and [installation authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).
 
-To release live sending, wire the approved receiver and player authentication
-to the pending queue, expose queued and delivered states, and enable Android
-network access. Verify an authorized test submission by reading back the GitHub
-file and comparing its bytes, then build Windows and Android from the same
-release commit and check real Windows input and the Fold keyboard in both
-orientations.
+To release live sending, deploy the approved relay, provision a revocable player
+credential, and configure the client on each platform. Verify an authorized
+test submission by reading back the GitHub record and comparing its bytes.
+Build Windows and Android from the same numbered release commit and check
+Windows input and the Fold keyboard in both orientations.
 
 ## Verification
 
@@ -77,6 +94,11 @@ the normal boards. For the HTTP integration test, run the same queue script with
 Godot `--headless --path . -s tests/run_comment_queue_test.gd -- --loopback` and
 the test runner's isolated APPDATA and LOCALAPPDATA paths. The fake receiver
 binds only on localhost. It simulates a lost response after writing, a wrong
-digest, and a successful idempotent retry. Headless input and geometry checks
+digest, and a successful idempotent retry. Run
+`python tests/run_comment_delivery_test.py <Godot-console.exe>` to drive the
+normal main scene through Expedition setup, F8, Delivery, and Save, then
+check persisted failure, matching receipt and deduplication across three
+processes. The plaintext fixture is limited to headless debug runs with
+`--loopback` and sends no credentials. Headless input and geometry checks
 leave native IME, graphics, physical control and installed-build verification
 open.

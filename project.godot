@@ -3,6 +3,9 @@ config/name="Waystone Prototype"
 config/icon="res://assets/waystone-icon.svg"
 run/main_scene="res://scenes/main.tscn"
 
+[autoload]
+RunCommentOutbox="*res://scripts/core/run_comment_outbox.gd"
+
 [display]
 window/size/viewport_width=720
 window/size/viewport_height=1280

@@ -11,9 +11,12 @@
 The isolated 0.3.8 candidate adds **Menu → Comment** and **F8** in all regular
 playable modes, including Campaign and the experimental Survey menu. The
 editor freezes play and saves the typed note with its opening gameplay state
-to a local queue. [Mid-run comments](run-comments.md) owns the input, record
-format, verification and integration contract. Live GitHub delivery and
-platform release remain pending.
+to a local queue. With a player relay configured, the candidate submits in
+the background and retries after restart or relay failure. The editor shows
+queued and delivered counts and a copyable GitHub receipt reference.
+[Mid-run comments](run-comments.md) owns the input, record format, verification
+and integration contract. Live GitHub setup and numbered platform release are
+pending.
 
 ## Regional Campaign integration — 0.3.8
 

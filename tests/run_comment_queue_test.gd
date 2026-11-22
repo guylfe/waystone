@@ -2,6 +2,7 @@ extends SceneTree
 
 const Queue = preload("res://scripts/core/run_comment_queue.gd")
 const Delivery = preload("res://scripts/core/run_comment_delivery.gd")
+const REFERENCE := "https://github.com/example/waystone/issues/42"
 
 var checks := 0
 var failures := 0
@@ -51,8 +52,8 @@ func _run() -> void:
 	if OS.get_cmdline_user_args().has("--loopback"):
 		await _exercise_http(restart, id, payload)
 	else:
-		check(restart.acknowledge(id, {"id": id, "sha256": digest, "reference": "test/one"}) == OK, "verified response persisted")
-	check(Queue.new(queue.directory).receipt(id) == "test/one", "receipt survives new queue instance")
+		check(restart.acknowledge(id, {"id": id, "sha256": digest, "reference": REFERENCE}) == OK, "verified response persisted")
+	check(Queue.new(queue.directory).receipt(id) == REFERENCE, "receipt survives new queue instance")
 	check(queue.pending_ids().is_empty() and queue.payload(id) == payload, "successful note leaves pending but keeps local bytes")
 	print("Run comment queue: ", checks, " checks, ", failures, " failures")
 	quit(1 if failures else 0)
@@ -65,7 +66,12 @@ func _exercise_http(queue: Queue, id: String, payload: String) -> void:
 	var endpoint := "http://127.0.0.1:%d/comments" % listener.get_local_port()
 	var transport := Delivery.new()
 	root.add_child(transport)
-	check(await transport.deliver(queue, id, endpoint, "Bearer forbidden") == ERR_INVALID_PARAMETER, "credentials excluded from plaintext loopback")
+	check(Delivery.valid_configuration("https://relay.example.invalid/comments", "test-fixture"), "HTTPS with player token accepted")
+	check(not Delivery.valid_configuration("https://relay.example.invalid/comments", ""), "HTTPS requires player token")
+	check(not Delivery.valid_configuration("https://relay.example.invalid/comments", "line\r\nbreak"), "reject header delimiters")
+	check(not Delivery.valid_configuration("http://relay.example.invalid/comments", "test-fixture"), "reject non-loopback plaintext")
+	check(not Delivery.valid_configuration("http://127.0.0.1:80@relay.example.invalid/comments", ""), "reject disguised non-loopback")
+	check(await transport.deliver(queue, id, endpoint, "forbidden") == ERR_INVALID_PARAMETER, "credentials excluded from plaintext loopback")
 	check(await transport.deliver(queue, id, endpoint) == ERR_CONNECTION_ERROR, "lost response remains pending")
 	check(queue.pending_ids().has(id) and receiver.get(id) == payload, "first remote write happened before response was lost")
 	check(await transport.deliver(queue, id, endpoint) == ERR_INVALID_DATA, "successful HTTP status with wrong hash stays pending")
@@ -107,7 +113,7 @@ func _serve_loopback() -> void:
 		receiver[request_id] = body
 		if requests > 1:
 			var digest := "wrong" if requests == 2 else String(receiver[request_id]).sha256_text()
-			var ack := JSON.stringify({"id": request_id, "sha256": digest, "reference": "test/one"})
+			var ack := JSON.stringify({"id": request_id, "sha256": digest, "reference": REFERENCE})
 			var response := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s" % [ack.to_utf8_buffer().size(), ack]
 			peer.put_data(response.to_utf8_buffer())
 		peer.disconnect_from_host()

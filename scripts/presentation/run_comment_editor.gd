@@ -3,6 +3,7 @@ extends Control
 
 const Metrics = preload("res://scripts/presentation/menu_metrics.gd")
 const CommentQueue = preload("res://scripts/core/run_comment_queue.gd")
+const Outbox = preload("res://scripts/core/run_comment_outbox.gd")
 
 signal closed
 var queue := CommentQueue.new()
@@ -11,6 +12,18 @@ var context: Dictionary
 var editor: TextEdit
 var save_button: Button
 var cancel_button: Button
+var delivery_button: Button
+var back_button: Button
+var apply_button: Button
+var delivery: Outbox
+var settings_scroll: ScrollContainer
+var endpoint_field: LineEdit
+var token_field: LineEdit
+var receipt_field: LineEdit
+var settings_status: Label
+var editing_delivery := false
+var save_failed := false
+var toast_id := ""
 var heading: Label
 var status: Label
 var panel: PanelContainer
@@ -25,6 +38,9 @@ var keyboard_height := 0
 var replaying := false
 
 func _ready() -> void:
+	delivery = get_node("/root/RunCommentOutbox")
+	queue = delivery.queue
+	delivery.changed.connect(_update_delivery_status)
 	z_index = 200
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -56,13 +72,16 @@ func _ready() -> void:
 	editor.virtual_keyboard_show_on_focus = false
 	editor.text_changed.connect(_text_changed)
 	content.add_child(editor)
+	_create_delivery_settings(content)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	content.add_child(actions)
 	cancel_button = _add_button(actions, "Cancel", _close)
 	save_button = _add_button(actions, "Save comment", _save)
+	delivery_button = _add_button(actions, "Delivery", _open_delivery)
+	back_button = _add_button(actions, "Back", _return_to_draft)
+	apply_button = _add_button(actions, "Apply", _apply_delivery)
 	toast = Label.new()
-	toast.text = "Comment saved on this device"
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -87,31 +106,110 @@ func _add_button(parent: Control, label: String, action: Callable) -> Button:
 func is_open() -> bool:
 	return is_instance_valid(backdrop) and backdrop.visible
 
+func _create_delivery_settings(content: Control) -> void:
+	settings_scroll = ScrollContainer.new()
+	settings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	settings_scroll.follow_focus = true
+	content.add_child(settings_scroll)
+	var form := VBoxContainer.new()
+	form.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_scroll.add_child(form)
+	endpoint_field = _delivery_field(form, "HTTPS relay address", 512)
+	token_field = _delivery_field(form, "Player relay token", 4096)
+	token_field.secret = true
+	receipt_field = _delivery_field(form, "Recent GitHub receipt", 512)
+	receipt_field.editable = false
+	var instructions := Label.new()
+	instructions.text = "The token is stored on this device for retries after restart. Clear both fields to turn off delivery."
+	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form.add_child(instructions)
+	settings_status = Label.new()
+	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form.add_child(settings_status)
+
+func _delivery_field(form: Control, label: String, max_length: int) -> LineEdit:
+	var caption := Label.new()
+	caption.text = label
+	form.add_child(caption)
+	var field := LineEdit.new()
+	field.accessibility_name = label
+	field.max_length = max_length
+	form.add_child(field)
+	return field
+
+func _open_delivery() -> void:
+	endpoint_field.text = delivery.endpoint
+	token_field.clear()
+	token_field.placeholder_text = "Leave blank to keep the token for this address" if not delivery.endpoint.is_empty() else ""
+	settings_status.text = ""
+	_set_editor_view(true)
+	_update_delivery_status()
+	back_button.grab_focus()
+
+func _return_to_draft() -> void:
+	token_field.clear()
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): DisplayServer.virtual_keyboard_hide()
+	_set_editor_view(false)
+	_update_delivery_status()
+	delivery_button.grab_focus()
+
+func _apply_delivery() -> void:
+	var result := delivery.configure(endpoint_field.text, token_field.text)
+	if result == OK:
+		_return_to_draft()
+		return
+	settings_status.text = "Enter an HTTPS relay address and its player token." if result == ERR_INVALID_PARAMETER else "Could not save Delivery settings. Try again."
+	settings_scroll.ensure_control_visible(settings_status)
+
+func _set_editor_view(show_settings: bool) -> void:
+	editing_delivery = show_settings
+	heading.text = "Comment delivery" if show_settings else "Run comment"
+	settings_scroll.visible = show_settings
+	back_button.visible = show_settings
+	apply_button.visible = show_settings
+	editor.visible = not show_settings
+	save_button.visible = not show_settings
+	cancel_button.visible = not show_settings
+	delivery_button.visible = not show_settings
+	_reflow()
+
+func _update_delivery_status() -> void:
+	if not save_failed: status.text = delivery.summary()
+	receipt_field.text = delivery.latest_reference
+	receipt_field.placeholder_text = "No confirmed delivery yet"
+	if toast.visible and not toast_id.is_empty() and not queue.receipt(toast_id).is_empty():
+		toast.text = "Comment delivered"
+
 func open(snapshot: Dictionary) -> void:
 	previous_focus = get_viewport().gui_get_focus_owner()
 	if is_instance_valid(previous_focus): previous_focus.release_focus()
 	draft_id = CommentQueue.new_id()
 	context = snapshot
-	status.text = "Gameplay state captured. Your comment will be saved on this device."
+	save_failed = false
 	editor.text = ""
 	save_button.disabled = true
 	toast.hide()
 	backdrop.show()
 	keyboard_height = _keyboard_height()
-	_reflow()
+	_set_editor_view(false)
+	_update_delivery_status()
 	set_process(true)
 	editor.grab_focus()
 
 func _save() -> void:
 	if not is_open() or editor.text.strip_edges().is_empty(): return
 	if queue.enqueue(draft_id, editor.text, context) != OK:
+		save_failed = true
 		status.text = "Could not save the comment. Your text is still here. Try again."
 		_reflow()
 		return
 	_close()
+	toast_id = draft_id
+	toast.text = "Comment saved · queued for delivery" if not delivery.endpoint.is_empty() else "Comment saved · queued on this device"
 	_reflow()
 	toast.show()
-	set_process(true)
+	if queue == delivery.queue: delivery.note_saved()
 	var saved_id := draft_id
 	await get_tree().create_timer(2.5).timeout
 	if draft_id == saved_id:
@@ -134,6 +232,7 @@ func _close() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): DisplayServer.virtual_keyboard_hide()
 	backdrop.hide()
 	editor.clear()
+	token_field.clear()
 	context = {}
 	set_process(false)
 	if is_instance_valid(previous_focus) and previous_focus.is_visible_in_tree(): previous_focus.grab_focus()
@@ -175,6 +274,9 @@ func _reflow() -> void:
 		Metrics.apply_unit(panel, u)
 		panel.size = extent
 		panel.position = safe.get_center() - extent * 0.5
+		var focus := get_viewport().gui_get_focus_owner()
+		if editing_delivery and focus in [endpoint_field, token_field]:
+			settings_scroll.ensure_control_visible.call_deferred(focus)
 	else:
 		var extent := Vector2(minf(safe.size.x, 330.0 * u), 44.0 * u)
 		Metrics.apply_unit(toast, u)
@@ -203,8 +305,10 @@ func route(event: InputEvent) -> bool:
 	if event is InputEventScreenDrag and (open_now or touches.has(event.index)):
 		if touches.has(event.index) and Vector2(touches[event.index]).distance_to(event.position) >= _touch_slop():
 			touches[event.index] = Vector2.INF
-			if open_now and editor.get_global_rect().has_point(event.position):
+			if open_now and editor.visible and editor.get_global_rect().has_point(event.position):
 				editor.scroll_vertical -= event.relative.y / maxf(1.0, editor.get_line_height())
+			if open_now and editing_delivery and settings_scroll.get_global_rect().has_point(event.position):
+				settings_scroll.scroll_vertical -= int(event.relative.y)
 		get_viewport().set_input_as_handled()
 		return true
 	if event is InputEventJoypadButton:
@@ -230,12 +334,13 @@ func route(event: InputEvent) -> bool:
 		if event.keycode == KEY_ESCAPE or (event.ctrl_pressed and event.keycode in [KEY_ENTER, KEY_KP_ENTER]):
 			get_viewport().set_input_as_handled()
 			if not event.echo:
-				if event.keycode == KEY_ESCAPE: _close()
+				if event.keycode == KEY_ESCAPE: _back()
+				elif editing_delivery: _apply_delivery()
 				else: _save()
 		elif event.keycode == KEY_TAB:
 			get_viewport().set_input_as_handled()
 			if not event.echo: _step(-1 if event.shift_pressed else 1)
-		elif get_viewport().gui_get_focus_owner() != editor and event.keycode in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+		elif not (get_viewport().gui_get_focus_owner() is TextEdit or get_viewport().gui_get_focus_owner() is LineEdit) and event.keycode in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 			get_viewport().set_input_as_handled()
 			if not event.echo: _step(-1 if event.keycode in [KEY_UP, KEY_LEFT] else 1)
 	return open_now
@@ -243,6 +348,8 @@ func route(event: InputEvent) -> bool:
 func _step(change: int) -> void:
 	var controls: Array[Control] = [editor, cancel_button]
 	if not save_button.disabled: controls.append(save_button)
+	controls.append(delivery_button)
+	if editing_delivery: controls = [endpoint_field, token_field, receipt_field, back_button, apply_button]
 	var selected := controls.find(get_viewport().gui_get_focus_owner())
 	controls[posmod(selected + change, controls.size())].grab_focus()
 
@@ -250,12 +357,23 @@ func _joy_button(button: int) -> void:
 	match button:
 		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_LEFT: _step(-1)
 		JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_RIGHT: _step(1)
-		JOY_BUTTON_B: _close()
+		JOY_BUTTON_B: _back()
 		JOY_BUTTON_A:
 			var focus := get_viewport().gui_get_focus_owner()
 			if focus == editor and DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): _show_keyboard()
 			elif focus == cancel_button: _close()
 			elif focus == save_button: _save()
+			elif focus == delivery_button: _open_delivery()
+			elif focus == back_button: _return_to_draft()
+			elif focus == apply_button: _apply_delivery()
+			elif focus in [endpoint_field, token_field] and DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+				var field := focus as LineEdit
+				var kind := DisplayServer.KEYBOARD_TYPE_PASSWORD if field.secret else DisplayServer.KEYBOARD_TYPE_URL
+				DisplayServer.virtual_keyboard_show(field.text, field.get_global_rect(), kind, field.max_length)
+
+func _back() -> void:
+	if editing_delivery: _return_to_draft()
+	else: _close()
 
 func _touch_slop() -> float:
 	return 10.0 * Metrics.unit(get_parent())

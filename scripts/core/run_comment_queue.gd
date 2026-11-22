@@ -23,10 +23,16 @@ func enqueue(id: String, text: String, context: Dictionary) -> Error:
 
 func pending_ids() -> PackedStringArray:
 	var ids := PackedStringArray()
+	for id in saved_ids():
+		if receipt(id).is_empty(): ids.append(id)
+	return ids
+
+func saved_ids() -> PackedStringArray:
+	var ids := PackedStringArray()
 	if not DirAccess.dir_exists_absolute(directory): return ids
 	for filename in DirAccess.get_files_at(directory):
 		var id := filename.trim_suffix(".json")
-		if filename.ends_with(".json") and valid_id(id) and receipt(id).is_empty(): ids.append(id)
+		if filename.ends_with(".json") and valid_id(id): ids.append(id)
 	return ids
 
 func payload(id: String) -> String:
