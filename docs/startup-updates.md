@@ -1,6 +1,6 @@
 # Startup update checks
 
-This describes the regular 0.3.9 candidate. [Current state](current-state.md)
+This describes regular Waystone 0.3.9. [Current state](current-state.md)
 owns publication and device status.
 
 On a normal Windows or Android launch, Waystone makes one anonymous HTTPS

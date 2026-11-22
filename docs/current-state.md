@@ -1,24 +1,27 @@
 # Waystone current state
 
-**Release reviewed and packaged on 2026-11-18.** Regular Waystone 0.3.8 includes the four-region Campaign. The exported runtime is `64875ccef06e730398eb78064e7d4476e8c3cc55`.
-**Windows.** The delivered executable has SHA256 `0627936f3f3bf27326ee309df611f9ac0a056269f87476a6dffa8e3fced6eaba`. The previous normal Windows installation was verified at 0.3.7.
-**Android.** The signed regular APK is version 0.3.8, code 308, SHA256 `714ae3a520631ad9e32fc22dd1611a8e3e92afb5b70e2e72c0f66fa0235967af`. Fold installation and device execution are pending.
+**Released 2026-11-22.** [Regular Waystone 0.3.9](https://github.com/guylfe/waystone/releases/tag/v0.3.9) includes the four-region Campaign, mid-run comment capture, and a startup update check. The exported runtime is `c0db50a967c3096edaabfdcc693b5ad4e25e9666`.
+**Windows.** The normal launcher executable was updated and verified by SHA-256 (`55dab6e2ce170cf299f1f880e7f035ac403b2f80d9277d2e9d18c34435c93b02`). Its headless Survey smoke passed with isolated saves.
+**Android.** The published signed APK is version 0.3.9, code 309, SHA-256 `027f6007586ec533731d009d79f95d0706ff6f547777ad14e820eeff170b9545`. Installation and execution of this version on the Fold are pending.
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-## 0.3.9 candidate
+## 0.3.9 startup updates
 
-The Windows and Android candidate adds a quiet startup check for a newer
+The Windows and Android release adds a quiet startup check for a newer
 stable GitHub release with an installer archive or APK for the current
 platform. See [startup updates](startup-updates.md) for input and evidence.
-Publication and device installation are pending.
+GitHub's anonymous latest-release response identified 0.3.9 and both uploaded
+assets. Their GitHub digests matched the verified local builds. The update
+checker from the installed Windows package processed that response for both
+platforms, offering 0.3.9 against a simulated 0.3.8 and staying quiet on 0.3.9.
 
 ### Mid-run comments
 
-The 0.3.9 candidate includes **Menu → Comment** and **F8** in all regular
+Version 0.3.9 includes **Menu → Comment** and **F8** in all regular
 playable modes, including Campaign and the experimental Survey menu. The
 editor freezes play and saves the typed note with its opening gameplay state
-to a local queue. With a player relay configured, the candidate submits in
+to a local queue. With a player relay configured, the game submits in
 the background and retries after restart or relay failure. The editor shows
 queued and delivered counts and a copyable GitHub receipt reference.
 [Mid-run comments](run-comments.md) owns the input, record format, verification
