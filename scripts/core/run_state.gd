@@ -770,6 +770,7 @@ var dodge_vulnerable_time_total := 0.0
 var dodge_recovery_damage_total := 0
 var effects: Array[Dictionary] = []
 var message := "Time is frozen. Choose an action."
+var recent_gameplay_messages: Array[Dictionary] = []
 var last_timeline: Array[Dictionary] = []
 var rng := RandomNumberGenerator.new()
 var _next_enemy_id := 1
@@ -967,6 +968,7 @@ func build_expedition_room() -> void:
 	start_run(loadout_id, ModeRulesScript.EXPEDITION, run_seed)
 
 func start_run(chosen_loadout: String, chosen_mode: String, seed_override: int = -1, survey_profile_override: String = "encounter", combat_rules_override: String = "energy", legacy_expedition: bool = false, survey_options: Dictionary = {}) -> void:
+	recent_gameplay_messages.clear()
 	# Experiments are opted into only by the Survey entry; old/default runs stay control.
 	var was_integrated := not survey_experiment.is_empty()
 	survey_experiment = survey_options.duplicate(true) if chosen_mode == "combat_survey" else {}
@@ -11923,6 +11925,7 @@ func load_run(path: String = "") -> bool:
 	# Alternating AI ticks are part of a current expedition's combat clock, not
 	# a disposable render cache. Preserve the phase across suspension.
 	if not expedition.is_empty() or not survey_experiment.is_empty(): _simulation_tick_index = int(payload.get("simulation_tick_index",roundi(simulation_time/SIM_DT)))
+	recent_gameplay_messages.clear()
 	message = String(payload.get("message", message))
 	if position_was_migrated or save_version < 13:
 		migration_notices.push_front("The forest shifted. Its old geography fades from memory.")
@@ -11966,4 +11969,8 @@ func restart() -> void:
 
 func _set_message(text: String) -> void:
 	message = text
+	var entry := text.left(240)
+	if recent_gameplay_messages.is_empty() or recent_gameplay_messages[-1].text != entry:
+		recent_gameplay_messages.append({"at": simulation_time, "text": entry})
+		if recent_gameplay_messages.size() > 8: recent_gameplay_messages.pop_front()
 	message_changed.emit(message)

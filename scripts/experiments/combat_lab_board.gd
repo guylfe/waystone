@@ -834,6 +834,9 @@ func _suspend_lab() -> void:
 	visual = _presentation_snapshot()
 
 func _notification(what: int) -> void:
+	if _run_comment_open():
+		super._notification(what)
+		return
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(character_menu): character_menu.cancel_touches()
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and state != null:
 		inspection_release_required=true
@@ -957,6 +960,7 @@ func _keyboard_direction(key: int) -> Vector2:
 	return _screen_delta_to_world_direction(direction)
 
 func _gui_input(event: InputEvent) -> void:
+	if _run_comment_open(): return
 	if not _lab_ui_active() or (survey_integrated and (state.survey_feedback_pending or state.trial_complete or survey_overlay.visible)):
 		super._gui_input(event)
 		return

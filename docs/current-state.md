@@ -6,6 +6,15 @@
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
+## Mid-run comments candidate
+
+The isolated 0.3.8 candidate adds **Menu → Comment** and **F8** in all regular
+playable modes, including Campaign and the experimental Survey menu. The
+editor freezes play and saves the typed note with its opening gameplay state
+to a local queue. [Mid-run comments](run-comments.md) owns the input, record
+format, verification and integration contract. Live GitHub delivery and
+platform release remain pending.
+
 ## Regional Campaign integration — 0.3.8
 
 Regular Waystone's mode selector includes **Campaign** alongside Expedition,

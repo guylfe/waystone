@@ -334,7 +334,7 @@ func _sync_camera() -> void:
 		material.albedo_color.a=0.12 if obstacle.cutaway else 1.0
 
 func _process(delta: float) -> void:
-	if ink_only or not state.run_active: return
+	if ink_only or not state.run_active or _run_comment_open(): return
 	# Refresh stationary touch intent as the player/camera moves, too.
 	if pointer_down and held_movement and held_movement_tracks_pointer:
 		var direction:=_pointer_follow_direction(touch_current)
@@ -403,6 +403,9 @@ func _draw_bridge_ink() -> void:
 
 func _restart() -> void:
 	_open_run_menu()
+
+func _comment_mode() -> String:
+	return ModeSession.REGIONAL
 
 func _layout() -> void:
 	super._layout()

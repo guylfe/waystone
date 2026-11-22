@@ -95,6 +95,8 @@ $HeadlessSuite = @(
     'menu_journey_test',
     'survey_pause_input_test',
     'survey_integration_test',
+    'run_comment_ui_test',
+    'run_comment_queue_test',
     'expedition_lifecycle_test',
     'expedition_systems_test',
     'expedition_edge_cases_test',

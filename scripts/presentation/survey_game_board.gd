@@ -129,6 +129,7 @@ func _ready() -> void:
 		child.queue_free()
 	_selector(selector_panel,["isometric","top_down"],view_mode,"Projection",func(value): view_mode=value; _layout())
 	_lab_button(selector_panel,"Character · C",func(): inspection_return=true; _close_inspection(); suspended=false; _open_character_sheet())
+	_lab_button(selector_panel,"Comment",_open_run_comment)
 	_lab_button(selector_panel,"Map · M",func(): inspection_return=true; _close_inspection(); suspended=false; map_open=true)
 	_lab_button(selector_panel,"End Survey / rate",func(): inspection_return=true; _close_inspection(); suspended=false; _build_survey_end_confirmation())
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
@@ -389,6 +390,7 @@ func _enemy_readout_tag(actor_id: int) -> String:
 	return String(enemy_tags[actor_id])
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _run_comment_open(): return
 	if survey_overlay.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and survey_overlay.get_meta("kind","") in ["experiment_setup", "replace_campaign"]: _close_experiment_setup()
 		return
@@ -400,7 +402,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	super._unhandled_key_input(event)
 
 func _input(event: InputEvent) -> void:
+	if _run_comment_open():
+		_observe_comment_releases(event)
+		_route_run_comment(event)
+		return
 	if state != null: _observe_menu_input(event)
+	if _route_run_comment(event): return
 	if is_instance_valid(character_menu) and character_menu.route_touch(event):
 		get_viewport().set_input_as_handled(); return
 	# Real native Survey overlay touch taps and swipes share one captured route.
@@ -442,9 +449,32 @@ func _input(event: InputEvent) -> void:
 	super._input(event)
 
 func _process(delta: float) -> void:
+	if _run_comment_open(): return
 	if overlay_release_gate and overlay_pointers.is_empty() and _physical_input_neutral():
 		overlay_release_gate = false
 	super._process(delta)
+
+func _observe_comment_releases(event: InputEvent) -> void:
+	# The modal owns new inputs. Older captures still need their release even
+	# when the editor opened over an inspection or during a multi-touch gesture.
+	if event is InputEventScreenTouch and not event.pressed:
+		inspection_pointers.erase(event.index)
+		observed_contacts.erase(str(event.index))
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		inspection_pointers.erase(-1)
+		observed_contacts.erase("mouse")
+	elif event is InputEventKey and not event.pressed:
+		inspection_held.erase("key:" + str(event.keycode))
+	elif event is InputEventJoypadButton and not event.pressed:
+		inspection_held.erase(str(event.button_index))
+		inspection_buttons.erase(event.button_index)
+	elif event is InputEventJoypadMotion and absf(event.axis_value) <= controller.DEADZONE:
+		inspection_axes.erase(event.axis)
+
+func _release_comment_inputs() -> void:
+	super._release_comment_inputs()
+	lab_keys.clear()
+	lab_pointer = false
 
 func _layout() -> void:
 	if previous_layout_size != Vector2.ZERO and previous_layout_size != size:

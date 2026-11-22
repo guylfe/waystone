@@ -295,6 +295,9 @@ var survey_export_status_label: Label
 var lab_session := false
 var character_menu: PanelContainer
 const MenuMetrics = preload("res://scripts/presentation/menu_metrics.gd")
+const RunCommentContext = preload("res://scripts/core/run_comment_context.gd")
+const RunCommentEditor = preload("res://scripts/presentation/run_comment_editor.gd")
+var run_comment_editor: RunCommentEditor
 
 func _ready() -> void:
 	character_menu = _create_character_menu()
@@ -313,6 +316,10 @@ func _ready() -> void:
 	if state.run_active: state.prewarm_expedition_navigation()
 	_create_seed_input()
 	_create_survey_overlay()
+	if _mode_select_enabled():
+		run_comment_editor = RunCommentEditor.new()
+		add_child(run_comment_editor)
+		run_comment_editor.closed.connect(_release_comment_inputs)
 	setup_loadout = state.loadout_id
 	setup_mode = state.mode_id
 	setup_survey_profile = state.survey_profile
@@ -374,6 +381,61 @@ func _open_run_menu() -> void:
 	controller.release_actions(self)
 	desktop_movement_keys.clear()
 	controller.paused = true
+	queue_redraw()
+
+func _run_comment_open() -> bool:
+	return is_instance_valid(run_comment_editor) and run_comment_editor.is_open()
+
+func _can_open_run_comment() -> bool:
+	return is_instance_valid(run_comment_editor) and state.run_active and not state.trial_complete and not survey_overlay.visible and not (is_instance_valid(expedition_dialog) and expedition_dialog.visible)
+
+func _open_run_comment() -> void:
+	if not _can_open_run_comment() or _run_comment_open(): return
+	move_child(run_comment_editor, -1)
+	run_comment_editor.open(RunCommentContext.capture(state, _comment_mode(), view_mode))
+	queue_redraw()
+
+func _comment_mode() -> String:
+	return state.mode_id
+
+func _route_run_comment(event: InputEvent) -> bool:
+	if not is_instance_valid(run_comment_editor): return false
+	if _run_comment_open() and controller.active and event.device == controller.device:
+		# Update physical-held bookkeeping without invoking gameplay releases.
+		if event is InputEventJoypadButton: controller.held[event.button_index] = event.pressed
+		elif event is InputEventJoypadMotion:
+			controller.axes[event.axis] = event.axis_value
+			if event.axis == JOY_AXIS_TRIGGER_RIGHT: controller.held["trigger"] = event.axis_value > controller.TRIGGER_RELEASE
+			elif event.axis == JOY_AXIS_TRIGGER_LEFT: controller.held["lab_lt"] = event.axis_value > controller.TRIGGER_RELEASE
+	if run_comment_editor.route(event): return true
+	if event is InputEventKey and event.keycode == KEY_F8 and _can_open_run_comment():
+		if event.pressed and not event.echo: _open_run_comment()
+		get_viewport().set_input_as_handled()
+		return true
+	return false
+
+func _release_comment_inputs() -> void:
+	# Closing restores the prior view. Held inputs need a fresh press, while
+	# committed actions retain their remaining playback.
+	controller.attack_held = false
+	controller.pending_button = -1
+	controller.neutral_required = true
+	desktop_movement_keys.clear()
+	if bool(state.player_action.get("continue_held", false)): state.set_attack_hold(false)
+	if bool(state.player_action.get("guard_held", false)): state.set_block_hold(false)
+	state.set_advance_hold(false)
+	state.release_bow_attack()
+	attack_key_held = false
+	attack_pointer_held = false
+	attack_button_pointer_held = false
+	advance_pointer_held = false
+	defense_pointer_held = false
+	wait_pointer_held = false
+	pointer_down = false
+	pointer_intent = ""
+	held_movement = false
+	held_movement_tracks_pointer = false
+	queued_movement_after_attack = false
 	queue_redraw()
 
 func _save_and_leave(quit_app: bool = false) -> void:
@@ -1341,6 +1403,7 @@ func _update_projection() -> void:
 	iso_origin = Vector2.ZERO
 
 func _process(delta: float) -> void:
+	if _run_comment_open(): return
 	if is_instance_valid(character_menu): character_menu.sync(self)
 	if is_instance_valid(survey_overlay) and survey_overlay.visible: MenuMetrics.apply(self,survey_overlay)
 	controller.sync_context(self) # Bind native focus for touch/keyboard handover too.
@@ -1576,6 +1639,7 @@ func _interpolate_visual_array(current: Array, following: Array, weight: float, 
 	return result
 
 func _input(event: InputEvent) -> void:
+	if _route_run_comment(event): return
 	if is_instance_valid(character_menu) and character_menu.route_touch(event):
 		get_viewport().set_input_as_handled(); return
 	if controller.menu_key(self,event):
@@ -1602,6 +1666,7 @@ func _controller_event(event: InputEvent) -> bool:
 	return true
 
 func _gui_input(event: InputEvent) -> void:
+	if _run_comment_open(): return
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
 	autosave_quiet_elapsed = 0.0
 	if survey_overlay != null and survey_overlay.visible: return
@@ -2072,6 +2137,7 @@ func _pointer_released(position: Vector2) -> void:
 	pointer_intent = ""
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _run_comment_open(): return
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
 	if survey_overlay != null and survey_overlay.visible: return
 	if desktop_controls and event.keycode == KEY_F:
@@ -2310,6 +2376,14 @@ func _enemy_touch_should_attack(tapped_enemy: Dictionary) -> bool:
 	return false
 
 func _notification(what: int) -> void:
+	if _run_comment_open():
+		if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+			run_comment_editor.cancel()
+			return
+		if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
+			run_comment_editor.cancel_contacts()
+			if what == NOTIFICATION_APPLICATION_PAUSED and not playing and state.run_active: _mark_autosave(true)
+			return
 	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED] and is_instance_valid(character_menu): character_menu.cancel_touches()
 	if lab_session and state != null and what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED]:
 		state.lab_suspend()

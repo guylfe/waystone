@@ -187,6 +187,14 @@ movement or combat. A keyboard key, mouse click or touch returns to the existing
 controls until fresh gamepad input or reconnection. Stick drift below the radial
 0.24 deadzone does not move or reclaim input. RT uses 0.55 press / 0.25 release hysteresis.
 
+## Mid-run comments candidate
+
+Press **Start**, then choose **Comment** in the Run menu or the experimental
+Survey menu. The D-pad or left stick moves focus. A selects and B cancels.
+Compose with a keyboard. Saving or cancelling returns to the same menu, and
+held gameplay controls require a fresh press. [Mid-run comments](run-comments.md)
+covers the local queue and verification.
+
 ## Illustrated interface
 
 The HUD pairs action names with original Xbox-style SVG images: colored A/B/X/Y,

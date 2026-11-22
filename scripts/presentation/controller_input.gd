@@ -581,6 +581,7 @@ func menu_entries(board) -> Array:
 			entries.append({"label": "Abandon this run (permanent)", "activate": func(): abandon_confirm = false; paused = false; board._restart()})
 			return entries
 		entries.append({"label": "Resume", "activate": func(): paused = false})
+		if board._can_open_run_comment(): entries.append({"label": "Comment", "activate": board._open_run_comment})
 		entries.append({"label": "Character & upgrades", "activate": func(): sheet_return_pause=true; paused = false; board._open_character_sheet()})
 		if active: entries.append({"label": "Controller guide", "activate": func(): help_open = true})
 		if board._can_abandon_from_menu():
