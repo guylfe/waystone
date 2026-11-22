@@ -5,6 +5,7 @@ run/main_scene="res://scenes/main.tscn"
 
 [autoload]
 RunCommentOutbox="*res://scripts/core/run_comment_outbox.gd"
+ReleaseUpdate="*res://scripts/core/release_update.gd"
 
 [display]
 window/size/viewport_width=720

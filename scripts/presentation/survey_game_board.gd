@@ -134,12 +134,26 @@ func _ready() -> void:
 	_lab_button(selector_panel,"End Survey / rate",func(): inspection_return=true; _close_inspection(); suspended=false; _build_survey_end_confirmation())
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
 	_lab_button(selector_panel,"Save and choose mode",_save_and_leave)
+	var open_update := _lab_button(selector_panel, "", release_notice.service.open_release)
+	var dismiss_update := _lab_button(selector_panel, "Dismiss update notice", release_notice.service.dismiss)
+	var sync_update := func():
+		var tag := release_notice.service.tag
+		open_update.text = "View %s on GitHub" % tag
+		open_update.visible = not tag.is_empty()
+		dismiss_update.visible = open_update.visible
+		if inspection_scroll.visible and selector_panel.visible: _setup_inspection_focus()
+	release_notice.service.changed.connect(sync_update)
+	sync_update.call()
 	_load_survey_identity()
 	_layout()
+	if persistent_session: release_notice.service.check_on_launch.call_deferred()
 	if session_entry == ModeSession.REGIONAL:
 		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.REGIONAL})
 	if OS.get_cmdline_user_args().has("--survey-smoke"):
 		load("res://scripts/core/survey_export_probe.gd").call_deferred("run",self)
+
+func update_menu_covers_play() -> bool:
+	return suspended or inspection_scroll.visible
 
 func _load_survey_identity() -> void:
 	if state.survey_experiment.is_empty(): return

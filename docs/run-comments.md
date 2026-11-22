@@ -1,7 +1,8 @@
 # Mid-run comments
 
-Status as of 2026-11-22. Delivery client candidate based on regular Waystone 0.3.8
-at `83e4087`. [Current state](current-state.md) owns release and device status.
+Status as of 2026-11-22. The regular 0.3.9 candidate includes the delivery
+client previously checked on the 0.3.8 baseline. Delivery starts disabled.
+[Current state](current-state.md) owns release and device status.
 
 ## Capture and input
 

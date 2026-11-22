@@ -1,7 +1,12 @@
 # Waystone Prototype
 
-Current prototype version: `0.3.8` (Android version code `308`).
+Current candidate version: `0.3.9` (Android version code `309`).
 Choose [Campaign](docs/campaign-regions.md) in the regular mode selector to play the four-region 3D Campaign. From an active run, use **Menu → Save and choose mode**.
+
+Waystone checks GitHub for a newer compatible release at startup. Use **View
+on GitHub** to open the release page or **Dismiss** to keep playing. Record
+mid-run notes through **Menu → Comment** or **F8**. See
+[startup updates](docs/startup-updates.md) and [mid-run comments](docs/run-comments.md).
 
 Normal attacks commit a single melee cut or automatic Bow draw/release/recovery.
 Commit Combo selects the full weapon sequence before confirming a target. World

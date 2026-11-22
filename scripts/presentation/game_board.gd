@@ -297,7 +297,9 @@ var character_menu: PanelContainer
 const MenuMetrics = preload("res://scripts/presentation/menu_metrics.gd")
 const RunCommentContext = preload("res://scripts/core/run_comment_context.gd")
 const RunCommentEditor = preload("res://scripts/presentation/run_comment_editor.gd")
+const UpdateNotice = preload("res://scripts/presentation/release_update_notice.gd")
 var run_comment_editor: RunCommentEditor
+var release_notice: UpdateNotice
 
 func _ready() -> void:
 	character_menu = _create_character_menu()
@@ -320,6 +322,8 @@ func _ready() -> void:
 		run_comment_editor = RunCommentEditor.new()
 		add_child(run_comment_editor)
 		run_comment_editor.closed.connect(_release_comment_inputs)
+		release_notice = UpdateNotice.new()
+		add_child(release_notice)
 	setup_loadout = state.loadout_id
 	setup_mode = state.mode_id
 	setup_survey_profile = state.survey_profile
@@ -340,6 +344,9 @@ func _ready() -> void:
 const ModeSession = preload("res://scripts/core/mode_session.gd")
 
 func _mode_select_enabled() -> bool:
+	return false
+
+func update_menu_covers_play() -> bool:
 	return false
 
 func _can_abandon_from_menu() -> bool:
@@ -1706,6 +1713,11 @@ func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
 			_build_survey_archive_overlay()
 			return
 		if setup_stage == "root":
+			if is_instance_valid(release_notice):
+				for entry in release_notice.setup_entries():
+					if Rect2(entry.rect).has_point(position):
+						entry.activate.call()
+						return
 			for mode in progression_rects:
 				if Rect2(progression_rects[mode]).has_point(position):
 					_select_setup_mode(String(mode))
@@ -3134,6 +3146,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), BG)
 	if not state.run_active:
 		_draw_setup()
+		if is_instance_valid(release_notice): release_notice.draw_setup()
 		controller.draw_overlay(self)
 		state.performance_metrics["draw_cpu_ms"] = float(Time.get_ticks_usec() - draw_start) / 1000.0
 		return

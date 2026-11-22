@@ -275,7 +275,8 @@ func _setup_inspection_focus() -> void:
 	if inspection_scroll.visible:
 		inspection_focus.assign([])
 		if selector_panel.visible:
-			for control in selector_panel.get_children(): inspection_focus.append(control)
+			for control in selector_panel.get_children():
+				if control.visible: inspection_focus.append(control)
 		inspection_focus.append_array(previous_page.get_parent().get_children())
 	for index in range(inspection_focus.size()):
 		var control := inspection_focus[index]

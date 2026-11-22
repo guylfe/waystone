@@ -1,3 +1,15 @@
+## Waystone 0.3.9 candidate — 22 November 2026
+
+Build Windows and Android from the same numbered source. The published
+`v0.3.9` release uses `Waystone-Windows.zip` with the standalone
+`Waystone.exe` and `Waystone-Android.apk` with Android version code 309.
+The startup check reads public GitHub release metadata and offers a manual
+link when the current platform has an uploaded asset. See
+[startup updates](docs/startup-updates.md) for the compatibility contract and
+fixture. The release lead owns publication, feed readback, and installation.
+Mid-run comments launch with local capture available and live delivery
+unconfigured. The [current state](docs/current-state.md) records verification.
+
 > **12 November 2026 candidate:** normal gameplay now uses single-cut ordinary melee, explicit prepaid full combos, fixed automatic ordinary Bow, and universal 1.25× playback at unchanged 120 Hz. Explicit Survey comparisons retain their grammar. This candidate is not published or installed. Normal movement now commits full 34-unit strides including nearby ground taps; interaction ranges and collision remain intact. The bounded Duellist guidance correction is implemented using existing uncertainty; corrected independent rendered review remains pending. Commit/Attack/guidance now occupy a stable dock outside the tactical viewport. [Scope and verification](docs/combat-decision-update.md).
 
 ## Current0.3.6 / Android306 delivery — 1 November 2026

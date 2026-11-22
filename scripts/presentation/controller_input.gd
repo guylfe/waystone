@@ -594,6 +594,7 @@ func menu_entries(board) -> Array:
 			entries.append({"label": "Save and quit", "activate": func(): board.state.save_run(); board.get_tree().quit()})
 		if board._can_abandon_from_menu():
 			entries.append({"label": "Abandon runâ€¦", "activate": func(): abandon_confirm = true})
+		if is_instance_valid(board.release_notice): entries.append_array(board.release_notice.run_entries())
 	elif not board.state.run_active:
 		if board.custom_room_open:
 			if board.custom_page == "kind": add_rects(board, entries, board.custom_kind_rects)
@@ -604,6 +605,7 @@ func menu_entries(board) -> Array:
 		elif board.setup_stage == "root":
 			add_rects(board, entries, board.progression_rects)
 			add_rect(board, entries, board.archive_button_rect)
+			if is_instance_valid(board.release_notice): entries.append_array(board.release_notice.setup_entries())
 		else:
 			for choice in board.CombatCatalogScript.loadout_ids(): add_rect(board, entries, board._setup_class_rect(choice))
 			if board.setup_mode == "combat_survey":

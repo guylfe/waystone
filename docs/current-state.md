@@ -6,17 +6,24 @@
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-## Mid-run comments candidate
+## 0.3.9 candidate
 
-The isolated 0.3.8 candidate adds **Menu → Comment** and **F8** in all regular
+The Windows and Android candidate adds a quiet startup check for a newer
+stable GitHub release with an installer archive or APK for the current
+platform. See [startup updates](startup-updates.md) for input and evidence.
+Publication and device installation are pending.
+
+### Mid-run comments
+
+The 0.3.9 candidate includes **Menu → Comment** and **F8** in all regular
 playable modes, including Campaign and the experimental Survey menu. The
 editor freezes play and saves the typed note with its opening gameplay state
 to a local queue. With a player relay configured, the candidate submits in
 the background and retries after restart or relay failure. The editor shows
 queued and delivered counts and a copyable GitHub receipt reference.
 [Mid-run comments](run-comments.md) owns the input, record format, verification
-and integration contract. Live GitHub setup and numbered platform release are
-pending.
+and integration contract. The live feedback relay and GitHub destination
+are pending.
 
 ## Regional Campaign integration — 0.3.8
 
