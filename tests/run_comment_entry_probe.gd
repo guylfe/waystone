@@ -1,6 +1,7 @@
 extends SceneTree
 ## Launched by run_comment_delivery_test.py with disposable app data.
 
+const Delivery = preload("res://scripts/core/run_comment_delivery.gd")
 const Outbox = preload("res://scripts/core/run_comment_outbox.gd")
 const CommentEditor = preload("res://scripts/presentation/run_comment_editor.gd")
 const REFERENCE := "https://github.com/guylfe/waystone/issues/42"
@@ -74,7 +75,30 @@ func _run() -> void:
 		quit(2)
 		return
 	await process_frame
-	if phase == "capture":
+	if phase == "enrollment":
+		_click(modal.delivery_button)
+		await process_frame
+		_check(modal.endpoint_field.text.is_empty() and modal.token_field.secret, "first enrollment needs only a masked playtester code")
+		modal.token_field.text = "pt_" + "1".repeat(48)
+		_click(modal.apply_button)
+		_check(outbox.endpoint == Delivery.DEFAULT_ENDPOINT and modal.token_field.text.is_empty(), "code-only enrollment selects the deployed service and clears the field")
+		_click(modal.delivery_button)
+		await process_frame
+		modal.endpoint_field.text = "https://fixture.example.invalid"
+		_click(modal.apply_button)
+		_check(outbox.endpoint == Delivery.DEFAULT_ENDPOINT and modal.view == CommentEditor.View.DELIVERY, "a saved code is never reused on another address")
+		modal.endpoint_field.text = Delivery.DEFAULT_ENDPOINT
+		modal.token_field.text = "pt_" + "2".repeat(48)
+		_click(modal.apply_button)
+		var settings := ConfigFile.new()
+		_check(settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value(Outbox.CONFIG_SECTION, "token") == "pt_" + "2".repeat(48), "replacement code is saved")
+		_click(modal.delivery_button)
+		await process_frame
+		_check(modal.token_field.text.is_empty(), "reopening Delivery leaves the stored code masked and undisclosed")
+		modal.endpoint_field.clear()
+		_click(modal.apply_button)
+		_check(outbox.endpoint.is_empty() and settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value(Outbox.CONFIG_SECTION, "token").is_empty(), "clearing both fields removes enrollment")
+	elif phase == "capture":
 		_check(outbox.endpoint.is_empty() and outbox.pending.is_empty() and outbox.local_count == 2, "legacy queue and enrollment are not active for public feedback")
 		_check(outbox.latest_reference == LEGACY_REFERENCE, "legacy receipt stays visible")
 		var opening_tick: int = modal.context.tick
@@ -98,14 +122,16 @@ func _run() -> void:
 		var record: Variant = JSON.parse_string(outbox.queue.payload(id))
 		_check(record is Dictionary and record.text == "n" and int(record.context.tick) == opening_tick, "immutable note carries gameplay context")
 		await create_timer(0.8).timeout
-		_check(outbox.pending.has(id) and outbox.queue.receipt(id).is_empty(), "failed request stays queued through process exit")
+		_check(outbox.pending.has(id) and outbox.queue.receipt(id).is_empty(), "accepted asynchronous request stays queued through process exit")
+		var settings := ConfigFile.new()
+		_check(settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value(Outbox.CONFIG_SECTION, "retry_at") > Time.get_unix_time_from_system(), "the service's retry deadline is saved")
 	elif phase == "recover":
 		_check(outbox.endpoint == endpoint and outbox.pending.size() == 1 and modal.status.text.contains("1 queued"), "relaunch loads settings and shows persisted pending note")
 		await create_timer(0.8).timeout
-		_check(outbox.pending.size() == 1 and outbox.sent_count == 0, "mismatched receipt stays pending")
+		_check(outbox.pending.size() == 1 and outbox.sent_count == 0, "the retry deadline survives relaunch and the report stays pending")
 		_key(KEY_ESCAPE)
 		_check(not modal.is_open() and not modal.toast.visible, "returns to live game before late acknowledgement")
-		var deadline := Time.get_ticks_msec() + 6500
+		var deadline := Time.get_ticks_msec() + 18000
 		while not outbox.pending.is_empty() and Time.get_ticks_msec() < deadline:
 			await process_frame
 		_check(outbox.pending.is_empty() and outbox.sent_count == 1, "automatic backoff confirms the queued report")
@@ -125,8 +151,37 @@ func _run() -> void:
 		_check(modal.receipt_field.text == REFERENCE, "relaunch exposes stored receipt")
 		modal.endpoint_field.clear()
 		_click(modal.apply_button)
-		_check(outbox.endpoint.is_empty() and modal.view == CommentEditor.View.DRAFT and modal.service_status.text.contains("Set up Delivery") and modal.status.text.contains("#42"), "can disable delivery without discarding receipt")
+		_check(outbox.endpoint.is_empty() and modal.view == CommentEditor.View.DRAFT and modal.service_status.text.contains("Enter your Waystone playtester code") and modal.status.text.contains("#42"), "can disable delivery without discarding receipt")
 		var settings := ConfigFile.new()
 		_check(settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value(Outbox.CONFIG_SECTION, "token", "missing").is_empty(), "disabling writes cleared credentials")
+	elif phase in ["auth", "auth_restart"]:
+		var auth_deadline := Time.get_ticks_msec() + 2000
+		while not outbox.delivery_status().contains("Delivery paused") and Time.get_ticks_msec() < auth_deadline:
+			await process_frame
+		_check(outbox.pending.size() == 2 and outbox.delivery_status().contains("Enter a new Waystone playtester code"), "invalid enrollment holds the entire queue with actionable status")
+		_click(modal.delivery_button)
+		await process_frame
+		_click(modal.apply_button)
+		await create_timer(2.3 if phase == "auth" else 0.3).timeout
+		_check(outbox.pending.size() == 2 and outbox.delivery_status().contains("Delivery paused"), "applying unchanged enrollment keeps rejection paused")
+		if phase == "auth_restart":
+			_click(modal.delivery_button)
+			await process_frame
+			modal.endpoint_field.clear()
+			_click(modal.apply_button)
+			_click(modal.delivery_button)
+			await process_frame
+			modal.endpoint_field.text = origin
+			_click(modal.apply_button)
+			var terminal_deadline := Time.get_ticks_msec() + 2500
+			while outbox.rejected_count != 2 and Time.get_ticks_msec() < terminal_deadline:
+				await process_frame
+			_check(outbox.pending.is_empty() and outbox.rejected_count == 2 and outbox.sent_count == 1, "400 and 409 stop those reports without treating them as sent")
+			var status := outbox.delivery_status()
+			_check(status.contains("invalid details") and status.contains("enrollment conflict") and status.contains("Contact the playtest organizer"), "permanent rejection shows both causes and a next step")
+	elif phase == "terminal_restart":
+		_check(outbox.pending.is_empty() and outbox.rejected_count == 2 and outbox.sent_count == 1, "permanent rejection survives reloading both records")
+		_check(modal.status.text.contains("2 rejected"), "editor identifies the saved rejected reports")
+		await create_timer(0.5).timeout
 	print("Run comment normal entry ", phase, ": ", checks, " checks, ", failures, " failures")
 	quit(1 if failures else 0)

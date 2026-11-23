@@ -135,18 +135,18 @@ func _create_delivery_settings(content: Control) -> void:
 	var form := VBoxContainer.new()
 	form.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_scroll.add_child(form)
-	endpoint_field = _delivery_field(form, "HTTPS feedback service", 512)
-	token_field = _delivery_field(form, "Participant token", 4096)
-	token_field.secret = true
-	receipt_field = _delivery_field(form, "Recent GitHub receipt", 512)
-	receipt_field.editable = false
-	var instructions := Label.new()
-	instructions.text = "The token is stored on this device for retries after restart. Clear both fields to turn off delivery."
-	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	form.add_child(instructions)
 	service_status = Label.new()
 	service_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	form.add_child(service_status)
+	token_field = _delivery_field(form, "Waystone playtester code", 4096)
+	token_field.secret = true
+	endpoint_field = _delivery_field(form, "Service address (optional)", 512)
+	receipt_field = _delivery_field(form, "Recent GitHub receipt", 512)
+	receipt_field.editable = false
+	var instructions := Label.new()
+	instructions.text = "Keep your code private. It is stored on this device for retries. To turn off delivery, clear both fields and choose Apply."
+	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form.add_child(instructions)
 	settings_status = Label.new()
 	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	form.add_child(settings_status)
@@ -163,8 +163,9 @@ func _delivery_field(form: Control, label: String, max_length: int) -> LineEdit:
 
 func _open_delivery() -> void:
 	endpoint_field.text = delivery.endpoint
+	endpoint_field.placeholder_text = "Waystone feedback service"
 	token_field.clear()
-	token_field.placeholder_text = "Leave blank to keep the token for this address" if not delivery.endpoint.is_empty() else ""
+	token_field.placeholder_text = "Leave blank to keep your code" if not delivery.endpoint.is_empty() else ""
 	settings_status.text = ""
 	_set_editor_view(View.DELIVERY)
 	_update_delivery_status()
@@ -189,7 +190,7 @@ func _apply_delivery() -> void:
 	if result == OK:
 		_return_to_draft()
 		return
-	settings_status.text = "Enter the HTTPS service address and its participant token." if result == ERR_INVALID_PARAMETER else "Could not save Delivery settings. Try again."
+	settings_status.text = "Enter your playtester code. A custom service address must use HTTPS." if result == ERR_INVALID_PARAMETER else "Could not save Delivery settings. Try again."
 	settings_scroll.ensure_control_visible(settings_status)
 
 func _set_editor_view(next_view: View) -> void:
@@ -283,10 +284,11 @@ func _close() -> void:
 
 func _text_changed() -> void:
 	# IME and paste can insert multiple characters in one change.
-	if editor.text.length() > CommentQueue.MAX_TEXT:
+	var bounded := CommentQueue.truncate_note(editor.text)
+	if bounded != editor.text:
 		var line := editor.get_caret_line()
 		var column := editor.get_caret_column()
-		editor.text = editor.text.left(CommentQueue.MAX_TEXT)
+		editor.text = bounded
 		editor.set_caret_line(mini(line, editor.get_line_count() - 1))
 		editor.set_caret_column(column)
 	review_button.disabled = editor.text.strip_edges().is_empty()
@@ -394,7 +396,7 @@ func _step(change: int) -> void:
 	var controls: Array[Control] = [editor, cancel_button]
 	if not review_button.disabled: controls.append(review_button)
 	controls.append(delivery_button)
-	if view == View.DELIVERY: controls = [endpoint_field, token_field, receipt_field, back_button, apply_button]
+	if view == View.DELIVERY: controls = [token_field, endpoint_field, receipt_field, back_button, apply_button]
 	elif view == View.REVIEW: controls = [back_button, local_button, send_button]
 	var selected := controls.find(get_viewport().gui_get_focus_owner())
 	controls[posmod(selected + change, controls.size())].grab_focus()

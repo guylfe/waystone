@@ -17,10 +17,14 @@ var _token := ""
 var pending := PackedStringArray()
 var sent_count := 0
 var local_count := 0
+var rejected_count := 0
 var latest_issue_number := 0
 var latest_reference := ""
 var _running := false
 var _delay := RETRY_MIN
+var _retry_at := 0.0
+var _rejected_reports := {}
+var _invalid_count := 0
 var _settings_version := 0
 var _rejected := false
 var _transport := Delivery.new()
@@ -41,17 +45,36 @@ func _ready() -> void:
 		if Delivery.valid_configuration(address, token):
 			endpoint = address
 			_token = token
+			_rejected = not endpoint.is_empty() and settings.get_value(CONFIG_SECTION, "rejected", false) == true
+			_retry_at = float(settings.get_value(CONFIG_SECTION, "retry_at", 0.0))
+			if not is_finite(_retry_at): _retry_at = 0.0
 	note_saved()
 
 func configure(address: String, token: String) -> Error:
 	address = address.strip_edges()
+	token = token.strip_edges()
+	if address.is_empty() and not token.is_empty(): address = Delivery.DEFAULT_ENDPOINT
 	if not address.is_empty():
 		address = Delivery.service_endpoint(address)
 		if address.is_empty(): return ERR_INVALID_PARAMETER
-	# An empty token keeps the stored credential only for this exact address.
+	# An empty code keeps the stored credential only for this exact address.
 	if address == endpoint and token.is_empty(): token = _token
 	if not Delivery.valid_configuration(address, token): return ERR_INVALID_PARAMETER
 	if address == endpoint and token == _token: return OK
+	var retry_at := _retry_at if address == endpoint else 0.0
+	var error := _write_configuration(address, token, false, retry_at)
+	if error != OK: return error
+	endpoint = address
+	_token = token
+	_settings_version += 1
+	_delay = RETRY_MIN
+	_rejected = false
+	_retry_at = retry_at
+	_retry.stop()
+	note_saved()
+	return OK
+
+func _write_configuration(address: String, token: String, rejected: bool, retry_at: float) -> Error:
 	var settings := ConfigFile.new()
 	# Keep pre-publication relay settings on disk for compatibility. They
 	# authorize a different protocol and are never loaded by this client.
@@ -59,25 +82,20 @@ func configure(address: String, token: String) -> Error:
 		settings = ConfigFile.new()
 	settings.set_value(CONFIG_SECTION, "endpoint", address)
 	settings.set_value(CONFIG_SECTION, "token", token)
+	settings.set_value(CONFIG_SECTION, "rejected", rejected)
+	settings.set_value(CONFIG_SECTION, "retry_at", retry_at)
 	var temporary := CONFIG_PATH + ".tmp"
 	var error := settings.save(temporary)
 	if error == OK: error = DirAccess.rename_absolute(temporary, CONFIG_PATH)
-	if error != OK:
-		if FileAccess.file_exists(temporary): DirAccess.remove_absolute(temporary)
-		return error
-	endpoint = address
-	_token = token
-	_settings_version += 1
-	_delay = RETRY_MIN
-	_rejected = false
-	_retry.stop()
-	note_saved()
-	return OK
+	if error != OK and FileAccess.file_exists(temporary): DirAccess.remove_absolute(temporary)
+	return error
 
 func note_saved() -> void:
 	pending.clear()
 	sent_count = 0
 	local_count = 0
+	rejected_count = 0
+	_invalid_count = 0
 	latest_issue_number = 0
 	latest_reference = ""
 	var latest_issue_time := -1
@@ -86,7 +104,12 @@ func note_saved() -> void:
 	for id in queue.saved_ids():
 		var receipt := queue.receipt(id)
 		if receipt.is_empty():
-			if queue.submission(id).is_empty(): local_count += 1
+			var rejection := int(_rejected_reports.get(id, 0))
+			if rejection == 0: rejection = queue.rejection(id)
+			if rejection != 0:
+				rejected_count += 1
+				if rejection == 400: _invalid_count += 1
+			elif queue.submission(id).is_empty(): local_count += 1
 			else: pending.append(id)
 			continue
 		var confirmed_at := FileAccess.get_modified_time(queue.directory.path_join(id + ".receipt"))
@@ -103,11 +126,15 @@ func note_saved() -> void:
 				legacy_reference = receipt.reference
 	if latest_reference.is_empty(): latest_reference = legacy_reference
 	changed.emit()
-	if not endpoint.is_empty() and not pending.is_empty() and not _running and _retry.is_stopped():
-		_retry.start(0.1)
+	_schedule()
+
+func _schedule() -> void:
+	if endpoint.is_empty() or pending.is_empty() or _rejected or _running or not _retry.is_stopped(): return
+	_retry.start(maxf(0.1, _retry_at - Time.get_unix_time_from_system()))
 
 func summary() -> String:
-	var details := "%d queued · %d sent · %d local" % [pending.size(), sent_count, local_count]
+	var details := "%d %s · %d sent · %d local" % [pending.size(), "paused" if _rejected else "queued", sent_count, local_count]
+	if rejected_count > 0: details += " · %d rejected" % rejected_count
 	if latest_issue_number > 0: details = issue_label(latest_issue_number) + "\n" + details
 	return details
 
@@ -115,31 +142,49 @@ static func issue_label(issue_number: int) -> String:
 	return "Sent as GitHub issue #%d" % issue_number
 
 func delivery_status() -> String:
-	if endpoint.is_empty(): return "Set up Delivery to send queued feedback."
-	if _rejected: return "The service rejected this token. Check Delivery settings."
-	if not pending.is_empty(): return "Queued feedback retries automatically."
-	return ""
+	var messages := PackedStringArray()
+	if endpoint.is_empty(): messages.append("Enter your Waystone playtester code to send queued feedback.")
+	elif _rejected: messages.append("Delivery paused. Enter a new Waystone playtester code.")
+	elif not pending.is_empty(): messages.append("Queued feedback retries automatically.")
+	if _invalid_count > 0: messages.append("%d report(s) had invalid details." % _invalid_count)
+	var conflicts := rejected_count - _invalid_count
+	if conflicts > 0: messages.append("%d report(s) had a report ID or enrollment conflict." % conflicts)
+	if rejected_count > 0: messages.append("The notes are saved on this device. Contact the playtest organizer before resending.")
+	return "\n".join(messages)
 
 func _drain() -> void:
-	if endpoint.is_empty() or pending.is_empty(): return
+	if endpoint.is_empty() or pending.is_empty() or _rejected: return
+	if Time.get_unix_time_from_system() < _retry_at:
+		_schedule()
+		return
 	_running = true
 	var settings_version := _settings_version
 	var failed := false
+	var deadline := 0.0
 	for id in pending.duplicate():
 		var result := await _transport.deliver(queue, id, endpoint, _token)
-		if result == OK:
+		if result.error == OK:
 			var issue_number := int(queue.receipt(id).get("issueNumber", 0))
 			if issue_number > 0: issue_sent.emit(issue_number)
 		if settings_version != _settings_version: break
-		failed = failed or result != OK
-		_rejected = result == ERR_UNAUTHORIZED
-		# An unreachable or unauthorized relay affects the whole queue.
-		if _rejected or result in [ERR_CONNECTION_ERROR, ERR_CANT_CONNECT, ERR_CANT_RESOLVE]: break
-		if result == OK: note_saved()
+		if result.error == ERR_UNAUTHORIZED:
+			_rejected = true
+			break
+		if result.status in [400, 409]:
+			_rejected_reports[id] = result.status
+			queue.reject(id, result.status)
+			continue
+		if result.error == OK: continue
+		failed = true
+		deadline = maxf(deadline, result.retry_at)
+		# A server-directed wait or connectivity failure pauses the whole outbox.
+		if result.status in Delivery.DEFERRED_STATUSES or result.error in [ERR_CONNECTION_ERROR, ERR_CANT_CONNECT, ERR_CANT_RESOLVE]:
+			break
 	_running = false
-	if failed and settings_version == _settings_version:
-		_retry.start(_delay)
-		_delay = minf(_delay * 2.0, RETRY_MAX)
-	else:
-		_delay = RETRY_MIN
+	if settings_version == _settings_version:
+		var previous_retry_at := _retry_at
+		_retry_at = maxf(Time.get_unix_time_from_system() + _delay, deadline) if failed and not _rejected else 0.0
+		_delay = minf(_delay * 2.0, RETRY_MAX) if failed and not _rejected else RETRY_MIN
+		if _rejected or _retry_at != previous_retry_at:
+			_write_configuration(endpoint, _token, _rejected, _retry_at)
 	note_saved()

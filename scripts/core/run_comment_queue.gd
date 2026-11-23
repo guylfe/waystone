@@ -2,6 +2,9 @@ extends RefCounted
 
 const DIRECTORY := "user://run-comments"
 const MAX_TEXT := 2000
+const MAX_CONTEXT_BYTES := 8192
+const MAX_REQUEST_BYTES := 16384
+const BUILD_VERSION := "^[A-Za-z0-9_.+ /()-]{1,96}\\z"
 const MAX_PAYLOAD_BYTES := 65536
 const ISSUE_URL_PREFIX := "https://github.com/guylfe/waystone/issues/"
 const REPORT_ID := "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\z"
@@ -27,17 +30,61 @@ static func valid_id(id: String) -> bool:
 	return valid_report_id(id)
 
 func enqueue(id: String, text: String, context: Dictionary, send_publicly: bool = false) -> Error:
-	if not valid_report_id(id) or not _valid_note(text): return ERR_INVALID_PARAMETER
-	var note := {"schema": 2, "id": id, "text": text, "context": context, "send_publicly": send_publicly}
-	var record := JSON.stringify(note)
+	if not valid_report_id(id) or text.strip_edges().is_empty() or text.to_utf16_buffer().size() > 2 * MAX_TEXT:
+		return ERR_INVALID_PARAMETER
+	var note := {"schema": 3, "id": id, "text": text, "context": context, "send_publicly": send_publicly}
+	if send_publicly:
+		var build: Variant = context.get("game_version")
+		if not build is String or RegEx.create_from_string(BUILD_VERSION).search(build) == null:
+			return ERR_INVALID_DATA
+		var report := {"game": "waystone", "reportId": id, "build": build, "note": text, "context": {}}
+		# Subtract the rest of the envelope, excluding the two empty-context braces.
+		var context_limit := mini(MAX_CONTEXT_BYTES, MAX_REQUEST_BYTES - _json_size(report) + 2)
+		var wire_context := _bounded_context(context, context_limit)
+		if _json_size(wire_context) > context_limit: return ERR_INVALID_DATA
+		report["context"] = wire_context
+		# Persist the exact consented request before the first attempt.
+		note["submission"] = _json_text(report)
+	var record := _json_text(note)
 	if record.to_utf8_buffer().size() > MAX_PAYLOAD_BYTES: return ERR_INVALID_DATA
-	if send_publicly and _submission_for(id, note).is_empty(): return ERR_INVALID_DATA
 	return _write_once(_note_path(id), record)
+
+static func truncate_note(text: String) -> String:
+	if text.to_utf16_buffer().size() <= 2 * MAX_TEXT: return text
+	var units := 0
+	for index in text.length():
+		units += 2 if text.unicode_at(index) > 0xffff else 1
+		if units > MAX_TEXT: return text.left(index)
+	return text
+
+static func _bounded_context(context: Dictionary, limit: int) -> Dictionary:
+	if _json_size(context) <= limit: return context
+	var bounded := context.duplicate(true)
+	for key in ["recent_messages", "recent_enemy_actions", "enemies"]:
+		var entries: Variant = bounded.get(key)
+		if not entries is Array: continue
+		while not entries.is_empty() and _json_size(bounded) > limit:
+			if key == "enemies": entries.pop_back()
+			else: entries.pop_front()
+	return bounded
+
+static func _json_size(value: Dictionary) -> int:
+	return _json_text(value).to_utf8_buffer().size()
+
+static func _json_text(value: Dictionary) -> String:
+	var encoded := JSON.stringify(value)
+	# Godot leaves some C0 controls raw in compact strings. Escape only raw
+	# controls so both the local record and public body are strict JSON.
+	for code in range(1, 0x20):
+		var control := String.chr(code)
+		if encoded.contains(control):
+			encoded = encoded.replace(control, "\\u%04x" % code)
+	return encoded
 
 func pending_ids() -> PackedStringArray:
 	var ids := PackedStringArray()
 	for id in saved_ids():
-		if not submission(id).is_empty() and receipt(id).is_empty(): ids.append(id)
+		if not submission(id).is_empty() and receipt(id).is_empty() and rejection(id) == 0: ids.append(id)
 	return ids
 
 func saved_ids() -> PackedStringArray:
@@ -59,8 +106,19 @@ func submission(id: String) -> String:
 
 static func _submission_for(id: String, note: Variant) -> String:
 	if not valid_report_id(id) or not note is Dictionary: return ""
-	if note.get("schema") != 2 or note.get("id") != id: return ""
-	if not note.get("send_publicly") is bool or not note.send_publicly: return ""
+	if note.get("id") != id or not note.get("send_publicly") is bool or not note.send_publicly: return ""
+	var schema: Variant = note.get("schema")
+	if schema == 2: return _schema_two_submission(id, note)
+	if schema != 3: return ""
+	var stored: Variant = note.get("submission")
+	if not stored is String: return ""
+	var body: Variant = JSON.parse_string(stored)
+	if not body is Dictionary or body.get("game") != "waystone" or body.get("reportId") != id or body.get("note") != note.get("text"): return ""
+	return stored
+
+static func _schema_two_submission(id: String, note: Dictionary) -> String:
+	# Existing queued UUIDs must retain the exact 0.3.10 wire representation,
+	# even when the new service would reject a field under its current limits.
 	var text: Variant = note.get("text")
 	var context: Variant = note.get("context")
 	if not _valid_note(text) or not context is Dictionary: return ""
@@ -107,6 +165,30 @@ func acknowledge(id: String, response: Variant) -> Error:
 		var error := DirAccess.remove_absolute(receipt_path)
 		if error != OK: return error
 	return _write_once(receipt_path, confirmed)
+
+func reject(id: String, status: int) -> Error:
+	var body := submission(id)
+	if body.is_empty() or status not in [400, 409]: return ERR_INVALID_PARAMETER
+	var path := _rejection_path(id)
+	if FileAccess.file_exists(path) and rejection(id) == 0:
+		var error := DirAccess.remove_absolute(path)
+		if error != OK: return error
+	return _write_once(path, JSON.stringify({"sha256": body.sha256_text(), "status": status}))
+
+func rejection(id: String) -> int:
+	if not valid_report_id(id): return 0
+	var file := FileAccess.open(_rejection_path(id), FileAccess.READ)
+	if file == null or file.get_length() > 512: return 0
+	var saved: Variant = JSON.parse_string(file.get_as_text())
+	if not saved is Dictionary: return 0
+	var status: Variant = saved.get("status")
+	if status != 400 and status != 409: return 0
+	var body := submission(id)
+	if body.is_empty() or saved.get("sha256") != body.sha256_text(): return 0
+	return int(status)
+
+func _rejection_path(id: String) -> String:
+	return directory.path_join(id + ".rejected")
 
 static func verified_issue_number(response: Variant) -> int:
 	if not response is Dictionary: return 0
