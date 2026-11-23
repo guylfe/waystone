@@ -16,38 +16,65 @@ func _ready() -> void:
 	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var background := StyleBoxFlat.new()
 	background.bg_color = Color("19343b")
 	toast.add_theme_stylebox_override("normal", background)
 	add_child(toast)
 	service.changed.connect(_refresh)
+	service.install_ready.connect(_install_if_safe)
 	_refresh()
 
 func _refresh() -> void:
 	_toast_left = 6.0
 	toast.hide()
-	set_process(not service.tag.is_empty())
+	set_process(not service.tag.is_empty() or not service.status.is_empty())
 	board.queue_redraw()
 
 func _process(delta: float) -> void:
 	var can_show: bool = (
-		board.state.run_active and not board.playing and not board.pointer_down
-		and not board.controller.modal(board) and not board._run_comment_open()
-		and not board.update_menu_covers_play()
+		not board.playing and not board.pointer_down and not board._run_comment_open()
+		and (not service.status.is_empty() or (
+			board.state.run_active and not board.controller.modal(board) and not board.update_menu_covers_play()
+		))
 	)
 	toast.visible = can_show
 	if not can_show: return
 	_toast_left -= delta
 	var safe: Rect2 = board._display_safe_layout_rect()
 	var unit := minf(Metrics.unit(board), safe.size.x / 390.0)
-	var extent := Vector2(318.0, 36.0) * unit
-	toast.text = "%s available · Open Menu" % service.tag
+	var extent := Vector2(360.0, 46.0) * unit
+	toast.text = service.status if not service.status.is_empty() else "%s available · Open Menu" % service.tag
 	toast.add_theme_font_size_override("font_size", roundi(16.0 * unit))
 	toast.size = extent
 	toast.position = Vector2(board.board_rect.get_center().x - extent.x * 0.5, safe.position.y + 100.0 * unit)
-	if _toast_left <= 0.0:
+	if _toast_left <= 0.0 and service.phase != Update.Phase.DOWNLOADING:
 		toast.hide()
 		set_process(false)
+
+func update_label(include_version: bool = false) -> String:
+	match service.phase:
+		Update.Phase.DOWNLOADING: return "Downloading…"
+		Update.Phase.READY: return "Install update"
+		Update.Phase.INSTALLING: return "Opening installer…"
+		_: return "Update now · " + service.tag if include_version else "Update now"
+
+func choose_update() -> void:
+	if service.phase == Update.Phase.READY:
+		_install_if_safe()
+	else:
+		service.start_download()
+
+func _install_if_safe() -> void:
+	if not board._autosave_frame_is_quiet() or board._run_comment_open(): return
+	if board.state.run_active:
+		if not board.controller.paused and not board.update_menu_covers_play(): return
+	elif setup_entries().is_empty():
+		return
+	service.install(_save_for_update)
+
+func _save_for_update() -> bool:
+	return not board.state.run_active or board.state.save_run()
 
 func setup_entries() -> Array:
 	if service.tag.is_empty() or board.setup_stage != "root" or board.custom_room_open or board.controller.paused or board.survey_overlay.visible: return []
@@ -64,8 +91,8 @@ func setup_entries() -> Array:
 	var open := Rect2(start + Vector2(width * 0.40, 0), Vector2(width * 0.36, height))
 	var dismiss := Rect2(start + Vector2(width * 0.78, 0), Vector2(width * 0.22, height))
 	return [
-		{"id": "open_release", "rect": open, "label": "View on GitHub", "activate": service.open_release},
-		{"id": "dismiss_release", "rect": dismiss, "label": "Dismiss", "activate": service.dismiss},
+		{"id": "update_now", "rect": open, "label": update_label(), "activate": choose_update},
+		{"id": "update_later", "rect": dismiss, "label": "Later", "activate": service.later},
 	]
 
 func draw_setup() -> void:
@@ -85,6 +112,6 @@ func draw_setup() -> void:
 func run_entries() -> Array:
 	if service.tag.is_empty(): return []
 	return [
-		{"id": "open_release", "label": "View %s on GitHub" % service.tag, "activate": service.open_release},
-		{"id": "dismiss_release", "label": "Dismiss update notice", "activate": service.dismiss},
+		{"id": "update_now", "label": update_label(true), "activate": choose_update},
+		{"id": "update_later", "label": "Later", "activate": service.later},
 	]

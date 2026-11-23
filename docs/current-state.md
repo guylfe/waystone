@@ -16,6 +16,14 @@ assets. Their GitHub digests matched the verified local builds. The update
 checker from the installed Windows package processed that response for both
 platforms, offering 0.3.9 against a simulated 0.3.8 and staying quiet on 0.3.9.
 
+The next-release branch adds **Update now** and **Later** in setup and run
+menus. It verifies the official asset, saves the active run, and hands off
+to the Windows replacement helper or Android system installer. A disposable
+Windows install passed replacement, relaunch, rollback, and save preservation.
+The Android export matches the published package and signer. Physical Android
+installer confirmation and save readback are pending. See [startup
+updates](startup-updates.md) for the release contract and verification commands.
+
 ### Mid-run comments
 
 Version 0.3.9 includes **Menu → Comment** and **F8** in all regular
