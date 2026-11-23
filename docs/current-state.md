@@ -6,6 +6,12 @@
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
+## 0.3.10 delivery — 2026-11-23
+
+The release candidate was exported from `ea208dad9fc914febf651489dff086ced198ae0f` (Android version code 310). Both platform assets are in the [private release draft](https://github.com/guylfe/waystone/releases/tag/untagged-b58c7305d08363af1289). The ordinary Windows launcher now starts that build. Its installed headless Survey smoke passed with isolated save data. A disposable packaged copy using a controlled release feed accepted **Update now**, downloaded the final ZIP, checked it, replaced its executable, and preserved an existing Survey save byte for byte. The signed APK has the same package and signing certificate as 0.3.9. Device installation, Android's confirmation screen, and saved-run readback on the Fold remain pending.
+
+The review and public-send choices in the actual Expedition Comment screen produced [issue #2](https://github.com/guylfe/waystone/issues/2) through the [repository publisher](https://github.com/guylfe/waystone/actions/runs/45223484523). Restarting the game replayed the original report and displayed **Sent as GitHub issue #2**. An additional authenticated replay returned the same issue. A repository readback found one matching report marker. The disposable participant enrollment was revoked after verification.
+
 ## 0.3.9 startup updates
 
 The Windows and Android release adds a quiet startup check for a newer
