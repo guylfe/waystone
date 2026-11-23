@@ -2,7 +2,9 @@ extends SceneTree
 ## Launched by run_comment_delivery_test.py with disposable app data.
 
 const Outbox = preload("res://scripts/core/run_comment_outbox.gd")
-const REFERENCE := "https://github.com/example/waystone/issues/42"
+const CommentEditor = preload("res://scripts/presentation/run_comment_editor.gd")
+const REFERENCE := "https://github.com/guylfe/waystone/issues/42"
+const LEGACY_REFERENCE := "https://github.com/guylfe/waystone/blob/main/comments/legacy.json"
 var failures := 0
 var checks := 0
 var view: SubViewport
@@ -46,7 +48,8 @@ func _run() -> void:
 		return
 	var phase := args[1]
 	var outbox := root.get_node("RunCommentOutbox") as Outbox
-	var endpoint := args[2]
+	var origin := args[2]
+	var endpoint := origin + "/v1/feedback"
 	var main := String(ProjectSettings.get_setting("application/run/main_scene"))
 	# Headless DisplayServer has no desktop window. Use a gameplay-sized viewport
 	# while keeping the actual main scene, startup layout and input handlers.
@@ -72,19 +75,24 @@ func _run() -> void:
 		return
 	await process_frame
 	if phase == "capture":
+		_check(outbox.endpoint.is_empty() and outbox.pending.is_empty() and outbox.local_count == 2, "legacy queue and enrollment are not active for public feedback")
+		_check(outbox.latest_reference == LEGACY_REFERENCE, "legacy receipt stays visible")
 		var opening_tick: int = modal.context.tick
 		_key(KEY_N, 110)
 		await process_frame
 		_click(modal.delivery_button)
 		await process_frame
-		_check(modal.editing_delivery, "Delivery is reachable in the editor")
-		modal.endpoint_field.text = endpoint
+		_check(modal.view == CommentEditor.View.DELIVERY, "Delivery is reachable in the editor")
+		modal.endpoint_field.text = origin
 		_click(modal.apply_button)
 		await process_frame
-		_check(outbox.endpoint == endpoint and not modal.editing_delivery, "Apply saves relay via game UI")
+		_check(outbox.endpoint == endpoint and modal.view == CommentEditor.View.DRAFT, "Apply saves relay via game UI")
 		_check(modal.editor.text == "n" and board.state._simulation_tick_index == opening_tick, "config preserves draft and suspended simulation")
 		var id: String = modal.draft_id
 		_key(KEY_ENTER, 13, true)
+		await process_frame
+		_check(modal.view == CommentEditor.View.REVIEW and modal.review_warning.text.contains("Anyone can read it") and outbox.pending.is_empty(), "review discloses publication before persisting consent")
+		_click(modal.send_button)
 		_check(not modal.is_open() and not board.controller.paused, "real Save restores prior gameplay immediately")
 		_check(outbox.pending.has(id) and modal.toast.text.contains("queued"), "Save persists before delivery and reports queued")
 		var record: Variant = JSON.parse_string(outbox.queue.payload(id))
@@ -94,24 +102,31 @@ func _run() -> void:
 	elif phase == "recover":
 		_check(outbox.endpoint == endpoint and outbox.pending.size() == 1 and modal.status.text.contains("1 queued"), "relaunch loads settings and shows persisted pending note")
 		await create_timer(0.8).timeout
-		_check(outbox.pending.size() == 1 and outbox.delivered_count == 0, "mismatched receipt stays pending")
+		_check(outbox.pending.size() == 1 and outbox.sent_count == 0, "mismatched receipt stays pending")
+		_key(KEY_ESCAPE)
+		_check(not modal.is_open() and not modal.toast.visible, "returns to live game before late acknowledgement")
 		var deadline := Time.get_ticks_msec() + 6500
 		while not outbox.pending.is_empty() and Time.get_ticks_msec() < deadline:
 			await process_frame
-		_check(outbox.pending.is_empty() and outbox.delivered_count == 1 and modal.status.text.contains("1 delivered"), "backoff retries while editor is open and updates status")
+		_check(outbox.pending.is_empty() and outbox.sent_count == 1, "automatic backoff confirms the queued report")
+		_check(modal.toast.visible and modal.toast.text == "Sent as GitHub issue #42", "gameplay shows a late receipt with its issue number")
+		_key(KEY_F8)
+		await process_frame
+		_check(modal.status.text.contains("Sent as GitHub issue #42"), "main editor shows the confirmed issue number")
 		_click(modal.delivery_button)
 		await process_frame
-		_check(modal.editing_delivery and modal.receipt_field.text == REFERENCE, "confirmed reference visible in Delivery")
+		_check(modal.view == CommentEditor.View.DELIVERY and modal.receipt_field.text == REFERENCE, "confirmed reference visible in Delivery")
 		_check(board._display_safe_layout_rect().encloses(modal.panel.get_global_rect()), "portrait Delivery stays in the gameplay safe area")
 	elif phase == "readback":
-		_check(outbox.pending.is_empty() and outbox.delivered_count == 1, "matching receipt survives a second relaunch")
+		_check(outbox.pending.is_empty() and outbox.sent_count == 1 and outbox.local_count == 2, "matching receipt and legacy records survive a second relaunch")
+		_check(modal.status.text.contains("Sent as GitHub issue #42"), "editor recovers the confirmed issue number on relaunch")
 		_click(modal.delivery_button)
 		await process_frame
 		_check(modal.receipt_field.text == REFERENCE, "relaunch exposes stored receipt")
 		modal.endpoint_field.clear()
 		_click(modal.apply_button)
-		_check(outbox.endpoint.is_empty() and not modal.editing_delivery and modal.status.text.contains("Delivery is off"), "can disable delivery without discarding receipt")
+		_check(outbox.endpoint.is_empty() and modal.view == CommentEditor.View.DRAFT and modal.service_status.text.contains("Set up Delivery") and modal.status.text.contains("#42"), "can disable delivery without discarding receipt")
 		var settings := ConfigFile.new()
-		_check(settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value("relay", "token", "missing").is_empty(), "disabling writes cleared credentials")
+		_check(settings.load(Outbox.CONFIG_PATH) == OK and settings.get_value(Outbox.CONFIG_SECTION, "token", "missing").is_empty(), "disabling writes cleared credentials")
 	print("Run comment normal entry ", phase, ": ", checks, " checks, ", failures, " failures")
 	quit(1 if failures else 0)

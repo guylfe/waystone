@@ -6,11 +6,18 @@ const CommentQueue = preload("res://scripts/core/run_comment_queue.gd")
 const Outbox = preload("res://scripts/core/run_comment_outbox.gd")
 
 signal closed
+
+enum View { DRAFT, REVIEW, DELIVERY }
+
 var queue := CommentQueue.new()
 var draft_id := ""
 var context: Dictionary
 var editor: TextEdit
-var save_button: Button
+var review_button: Button
+var local_button: Button
+var send_button: Button
+var review_scroll: ScrollContainer
+var review_warning: Label
 var cancel_button: Button
 var delivery_button: Button
 var back_button: Button
@@ -21,9 +28,10 @@ var endpoint_field: LineEdit
 var token_field: LineEdit
 var receipt_field: LineEdit
 var settings_status: Label
-var editing_delivery := false
+var service_status: Label
+var view := View.DRAFT
 var save_failed := false
-var toast_id := ""
+var toast_generation := 0
 var heading: Label
 var status: Label
 var panel: PanelContainer
@@ -41,6 +49,7 @@ func _ready() -> void:
 	delivery = get_node("/root/RunCommentOutbox")
 	queue = delivery.queue
 	delivery.changed.connect(_update_delivery_status)
+	delivery.issue_sent.connect(_issue_sent)
 	z_index = 200
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -72,14 +81,25 @@ func _ready() -> void:
 	editor.virtual_keyboard_show_on_focus = false
 	editor.text_changed.connect(_text_changed)
 	content.add_child(editor)
+	review_scroll = ScrollContainer.new()
+	review_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	review_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(review_scroll)
+	review_warning = Label.new()
+	review_warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	review_warning.text = "Your note, build and gameplay context will be posted in a public GitHub issue. Anyone can read it. Leave out personal information."
+	review_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	review_scroll.add_child(review_warning)
 	_create_delivery_settings(content)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	content.add_child(actions)
 	cancel_button = _add_button(actions, "Cancel", _close)
-	save_button = _add_button(actions, "Save comment", _save)
+	review_button = _add_button(actions, "Review comment", _open_review)
 	delivery_button = _add_button(actions, "Delivery", _open_delivery)
 	back_button = _add_button(actions, "Back", _return_to_draft)
+	local_button = _add_button(actions, "Save locally", _save.bind(false))
+	send_button = _add_button(actions, "Send publicly", _save.bind(true))
 	apply_button = _add_button(actions, "Apply", _apply_delivery)
 	toast = Label.new()
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -115,8 +135,8 @@ func _create_delivery_settings(content: Control) -> void:
 	var form := VBoxContainer.new()
 	form.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_scroll.add_child(form)
-	endpoint_field = _delivery_field(form, "HTTPS relay address", 512)
-	token_field = _delivery_field(form, "Player relay token", 4096)
+	endpoint_field = _delivery_field(form, "HTTPS feedback service", 512)
+	token_field = _delivery_field(form, "Participant token", 4096)
 	token_field.secret = true
 	receipt_field = _delivery_field(form, "Recent GitHub receipt", 512)
 	receipt_field.editable = false
@@ -124,6 +144,9 @@ func _create_delivery_settings(content: Control) -> void:
 	instructions.text = "The token is stored on this device for retries after restart. Clear both fields to turn off delivery."
 	instructions.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	form.add_child(instructions)
+	service_status = Label.new()
+	service_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	form.add_child(service_status)
 	settings_status = Label.new()
 	settings_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	form.add_child(settings_status)
@@ -143,43 +166,56 @@ func _open_delivery() -> void:
 	token_field.clear()
 	token_field.placeholder_text = "Leave blank to keep the token for this address" if not delivery.endpoint.is_empty() else ""
 	settings_status.text = ""
-	_set_editor_view(true)
+	_set_editor_view(View.DELIVERY)
 	_update_delivery_status()
+	back_button.grab_focus()
+
+func _open_review() -> void:
+	if not is_open() or editor.text.strip_edges().is_empty(): return
+	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): DisplayServer.virtual_keyboard_hide()
+	_set_editor_view(View.REVIEW)
 	back_button.grab_focus()
 
 func _return_to_draft() -> void:
 	token_field.clear()
+	save_failed = false
 	if DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): DisplayServer.virtual_keyboard_hide()
-	_set_editor_view(false)
+	_set_editor_view(View.DRAFT)
 	_update_delivery_status()
-	delivery_button.grab_focus()
+	editor.grab_focus()
 
 func _apply_delivery() -> void:
 	var result := delivery.configure(endpoint_field.text, token_field.text)
 	if result == OK:
 		_return_to_draft()
 		return
-	settings_status.text = "Enter an HTTPS relay address and its player token." if result == ERR_INVALID_PARAMETER else "Could not save Delivery settings. Try again."
+	settings_status.text = "Enter the HTTPS service address and its participant token." if result == ERR_INVALID_PARAMETER else "Could not save Delivery settings. Try again."
 	settings_scroll.ensure_control_visible(settings_status)
 
-func _set_editor_view(show_settings: bool) -> void:
-	editing_delivery = show_settings
-	heading.text = "Comment delivery" if show_settings else "Run comment"
-	settings_scroll.visible = show_settings
-	back_button.visible = show_settings
-	apply_button.visible = show_settings
-	editor.visible = not show_settings
-	save_button.visible = not show_settings
-	cancel_button.visible = not show_settings
-	delivery_button.visible = not show_settings
+func _set_editor_view(next_view: View) -> void:
+	view = next_view
+	match view:
+		View.DRAFT: heading.text = "Run comment"
+		View.REVIEW: heading.text = "Review comment"
+		View.DELIVERY: heading.text = "Comment delivery"
+	settings_scroll.visible = view == View.DELIVERY
+	review_scroll.visible = view == View.REVIEW
+	back_button.visible = view != View.DRAFT
+	local_button.visible = view == View.REVIEW
+	send_button.visible = view == View.REVIEW
+	apply_button.visible = view == View.DELIVERY
+	editor.visible = view == View.DRAFT
+	review_button.visible = view == View.DRAFT
+	cancel_button.visible = view == View.DRAFT
+	delivery_button.visible = view == View.DRAFT
 	_reflow()
 
 func _update_delivery_status() -> void:
 	if not save_failed: status.text = delivery.summary()
+	service_status.text = delivery.delivery_status()
+	service_status.visible = not service_status.text.is_empty()
 	receipt_field.text = delivery.latest_reference
 	receipt_field.placeholder_text = "No confirmed delivery yet"
-	if toast.visible and not toast_id.is_empty() and not queue.receipt(toast_id).is_empty():
-		toast.text = "Comment delivered"
 
 func open(snapshot: Dictionary) -> void:
 	previous_focus = get_viewport().gui_get_focus_owner()
@@ -188,33 +224,40 @@ func open(snapshot: Dictionary) -> void:
 	context = snapshot
 	save_failed = false
 	editor.text = ""
-	save_button.disabled = true
+	review_button.disabled = true
 	toast.hide()
 	backdrop.show()
 	keyboard_height = _keyboard_height()
-	_set_editor_view(false)
+	_set_editor_view(View.DRAFT)
 	_update_delivery_status()
 	set_process(true)
 	editor.grab_focus()
 
-func _save() -> void:
-	if not is_open() or editor.text.strip_edges().is_empty(): return
-	if queue.enqueue(draft_id, editor.text, context) != OK:
+func _save(send_publicly: bool) -> void:
+	if not is_open() or view != View.REVIEW or editor.text.strip_edges().is_empty(): return
+	if queue.enqueue(draft_id, editor.text, context, send_publicly) != OK:
 		save_failed = true
 		status.text = "Could not save the comment. Your text is still here. Try again."
 		_reflow()
 		return
 	_close()
-	toast_id = draft_id
-	toast.text = "Comment saved · queued for delivery" if not delivery.endpoint.is_empty() else "Comment saved · queued on this device"
+	if queue == delivery.queue: delivery.note_saved()
+	var message := "Comment saved locally"
+	if send_publicly:
+		message = "Feedback queued · set up Delivery" if delivery.endpoint.is_empty() else "Feedback queued"
+	_show_toast(message)
+
+func _issue_sent(issue_number: int) -> void:
+	if not is_open(): _show_toast(Outbox.issue_label(issue_number))
+
+func _show_toast(message: String) -> void:
+	toast.text = message
 	_reflow()
 	toast.show()
-	if queue == delivery.queue: delivery.note_saved()
-	var saved_id := draft_id
-	await get_tree().create_timer(2.5).timeout
-	if draft_id == saved_id:
-		toast.hide()
-		if not is_open(): set_process(false)
+	toast_generation += 1
+	var generation := toast_generation
+	await get_tree().create_timer(2.5, true, false, true).timeout
+	if generation == toast_generation: toast.hide()
 
 func cancel() -> void:
 	_close()
@@ -246,7 +289,7 @@ func _text_changed() -> void:
 		editor.text = editor.text.left(CommentQueue.MAX_TEXT)
 		editor.set_caret_line(mini(line, editor.get_line_count() - 1))
 		editor.set_caret_column(column)
-	save_button.disabled = editor.text.strip_edges().is_empty()
+	review_button.disabled = editor.text.strip_edges().is_empty()
 
 func _process(_delta: float) -> void:
 	if not is_open(): return
@@ -270,12 +313,12 @@ func _reflow() -> void:
 		var margin := 12.0 * u
 		var extent := Vector2(maxf(1.0, minf(safe.size.x - 2.0 * margin, 600.0 * u)), maxf(1.0, minf(safe.size.y - 2.0 * margin, 360.0 * u)))
 		heading.visible = extent.y >= 200.0 * u
-		status.visible = heading.visible or status.text.begins_with("Could not")
+		status.visible = save_failed or (heading.visible and view != View.REVIEW)
 		Metrics.apply_unit(panel, u)
 		panel.size = extent
 		panel.position = safe.get_center() - extent * 0.5
 		var focus := get_viewport().gui_get_focus_owner()
-		if editing_delivery and focus in [endpoint_field, token_field]:
+		if view == View.DELIVERY and focus in [endpoint_field, token_field]:
 			settings_scroll.ensure_control_visible.call_deferred(focus)
 	else:
 		var extent := Vector2(minf(safe.size.x, 330.0 * u), 44.0 * u)
@@ -307,8 +350,10 @@ func route(event: InputEvent) -> bool:
 			touches[event.index] = Vector2.INF
 			if open_now and editor.visible and editor.get_global_rect().has_point(event.position):
 				editor.scroll_vertical -= event.relative.y / maxf(1.0, editor.get_line_height())
-			if open_now and editing_delivery and settings_scroll.get_global_rect().has_point(event.position):
-				settings_scroll.scroll_vertical -= int(event.relative.y)
+			if open_now and view != View.DRAFT:
+				var scroll := review_scroll if view == View.REVIEW else settings_scroll
+				if scroll.get_global_rect().has_point(event.position):
+					scroll.scroll_vertical -= int(event.relative.y)
 		get_viewport().set_input_as_handled()
 		return true
 	if event is InputEventJoypadButton:
@@ -335,8 +380,8 @@ func route(event: InputEvent) -> bool:
 			get_viewport().set_input_as_handled()
 			if not event.echo:
 				if event.keycode == KEY_ESCAPE: _back()
-				elif editing_delivery: _apply_delivery()
-				else: _save()
+				elif view == View.DELIVERY: _apply_delivery()
+				elif view == View.DRAFT: _open_review()
 		elif event.keycode == KEY_TAB:
 			get_viewport().set_input_as_handled()
 			if not event.echo: _step(-1 if event.shift_pressed else 1)
@@ -347,9 +392,10 @@ func route(event: InputEvent) -> bool:
 
 func _step(change: int) -> void:
 	var controls: Array[Control] = [editor, cancel_button]
-	if not save_button.disabled: controls.append(save_button)
+	if not review_button.disabled: controls.append(review_button)
 	controls.append(delivery_button)
-	if editing_delivery: controls = [endpoint_field, token_field, receipt_field, back_button, apply_button]
+	if view == View.DELIVERY: controls = [endpoint_field, token_field, receipt_field, back_button, apply_button]
+	elif view == View.REVIEW: controls = [back_button, local_button, send_button]
 	var selected := controls.find(get_viewport().gui_get_focus_owner())
 	controls[posmod(selected + change, controls.size())].grab_focus()
 
@@ -362,7 +408,9 @@ func _joy_button(button: int) -> void:
 			var focus := get_viewport().gui_get_focus_owner()
 			if focus == editor and DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD): _show_keyboard()
 			elif focus == cancel_button: _close()
-			elif focus == save_button: _save()
+			elif focus == review_button: _open_review()
+			elif focus == local_button: _save(false)
+			elif focus == send_button: _save(true)
 			elif focus == delivery_button: _open_delivery()
 			elif focus == back_button: _return_to_draft()
 			elif focus == apply_button: _apply_delivery()
@@ -372,7 +420,7 @@ func _joy_button(button: int) -> void:
 				DisplayServer.virtual_keyboard_show(field.text, field.get_global_rect(), kind, field.max_length)
 
 func _back() -> void:
-	if editing_delivery: _return_to_draft()
+	if view != View.DRAFT: _return_to_draft()
 	else: _close()
 
 func _touch_slop() -> float:

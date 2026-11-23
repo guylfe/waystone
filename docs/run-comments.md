@@ -1,8 +1,7 @@
 # Mid-run comments
 
-Status as of 2026-11-22. The regular 0.3.9 candidate includes the delivery
-client previously checked on the 0.3.8 baseline. Delivery starts disabled.
-[Current state](current-state.md) owns release and device status.
+This client is based on Waystone 0.3.9. [Current state](current-state.md) owns
+release and device status.
 
 ## Capture and input
 
@@ -11,25 +10,36 @@ ordinary Combat Survey. For an experimental Survey, use **Survey menu → Commen
 The regular Run menu waits for the current commitment to finish as usual.
 **F8** opens the editor immediately, including during a committed action.
 
-Type a multiline comment and choose **Save comment**. On Windows, **Ctrl+Enter**
-saves and **Esc** cancels. Controller Start opens the appropriate menu. Use the
-D-pad or left stick and A to open the editor and choose an action. B cancels.
-The controller workflow uses a keyboard to compose. On Android, tap the editor
-to open the software keyboard, or type with a connected keyboard.
+Type a multiline comment and choose **Review comment**. The review explains
+that the note, build and gameplay context will appear in a public GitHub issue.
+**Send publicly** saves the report and queues it for delivery. **Save locally**
+keeps the note on this device. **Back** returns to the draft.
 
-The world freezes when the editor opens. Save and Cancel both return to the
-previous view, including a paused Survey or Run menu. Live gameplay resumes
-any committed action. A fresh press is required to repeat held gameplay input.
-Cancel discards the draft. If a save fails, the editor retains the text,
-opening snapshot and ID for another attempt.
+On Windows, **Ctrl+Enter** opens review and **Esc** returns to the draft or
+closes the editor from the draft. Controller Start opens the appropriate
+menu. Use D-pad or left stick and A to open Comment and choose an action.
+B goes back. Use a keyboard to compose with a controller. On Android, tap
+the editor to open the software keyboard, or use a connected keyboard.
+
+The world freezes when the editor opens. Closing it returns to the previous
+view, including a paused Survey or Run menu. Live gameplay resumes any
+committed action. A fresh press is required to repeat held gameplay input.
+Cancel discards the draft. If a write fails, the editor retains the draft,
+opening snapshot and UUID for another attempt.
 
 ## Local records
 
-Each successful save creates `user://run-comments/<id>.json`. The editor reports
-queued and delivered counts. **Delivery** shows a copyable GitHub receipt
-reference after the relay confirms the comment. Notes remain available across game exits and mode changes, even
-when the corresponding run is abandoned. The game stores the note separately
-from all run saves and Survey reports.
+Each successful save creates `user://run-comments/<id>.json` with a stable
+UUID and the player's choice about public submission. The editor shows
+separate queued, sent and local counts. After confirmation it shows **Sent
+as GitHub issue #N** in the editor, including after restart. A receipt that
+arrives during play shows the same status in a toast. **Delivery** shows a
+copyable receipt URL. Notes and receipts remain on disk when a run is
+abandoned. The game stores them separately from run saves and Survey reports.
+
+Existing schema 1 notes and receipts remain readable on disk. They stay out
+of public delivery. The earlier relay enrollment remains stored for
+compatibility. Public feedback uses its own enrollment.
 
 The versioned JSON holds the note ID, text up to 2,000 characters, and a bounded
 context captured when the editor opens. Context includes game and build
@@ -44,62 +54,55 @@ credentials, and serialized saves.
 
 ## Delivery integration
 
-The client starts with delivery off and can capture notes offline. In the
-comment editor, choose **Delivery**, enter the approved HTTPS relay address and
-a player-scoped bearer token issued by that relay, then choose **Apply**.
-Use a plain HTTPS URL with a path and optional port. Applying a new address
-requires that address's token. Leaving the token blank for the same address
-keeps the existing credential. Clear both fields and apply to disable delivery.
-The client stores the endpoint and token in the platform's per-user app data
-at `user://run-comment-delivery.cfg`. That file is readable on the device by
-anyone with access to its app data. Use a revocable relay credential with
-submission-only access. Keep GitHub credentials entirely on the relay.
+In the editor, choose **Delivery**, enter the approved HTTPS service origin
+and its participant-scoped submission token, then choose **Apply**. The
+client accepts the origin or the complete `/v1/feedback` URL. An empty token
+keeps the existing credential for the same endpoint. Clear both fields and
+apply to disable delivery. That preserves consented pending reports and
+existing receipts. Reports can be queued before enrollment.
 
-Save returns to play as soon as the local write completes. The background
-worker checks persisted notes at launch and after a save. On failure it backs
-off from two seconds to at most sixty seconds between attempts while the app
-is running. An acknowledged note keeps its local record and receipt.
+The endpoint and participant token are stored in the user's app data at
+`user://run-comment-delivery.cfg`. Anyone with access to that app data can
+read it. The service should issue revocable, submission-only credentials.
+All GitHub credentials belong on the service.
 
-The client sends the original JSON bytes
-with the note ID in the `Idempotency-Key` header over HTTPS, with redirects
-disabled, and the token in `Authorization: Bearer <token>`. A success requires
-HTTP 200 or 201 and a JSON receipt containing the
-same `id`, the SHA-256 digest of those bytes as `sha256`, and a nonempty
-`reference`. The reference must be a GitHub HTTPS URL to the verified file,
-issue or commit. The relay verifies the GitHub readback before acknowledging.
-The client stores the matching receipt beside the immutable note, excludes it from
-the pending list, and can safely retry a missing or mismatched receipt.
+The worker sends `POST /v1/feedback` with a JSON body containing `game`
+(`waystone`), `reportId` (UUID), `build`, `note`, and `context`. It sends
+`Authorization: Bearer <participant token>` and the same UUID as
+`Idempotency-Key`. HTTPS redirects are disabled. The request body is derived
+from the immutable saved report on every attempt.
 
-For a private GitHub inbox, the smallest deterministic receiver can create
-`comments/<id>.json` in the approved repository using a GitHub App installed
-only on that repository with Contents write permission. A separately
-authenticated player request can carry the note to that receiver. Keep the
-GitHub App private key and installation tokens on the receiver. On a retry,
-read the existing file, verify byte identity, and return the same reference.
-Return a conflict if the saved bytes differ. Issue creation would need its
-own durable deduplication and readback. See
-[GitHub's Contents API](https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents)
-and [installation authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).
+The service must deduplicate by game and report UUID, including when a
+response is lost after issue creation. A retry for the same report must return
+the same issue. A confirmed response is HTTP 200 or 201 with a positive
+integer `issueNumber` and an `issueUrl` exactly equal to
+`https://github.com/guylfe/waystone/issues/<issueNumber>`. The client records
+that receipt beside the note before removing the report from its pending
+list. Failed requests or invalid receipts leave the report queued. Retries
+start at two seconds and back off to sixty seconds while the game runs.
+The worker checks pending reports on launch, enrollment and successful save.
 
-To release live sending, deploy the approved relay, provision a revocable player
-credential, and configure the client on each platform. Verify an authorized
-test submission by reading back the GitHub record and comparing its bytes.
-Build Windows and Android from the same numbered release commit and check
-Windows input and the Fold keyboard in both orientations.
+For future games using the same service, give the player a public-disclosure
+step, persist the report UUID and consent together, restrict accepted receipts
+to that game's repository, and surface the issue number during play and after
+restart. Use the same deduplication and receipt checks for each first build.
 
 ## Verification
 
-Run `./run-tests.ps1 run_comment_ui_test run_comment_queue_test` from the project
-root. These tests use disposable data and drive Godot's input events through
-the normal boards. For the HTTP integration test, run the same queue script with
-Godot `--headless --path . -s tests/run_comment_queue_test.gd -- --loopback` and
-the test runner's isolated APPDATA and LOCALAPPDATA paths. The fake receiver
-binds only on localhost. It simulates a lost response after writing, a wrong
-digest, and a successful idempotent retry. Run
-`python tests/run_comment_delivery_test.py <Godot-console.exe>` to drive the
-normal main scene through Expedition setup, F8, Delivery, and Save, then
-check persisted failure, matching receipt and deduplication across three
-processes. The plaintext fixture is limited to headless debug runs with
-`--loopback` and sends no credentials. Headless input and geometry checks
-leave native IME, graphics, physical control and installed-build verification
-open.
+Run `./run-tests.ps1 run_comment_ui_test run_comment_queue_test` from the
+project root. The tests drive keyboard, synthetic touch and controller events
+through the normal boards using disposable data. To exercise the transport in
+the queue test, run Godot with
+`--headless --path . -s tests/run_comment_queue_test.gd -- --loopback`
+and isolate `APPDATA` and `LOCALAPPDATA` under `.runtime`. That receiver
+tests a lost response after the first write and a mismatched issue number
+before the successful retry.
+
+Run `python tests/run_comment_delivery_test.py <Godot-console.exe>` to test
+capture through the standard game entry, restart and receipt readback across
+three processes. The fixture checks that legacy notes remain local, the
+report retries with the same UUID and request bytes after failures, one issue
+is recorded by the test receiver, and relaunch after confirmation sends no
+request. The plaintext fixture runs only on headless debug loopback and sends
+no credentials. Live service enrollment and GitHub readback, native keyboard
+and controls, and installed-build verification are separate checks.

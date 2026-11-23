@@ -4,6 +4,8 @@ const Queue = preload("res://scripts/core/run_comment_queue.gd")
 const Session = preload("res://scripts/core/mode_session.gd")
 const Survey = preload("res://scripts/core/survey_experiment.gd")
 
+const CommentEditor = preload("res://scripts/presentation/run_comment_editor.gd")
+
 var board
 var viewport: SubViewport
 var queue: Queue
@@ -92,7 +94,7 @@ func touch_menu(mode: String) -> void:
 	check(modal.is_open(), mode + " touch opens comment")
 	if not modal.is_open(): return
 	await frames()
-	check(board._display_safe_layout_rect().encloses(modal.panel.get_global_rect()), mode + " portrait containment " + str([board._display_safe_layout_rect(), modal.panel.get_global_rect(), modal.save_button.get_global_rect()]))
+	check(board._display_safe_layout_rect().encloses(modal.panel.get_global_rect()), mode + " portrait containment " + str([board._display_safe_layout_rect(), modal.panel.get_global_rect(), modal.review_button.get_global_rect()]))
 	check(modal.context.mode == mode and int(modal.context.area_id) == board.state.current_area_id, mode + " entry/area context")
 	check(modal.context.has("room") == board.state.is_measurement_mode(), mode + " measurement context boundary")
 	if mode == Session.REGIONAL:
@@ -103,13 +105,17 @@ func touch_menu(mode: String) -> void:
 	await frames()
 	check(modal.editor.text == "f", mode + " touch focus routes keyboard text")
 	touch(board.reset_rect.get_center(), true, 2)
-	tap(modal.save_button.get_global_rect().get_center())
+	tap(modal.review_button.get_global_rect().get_center())
+	await frames()
+	check(modal.view == CommentEditor.View.REVIEW and modal.review_warning.text.contains("public GitHub issue") and queue.payload(id).is_empty(), mode + " touch review requires explicit consent")
+	check(modal.panel.get_global_rect().encloses(modal.review_warning.get_global_rect()) and modal.panel.get_global_rect().encloses(modal.send_button.get_global_rect()), mode + " warning and send visible in portrait")
+	tap(modal.send_button.get_global_rect().get_center())
 	touch(board.reset_rect.get_center(), false, 2)
 	check(not modal.is_open() and board.controller.paused, mode + " save returns to same run menu")
 	var reopened := Queue.new(queue.directory)
 	var record: Variant = JSON.parse_string(reopened.payload(id))
 	check(record is Dictionary and record.text == "f" and record.context.mode == mode, mode + " persisted text and context")
-	check(reopened.pending_ids().has(id), mode + " conserves pending upload")
+	check(reopened.pending_ids().has(id), mode + " preserves consented feedback for retry")
 
 func _run() -> void:
 	if not OS.get_user_data_dir().replace("\\", "/").contains("/.runtime/"):
@@ -131,10 +137,20 @@ func _run() -> void:
 		await frames()
 		joy(JOY_BUTTON_DPAD_DOWN)
 		joy(JOY_BUTTON_DPAD_DOWN)
-		check(viewport.gui_get_focus_owner() == modal.save_button, "controller focuses save after keyboard entry")
+		check(viewport.gui_get_focus_owner() == modal.review_button, "controller focuses save after keyboard entry")
 		var gamepad_id: String = modal.draft_id
 		joy(JOY_BUTTON_A)
-		check(not modal.is_open() and not queue.payload(gamepad_id).is_empty(), "controller saves keyboard text")
+		check(modal.view == CommentEditor.View.REVIEW and viewport.gui_get_focus_owner() == modal.back_button, "controller starts review with Back focused")
+		viewport.size = Vector2i(720, 480)
+		await frames()
+		check(board._display_safe_layout_rect().encloses(modal.panel.get_global_rect()) and modal.panel.get_global_rect().encloses(modal.review_warning.get_global_rect()) and modal.panel.get_global_rect().encloses(modal.send_button.get_global_rect()), "compact landscape retains disclosure and confirmation " + str([board.size, board._display_safe_layout_rect(), modal.panel.get_global_rect(), modal.review_warning.get_global_rect(), modal.send_button.get_global_rect()]))
+		joy(JOY_BUTTON_B)
+		check(modal.view == CommentEditor.View.DRAFT and modal.editor.text == "r" and queue.payload(gamepad_id).is_empty(), "controller Back preserves the draft without consent")
+		key(KEY_ENTER, 13, true)
+		joy(JOY_BUTTON_DPAD_DOWN)
+		check(viewport.gui_get_focus_owner() == modal.local_button, "controller can choose local save")
+		joy(JOY_BUTTON_A)
+		check(not modal.is_open() and not queue.payload(gamepad_id).is_empty() and queue.submission(gamepad_id).is_empty(), "controller saves keyboard text locally")
 		check(board.controller.paused, "controller stays in Run menu")
 		joy(JOY_BUTTON_B)
 		check(not board.controller.paused, "next controller Back resumes")
@@ -201,10 +217,15 @@ func _run() -> void:
 		modal.queue = Queue.new(bad_path)
 		var id: String = modal.draft_id
 		key(KEY_ENTER, 13, true)
+		key(KEY_ENTER, 13, true)
+		check(modal.view == CommentEditor.View.REVIEW and queue.payload(id).is_empty(), "Ctrl+Enter opens review and never consents to publication")
+		joy(JOY_BUTTON_DPAD_DOWN)
+		joy(JOY_BUTTON_DPAD_DOWN)
+		joy(JOY_BUTTON_A)
 		check(modal.is_open() and modal.editor.text == "fmr\nw" and modal.draft_id == id and modal.status.text.begins_with("Could not"), "write failure retains draft, ID and view")
 		modal.queue = queue
-		key(KEY_ENTER, 13, true)
-		check(not modal.is_open() and not board.controller.paused and board.state._simulation_tick_index == tick, "Ctrl+Enter saves and restores active action")
+		joy(JOY_BUTTON_A)
+		check(not modal.is_open() and not board.controller.paused and board.state._simulation_tick_index == tick, "confirmed retry saves and restores active action")
 		var record: Variant = JSON.parse_string(queue.payload(id))
 		check(record is Dictionary and int(record.context.tick) == tick and record.text == "fmr\nw", "saved tick and multiline note match opening")
 		if record is Dictionary:
