@@ -1,14 +1,14 @@
 # Waystone current state
 
-**Released 2026-11-22.** [Regular Waystone 0.3.9](https://github.com/guylfe/waystone/releases/tag/v0.3.9) includes the four-region Campaign, mid-run comment capture, and a startup update check. The exported runtime is `c0db50a967c3096edaabfdcc693b5ad4e25e9666`.
-**Windows.** The normal launcher executable was updated and verified by SHA-256 (`55dab6e2ce170cf299f1f880e7f035ac403b2f80d9277d2e9d18c34435c93b02`). Its headless Survey smoke passed with isolated saves.
-**Android.** The published signed APK is version 0.3.9, code 309, SHA-256 `027f6007586ec533731d009d79f95d0706ff6f547777ad14e820eeff170b9545`. Installation and execution of this version on the Fold are pending.
+**Current release.** [Waystone 0.3.10 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.10) became the latest stable release on 2026-11-24 Israel time. The release tag and both exports use runtime commit `ea208dad9fc914febf651489dff086ced198ae0f`.
+**Windows.** The normal launcher executable has SHA-256 `2090309c682d6d20b9fc5fe2d8ebd0dc55c8ea0f79bd086365d23f8c20742f84`. Its installed headless Survey smoke passed with isolated saves.
+**Android.** The signed APK is version 0.3.10, code 310, SHA-256 `89148e0031f31055cb6ad9637494792873f17dc3943173025d148b5a8bad33a6`. Physical installation and saved-run readback on the Fold are pending.
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
 **Authority:** current source/tests define implementation; this document owns current delivery and verification status. Design Foundations owns intent. Guy decides feel acceptance.
 
-## 0.3.10 delivery — 2026-11-23
+## 0.3.10 delivery
 
-The release candidate was exported from `ea208dad9fc914febf651489dff086ced198ae0f` (Android version code 310). Both platform assets are in the [private release draft](https://github.com/guylfe/waystone/releases/tag/untagged-b58c7305d08363af1289). The ordinary Windows launcher now starts that build. Its installed headless Survey smoke passed with isolated save data. A disposable packaged copy using a controlled release feed accepted **Update now**, downloaded the final ZIP, checked it, replaced its executable, and preserved an existing Survey save byte for byte. The signed APK has the same package and signing certificate as 0.3.9. Device installation, Android's confirmation screen, and saved-run readback on the Fold remain pending.
+The public GitHub latest-release feed lists both platform assets. Anonymous downloads matched the tested artifacts byte for byte. In a disposable older Windows test build with the new updater, pressing **Update now** downloaded the published ZIP from GitHub and installed the same executable as the normal launcher. An existing Survey save retained its SHA-256 across the replacement. The published 0.3.9 build uses **View on GitHub** for this first upgrade. The signed Android APK has the same package and signing certificate as 0.3.9. System confirmation on the Fold remains unverified.
 
 The review and public-send choices in the actual Expedition Comment screen produced [issue #2](https://github.com/guylfe/waystone/issues/2) through the [repository publisher](https://github.com/guylfe/waystone/actions/runs/45223484523). Restarting the game replayed the original report and displayed **Sent as GitHub issue #2**. An additional authenticated replay returned the same issue. A repository readback found one matching report marker. The disposable participant enrollment was revoked after verification.
 
