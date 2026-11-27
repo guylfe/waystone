@@ -1,8 +1,8 @@
 extends HTTPRequest
-## Sends consented reports to the participant-authenticated feedback service.
+## Sends consented reports to the private feedback file service.
 
 const Queue = preload("res://scripts/core/run_comment_queue.gd")
-const ROUTE := "/v1/feedback"
+const ROUTE := "/v3/feedback"
 const DEFAULT_ENDPOINT := "https://guylfe-game-feedback.netlify.app" + ROUTE
 const DEFERRED_STATUSES := [202, 429, 503]
 const MONTHS := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -16,25 +16,11 @@ class Response:
 		error = result
 		status = http_status
 		retry_at = deadline
-const HTTPS_ORIGIN := "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?\\z"
-const LOOPBACK_ORIGIN := "^http://127\\.0\\.0\\.1:[0-9]{1,5}\\z"
-const PLAYTESTER_CODE := "^pt_[0-9a-f]{48}\\z"
-const BEARER := "^[A-Za-z0-9._~+/-]+=*\\z"
 
-static func service_endpoint(address: String) -> String:
-	var origin := address.strip_edges().trim_suffix(ROUTE).trim_suffix("/")
-	if not _matches(HTTPS_ORIGIN, origin) and not _is_loopback(origin): return ""
-	return origin + ROUTE
-
-static func _is_loopback(origin: String) -> bool:
-	return OS.is_debug_build() and DisplayServer.get_name() == "headless" and OS.get_cmdline_user_args().has("--loopback") and _matches(LOOPBACK_ORIGIN, origin)
-
-static func valid_configuration(endpoint: String, token: String) -> bool:
-	if endpoint.is_empty(): return token.is_empty()
-	if endpoint.length() > 512 or token.length() > 4096 or service_endpoint(endpoint) != endpoint: return false
-	if endpoint == DEFAULT_ENDPOINT: return _matches(PLAYTESTER_CODE, token)
-	if _is_loopback(endpoint.trim_suffix(ROUTE)): return token.is_empty()
-	return _matches(BEARER, token)
+static func valid_endpoint(endpoint: String) -> bool:
+	if endpoint == DEFAULT_ENDPOINT: return true
+	if not OS.is_debug_build() or DisplayServer.get_name() != "headless" or not OS.get_cmdline_user_args().has("--loopback"): return false
+	return _matches("^http://127\\.0\\.0\\.1:[0-9]{1,5}/v3/feedback\\z", endpoint)
 
 static func _matches(pattern: String, value: String) -> bool:
 	return RegEx.create_from_string(pattern).search(value) != null
@@ -84,11 +70,11 @@ static func _http_date(value: String, now: float) -> float:
 	if month == 0 or day < 1 or day > 31 or hour > 23 or minute > 59 or second > 60: return 0.0
 	return float(Time.get_unix_time_from_datetime_dict({"year": int(date[2]), "month": month, "day": day, "hour": hour, "minute": minute, "second": second}))
 
-func deliver(queue: Queue, id: String, endpoint: String, token: String = "") -> Response:
+func deliver(queue: Queue, id: String, endpoint: String) -> Response:
 	var payload := queue.submission(id)
 	if payload.is_empty() or queue.rejection(id) != 0: return Response.new(ERR_INVALID_DATA)
 	if not queue.receipt(id).is_empty(): return Response.new(OK)
-	if endpoint.is_empty() or not valid_configuration(endpoint, token): return Response.new(ERR_INVALID_PARAMETER)
+	if not valid_endpoint(endpoint): return Response.new(ERR_INVALID_PARAMETER)
 
 	timeout = 15.0
 	body_size_limit = 4096
@@ -96,7 +82,6 @@ func deliver(queue: Queue, id: String, endpoint: String, token: String = "") -> 
 	var headers := PackedStringArray([
 		"Content-Type: application/json", "Accept: application/json", "Idempotency-Key: " + id,
 	])
-	if not token.is_empty(): headers.append("Authorization: Bearer " + token)
 	var error := request(endpoint, headers, HTTPClient.METHOD_POST, payload)
 	if error != OK: return Response.new(error)
 	var response: Array = await request_completed
@@ -106,6 +91,6 @@ func deliver(queue: Queue, id: String, endpoint: String, token: String = "") -> 
 	if status in DEFERRED_STATUSES:
 		return Response.new(ERR_BUSY, status, retry_deadline(response[2], Time.get_unix_time_from_system()))
 	if response[0] != RESULT_SUCCESS: return Response.new(ERR_CONNECTION_ERROR, status)
-	if status != 200 and status != 201: return Response.new(FAILED, status)
+	if status != 200: return Response.new(FAILED, status)
 	var body: PackedByteArray = response[3]
 	return Response.new(queue.acknowledge(id, JSON.parse_string(body.get_string_from_utf8())), status)

@@ -15,7 +15,6 @@ from time import time
 from uuid import UUID
 
 
-REFERENCE = "https://github.com/guylfe/waystone/issues/42"
 LEGACY_REFERENCE = "https://github.com/guylfe/waystone/blob/main/comments/legacy.json"
 OLDER_REPORTS = ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 PROJECT = Path(__file__).resolve().parents[1]
@@ -23,7 +22,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 def run(godot: Path) -> None:
     requests = []
-    remote_issues = {}
+    remote_files = {}
     deadlines = []
 
     class Relay(BaseHTTPRequestHandler):
@@ -35,14 +34,13 @@ def run(godot: Path) -> None:
             receipt = {}
             retry_after = None
             if report_id in OLDER_REPORTS:
-                attempts = sum(request[2] == report_id for request in requests)
                 if report_id == OLDER_REPORTS[0]:
-                    status = 401 if attempts == 1 else 409
+                    status = 409
                 else:
                     status = 400
             else:
-                # Model one issue created before the eventual confirmed receipt.
-                issue = remote_issues.setdefault(report_id, (42, body))
+                # Model one file written before the eventual confirmed receipt.
+                remote_files.setdefault(report_id, body)
                 if len(requests) == 1:
                     status, retry_after = 202, "4"
                 elif len(requests) == 2:
@@ -50,7 +48,8 @@ def run(godot: Path) -> None:
                 elif len(requests) == 3:
                     status, retry_after = 503, "5"
                 else:
-                    status, receipt = 201, {"issueNumber": issue[0], "issueUrl": REFERENCE}
+                    status, receipt = 200, {"game": "waystone", "reportId": report_id,
+                                            "filePath": f"playtest-feedback/{report_id}.json"}
             if retry_after is not None:
                 deadlines.append(parsedate_to_datetime(retry_after).timestamp() if status == 429 else time() + int(retry_after))
             receipt = json.dumps(receipt).encode()
@@ -104,10 +103,10 @@ def run(godot: Path) -> None:
                     assert all(problem not in result.stdout + result.stderr for problem in problems)
                     assert len(requests) == expected, (phase, len(requests))
 
-                for phase, expected in [("enrollment", 0), ("capture", 1), ("recover", 4), ("readback", 4)]:
+                for phase, expected in [("capture", 1), ("recover", 4), ("readback", 4)]:
                     probe(phase, expected)
                 _, path, note_id, authorization, body = requests[0]
-                assert path == "/v1/feedback" and authorization is None
+                assert path == "/v3/feedback" and authorization is None
                 assert all(request[1:] == requests[0][1:] for request in requests)
                 payload = json.loads(body)
                 assert UUID(note_id).version == 4
@@ -117,10 +116,10 @@ def run(godot: Path) -> None:
                 }
                 assert payload["build"] and payload["context"]["mode"] == "expedition"
                 receipt = json.loads((comments / f"{note_id}.receipt").read_bytes())
-                assert receipt["issueNumber"] == 42 and receipt["issueUrl"] == REFERENCE
+                assert receipt["filePath"] == f"playtest-feedback/{note_id}.json"
                 assert all(path.read_bytes() == contents for path, contents in legacy_files.items())
                 assert f'endpoint="{origin}/comments"' in config.read_text()
-                assert remote_issues == {note_id: (42, body)}, remote_issues
+                assert remote_files == {note_id: body}, remote_files
                 assert all(request[0] >= deadline - 0.10 for request, deadline in zip(requests[1:], deadlines))
                 print("202, 429 and 503 all honored Retry-After, including across restart. "
                       "Same UUID and bytes on all attempts. No request after receipt on relaunch.")
@@ -144,20 +143,18 @@ def run(godot: Path) -> None:
                                                      separators=(",", ":"), sort_keys=True).encode()
                 for path, contents in old_files.items():
                     path.write_bytes(contents)
-                config.write_text(config.read_text().replace('endpoint=""', f'endpoint="{origin}/v1/feedback"'))
-                for phase, expected in [("auth", 5), ("auth_restart", 7), ("terminal_restart", 7)]:
+                for phase, expected in [("terminal", 6), ("terminal_restart", 6)]:
                     probe(phase, expected)
                 older_requests = requests[4:]
-                assert [request[2] for request in older_requests] == [OLDER_REPORTS[0], *OLDER_REPORTS]
-                assert all(request[1] == "/v1/feedback" and request[3] is None
+                assert [request[2] for request in older_requests] == list(OLDER_REPORTS)
+                assert all(request[1] == "/v3/feedback" and request[3] is None
                            and request[4] == old_wire[request[2]] for request in older_requests)
                 assert all(path.read_bytes() == contents for path, contents in old_files.items())
                 for report_id, status in zip(OLDER_REPORTS, (409, 400)):
-                    rejected = json.loads((comments / f"{report_id}.rejected").read_bytes())
+                    rejected = json.loads((comments / f"{report_id}.v3.rejected").read_bytes())
                     assert rejected["status"] == status
                     assert rejected["sha256"] == hashlib.sha256(old_wire[report_id]).hexdigest()
-                print("401 stopped the queue across restart. Re-enrollment resumed it. "
-                      "400 and 409 persisted without more requests. Both schema 2 reports replayed byte-for-byte.")
+                print("400 and 409 persisted without more requests. Both schema 2 reports replayed byte-for-byte.")
         finally:
             server.shutdown()
             thread.join()

@@ -29,11 +29,11 @@ static func valid_id(id: String) -> bool:
 		return id == id.to_lower() and id[0] not in ["+", "-"] and id.is_valid_hex_number(false)
 	return valid_report_id(id)
 
-func enqueue(id: String, text: String, context: Dictionary, send_publicly: bool = false) -> Error:
+func enqueue(id: String, text: String, context: Dictionary, send_feedback: bool = false) -> Error:
 	if not valid_report_id(id) or text.strip_edges().is_empty() or text.to_utf16_buffer().size() > 2 * MAX_TEXT:
 		return ERR_INVALID_PARAMETER
-	var note := {"schema": 3, "id": id, "text": text, "context": context, "send_publicly": send_publicly}
-	if send_publicly:
+	var note := {"schema": 4, "id": id, "text": text, "context": context, "send_feedback": send_feedback}
+	if send_feedback:
 		var build: Variant = context.get("game_version")
 		if not build is String or RegEx.create_from_string(BUILD_VERSION).search(build) == null:
 			return ERR_INVALID_DATA
@@ -74,7 +74,7 @@ static func _json_size(value: Dictionary) -> int:
 static func _json_text(value: Dictionary) -> String:
 	var encoded := JSON.stringify(value)
 	# Godot leaves some C0 controls raw in compact strings. Escape only raw
-	# controls so both the local record and public body are strict JSON.
+	# controls so both the local record and request body are strict JSON.
 	for code in range(1, 0x20):
 		var control := String.chr(code)
 		if encoded.contains(control):
@@ -106,10 +106,12 @@ func submission(id: String) -> String:
 
 static func _submission_for(id: String, note: Variant) -> String:
 	if not valid_report_id(id) or not note is Dictionary: return ""
-	if note.get("id") != id or not note.get("send_publicly") is bool or not note.send_publicly: return ""
+	if note.get("id") != id: return ""
+	var consent: Variant = note.get("send_feedback") if note.get("schema") == 4 else note.get("send_publicly")
+	if not consent is bool or not consent: return ""
 	var schema: Variant = note.get("schema")
 	if schema == 2: return _schema_two_submission(id, note)
-	if schema != 3: return ""
+	if schema != 3 and schema != 4: return ""
 	var stored: Variant = note.get("submission")
 	if not stored is String: return ""
 	var body: Variant = JSON.parse_string(stored)
@@ -144,6 +146,8 @@ func receipt(id: String) -> Dictionary:
 		if reference is String and not reference.strip_edges().is_empty() and reference.length() <= 512:
 			return {"reference": reference}
 	elif not _submission_for(id, note).is_empty():
+		if _valid_file_receipt(id, saved): return {"filePath": saved.filePath}
+		if note.get("schema") == 4: return {}
 		var issue_number := verified_issue_number(saved)
 		if issue_number > 0:
 			return {"issueNumber": issue_number, "issueUrl": saved.issueUrl}
@@ -153,12 +157,11 @@ func acknowledge(id: String, response: Variant) -> Error:
 	var record := payload(id)
 	if record.is_empty(): return ERR_FILE_NOT_FOUND
 	if _submission_for(id, JSON.parse_string(record)).is_empty(): return ERR_INVALID_DATA
-	var issue_number := verified_issue_number(response)
-	if issue_number == 0: return ERR_INVALID_DATA
+	if not _valid_file_receipt(id, response): return ERR_INVALID_DATA
 	var receipt_path := directory.path_join(id + ".receipt")
 	var confirmed := JSON.stringify({
 		"id": id, "sha256": record.sha256_text(),
-		"issueNumber": issue_number, "issueUrl": response.issueUrl,
+		"game": "waystone", "reportId": id, "filePath": response.filePath,
 	})
 	# A damaged or interrupted receipt must not permanently prevent a retry.
 	if FileAccess.file_exists(receipt_path) and receipt(id).is_empty():
@@ -188,8 +191,12 @@ func rejection(id: String) -> int:
 	return int(status)
 
 func _rejection_path(id: String) -> String:
-	return directory.path_join(id + ".rejected")
+	return directory.path_join(id + ".v3.rejected")
 
+static func _valid_file_receipt(id: String, response: Variant) -> bool:
+	return response is Dictionary and response.get("game") == "waystone" and response.get("reportId") == id and response.get("filePath") == "playtest-feedback/" + id + ".json"
+
+# Only for locally persisted receipts from the previous release.
 static func verified_issue_number(response: Variant) -> int:
 	if not response is Dictionary: return 0
 	var number: Variant = response.get("issueNumber")

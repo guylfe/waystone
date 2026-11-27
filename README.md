@@ -1,10 +1,9 @@
 # Waystone Prototype
 
-Current candidate version: `0.3.9` (Android version code `309`).
+Version `0.3.11` (Android version code `311`).
 Choose [Campaign](docs/campaign-regions.md) in the regular mode selector to play the four-region 3D Campaign. From an active run, use **Menu → Save and choose mode**.
 
-Waystone checks GitHub for a newer compatible release at startup. Use **View
-on GitHub** to open the release page or **Dismiss** to keep playing. Record
+Waystone checks GitHub for a newer compatible release at startup. Choose **Update now** or **Later**. Send private suggestions and record
 mid-run notes through **Menu → Comment** or **F8**. See
 [startup updates](docs/startup-updates.md) and [mid-run comments](docs/run-comments.md).
 

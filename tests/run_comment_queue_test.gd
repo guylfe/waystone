@@ -36,7 +36,7 @@ func _run() -> void:
 	check(queue.enqueue(id, " \n ", context) == ERR_INVALID_PARAMETER, "empty draft rejected")
 	check(queue.enqueue(id, "a".repeat(Queue.MAX_TEXT + 1), context) == ERR_INVALID_PARAMETER, "oversize text rejected")
 	_contract_limits(queue, context)
-	check(queue.enqueue(id, text, context, true) == OK, "enqueue public feedback")
+	check(queue.enqueue(id, text, context, true) == OK, "enqueue private feedback")
 	var restart := Queue.new(queue.directory)
 	check(restart.pending_ids() == PackedStringArray([id]), "pending survives new queue instance")
 	var payload := restart.payload(id)
@@ -55,11 +55,18 @@ func _run() -> void:
 	check(restart.saved_ids().has(LEGACY_ID) and restart.pending_ids() == PackedStringArray([id]), "legacy queued notes stay on disk without public consent")
 	_write_fixture(restart.directory.path_join(LEGACY_ID + ".receipt"), JSON.stringify({"id": LEGACY_ID, "sha256": legacy.sha256_text(), "reference": LEGACY_REFERENCE}))
 	check(restart.receipt(LEGACY_ID).get("reference") == LEGACY_REFERENCE, "legacy receipt stays readable")
-	for invalid_number in [null, "42", true, 0, -42, 41, 42.5, 9007199254740992]:
-		check(restart.acknowledge(id, {"issueNumber": invalid_number, "issueUrl": REFERENCE}) == ERR_INVALID_DATA, "reject invalid issue number")
-	for invalid_url in [null, 42, [], "", REFERENCE + "?a=b", REFERENCE + "/", REFERENCE + "#comment", REFERENCE.replace("/42", "/042"), REFERENCE.replace("guylfe", "example"), REFERENCE.replace("/issues/", "/pull/"), REFERENCE.replace("https://", "http://")]:
-		check(restart.acknowledge(id, {"issueNumber": 42, "issueUrl": invalid_url}) == ERR_INVALID_DATA, "reject non-canonical issue URL")
-	check(restart.acknowledge(local_id, {"issueNumber": 42, "issueUrl": REFERENCE}) == ERR_INVALID_DATA, "consent required to persist a public receipt")
+	var file_receipt := _file_receipt(id)
+	for invalid in [{}, {"issueNumber": 42, "issueUrl": REFERENCE}, file_receipt.merged({"game": "other"}, true), file_receipt.merged({"reportId": local_id}, true), file_receipt.merged({"filePath": "other/" + id + ".json"}, true)]:
+		check(restart.acknowledge(id, invalid) == ERR_INVALID_DATA, "reject unrelated or legacy server receipt")
+	check(restart.acknowledge(local_id, _file_receipt(local_id)) == ERR_INVALID_DATA, "local-only notes cannot be acknowledged")
+	var old_id := Queue.new_id()
+	var old_body: Dictionary = wire.duplicate()
+	old_body.reportId = old_id
+	var old_note := JSON.stringify({"schema": 3, "id": old_id, "text": text, "context": context, "send_publicly": true, "submission": JSON.stringify(old_body)})
+	_write_fixture(restart.directory.path_join(old_id + ".json"), old_note)
+	check(restart.pending_ids().has(old_id) and restart.submission(old_id) == JSON.stringify(old_body), "previous release queue retries the original bytes and UUID")
+	_write_fixture(restart.directory.path_join(old_id + ".receipt"), JSON.stringify({"id": old_id, "sha256": old_note.sha256_text(), "issueNumber": 42, "issueUrl": REFERENCE}))
+	check(not restart.pending_ids().has(old_id), "previously acknowledged reports are never resent")
 	var sidecar := FileAccess.open(restart.directory.path_join(id + ".receipt"), FileAccess.WRITE)
 	sidecar.store_string("{}")
 	sidecar.close()
@@ -67,8 +74,8 @@ func _run() -> void:
 	if OS.get_cmdline_user_args().has("--loopback"):
 		await _exercise_http(restart, id, submission, local_id)
 	else:
-		check(restart.acknowledge(id, {"issueNumber": 42, "issueUrl": REFERENCE}) == OK, "verified response persisted")
-	check(Queue.new(queue.directory).receipt(id) == {"issueNumber": 42, "issueUrl": REFERENCE}, "receipt survives new queue instance")
+		check(restart.acknowledge(id, file_receipt) == OK, "verified response persisted")
+	check(Queue.new(queue.directory).receipt(id) == {"filePath": file_receipt.filePath}, "receipt survives new queue instance")
 	check(queue.pending_ids().is_empty() and queue.payload(id) == payload, "successful note leaves pending but keeps local bytes")
 	var rejected_id := Queue.new_id()
 	check(queue.enqueue(rejected_id, text, context, true) == OK and queue.reject(rejected_id, 409) == OK, "permanent rejection can be persisted")
@@ -115,6 +122,9 @@ func _contract_limits(queue: Queue, context: Dictionary) -> void:
 		check(Delivery.retry_deadline(["Retry-After: " + value], now) == date, "HTTP-date Retry-After is exact")
 	check(Delivery.retry_deadline(["Retry-After: -2", "Retry-After: +6", "Retry-After: tomorrow"], now) == 0.0, "invalid waits fall back to local retry")
 
+func _file_receipt(id: String) -> Dictionary:
+	return {"game": "waystone", "reportId": id, "filePath": "playtest-feedback/" + id + ".json"}
+
 func _write_fixture(path: String, contents: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(contents)
@@ -125,22 +135,16 @@ func _exercise_http(queue: Queue, id: String, payload: String, local_id: String)
 	check(listening == OK, "local receiver binds")
 	if listening != OK: return
 	_serve_loopback()
-	var endpoint := "http://127.0.0.1:%d/v1/feedback" % listener.get_local_port()
+	var endpoint := "http://127.0.0.1:%d/v3/feedback" % listener.get_local_port()
 	var transport := Delivery.new()
 	root.add_child(transport)
-	check(Delivery.valid_configuration("https://relay.example.invalid/v1/feedback", "test-fixture"), "HTTPS with player token accepted")
-	check(not Delivery.valid_configuration("https://relay.example.invalid/v1/feedback", ""), "HTTPS requires player token")
-	check(not Delivery.valid_configuration("https://relay.example.invalid/v1/feedback", "line\r\nbreak"), "reject header delimiters")
-	check(not Delivery.valid_configuration("http://relay.example.invalid/v1/feedback", "test-fixture"), "reject non-loopback plaintext")
-	check(not Delivery.valid_configuration("http://127.0.0.1:80@relay.example.invalid/v1/feedback", ""), "reject disguised non-loopback")
-	check(Delivery.service_endpoint("https://relay.example.invalid/") == "https://relay.example.invalid/v1/feedback", "origin resolves to the feedback endpoint")
-	check(Delivery.service_endpoint("https://relay.example.invalid/comments").is_empty(), "reject legacy protocol paths")
+	check(Delivery.valid_endpoint(Delivery.DEFAULT_ENDPOINT), "production endpoint is allowed")
+	check(not Delivery.valid_endpoint("https://elsewhere.example/v3/feedback"), "foreign destination refused")
 	check((await transport.deliver(queue, local_id, endpoint)).error == ERR_INVALID_DATA and requests == 0, "transport refuses local-only notes")
 	check((await transport.deliver(queue, LEGACY_ID, endpoint)).error == ERR_INVALID_DATA and requests == 0, "transport refuses legacy notes")
-	check((await transport.deliver(queue, id, endpoint, "forbidden")).error == ERR_INVALID_PARAMETER, "credentials excluded from plaintext loopback")
 	check((await transport.deliver(queue, id, endpoint)).error == ERR_CONNECTION_ERROR, "lost response remains pending")
 	check(queue.pending_ids().has(id) and receiver.get(id) == payload, "first remote write happened before response was lost")
-	check((await transport.deliver(queue, id, endpoint)).error == ERR_INVALID_DATA, "successful HTTP status with wrong issue number stays pending")
+	check((await transport.deliver(queue, id, endpoint)).error == ERR_INVALID_DATA, "successful HTTP status with wrong file receipt stays pending")
 	check(queue.pending_ids().has(id), "wrong receipt did not remove pending")
 	check((await transport.deliver(queue, id, endpoint)).error == OK, "read-back receipt confirms retry")
 	check(receiver.size() == 1 and receiver.get(id) == payload and requests == 3, "same ID and bytes reached receiver each time")
@@ -178,8 +182,8 @@ func _serve_loopback() -> void:
 		check(not receiver.has(request_id) or receiver[request_id] == body, "retry sent the same body bytes")
 		receiver[request_id] = body
 		if requests > 1:
-			var number := 43 if requests == 2 else 42
-			var ack := JSON.stringify({"issueNumber": number, "issueUrl": REFERENCE})
+			var confirmed_id := Queue.new_id() if requests == 2 else request_id
+			var ack := JSON.stringify(_file_receipt(confirmed_id))
 			var response := "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s" % [ack.to_utf8_buffer().size(), ack]
 			peer.put_data(response.to_utf8_buffer())
 		peer.disconnect_from_host()
