@@ -1,10 +1,16 @@
 # Waystone current state
 
-**0.3.11.** Windows and Android share the private file intake described in [Mid-run comments](run-comments.md). Sending requires one button in the comment editor. Run saves and the startup updater retain their existing formats.
+[Waystone 0.3.11 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.11) is the latest stable release as of November 27, 2026. Both exports identify commit `7b953e31c1e5a698139c2ebe0d92e96ae88556fb`. Anonymous downloads of the Windows ZIP, Android APK and source bundle matched the tested release artifacts.
+
+**Feedback.** Open **Comment**, type a suggestion, and choose **Send**. The private service confirmed a synthetic report from the packaged Windows client. Replaying its original bytes returned HTTP 200 and the same file path. The old scheduled issue publisher has been removed. The [feedback guide](run-comments.md) covers local notes, offline delivery, migration and deleting implemented suggestions from private intake.
+
+**Windows.** The installed launcher executable has SHA-256 `3cf6fb83f332a90b720825b848b81243c9f39ef9af14c207d4b0fa8890efba81`. Its Survey smoke passed with isolated saves. A disposable 0.3.10 installation upgraded, relaunched and retained its Survey save byte for byte.
+
+**Android.** The public arm64 APK has SHA-256 `ae78351ed38fd18bd6d3ead31d8d02c95ede5357fd4201c4b98bc4406e0ee727`, package `com.waystone.prototype`, version code 311 and the same verified signing certificate as 0.3.10. The Fold was unavailable for physical installation and feedback verification.
 
 ## Previous release 0.3.10
 
- [Waystone 0.3.10 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.10) became the latest stable release on 2026-11-24 Israel time. The release tag and both exports use runtime commit `ea208dad9fc914febf651489dff086ced198ae0f`.
+[Waystone 0.3.10 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.10) became the latest stable release on 2026-11-24 Israel time. The release tag and both exports use runtime commit `ea208dad9fc914febf651489dff086ced198ae0f`.
 **Windows.** The normal launcher executable has SHA-256 `2090309c682d6d20b9fc5fe2d8ebd0dc55c8ea0f79bd086365d23f8c20742f84`. Its installed headless Survey smoke passed with isolated saves.
 **Android.** The signed APK is version 0.3.10, code 310, SHA-256 `89148e0031f31055cb6ad9637494792873f17dc3943173025d148b5a8bad33a6`. Physical installation and saved-run readback on the Fold are pending.
 **Compatibility:** save schema `39`, Survey format `37`, Survey generator `3`, expedition generator `1`, presentation `20` unchanged.
