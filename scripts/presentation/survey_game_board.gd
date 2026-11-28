@@ -213,11 +213,13 @@ func _ready() -> void:
 	_lab_button(selector_panel,"End Survey / rate",func(): inspection_return=true; _close_inspection(); suspended=false; _build_survey_end_confirmation())
 	_lab_button(selector_panel,"Save attempt",func(): state.save_run(); state.lab_notice="Survey saved; Resume to continue.")
 	_lab_button(selector_panel,"Save and choose mode",_save_and_leave)
+	var check_update := _lab_button(selector_panel, "Check for updates · v"+state.GAME_VERSION, release_notice.service.check_for_updates)
 	var open_update := _lab_button(selector_panel, "", release_notice.choose_update)
 	var dismiss_update := _lab_button(selector_panel, "Later", release_notice.service.later)
 	var sync_update := func():
 		var tag := release_notice.service.tag
 		open_update.text = release_notice.update_label(true)
+		check_update.visible = tag.is_empty()
 		open_update.visible = not tag.is_empty()
 		dismiss_update.visible = open_update.visible
 		if inspection_scroll.visible and selector_panel.visible: _setup_inspection_focus()

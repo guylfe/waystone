@@ -77,7 +77,7 @@ func _save_for_update() -> bool:
 	return not board.state.run_active or board.state.save_run()
 
 func setup_entries() -> Array:
-	if service.tag.is_empty() or board.setup_stage != "root" or board.custom_room_open or board.controller.paused or board.survey_overlay.visible: return []
+	if board.setup_stage != "root" or board.custom_room_open or board.controller.paused or board.survey_overlay.visible: return []
 	var safe: Rect2 = board.safe_layout_rect
 	var unit := minf(Metrics.unit(board), safe.size.x / 390.0)
 	var width := minf(safe.size.x - 20.0 * unit, 450.0 * unit)
@@ -89,6 +89,8 @@ func setup_entries() -> Array:
 	var height := bottom - top
 	var start := Vector2(safe.get_center().x - width * 0.5, top)
 	var open := Rect2(start + Vector2(width * 0.40, 0), Vector2(width * 0.36, height))
+	if service.tag.is_empty():
+		return [{"id":"check_updates", "rect":Rect2(open.position,Vector2(width*0.60,height)), "label":"Check for updates", "activate":service.check_for_updates}]
 	var dismiss := Rect2(start + Vector2(width * 0.78, 0), Vector2(width * 0.22, height))
 	return [
 		{"id": "update_now", "rect": open, "label": update_label(), "activate": choose_update},
@@ -99,10 +101,11 @@ func draw_setup() -> void:
 	var entries := setup_entries()
 	if entries.is_empty(): return
 	var open: Rect2 = entries[0].rect
-	var origin := open.position - Vector2(open.size.x / 0.36 * 0.40, 0)
+	var fraction := 0.60 if service.tag.is_empty() else 0.36
+	var origin := open.position - Vector2(open.size.x / fraction * 0.40, 0)
 	var font := maxi(10, mini(roundi(open.size.y * 0.34), roundi(open.size.x / 8.6)))
 	var title_width := open.position.x - origin.x - 4.0
-	board.draw_string(ThemeDB.fallback_font, origin + Vector2(0, open.size.y * 0.62), "%s available" % service.tag, HORIZONTAL_ALIGNMENT_CENTER, title_width, font, Color("f2e7c8"))
+	board.draw_string(ThemeDB.fallback_font, origin + Vector2(0, open.size.y * 0.62), "v" + Update.Run.GAME_VERSION if service.tag.is_empty() else "%s available" % service.tag, HORIZONTAL_ALIGNMENT_CENTER, title_width, font, Color("f2e7c8"))
 	for entry in entries:
 		var rect: Rect2 = entry.rect
 		board.draw_rect(rect, Color("24433f"))
@@ -110,7 +113,7 @@ func draw_setup() -> void:
 		board.draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.62), entry.label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font, Color.WHITE)
 
 func run_entries() -> Array:
-	if service.tag.is_empty(): return []
+	if service.tag.is_empty(): return [{"id":"check_updates", "label":"Check for updates · v"+Update.Run.GAME_VERSION, "activate":service.check_for_updates}]
 	return [
 		{"id": "update_now", "label": update_label(true), "activate": choose_update},
 		{"id": "update_later", "label": "Later", "activate": service.later},

@@ -150,7 +150,13 @@ func _run() -> void:
 		tap(Rect2(entries[1].rect).get_center(), false)
 		check(service.tag.is_empty(), "Later still works after failure")
 	else:
-		check(board.release_notice.setup_entries().is_empty(), "no notice actions for ignored response")
+		var rows: Array = board.release_notice.setup_entries()
+		check(rows.size() == 1 and rows[0].id == "check_updates", "manual check available at setup")
+		tap(Rect2(rows[0].rect).get_center(), false)
+		service.check_for_updates()
+		while service.checking: await process_frame
+		var current := scenario in ["equal", "older"]
+		check(service.status.contains("up to date") if current else service.status.contains("Could not check"), "manual result is accurate")
 	await process_frame
 	service.check_on_launch()
 	check(service.get_child_count() == 0, "second scene entry never makes a second request")

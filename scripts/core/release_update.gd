@@ -24,6 +24,8 @@ var status := ""
 var phase := Phase.OFFER
 var _offer := {}
 var _started := false
+var checking := false
+var _manual_result := false
 var _platform := ""
 var _partial := ""
 var _verified := ""
@@ -42,6 +44,24 @@ func check_on_launch() -> void:
 	if _platform == "Windows" and _test_feed.is_empty():
 		status = Windows.take_failure()
 		if not status.is_empty(): changed.emit()
+	_discover()
+
+func check_for_updates() -> void:
+	if phase != Phase.OFFER or not tag.is_empty(): return
+	_platform = OS.get_name() if _test_feed.is_empty() else _test_platform
+	if not ASSETS.has(_platform):
+		status = "Updates are available on Windows and Android."
+		changed.emit()
+		return
+	_manual_result = true
+	status = "Checking for updates…"
+	changed.emit()
+	if not checking: _discover()
+
+func _discover() -> void:
+	if checking: return
+	checking = true
+	var result := "Could not check for updates. Try again."
 	var http := _request_node(5.0, 256 * 1024)
 	var error := http.request(FEED if _test_feed.is_empty() else _test_feed, [
 		"Accept: application/vnd.github+json", "User-Agent: Waystone",
@@ -53,10 +73,20 @@ func check_on_launch() -> void:
 			var bytes: PackedByteArray = response[3]
 			var json := JSON.new()
 			if json.parse(bytes.get_string_from_utf8()) == OK:
-				_offer = eligible_asset(json.data, Run.GAME_VERSION, _platform)
+				var release: Variant = json.data
+				if release is Dictionary and release.get("draft") == false and release.get("prerelease") == false:
+					var latest := _version(str(release.get("tag_name", "")))
+					if latest != Vector3i(-1, -1, -1) and latest <= _version("v" + Run.GAME_VERSION):
+						result = "Waystone v%s is up to date." % Run.GAME_VERSION
+				_offer = eligible_asset(release, Run.GAME_VERSION, _platform)
 				tag = _offer.get("tag", "")
 	http.queue_free()
-	if not tag.is_empty(): changed.emit()
+	checking = false
+	if _manual_result:
+		status = result if tag.is_empty() else ""
+		_manual_result = false
+		changed.emit()
+	elif not tag.is_empty(): changed.emit()
 
 func _request_node(seconds: float, limit: int) -> HTTPRequest:
 	var http := HTTPRequest.new()

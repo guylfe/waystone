@@ -50,7 +50,7 @@ def run(godot: Path) -> None:
                 return
             # The normal scene and the player's input must work before this response.
             sleep(0.85)
-            tag = {"equal": "v0.3.12", "older": "v0.2.95"}.get(scenario, "v99.0.0")
+            tag = {"equal": "v0.3.13", "older": "v0.2.95"}.get(scenario, "v99.0.0")
             filename = ASSETS["Android" if scenario == "wrong-platform" else platform]
             body = json.dumps({
                 "tag_name": tag, "draft": False, "prerelease": False,
@@ -102,6 +102,8 @@ def run(godot: Path) -> None:
                 print(result.stderr, end="")
                 assert result.returncode == 0 and "ERROR:" not in result.stderr, scenario
                 expected = [] if scenario == "offline" else [("/releases/latest", None, None, None)]
+                if scenario in ("missing-digest","equal","older","wrong-platform","missing","invalid","http-error","timeout"):
+                    expected += expected.copy()
                 if scenario in ("fresh", "resumed", "survey", "campaign", "bad-digest", "short", "foreign-redirect"):
                     expected.append(("/asset", None, None, None))
                 if scenario == "fresh":
