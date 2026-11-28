@@ -1,8 +1,12 @@
 # Waystone current state
 
+## 0.3.13 manual update checks
+
+[Waystone 0.3.13](https://github.com/guylfe/waystone/releases/tag/v0.3.13) is the stable Windows and Android release. The mode selector shows the running version and provides **Check for updates**. The Run and Survey menus also provide the check. The two release artifacts match source commit `a098424784c698738bdc4c2adaa3671e76993346` by build identity. Their SHA-256 digests match the tested local packages. Android version code 313 has the same signer as 312. The release-update fixture passed on both platform paths. Installation on the Pixel Fold is unverified.
+
 ## 0.3.12 Campaign combat comparison
 
-[Waystone 0.3.12](https://github.com/guylfe/waystone/releases/tag/v0.3.12) is the stable Windows and Android release as of November 28, 2026. Each artifact was exported from `c1ab73ac2fc77a5b136257928203319ff7dccf1b`. Anonymous public downloads matched the candidate files by SHA-256.
+[Waystone 0.3.12](https://github.com/guylfe/waystone/releases/tag/v0.3.12) was the preceding Windows and Android release. Each artifact was exported from `c1ab73ac2fc77a5b136257928203319ff7dccf1b`. Anonymous public downloads matched the candidate files by SHA-256.
 
 **Campaign.** Choose Default Waystone, Slow or Fast when entering Campaign. Each has a separate save. [Combat comparison](campaign-combat-comparison.md) records the research, controls and measured decisions. An integrated Godot 4.7 run passed 393 combat and input checks. The exported Windows game data passed 276 Campaign entry checks and seven fresh-process relaunch checks, beginning with a save created using the installed 0.3.11 game data.
 

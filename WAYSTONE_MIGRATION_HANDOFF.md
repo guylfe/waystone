@@ -1,3 +1,7 @@
+## Waystone 0.3.13 — 28 November 2026
+
+Windows and Android build 313 show the installed version and offer **Check for updates** from mode selection. The latest verified packages, update tests, and device verification status are in [current state](docs/current-state.md#0313-manual-update-checks).
+
 ## Waystone 0.3.9 candidate — 22 November 2026
 
 Build Windows and Android from the same numbered source. The published
