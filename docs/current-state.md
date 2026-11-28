@@ -1,6 +1,18 @@
 # Waystone current state
 
-[Waystone 0.3.11 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.11) is the latest stable release as of November 27, 2026. Both exports identify commit `7b953e31c1e5a698139c2ebe0d92e96ae88556fb`. Anonymous downloads of the Windows ZIP, Android APK and source bundle matched the tested release artifacts.
+## 0.3.12 Campaign combat comparison
+
+[Waystone 0.3.12](https://github.com/guylfe/waystone/releases/tag/v0.3.12) is the stable Windows and Android release as of November 28, 2026. Each artifact was exported from `c1ab73ac2fc77a5b136257928203319ff7dccf1b`. Anonymous public downloads matched the candidate files by SHA-256.
+
+**Campaign.** Choose Default Waystone, Slow or Fast when entering Campaign. Each has a separate save. [Combat comparison](campaign-combat-comparison.md) records the research, controls and measured decisions. An integrated Godot 4.7 run passed 393 combat and input checks. The exported Windows game data passed 276 Campaign entry checks and seven fresh-process relaunch checks, beginning with a save created using the installed 0.3.11 game data.
+
+**Windows.** The normal launcher points to the installed executable with SHA-256 `2e0e3adc623111f2eccb932621f02cc347b19d7e655b3e3e17f121e4f2e41042`. Its Survey smoke passed with isolated saves. A rollback copy of the prior executable was retained.
+
+**Android.** The public arm64 APK is version code 312, SHA-256 `e5b57d5cd26615e966e34bac0def97bf0956c7dbe8af5f2b89250b08eb14abc0`. Its package and signing certificate match the preceding release. Installation and physical play on the Fold remain unverified. Rendered phone-size and synthesized controller checks are separate from physical device evidence. The existing general run-state assertion at the old line 668 also failed on the 0.3.11 baseline. Guy's playtest decides feel acceptance.
+
+## Previous release, 0.3.11
+
+[Waystone 0.3.11 for Windows and Android](https://github.com/guylfe/waystone/releases/tag/v0.3.11) was the stable release on November 27, 2026. Both exports identify commit `7b953e31c1e5a698139c2ebe0d92e96ae88556fb`. Anonymous downloads of the Windows ZIP, Android APK and source bundle matched the tested release artifacts.
 
 **Feedback.** Open **Comment**, type a suggestion, and choose **Send**. The private service confirmed a synthetic report from the packaged Windows client. Replaying its original bytes returned HTTP 200 and the same file path. The old scheduled issue publisher has been removed. The [feedback guide](run-comments.md) covers local notes, offline delivery, migration and deleting implemented suggestions from private intake.
 

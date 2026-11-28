@@ -1,6 +1,6 @@
 # Regional Campaign combat comparison
 
-This local experiment uses Waystone 0.3.11 as its baseline. Its runtime lives in
+The 0.3.12 comparison uses Waystone 0.3.11 as its baseline. Its runtime lives in
 [CampaignState](../scripts/campaign/campaign_state.gd). The
 [player reference](campaign-player-reference.md) and
 [enemy reference](campaign-enemy-reference.md) give the source rows, conversions
@@ -71,3 +71,16 @@ authored Ridge Stairs encounter in all three styles, tests Fast Blade's in-range
 follow-up and a retreat that breaks it, and checks legacy save loading and
 stable encounter seats. Renderer and physical controller tests require a
 separate pass. Guy's playtest determines acceptance.
+
+
+## Same-encounter comparison
+
+A scripted Warrior in each style entered the same Ridge Stairs encounter on seed 131137, moved toward the resident Polearm, then chose a response at the first frozen melee telegraph. Values below cover the chosen action until the player could decide again. Elapsed time excludes deliberation. These results were reproduced using the exported Windows game data.
+
+| Style | Attack commitment | Combo commitment | Combo damage dealt / received | Retreat roll commitment |
+| --- | ---: | ---: | ---: | ---: |
+| Default Waystone | 0.79 s | 1.98 s | 40 / 0 | 0.45 s |
+| Slow | 1.43 s | 2.37 s | 20 / 0 | 1.10 s |
+| Fast | 1.40 s | 5.00 s | 40 / 12 | 0.73 s |
+
+One Attack dealt 10 damage with no damage received during the commitment in all three runs. At this opening, Default rewarded a full chain, Slow exchanged two committed hits before the next decision, and Fast punished the longer chain even though its greatsword reached contact earlier. All three retreat rolls avoided damage during the roll. A single sideways step ended with the opponent still in its melee action. These are reproducible outcomes from one opponent, approach and seed, rather than a win-rate or human-play estimate.
