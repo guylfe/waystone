@@ -1354,7 +1354,7 @@ func _generate_survey_layout(room_number: int) -> Dictionary:
 	return {
 		"world_size": Vector2(1700.0, 1400.0),
 		"geometry_style": "arena",
-		"areas": [{"id": 0, "name": "%s Arena" % lab_name, "arrival_text": "%s Â· %s" % [arena_id.replace("_", " ").capitalize(), formation_id.replace("_", " ").capitalize()], "kind": "survey", "rect": Rect2(175, 75, 1350, 1250), "center": center, "layer": layer, "discovered": true}],
+		"areas": [{"id": 0, "name": "%s Arena" % lab_name, "arrival_text": "%s · %s" % [arena_id.replace("_", " ").capitalize(), formation_id.replace("_", " ").capitalize()], "kind": "survey", "rect": Rect2(175, 75, 1350, 1250), "center": center, "layer": layer, "discovered": true}],
 		"connections": [],
 		"route_recipe": [],
 		"run_graph": {"nodes": [0], "edges": []},
@@ -2775,7 +2775,7 @@ func request_expedition_departure(confirmed: bool = false) -> bool:
 		_install_layout(ExpeditionGeneratorScript.generate(run_seed, int(expedition["biome"])))
 		_respawn_enemies()
 		_update_exploration(true)
-		_set_message("%s â€” the route back is closed." % ExpeditionCatalogScript.BIOMES[int(expedition["biome"])]["name"])
+		_set_message("%s — the route back is closed." % ExpeditionCatalogScript.BIOMES[int(expedition["biome"])]["name"])
 	changed.emit()
 	return true
 
@@ -3269,7 +3269,7 @@ func _begin_exhaustion() -> void:
 	player_exhaustion_remaining = EXHAUSTION_DURATION
 	overexertion_count += 1
 	_record_exhaustion_threat(true)
-	_set_message("EXHAUSTED â€” attacks are locked and your footwork is slow. Dodge still answers, but it costs you the recovery.")
+	_set_message("EXHAUSTED — attacks are locked and your footwork is slow. Dodge still answers, but it costs you the recovery.")
 
 func _shorten_recovery(duration: float, active_end: float, factor: float = 0.60) -> float:
 	if not uses_energy_rules(): return duration
@@ -3439,7 +3439,7 @@ func lab_toggle_commit() -> bool:
 func lab_input_neutral() -> void:
 	lab_neutral_required = false
 	# Retire only obsolete gate guidance. Refusal/interruption events survive.
-	if lab_notice in ["Suspended; input must return to neutral.","Release controls to continue.","Release controls first.","Suspended Â· Resume first."]:
+	if lab_notice in ["Suspended; input must return to neutral.","Release controls to continue.","Release controls first.","Suspended · Resume first."]:
 		lab_notice = ""
 
 func lab_forced_replacement() -> void:
@@ -3447,7 +3447,7 @@ func lab_forced_replacement() -> void:
 	lab_armed = false
 	var paid := (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false)))
 	if paid: lab_neutral_required = true
-	lab_notice = "Interrupted Â· Commit ended. No refund." if paid else "Interrupted Â· Sequence ended."
+	lab_notice = "Interrupted · Commit ended. No refund." if paid else "Interrupted · Sequence ended."
 	if player_action.has("lab_exit_request"): lab_notice += " Queued %s cleared." % String(player_action["lab_exit_request"]["kind"]).capitalize()
 
 # Target cycling, preview and launch share eligibility; this never mutates facing/time.
@@ -3481,7 +3481,7 @@ func lab_target(target_id: int, held: bool = false) -> bool:
 		return false
 	var cost := lab_commit_cost()
 	if uses_energy_rules() and player_energy + 0.000001 < cost:
-		lab_notice = "Need %.2f Energy Â· Have %.2f." % [cost, player_energy]
+		lab_notice = "Need %.2f Energy · Have %.2f." % [cost, player_energy]
 		return false
 	if not _spend_energy(cost, false): return false
 	lab_armed = false
@@ -3497,7 +3497,7 @@ func lab_target(target_id: int, held: bool = false) -> bool:
 
 func lab_continue(held: bool = false) -> bool:
 	if not lab_junction() or bool(player_action.get("terminal_recovery_locked",false)):
-		lab_notice = "Recovery chosen Â· Cannot continue." if bool(player_action.get("terminal_recovery_locked",false)) else "Continue requires a frozen junction."
+		lab_notice = "Recovery chosen · Cannot continue." if bool(player_action.get("terminal_recovery_locked",false)) else "Continue requires a frozen junction."
 		return false
 	player_action["lab_pending"] = false
 	player_action["lab_continue_token"] = true
@@ -5605,7 +5605,7 @@ static func xp_for_character_level(level: int) -> int:
 func upgrade_name(id: String) -> String:
 	var track := CombatCatalogScript.character_track(id)
 	var stage := next_track_stage(id)
-	return "%s Â· %s" % [String(track.get("label", "Track")), String(stage.get("label", "Complete"))]
+	return "%s · %s" % [String(track.get("label", "Track")), String(stage.get("label", "Complete"))]
 
 func upgrade_description(id: String) -> String:
 	return String(next_track_stage(id).get("description", ""))
@@ -6026,7 +6026,7 @@ func _tick(dt: float) -> void:
 			if completed and player_hp > 0:
 				var accepted := request_dodge(lab_exit["direction"], false) if lab_exit["kind"] == "dodge" else begin_streamed_move(lab_exit["direction"], float(lab_exit["distance"]))
 				lab_notice = "Queued %s started after recovery." % lab_exit["kind"] if accepted else "Queued %s unavailable after recovery; ready." % lab_exit["kind"]
-			else: lab_notice = "Interrupted Â· Sequence ended. Queued %s cleared." % String(lab_exit["kind"]).capitalize()
+			else: lab_notice = "Interrupted · Sequence ended. Queued %s cleared." % String(lab_exit["kind"]).capitalize()
 
 	if room_clear_pending and not survey_experiment.is_empty(): _resolve_pending_room_clear()
 
@@ -6591,7 +6591,7 @@ func _resolve_twin_fang_tick(elapsed: float) -> void:
 	else: _set_message("Both blades land in the same instant.")
 
 func _player_basic_attack_definition(_direction: Vector2) -> Dictionary:
-	# A direct tap or Ã—1 command always uses the compact opener. The varied
+	# A direct tap or ×1 command always uses the compact opener. The varied
 	# three-form chain belongs to request_combo(), where it is one uninterrupted
 	# commitment and cannot be resumed after time freezes.
 	if player_weapon_frame != "sword":
@@ -9634,7 +9634,7 @@ func _resolve_chant(caster: Dictionary, chant: String, announced_target_ids: Arr
 func _spawn_projectile(enemy: Dictionary) -> void:
 	var direction: Vector2 = Vector2(enemy["facing"]).normalized()
 	var firebolt := String(enemy["kind"]) == "fire_caster"
-	# A firebolt is a fast, lightly canted shotâ€”not a homing missile. The tiny
+	# A firebolt is a fast, lightly canted shot—not a homing missile. The tiny
 	# alternating launch bias gives it character while preserving one readable,
 	# committed trajectory once it has left the caster.
 	if firebolt:
@@ -10384,7 +10384,7 @@ func _trigger_clean_dodge(impact: Vector2, source_name: String) -> void:
 		if has_track_rank("acrobat", 3):
 			turnabout_primed_total += 1
 			turnabout_remaining = 4.0
-			_set_message("CLEAN EVADE â€” Turnabout empowers your next basic attack.")
+			_set_message("CLEAN EVADE — Turnabout empowers your next basic attack.")
 	_add_effect("evade", impact)
 
 func _begin_death() -> void:

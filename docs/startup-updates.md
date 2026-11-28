@@ -5,6 +5,8 @@ launch. This anonymous HTTPS request goes to the official Waystone GitHub
 repository. The check runs while the game loads or resumes, including when
 the player is offline.
 
+Setup shows the running version beside **Check for updates**. This checks again after choosing Later, and reports the result even when the current version is already installed. The Run and Survey menus also provide a manual check.
+
 Setup shows **Update now** and **Later** for an eligible release. A resumed run
 shows a brief notice after the current action. The same choices are available
 in the Run menu and the Survey menu. **Later** hides the offer for this launch
