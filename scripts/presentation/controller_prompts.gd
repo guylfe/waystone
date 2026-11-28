@@ -29,8 +29,13 @@ static func rows(board, controller) -> Array:
 	var defense_detail := "Move stick to choose direction"
 	if state.defense_id == "block": defense_detail = "Hold to block · left stick chooses facing"
 	elif state.defense_id == "endure": defense_detail = "Press to endure"
+	var ranged: bool = state.player_uses_ranged_basic_attack()
+	var attack_detail := "Hold to draw · release to fire" if ranged else "Hold to chain · release to stop"
+	if state.uses_decision_commitments():
+		attack_detail = "Automatic draw + recovery" if ranged else "Single cut + recovery"
+		if not ranged and board._direct_attack_repeats(): attack_detail += " · hold repeats"
 	var result := [
-		{"key": "rt", "label": "Draw bow" if state.player_weapon_frame == "bow" else "Attack", "detail": ("Automatic draw + recovery" if state.player_weapon_frame == "bow" else "Single cut + recovery; hold repeats") if state.uses_decision_commitments() else "Hold to draw · release to fire" if state.player_weapon_frame == "bow" else "Hold to chain · release to stop"},
+		{"key": "rt", "label": "Draw bow" if ranged else "Attack", "detail": attack_detail},
 		{"key": "b", "label": String(state.defense_id).capitalize(), "detail": defense_detail, "cooldown": board._defense_cooldown()},
 		{"key": "rb", "label": String(art.get("label", "Weapon art locked")), "detail": "Learn an art through upgrades" if art.is_empty() else "Press to use weapon art", "locked": art.is_empty(), "cooldown": state.skill_cooldown},
 		{"key": "y", "label": controller.quick_label(board), "detail": quick_detail, "cooldown": quick_cooldown},
@@ -41,7 +46,11 @@ static func rows(board, controller) -> Array:
 		{"key": "lr", "label": item_name, "detail": "Select item · slot %d / 3 · %d left" % [controller.utility_slot + 1, int(item.get("count", 0))]},
 		{"key": "down", "label": "Replace selected slot" if state.has_pending_pickup() else "Use selected item", "detail": "Take the nearby pickup" if state.has_pending_pickup() else "Aim, then press to use", "locked": item_id == "" and not state.has_pending_pickup()},
 	]
-	if state.commit_available(): result.append({"key":"lb","label":"LB + A · Commit Shot" if state.player_weapon_frame=="bow" else "LB + LS click · Commit Combo","detail":"+25% full-shot damage · RS click target, A confirm" if state.player_weapon_frame=="bow" else "All cuts + recovery · RS click target, A confirm"})
+	if state.commit_available():
+		var shortcut := "LB + A" if ranged else "LB + LS click"
+		var detail := "+25% full-shot damage" if ranged else "All cuts + recovery"
+		detail += " · RS click target, A confirm" if board._combo_targets_enemy() else " · Attack in your current direction"
+		result.append({"key": "lb", "label": "%s · %s" % [shortcut, board._commit_action_name()], "detail": detail})
 	return result
 
 static func draw_row(board, rect: Rect2, row: Dictionary, scale: float) -> void:
@@ -115,7 +124,7 @@ static func draw_help(board, controller) -> void:
 		{"key": "ls", "label": "Move", "detail": "Tilt chains full strides · release finishes the current stride" if board.state.uses_decision_commitments() else "Tilt to move · release finishes the current step"},
 		{"key": "rs", "label": "Ranged direction / ground placement", "detail": "Placed ability: move marker, A uses it, B cancels"},
 		{"key": "lsc", "label": "Wait", "detail": "Click the left stick for one deliberate time step"},
-		{"key": "rsc", "label": "Cycle ranged target", "detail": "Bow / Mage only; manual aim clears the target"},
+		{"key": "rsc", "label": "Cycle ranged target", "detail": "Sharpshooter or Mage · manual aim clears the target"},
 		{"key": "view", "label": "Map", "detail": "The overlapping-rectangles button"},
 		{"key": "menu", "label": "Menu and upgrades", "detail": "The three-lines button; also save and quit"},
 		{"key": "lt", "label": "Not assigned", "detail": "The left trigger has no gameplay action"},

@@ -7,6 +7,22 @@ const MODE_SELECT := "mode_select"
 const REQUEST := &"waystone_scene_request"
 const ENTRY_PATH := "user://waystone-session.cfg"
 const Run = preload("res://scripts/core/run_state.gd")
+const CampaignSave = preload("res://scripts/campaign/campaign_state.gd")
+const CAMPAIGN_STYLES := CampaignSave.COMBAT_STYLES
+const CAMPAIGN_SEED := 131137
+
+static func campaign_entry(style: String) -> String:
+	return REGIONAL if style == "default" else "%s:%s" % [REGIONAL, style]
+
+static func campaign_style(entry: String) -> String:
+	for style in CAMPAIGN_STYLES:
+		if entry == campaign_entry(style): return style
+	return ""
+
+static func campaign_save_path(style: String) -> String:
+	if style == "default": return CampaignSave.SAVE_PATH
+	assert(style in CAMPAIGN_STYLES)
+	return "user://waystone-regional-campaign-%s.save" % style
 
 static func regular_save_path(mode: String) -> String:
 	return "user://waystone-mode-%s.save" % mode

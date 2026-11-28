@@ -99,7 +99,7 @@ func menu_key(board, event: InputEvent) -> bool:
 	return true
 
 func connected(board, connected_device: int) -> void:
-	if not board.desktop_controls or board.state == null: return
+	if board.state == null or not board._uses_controller_input(): return
 	if active and device >= 0: return
 	release_actions(board)
 	active = true
@@ -122,7 +122,7 @@ func move_direction(board) -> Vector2:
 
 func direction(board, movement_first: bool = false) -> Vector2:
 	# Melee, defense and locomotion never inherit the ranged aiming stick/lock.
-	if not movement_first and board.state.player_weapon_frame == "bow": return ranged_direction(board)
+	if not movement_first and board.state.player_uses_ranged_basic_attack(): return ranged_direction(board)
 	var movement: Vector2 = board._screen_delta_to_world_direction(stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y))
 	return movement if not movement.is_zero_approx() else board.state.player_facing
 
@@ -137,7 +137,7 @@ func ranged_direction(board) -> Vector2:
 	return board.state.player_facing
 
 func has_ranged_aim(board) -> bool:
-	return board.state.player_weapon_frame == "bow" or board.state.loadout_id == "mage_elementalist"
+	return board.state.player_uses_ranged_basic_attack() or board.state.loadout_id in ["mage_elementalist", "rogue_sharpshooter"]
 
 func show_ranged_guide(board) -> bool:
 	if has_ranged_aim(board): return true
@@ -174,7 +174,7 @@ func set_palette(board, open: bool) -> void:
 
 func palette_button(board, button: int) -> void:
 	if board.playing or not board.state.is_player_ready(): return
-	if button==(JOY_BUTTON_A if board.state.player_weapon_frame=="bow" else JOY_BUTTON_LEFT_STICK) and board.state.commit_available():
+	if button==(JOY_BUTTON_A if board.state.player_uses_ranged_basic_attack() else JOY_BUTTON_LEFT_STICK) and board.state.commit_available():
 		if palette_open: set_palette(board,false)
 		release_actions(board)
 		board._select_commit_shot("controller")
@@ -215,7 +215,7 @@ func use_adopted(board) -> void:
 	elif discipline == "trapper": board._begin_streamed_action(board.state.request_adopted(board.state.player_pos + direction(board, true) * 65.0, false))
 
 func targeting_range(board) -> float:
-	if targeting_action=="commit_shot": return 700.0 if board.state.player_weapon_frame=="bow" else 180.0
+	if targeting_action=="commit_shot": return 700.0 if board.state.player_uses_ranged_basic_attack() else 180.0
 	if targeting_action == "adopted": return float(board.state.AbilityCatalogScript.ADOPTED_DISCIPLINES["sapper"]["range"])
 	return board.state.spell_reach(targeting_action)
 
@@ -304,7 +304,7 @@ func disconnected(board, disconnected_device: int) -> void:
 	board.queue_redraw()
 
 func handle(board, event: InputEvent) -> bool:
-	if not board.desktop_controls: return false
+	if not board._uses_controller_input(): return false
 	if not (event is InputEventJoypadMotion or event is InputEventJoypadButton): return false
 	if device >= 0 and event.device != device: return false
 	if not active:
@@ -425,11 +425,12 @@ func attack(board, down: bool) -> void:
 		else: board._begin_streamed_action(board.state.lab_target(target_id,true))
 		return
 	if board.playing:
+		if not board._direct_attack_repeats(): return
 		attack_held = board.state.resume_combo_hold() or String(board.state.player_action.get("kind", "")) == "move"
 		return
 	if not board._can_repeat_primary_action(): return
-	attack_held = true
-	board._begin_streamed_action(board.state.request_direct_attack(direction(board), false, true))
+	attack_held = board._direct_attack_repeats()
+	board._begin_streamed_action(board.state.request_direct_attack(direction(board), false, attack_held))
 	if not board.playing: attack_held = false
 
 func use_quick_action(board) -> void:
@@ -607,6 +608,7 @@ func menu_entries(board) -> Array:
 			add_rect(board, entries, board.archive_button_rect)
 			if is_instance_valid(board.release_notice): entries.append_array(board.release_notice.setup_entries())
 		else:
+			entries.append_array(board._setup_extra_entries())
 			for choice in board.CombatCatalogScript.loadout_ids(): add_rect(board, entries, board._setup_class_rect(choice))
 			if board.setup_mode == "combat_survey":
 				add_rects(board, entries, board.survey_profile_rects)
@@ -739,10 +741,10 @@ func draw_overlay(board) -> void:
 		var scale := minf(board.size.x / 1280.0, board.size.y / 800.0)
 		var bar := Rect2(Vector2(board.board_rect.position.x + 8 * scale, board.board_rect.end.y - 180 * scale), Vector2(680, 70) * scale)
 		board.draw_rect(bar, Color("101c24"))
-		var label: String = ("Commit Shot Â· +25% full-shot damage" if board.state.player_weapon_frame=="bow" else "Commit Combo Â· all cuts + recovery") if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
+		var label: String = ("Commit Shot Â· +25% full-shot damage" if board.state.player_uses_ranged_basic_attack() else "Commit Combo Â· all cuts + recovery") if targeting_action=="commit_shot" else "Concussion flask" if targeting_action == "adopted" else board.state.spell_label(targeting_action)
 		Glyphs.text(board, bar.position + Vector2(10, 22) * scale, "%s Â· TIME STOPPED" % label, 640 * scale, int(17 * scale), Color.WHITE)
 		Glyphs.hint(board, bar.position + Vector2(10, 32) * scale, "rsc" if targeting_action=="commit_shot" else "rs", "Choose enemy" if targeting_action=="commit_shot" else "Place marker", scale)
-		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", ("Commit full shot" if board.state.player_weapon_frame=="bow" else "Commit full combo") if targeting_action=="commit_shot" else "Use here", scale)
+		Glyphs.hint(board, bar.position + Vector2(245, 32) * scale, "a", ("Commit full shot" if board.state.player_uses_ranged_basic_attack() else "Commit full combo") if targeting_action=="commit_shot" else "Use here", scale)
 		Glyphs.hint(board, bar.position + Vector2(440, 32) * scale, "b", "Cancel", scale)
 		return
 	if modal(board):

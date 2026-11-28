@@ -36,7 +36,7 @@ func _ready() -> void:
 		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.MAIN_SCENE,
 			{"entry": ModeSession.MODE_SELECT, "notice": "The Campaign save could not be opened. The file was preserved."})
 		return
-	if not entry_request.is_empty(): ModeSession.remember_entry(ModeSession.REGIONAL)
+	if not entry_request.is_empty(): ModeSession.remember_entry(ModeSession.campaign_entry((state as CampaignState).combat_style))
 	_prepare_regional_view()
 	_build_terrain()
 	_sync_camera()
@@ -49,11 +49,18 @@ func _ready() -> void:
 	world_ink.set_process(false)
 	world_ink.set_process_input(false)
 	world_ink.set_process_unhandled_input(false)
+	world_ink.set_process_unhandled_key_input(false)
 	for prop in get_property_list():
 		if int(prop.usage)&PROPERTY_USAGE_SCRIPT_VARIABLE and prop.name not in ["ink_only","world_ink","ink_properties"]: ink_properties.append(prop.name)
 	_sync_ink()
 
 func _mode_select_enabled() -> bool:
+	return true
+
+func _uses_controller_input() -> bool:
+	return true
+
+func _uses_keyboard_combat() -> bool:
 	return true
 
 func _can_abandon_from_menu() -> bool:
@@ -65,14 +72,54 @@ func _create_character_menu() -> PanelContainer:
 func _can_preview_upgrade(upgrade_id: String) -> bool:
 	return not state.next_track_stage(upgrade_id).is_empty()
 
+func _combo_targets_enemy() -> bool:
+	return not (state as CampaignState).inspired_combat()
+
+func _direct_attack_repeats() -> bool:
+	return not (state as CampaignState).inspired_combat()
+
+func _commit_action_name() -> String:
+	return super._commit_action_name() if _combo_targets_enemy() else "Combo"
+
+func _commit_shot_selection_text(input_method: String) -> String:
+	if _combo_targets_enemy(): return super._commit_shot_selection_text(input_method)
+	return "Full combo + recovery · %s" % _commit_shot_price_text()
+
+func _select_commit_shot(input_method: String = "pointer") -> void:
+	if _combo_targets_enemy():
+		super._select_commit_shot(input_method)
+		return
+	if playing or not _can_repeat_primary_action(): return
+	var direction := state.player_facing
+	if input_method == "controller":
+		direction = controller.direction(self)
+	elif input_method == "keyboard":
+		var held_direction := _desktop_held_direction()
+		if not held_direction.is_zero_approx(): direction = held_direction
+	if (state as CampaignState).request_campaign_combo(direction, false):
+		selected_action = ""
+		controller.pending_button = -1
+		controller.attack_held = false
+		attack_key_held = false
+		attack_pointer_held = false
+		queued_movement_after_attack = false
+		_begin_streamed_action(true)
+	queue_redraw()
+
 func _initial_run_state() -> RunState:
 	var run := CampaignState.new(false)
+	var style := ModeSession.campaign_style(String(entry_request.get("entry", ModeSession.REGIONAL)))
+	if style.is_empty(): return run
+	run.combat_style = style
+	run.session_save_path = ModeSession.campaign_save_path(style)
 	if entry_request.has("loadout"):
 		run.start_run(String(entry_request.loadout), "campaign_lab", int(entry_request.seed))
 		if not run.save_run(): run.run_active = false
-	elif not run.load_run() and entry_request.is_empty() and not run.protected_save:
+	elif run.load_run():
+		if run.combat_style != style: run.run_active = false
+	elif entry_request.is_empty() and not run.protected_save:
 		# Direct scene launch is used by local renderer fixtures.
-		run.start_run("warrior", "campaign_lab", 131137)
+		run.start_run("warrior", "campaign_lab", ModeSession.CAMPAIGN_SEED)
 	return run
 
 func _prepare_regional_view() -> void:
@@ -616,7 +663,10 @@ func _draw_world_header() -> void:
 	# The battlefield footer owns location in both orientations. Keep time and
 	# navigation above the shared resource bars.
 	var font:=maxi(14,int(minf(size.x,size.y)*0.026))
-	draw_string(ThemeDB.fallback_font,board_rect.position+Vector2(12,font+10),"TIME FLOWING" if playing else "TIME FROZEN",HORIZONTAL_ALIGNMENT_LEFT,board_rect.size.x*0.5,font,Color("f0b45a") if playing else DODGE_COLOR)
+	var time_status := "TIME FLOWING" if playing else "TIME FROZEN"
+	var combat_style := (state as CampaignState).combat_style
+	var style := "WAYSTONE" if combat_style == "default" else combat_style.to_upper()
+	draw_string(ThemeDB.fallback_font,board_rect.position+Vector2(12,font+10),"%s  /  %s" % [time_status, style],HORIZONTAL_ALIGNMENT_LEFT,board_rect.size.x*0.5,font,Color("f0b45a") if playing else DODGE_COLOR)
 	var dy:=maxf(0,maxf(sheet_button_rect.end.y,map_rect.end.y)+14-(board_rect.position.y+font+34))
 	draw_set_transform(Vector2(0,dy))
 	_draw_player_health_bar(font)

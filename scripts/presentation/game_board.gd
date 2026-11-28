@@ -346,6 +346,12 @@ const ModeSession = preload("res://scripts/core/mode_session.gd")
 func _mode_select_enabled() -> bool:
 	return false
 
+func _uses_controller_input() -> bool:
+	return desktop_controls
+
+func _uses_keyboard_combat() -> bool:
+	return desktop_controls
+
 func update_menu_covers_play() -> bool:
 	return false
 
@@ -380,6 +386,21 @@ func _setup_resume_label() -> String:
 
 func _setup_start_label() -> String:
 	return "Start run"
+
+func _setup_class_label(loadout: String) -> String:
+	return CombatCatalogScript.loadout_name(loadout)
+
+func _setup_extra_entries() -> Array:
+	return []
+
+func _setup_control_unit() -> float:
+	return 1.0
+
+func _setup_class_columns() -> int:
+	return 1
+
+func _layout_setup_extras(row: float, _left: float, _width: float, _height: float) -> float:
+	return row
 
 func _resume_selected_mode() -> void:
 	pass
@@ -1298,6 +1319,9 @@ func _layout() -> void:
 	sheet_close_rect = Rect2(sheet_panel_rect.end - Vector2(102.0, sheet_panel_rect.size.y - 10.0), Vector2(92.0, 38.0))
 	var setup_gap := clampf(minf(layout_size.x, layout_size.y) * 0.018, 8.0, 20.0)
 	var setup_width := minf(layout_size.x * 0.76, 640.0) if portrait else minf(layout_size.x * 0.52, 620.0)
+	var setup_unit := _setup_control_unit()
+	if setup_unit != 1.0:
+		setup_width = minf(layout_size.x * 0.90, (460.0 if portrait else 560.0) * setup_unit)
 	var setup_left := layout_origin.x + (layout_size.x - setup_width) * 0.5
 	setup_class_rects.clear()
 	setup_resume_rect = Rect2()
@@ -1323,13 +1347,18 @@ func _layout() -> void:
 		# character sheet, and 0.2.65 made it far more frequent by relaying out whenever the
 		# spellbook's contents change.
 		seed_input.visible = state == null or not state.run_active
-		var row := layout_origin.y + 74.0
-		setup_back_rect = Rect2(setup_left, layout_origin.y + 16.0, clampf(setup_width * 0.32, 96.0, 160.0), 44.0)
-		var class_height := clampf(layout_size.y * 0.052, 44.0, 62.0)
+		var row := layout_origin.y + maxf(74.0, 64.0 * setup_unit)
+		setup_back_rect = Rect2(setup_left, layout_origin.y + 16.0 * setup_unit, clampf(setup_width * 0.32, 96.0 * setup_unit, 160.0 * setup_unit), 44.0 * setup_unit)
+		var class_height := maxf(44.0 * setup_unit, clampf(layout_size.y * 0.052, 44.0, 62.0))
+		row = _layout_setup_extras(row, setup_left, setup_width, class_height)
 		var choices := CombatCatalogScript.loadout_ids()
+		var columns := _setup_class_columns()
+		var class_width := (setup_width - float(columns - 1) * setup_gap) / float(columns)
 		for index in range(choices.size()):
-			setup_class_rects[String(choices[index])] = Rect2(setup_left, row + float(index) * (class_height + 6.0), setup_width, class_height)
-		row += float(choices.size()) * (class_height + 6.0) + 12.0
+			var line := floorf(float(index) / float(columns))
+			var left := setup_left + float(index % columns) * (class_width + setup_gap)
+			setup_class_rects[String(choices[index])] = Rect2(left, row + line * (class_height + 6.0), class_width, class_height)
+		row += ceilf(float(choices.size()) / float(columns)) * (class_height + 6.0) + 12.0
 		var half := (setup_width - setup_gap) * 0.5
 		var option_height := clampf(layout_size.y * 0.045, 40.0, 52.0)
 		if setup_mode == "combat_survey":
@@ -1354,9 +1383,9 @@ func _layout() -> void:
 		else:
 			custom_open_rect = Rect2()
 		seed_input.position = Vector2(setup_left, row)
-		seed_input.size = Vector2(setup_width, clampf(layout_size.y * 0.05, 44.0, 56.0))
+		seed_input.size = Vector2(setup_width, maxf(44.0 * setup_unit, clampf(layout_size.y * 0.05, 44.0, 56.0)))
 		row += seed_input.size.y + 10.0
-		start_rect = Rect2(setup_left, row, setup_width, clampf(minf(layout_size.y * 0.07, safe_layout_rect.end.y - row - 8.0), 44.0, 72.0))
+		start_rect = Rect2(setup_left, row, setup_width, maxf(44.0 * setup_unit, clampf(minf(layout_size.y * 0.07, safe_layout_rect.end.y - row - 8.0), 44.0, 72.0)))
 		setup_resume_text = _setup_resume_label() if not state.run_active else ""
 		if not setup_resume_text.is_empty():
 			setup_resume_rect = Rect2(start_rect.position, Vector2(half, start_rect.size.y))
@@ -1520,7 +1549,7 @@ func _process(delta: float) -> void:
 		elif held_movement and pointer_down:
 			if pointer_is_mouse: _commit_mouse_primary(finished_streamed_movement)
 			else: _begin_streamed_move(held_direction, state.MOVE_RANGE, finished_streamed_movement)
-		elif desktop_controls:
+		elif _uses_keyboard_combat() or controller.active:
 			var keyboard_direction := _desktop_held_direction()
 			if not keyboard_direction.is_zero_approx(): _begin_streamed_move(keyboard_direction, state.MOVE_RANGE, finished_streamed_movement)
 	if finished_streamed_movement and not streaming_action: stream_accumulator = 0.0
@@ -2152,7 +2181,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if _run_comment_open(): return
 	if is_instance_valid(expedition_dialog) and expedition_dialog.visible: return
 	if survey_overlay != null and survey_overlay.visible: return
-	if desktop_controls and event.keycode == KEY_F:
+	if _uses_keyboard_combat() and event.keycode == KEY_F:
 		if event.pressed:
 			if event.echo: return
 			if String(state.player_action.get("kind", "")) == "bow_draw": return
@@ -2178,7 +2207,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				else: state.set_attack_hold(false)
 				queue_redraw()
 		return
-	if desktop_controls and state.run_active and event.pressed and not event.echo and not playing and not character_sheet_open and not map_open and not waystone_menu_open and not controller.modal(self):
+	if _uses_keyboard_combat() and state.run_active and event.pressed and not event.echo and not playing and not character_sheet_open and not map_open and not waystone_menu_open and not controller.modal(self):
 		if event.keycode==KEY_G:
 			_select_commit_shot("keyboard")
 			return
@@ -2189,7 +2218,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if selected_action=="commit_shot" and event.keycode in [KEY_ENTER,KEY_KP_ENTER]:
 			_confirm_commit_shot(controller.target_id)
 			return
-	if desktop_controls and _is_desktop_movement_key(event.keycode):
+	if _uses_keyboard_combat() and _is_desktop_movement_key(event.keycode):
 		if event.echo: return
 		_set_desktop_movement_key(event.keycode, event.pressed)
 		if event.pressed and not playing and _can_repeat_primary_action():
@@ -2584,20 +2613,26 @@ func _handle_button(name: String) -> void:
 	queue_redraw()
 
 func _commit_action_name() -> String:
-	return "Commit Shot" if state.player_weapon_frame=="bow" else "Commit Combo"
+	return "Commit Shot" if state.player_uses_ranged_basic_attack() else "Commit Combo"
+
+func _combo_targets_enemy() -> bool:
+	return true
+
+func _direct_attack_repeats() -> bool:
+	return true
 
 func _ordinary_attack_text() -> Dictionary:
 	if not state.uses_decision_commitments(): return {"title":"ATTACK","subtitle":"HOLD: COMBO"}
-	return {"title":"AUTO SHOT" if state.player_weapon_frame=="bow" else "ATTACK","subtitle":"HOLD: REPEAT"}
+	return {"title":"AUTO SHOT" if state.player_uses_ranged_basic_attack() else "ATTACK","subtitle":"HOLD: REPEAT" if _direct_attack_repeats() else "ONE CUT"}
 
 func _commit_shot_price_text() -> String:
-	return ("%.1f Energy" % state.energy_cost(18 if state.player_weapon_frame=="bow" else state.full_combo_raw_cost())) if state.uses_energy_rules() else "Recovery: 0 Energy"
+	return ("%.1f Energy" % state.energy_cost(18 if state.player_uses_ranged_basic_attack() else state.full_combo_raw_cost())) if state.uses_energy_rules() else "Recovery: 0 Energy"
 
 func _commit_shot_selection_text(input_method: String) -> String:
 	var controls := "tap enemy; tap "+_commit_action_name().to_upper()+" to cancel."
 	if input_method=="keyboard": controls="[Tab] choose; [Enter] commit; [G] cancel."
 	elif input_method=="controller": controls="RS-click choose; [A] commit; [B] cancel."
-	return ("Full shot +25%: " if state.player_weapon_frame=="bow" else "Full combo + recovery: ")+_commit_shot_price_text()+". "+controls
+	return ("Full shot +25%: " if state.player_uses_ranged_basic_attack() else "Full combo + recovery: ")+_commit_shot_price_text()+". "+controls
 
 func _cancel_commit_shot_selection() -> void:
 	if selected_action!="commit_shot": return
@@ -2614,7 +2649,7 @@ func _select_commit_shot(input_method: String="pointer") -> void:
 
 func _confirm_commit_shot(target_id: int) -> bool:
 	if selected_action!="commit_shot": return false
-	var accepted := state.request_commit_shot(target_id,false) if state.player_weapon_frame=="bow" else state.request_commit_combo(target_id,false)
+	var accepted := state.request_commit_shot(target_id,false) if state.player_uses_ranged_basic_attack() else state.request_commit_combo(target_id,false)
 	if accepted:
 		selected_action=""
 		# A discrete commitment owns no repeat, held trigger or buffered action.
@@ -2624,7 +2659,7 @@ func _confirm_commit_shot(target_id: int) -> bool:
 		attack_pointer_held=false
 		queued_movement_after_attack=false
 		_begin_streamed_action(true)
-	if not accepted and state.player_weapon_frame!="bow": state.message="Choose a living visible enemy for "+_commit_action_name()+"."
+	if not accepted and not state.player_uses_ranged_basic_attack(): state.message="Choose a living visible enemy for "+_commit_action_name()+"."
 	queue_redraw()
 	return accepted
 
@@ -3119,7 +3154,7 @@ func _mark_autosave(critical: bool = false) -> void:
 
 func _autosave_frame_is_quiet() -> bool:
 	if playing or streaming_action or pointer_down or held_movement: return false
-	if desktop_controls and not _desktop_held_direction().is_zero_approx(): return false
+	if (_uses_keyboard_combat() or controller.active) and not _desktop_held_direction().is_zero_approx(): return false
 	return state == null or String(state.player_action.get("kind", "idle")) == "idle"
 
 func _flush_autosave_if_quiet() -> void:
@@ -4520,14 +4555,16 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 	var sample: Dictionary = AttackGeometryScript.pose(action, world_pos, facing, state.walls)
 	var technique := String(sample.get("technique_id", "diagonal_cut"))
 	var active := bool(sample.get("active", false))
+	var reference_contact := player_weapon and active and action.has("reference_travel")
 	if String(sample.get("shape", "")) == "sector":
 		_draw_attack_sector(sample, action, player_weapon)
 	if view_mode == "isometric":
 		if String(sample.get("shape", "")) == "segment":
 			var ground_body := _project_world_capsule(Vector2(sample["start"]), Vector2(sample["end"]), float(sample.get("radius", 5.0)))
-			var shadow_alpha := 0.16 if active else 0.075
+			var shadow_alpha := 0.34 if reference_contact else 0.16 if active else 0.075
 			var shadow_color := Color(0.98, 0.78, 0.34, shadow_alpha) if player_weapon and active else Color(0.015, 0.025, 0.03, shadow_alpha + 0.10)
 			draw_colored_polygon(ground_body, shadow_color)
+			if reference_contact: draw_polyline(_closed_points(ground_body), Color("ffdf80"), maxf(2.0, world_scale * 2.0), true)
 			if debug_hitboxes: draw_polyline(_closed_points(ground_body), Color("ff4fd8"), maxf(1.5, world_scale * 1.5))
 		elif String(sample.get("shape", "")) == "circle":
 			var ground_circle := _project_world_circle(Vector2(sample.get("center", sample["weapon_end"])), float(sample.get("head_radius", sample.get("radius", 16.0))))
@@ -4580,8 +4617,9 @@ func _draw_weapon(world_pos: Vector2, action: Dictionary, player_weapon: bool, a
 
 func _draw_attack_sector(sample: Dictionary, action: Dictionary, player_weapon: bool) -> void:
 	var effect_alpha := float(sample.get("effect_alpha", 0.0))
-	var startup := maxf(0.001, float(action.get("startup", 0.35)))
-	var elapsed := float(action.get("elapsed", 0.0))
+	var origin_time := float(action.get("pose_start", 0.0))
+	var startup := maxf(0.001, float(action.get("startup", origin_time + 0.35)) - origin_time)
+	var elapsed := float(action.get("elapsed", 0.0)) - origin_time
 	var telegraph := 0.0
 	if not player_weapon and elapsed < startup:
 		# Brute's forward smash is taught as a lateral-movement check, so its narrow
@@ -4599,6 +4637,13 @@ func _draw_attack_sector(sample: Dictionary, action: Dictionary, player_weapon: 
 	var fill_color := Color("ffe09a") if player_weapon else Color("ef765f")
 	var alpha := 0.24 * effect_alpha if player_weapon else maxf(0.10 * telegraph, 0.20 * effect_alpha)
 	var outline_alpha := maxf(0.40 * effect_alpha, 0.28 * telegraph)
+	if player_weapon and action.has("reference_travel"):
+		if bool(sample.get("active", false)):
+			alpha = 0.40
+			outline_alpha = 0.66
+		else:
+			alpha = maxf(0.12 * telegraph, 0.08 * effect_alpha)
+			outline_alpha = maxf(0.22 * telegraph, 0.13 * effect_alpha)
 	var outer_line := PackedVector2Array()
 	var inner_line := PackedVector2Array()
 	for index in range(steps):
@@ -5334,7 +5379,7 @@ func _draw_commit_shot_control() -> void:
 	draw_rect(commit_shot_rect,Color("66e0ff") if selected else Color("d7aa58"),false,3*u if selected else 1.5*u)
 	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,25)*u,_commit_action_name().to_upper(),HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(17*u),Color("f0ece0"))
 	var detail := "FULL SHOT COMMITTED" if committed else "CHOOSE ENEMY" if selected else "+25% damage · [G]" if desktop_controls and not controller.active else "+25% damage · LB+A" if controller.active else "+25% full-shot damage"
-	if state.player_weapon_frame!="bow": detail="ALL CUTS + RECOVERY" if bool(state.player_action.get("full_combo_commit",false)) else "CHOOSE ENEMY" if selected else "Full combo · [G]" if desktop_controls else "LB + LS click" if controller.active else "Full combo + recovery"
+	if not state.player_uses_ranged_basic_attack(): detail="ALL CUTS + RECOVERY" if bool(state.player_action.get("full_combo_commit",false)) else "CHOOSE ENEMY" if selected else "LB + LS click" if controller.active else "Full combo · [G]" if desktop_controls else "Full combo + recovery"
 	draw_string(ThemeDB.fallback_font,commit_shot_rect.position+Vector2(0,49)*u,detail,HORIZONTAL_ALIGNMENT_CENTER,commit_shot_rect.size.x,roundi(12*u),Color("adc8d4"))
 	if selected:
 		var target: Dictionary=controller.locked_target(self)
@@ -5372,6 +5417,13 @@ func _draw_attack_button() -> void:
 	elif not available:
 		title = "BUSY"
 		subtitle = "COMMITTED"
+	if attacking and state.player_action.has("reference_travel"):
+		var shown: Dictionary = visual.get("player_action", state.player_action)
+		var elapsed := float(shown.get("elapsed", 0.0))
+		var windup := elapsed < float(shown.get("startup", 0.0))
+		var contact := elapsed < float(shown.get("active_end", 0.0))
+		title = "WINDUP" if windup else "STRIKING" if contact else "RECOVERY"
+		subtitle = "FULL COMBO" if bool(shown.get("full_combo_commit", false)) else "ONE CUT"
 	var title_font := maxi(roundi(11*MenuMetrics.unit(self)), int(radius * 0.27)) if state.uses_decision_commitments() else maxi(10, int(radius * 0.27))
 	var text_color := Color("f4eee3") if available or attacking else Color("778388")
 	draw_string(ThemeDB.fallback_font, center + Vector2(-radius, -2.0), title, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, title_font, text_color)
@@ -5885,6 +5937,8 @@ func _draw_setup() -> void:
 	var portrait := layout.size.y >= layout.size.x
 	var title_font := maxi(28, int(minf(layout.size.x, layout.size.y) * 0.055))
 	var body_font := maxi(14, int(title_font * 0.44))
+	var setup_unit := _setup_control_unit()
+	if setup_stage != "root": body_font = maxi(body_font, roundi(14.0 * setup_unit))
 	var heading_x := layout.position.x if portrait else layout.position.x + 24.0
 	var heading_width := layout.size.x if portrait else minf(layout.size.x * 0.42, 520.0)
 	# The title only belongs on the root screen. On the options screen everything above the
@@ -5902,14 +5956,16 @@ func _draw_setup() -> void:
 		if setup_mode == "combat_survey": heading = "DEV · CUSTOM ROOM" if _custom_section_active() else "DEV · SURVEY ROOMS"
 		draw_rect(setup_back_rect, Color("17272d"))
 		draw_rect(setup_back_rect, Color("718087"), false, 2.0)
-		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, 14, Color("d7dddd"))
-		draw_string(ThemeDB.fallback_font, Vector2(setup_back_rect.end.x + 14.0, setup_back_rect.position.y + setup_back_rect.size.y * 0.68), heading, HORIZONTAL_ALIGNMENT_LEFT, layout.size.x, 16, Color("f2e7c8"))
+		draw_string(ThemeDB.fallback_font, setup_back_rect.position + Vector2(0, setup_back_rect.size.y * 0.66), "BACK", HORIZONTAL_ALIGNMENT_CENTER, setup_back_rect.size.x, roundi(14.0 * setup_unit), Color("d7dddd"))
+		draw_string(ThemeDB.fallback_font, Vector2(setup_back_rect.end.x + 14.0, setup_back_rect.position.y + setup_back_rect.size.y * 0.68), heading, HORIZONTAL_ALIGNMENT_LEFT, layout.size.x, roundi(16.0 * setup_unit), Color("f2e7c8"))
 	for choice in CombatCatalogScript.loadout_ids():
 		var rect: Rect2 = _setup_class_rect(String(choice))
 		var selected: bool = setup_loadout == String(choice)
 		draw_rect(rect, Color("17272d"))
 		draw_rect(rect, Color("58d2cf") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.58), CombatCatalogScript.loadout_name(String(choice)).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, body_font, Color("eef0e9"))
+		var label := _setup_class_label(String(choice)).to_upper()
+		var font := body_font if setup_unit == 1.0 else _message_font_for(label, rect.size.x - 16.0, body_font)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(0, rect.size.y * 0.60), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font, Color("eef0e9"))
 	for mode in progression_rects:
 		var rect := Rect2(progression_rects[mode])
 		var selected: bool = setup_mode == String(mode)

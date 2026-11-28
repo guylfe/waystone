@@ -1,10 +1,16 @@
 extends "res://scripts/experiments/combat_lab_board.gd"
 
-const CampaignSave = preload("res://scripts/campaign/campaign_state.gd")
 const Experiment = preload("res://scripts/core/survey_experiment.gd")
+const CAMPAIGN_STYLES := {
+	"default": ["Default Waystone", "Original combat", ""],
+	"slow": ["Slow", "Dark Souls 1", "Inspired"],
+	"fast": ["Fast", "Elden Ring", "Inspired"],
+}
 var inspection_return := false
 var session_entry := ""
 var persistent_session := false
+var campaign_style := "default"
+var campaign_style_rects: Dictionary = {}
 var survey_choices := Experiment.defaults()
 var survey_setup_confirmed := false
 var overlay_pointers: Dictionary = {}
@@ -48,6 +54,9 @@ func _choice_row(parent: Node, button: Button, id: String, change: Callable) -> 
 func _mode_select_enabled() -> bool:
 	return true
 
+func _uses_controller_input() -> bool:
+	return super._uses_controller_input() or not state.run_active
+
 func _initial_run_state() -> RunState:
 	var request := ModeSession.take_request(get_tree())
 	persistent_session = get_tree().current_scene == self or not request.is_empty()
@@ -55,7 +64,7 @@ func _initial_run_state() -> RunState:
 	session_entry = String(request.get("entry", ModeSession.launch_entry()))
 	setup_notice = String(request.get("notice", ""))
 	var run := RunStateScript.new(false)
-	if session_entry in [ModeSession.MODE_SELECT, ModeSession.REGIONAL]: return run
+	if session_entry == ModeSession.MODE_SELECT or not ModeSession.campaign_style(session_entry).is_empty(): return run
 	if session_entry in _setup_modes():
 		if not run.load_run(ModeSession.regular_resume_path(session_entry)) or run.mode_id != session_entry:
 			setup_notice = "The saved run could not be opened. The file was preserved."
@@ -80,26 +89,95 @@ func _setup_mode_subtitle(mode: String) -> String:
 	if mode == ModeSession.REGIONAL: return "Explore four connected regions"
 	return super._setup_mode_subtitle(mode)
 
+func _campaign_setup_open() -> bool:
+	return state != null and not state.run_active and setup_mode == ModeSession.REGIONAL and setup_stage == "options"
+
+func _select_campaign_style(style: String) -> void:
+	campaign_style = style
+	controller.focus_id = "campaign_style:" + style
+	_layout()
+
+func _setup_control_unit() -> float:
+	return MenuMetrics.unit(self) if _campaign_setup_open() else super._setup_control_unit()
+
+func _setup_class_columns() -> int:
+	return 2 if _campaign_setup_open() and safe_layout_rect.size.x > safe_layout_rect.size.y else 1
+
+func _layout_setup_extras(row: float, left: float, width: float, height: float) -> float:
+	campaign_style_rects.clear()
+	if not _campaign_setup_open(): return row
+	var unit := _setup_control_unit()
+	var gap := 8.0 * unit
+	var cell := (width - gap * 2.0) / 3.0
+	var card_height := maxf(height, 64.0 * unit)
+	for index in ModeSession.CAMPAIGN_STYLES.size():
+		var style: String = ModeSession.CAMPAIGN_STYLES[index]
+		campaign_style_rects[style] = Rect2(left + index * (cell + gap), row, cell, card_height)
+	return row + card_height + 12.0 * unit
+
+func _setup_extra_entries() -> Array:
+	var entries: Array = []
+	if not _campaign_setup_open(): return entries
+	for style: String in campaign_style_rects:
+		entries.append({"id": "campaign_style:" + style, "rect": campaign_style_rects[style], "activate": _select_campaign_style.bind(style)})
+	controller.collect_buttons(seed_input, entries)
+	return entries
+
+func _setup_class_label(loadout: String) -> String:
+	var name := super._setup_class_label(loadout)
+	if not _campaign_setup_open(): return name
+	if campaign_style != "default":
+		return "%s  /  %s" % [name, String(ModeSession.CampaignSave.COMPARISON_WEAPONS[loadout]).capitalize()]
+	var frame := String(CombatCatalogScript.loadout_profile(loadout).get("weapon_frame", "unarmed"))
+	return "%s  /  %s" % [name, CombatCatalogScript.weapon_frame(frame).label]
+
+func _draw_setup() -> void:
+	super._draw_setup()
+	if not _campaign_setup_open(): return
+	var unit := _setup_control_unit()
+	for style: String in campaign_style_rects:
+		var box: Rect2 = campaign_style_rects[style]
+		var selected := style == campaign_style
+		var title: String = CAMPAIGN_STYLES[style][0]
+		var reference: String = CAMPAIGN_STYLES[style][1]
+		var suffix: String = CAMPAIGN_STYLES[style][2]
+		var title_size := _message_font_for(title, box.size.x - 10.0 * unit, roundi(16.0 * unit))
+		var reference_size := _message_font_for(reference, box.size.x - 10.0 * unit, roundi(12.0 * unit))
+		draw_rect(box, Color("25413e") if selected else Color("17272d"))
+		draw_rect(box, Color("58d2cf") if selected else Color("45545a"), false, 3.0 if selected else 1.0)
+		var title_y := 26.0 if suffix.is_empty() else 22.0
+		var reference_y := 46.0 if suffix.is_empty() else 40.0
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(0, title_y * unit), title, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, title_size, Color("eef0e9"))
+		draw_string(ThemeDB.fallback_font, box.position + Vector2(0, reference_y * unit), reference, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, reference_size, Color("adc8d4"))
+		if not suffix.is_empty():
+			draw_string(ThemeDB.fallback_font, box.position + Vector2(0, 55.0 * unit), suffix, HORIZONTAL_ALIGNMENT_CENTER, box.size.x, reference_size, Color("adc8d4"))
+	if setup_seed_error.is_empty() and (desktop_controls or controller.active):
+		var hint := "D-pad or stick to choose · A to confirm · B to go back" if controller.active else "Arrow keys to choose · Enter to confirm · Esc to go back"
+		var width := start_rect.end.x - setup_back_rect.position.x
+		draw_string(ThemeDB.fallback_font, Vector2(setup_back_rect.position.x, start_rect.end.y + 18.0 * unit), hint, HORIZONTAL_ALIGNMENT_CENTER, width, _message_font_for(hint, width, roundi(12.0 * unit)), Color("adc8d4"))
+
 func _setup_resume_label() -> String:
 	if setup_mode == ModeSession.REGIONAL:
-		return "Resume Campaign" if FileAccess.file_exists(CampaignSave.SAVE_PATH) else ""
+		if not FileAccess.file_exists(ModeSession.campaign_save_path(campaign_style)): return ""
+		return "Resume Campaign" if campaign_style == "default" else "Resume %s" % CAMPAIGN_STYLES[campaign_style][0]
 	var path := ModeSession.regular_resume_path(setup_mode)
 	return "Resume run" if ModeSession.has_active_save(path, setup_mode) else ""
 
 func _setup_start_label() -> String:
 	if setup_mode == ModeSession.REGIONAL:
-		return "New Campaign…" if not setup_resume_text.is_empty() else "Start Campaign"
+		var label: String = "Campaign" if campaign_style == "default" else CAMPAIGN_STYLES[campaign_style][0]
+		return "New %s…" % label if not setup_resume_text.is_empty() else "Start %s" % label
 	return "New run" if not setup_resume_text.is_empty() else super._setup_start_label()
 
 func _resume_selected_mode() -> void:
 	if setup_mode == ModeSession.REGIONAL:
-		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.REGIONAL})
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.campaign_entry(campaign_style)})
 	else:
 		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.MAIN_SCENE, {"entry": setup_mode})
 
-func _open_new_campaign(seed: int) -> void:
+func _open_new_campaign(seed: int, style: String) -> void:
 	ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE,
-		{"entry": ModeSession.REGIONAL, "loadout": setup_loadout, "seed": seed})
+		{"entry": ModeSession.campaign_entry(style), "loadout": setup_loadout, "seed": seed})
 
 func _confirm_new_campaign(seed: int) -> void:
 	_clear_survey_overlay()
@@ -109,11 +187,12 @@ func _confirm_new_campaign(seed: int) -> void:
 	var content := VBoxContainer.new()
 	survey_overlay.add_child(content)
 	var title := Label.new()
-	title.text = "Replace the saved Campaign?"
+	var style := campaign_style
+	title.text = "Replace the saved Campaign?" if style == "default" else "Replace the saved %s Campaign?" % CAMPAIGN_STYLES[style][0]
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(title)
 	content.add_child(_survey_action_button("KEEP SAVED CAMPAIGN", _close_experiment_setup))
-	content.add_child(_survey_action_button("REPLACE AND START CAMPAIGN", _open_new_campaign.bind(seed)))
+	content.add_child(_survey_action_button("REPLACE AND START CAMPAIGN", _open_new_campaign.bind(seed, style)))
 	_reflow_survey_menu()
 
 func _restart() -> void:
@@ -147,8 +226,8 @@ func _ready() -> void:
 	_load_survey_identity()
 	_layout()
 	if persistent_session: release_notice.service.check_on_launch.call_deferred()
-	if session_entry == ModeSession.REGIONAL:
-		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": ModeSession.REGIONAL})
+	if not ModeSession.campaign_style(session_entry).is_empty():
+		ModeSession.request_scene.call_deferred(get_tree(), ModeSession.CAMPAIGN_SCENE, {"entry": session_entry})
 	if OS.get_cmdline_user_args().has("--survey-smoke"):
 		load("res://scripts/core/survey_export_probe.gd").call_deferred("run",self)
 
@@ -172,14 +251,18 @@ func _start_run() -> void:
 	if setup_mode == ModeSession.REGIONAL:
 		var seed := _setup_seed()
 		if seed == -2: return
-		if FileAccess.file_exists(CampaignSave.SAVE_PATH): _confirm_new_campaign(seed)
-		else: _open_new_campaign(seed)
+		if seed == -1: seed = ModeSession.CAMPAIGN_SEED
+		if FileAccess.file_exists(ModeSession.campaign_save_path(campaign_style)): _confirm_new_campaign(seed)
+		else: _open_new_campaign(seed, campaign_style)
 		return
 	if setup_mode == "combat_survey" and not survey_setup_confirmed:
 		_build_experiment_setup()
 		return
 	survey_setup_confirmed = false
 	state.combat_lab = false
+	if not desktop_controls and controller.active:
+		controller.disconnected(self, controller.device)
+		controller.active = false
 	if persistent_session: state.session_save_path = ModeSession.regular_save_path(setup_mode)
 	super._start_run()
 	if persistent_session and state.run_active: ModeSession.remember_entry(state.mode_id)
@@ -261,6 +344,11 @@ func _add_setup_choice(parent: Node, caption: String, values: Array, _current: S
 	refresh.call()
 
 func _pointer_pressed(position: Vector2, is_mouse: bool = false) -> void:
+	if _campaign_setup_open() and not survey_overlay.visible:
+		for style: String in campaign_style_rects:
+			if Rect2(campaign_style_rects[style]).has_point(position):
+				_select_campaign_style(style)
+				return
 	super._pointer_pressed(position,is_mouse)
 	if not state.run_active and setup_stage != "root" and setup_mode == "combat_survey" and not custom_room_open and not survey_overlay.visible:
 		_build_experiment_setup()
@@ -494,3 +582,7 @@ func _layout() -> void:
 	if previous_layout_size != Vector2.ZERO and previous_layout_size != size:
 		for pointer in overlay_pointers.values(): pointer["dragged"] = true
 	super._layout()
+	var campaign_setup := _campaign_setup_open()
+	seed_input.add_theme_font_size_override("font_size", roundi(14.0 * _setup_control_unit()) if campaign_setup else 18)
+	seed_input.placeholder_text = "WORLD SEED · %d IF BLANK" % ModeSession.CAMPAIGN_SEED if campaign_setup else "WORLD SEED — BLANK FOR RANDOM"
+	if survey_overlay.visible and survey_overlay.get_meta("kind", "") == "replace_campaign": seed_input.hide()
