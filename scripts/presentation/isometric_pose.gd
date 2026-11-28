@@ -9,11 +9,12 @@ static func sample(action: Dictionary, facing: Vector2, world_radius: float) -> 
 	var direction := facing.normalized()
 	if direction.length_squared() < 0.001: direction = Vector2.UP
 	var kind := String(action.get("kind", "idle"))
-	var elapsed := float(action.get("elapsed", 0.0))
-	var duration := maxf(0.001, float(action.get("duration", 1.0)))
+	var origin_time := float(action.get("pose_start", 0.0))
+	var elapsed := float(action.get("elapsed", 0.0)) - origin_time
+	var duration := maxf(0.001, float(action.get("pose_end", action.get("duration", 1.0))) - origin_time)
 	var progress := clampf(elapsed / duration, 0.0, 1.0)
-	var startup := clampf(float(action.get("startup", duration * 0.30)) / duration, 0.01, 0.90)
-	var active_end := clampf(float(action.get("active_end", duration * 0.60)) / duration, startup, 0.98)
+	var startup := clampf((float(action.get("startup", origin_time + duration * 0.30)) - origin_time) / duration, 0.01, 0.90)
+	var active_end := clampf((float(action.get("active_end", origin_time + duration * 0.60)) - origin_time) / duration, startup, 0.98)
 	var offset := Vector2.ZERO
 	var lift := 0.0
 	var width_scale := 1.0

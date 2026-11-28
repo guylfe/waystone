@@ -4533,6 +4533,9 @@ func request_circle(simulate_immediately: bool = true) -> bool:
 	else: _streamed_action_cpu_usec = 0
 	return true
 
+func _reference_roll() -> Dictionary:
+	return {}
+
 func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> bool:
 	if lab_junction():
 		var accepted := lab_recover("dodge", direction)
@@ -4625,6 +4628,10 @@ func request_dodge(direction: Vector2, simulate_immediately: bool = true) -> boo
 	player_action = _action("dodge", duration, player_facing)
 	var reported_style := "desperate" if desperate else style if not style.is_empty() else "practised" if has_track_rank("evasion", 1) else "basic"
 	player_action.merge({"speed": speed, "move_start": move_start, "move_end": move_end, "evade_start": evade_start, "evade_end": evade_end, "vulnerable_recovery_start": evade_end, "dodge_style": reported_style, "clean_dodge_triggered": false}, true)
+	var reference := {} if desperate else _reference_roll()
+	if not reference.is_empty():
+		player_action.merge(reference, true)
+		reported_style = String(reference["dodge_style"])
 	dodge_style_uses_total[reported_style] = int(dodge_style_uses_total.get(reported_style, 0)) + 1
 	_annotate_player_action("defense_dodge")
 	dodge_cooldown = 0.0 if uses_energy_rules() else cooldown
@@ -4955,7 +4962,7 @@ func wait_unit_duration() -> float:
 	# One movement step's worth of world time. It tracks the *current* walk speed,
 	# so waiting while exhausted is as coarse as stepping while exhausted and the
 	# two never disagree about what "a beat" costs.
-	return MOVE_RANGE / maxf(1.0, current_move_speed())
+	return committed_move_distance() / maxf(1.0, current_move_speed())
 
 func request_wait(duration: float = -1.0, simulate_immediately: bool = true) -> bool:
 	if not is_player_ready() or trial_complete:
@@ -6153,9 +6160,12 @@ func _update_player(dt: float) -> void:
 		"circle":
 			pass
 		"move":
-			player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
+			var travel_dt := minf(dt, maxf(0.0, float(player_action["duration"]) - elapsed + dt)) if player_action.has("reference_travel") else dt
+			player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * travel_dt, PLAYER_RADIUS, 0)
 		"dodge":
-			if elapsed >= float(player_action.get("move_start", 0.08)) and elapsed <= float(player_action.get("move_end", 0.38)):
+			if player_action.has("reference_travel"):
+				_advance_reference_travel(player_action, elapsed - dt, elapsed)
+			elif elapsed >= float(player_action.get("move_start", 0.08)) and elapsed <= float(player_action.get("move_end", 0.38)):
 				player_pos = _move_actor(player_pos, Vector2(player_action["direction"]) * float(player_action["speed"]) * dt, PLAYER_RADIUS, 0)
 			if uses_energy_rules():
 				var vulnerable_start := float(player_action.get("vulnerable_recovery_start", player_action.get("evade_end", 0.38)))
@@ -6163,11 +6173,13 @@ func _update_player(dt: float) -> void:
 				var vulnerable_overlap := maxf(0.0, minf(elapsed, float(player_action["duration"])) - maxf(previous_elapsed, vulnerable_start))
 				dodge_vulnerable_time_total += vulnerable_overlap
 		"attack":
+			if player_action.has("root_motion"):
+				_advance_reference_attack(player_action, elapsed - dt, elapsed)
 			if elapsed >= float(player_action["startup"]) and elapsed <= float(player_action["active_end"]):
 				if stealth_remaining > 0.0: _break_stealth_for_hostile_action()
 				_resolve_player_attack_tick(elapsed)
 		"combo", "art_combo":
-			_update_player_combo(elapsed)
+			_update_player_combo(elapsed, dt)
 			elapsed = float(player_action.get("elapsed", elapsed))
 			if kind == "combo" and bool(player_action.get("terminal_recovery_locked", false)):
 				var recovery_start := float(player_action.get("terminal_recovery_start", elapsed))
@@ -6377,14 +6389,35 @@ func _apply_consumable_effect(item_id: String, direction: Vector2) -> void:
 			_add_effect("smoke", player_pos)
 			_set_message("Smoke veils the immediate path.")
 
-func _update_player_combo(elapsed: float) -> void:
+func _advance_reference_travel(phase: Dictionary, previous_elapsed: float, elapsed: float) -> void:
+	var travel_start := float(phase.get("move_start", 0.0))
+	var travel_end := float(phase.get("move_end", travel_start))
+	var travel_dt := minf(elapsed, travel_end) - maxf(previous_elapsed, travel_start)
+	if travel_dt > 0.0:
+		var motion := player_facing * float(phase["speed"]) * travel_dt
+		player_pos = _move_actor(player_pos, motion, PLAYER_RADIUS, 0)
+
+func _advance_reference_attack(phase: Dictionary, previous_elapsed: float, elapsed: float) -> void:
+	var points: PackedVector2Array = phase["root_motion"]
+	for index in range(1, points.size()):
+		var start := points[index - 1]
+		var finish := points[index]
+		var overlap := minf(elapsed, finish.x) - maxf(previous_elapsed, start.x)
+		if overlap <= 0.0: continue
+		var travel := (finish.y - start.y) * overlap / (finish.x - start.x)
+		player_pos = _move_actor(player_pos, player_facing * travel, PLAYER_RADIUS, 0)
+
+func _update_player_combo(elapsed: float, dt: float) -> void:
 	var phases: Array = player_action.get("phases", [])
 	if phases.is_empty():
 		player_action["duration"] = elapsed
 		return
 	var committed_phase := int(player_action.get("committed_phase", 0))
+	var previous_phase := committed_phase
 	var phase: Dictionary = phases[committed_phase]
 	var link := float(phase.get("link", phase["active_end"]))
+	if phase.has("root_motion"):
+		_advance_reference_attack(phase, elapsed - dt, elapsed)
 	if not bool(player_action.get("terminal_recovery_locked", false)) and elapsed >= link:
 		if (uses_decision_commitments() and not bool(player_action.get("full_combo_commit",false))) or committed_phase >= phases.size() - 1 or not (bool(player_action.get("continue_held", false)) or (lab_frozen_rules() and bool(player_action.get("lab_continue_token",false))) or (bool(player_action.get("lab_prepaid",false)) or bool(player_action.get("full_combo_commit",false)))):
 			_lock_combo_terminal_recovery(phase)
@@ -6410,6 +6443,11 @@ func _update_player_combo(elapsed: float) -> void:
 	player_action["damage_min"] = int(phase["damage_min"])
 	player_action["damage_max"] = int(phase["damage_max"])
 	player_action["posture_damage"] = float(phase["posture"])
+	if player_action.has("reference_travel"):
+		player_action["pose_start"] = float(phase["pose_start"])
+		player_action["pose_end"] = float(phase["pose_end"])
+		if committed_phase != previous_phase:
+			_advance_reference_attack(phase, elapsed - dt, elapsed)
 	if int(player_action.get("phase_index", -1)) != committed_phase:
 		if int(player_action.get("phase_index", -1)) >= 0: _survey_finalize_strike_probe("phase_complete")
 		if int(player_action.get("phase_index", -1)) >= 0 and Array(player_action.get("hit_ids", [])).is_empty():
@@ -7870,7 +7908,14 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			# committed line and does not steer, so an early read still escapes it and
 			# the attack stays a commitment rather than a homing move.
 			var advance_end := float(action.get("advance_end", 0.0))
-			if update_locomotion and advance_end > 0.0 and elapsed <= advance_end:
+			if action.has("reference_travel") and advance_end > 0.0 and previous_elapsed < advance_end:
+				var advance_dt := minf(elapsed, advance_end) - previous_elapsed
+				var step := Vector2(action["direction"]) * float(action["advance_distance"]) * advance_dt / advance_end
+				var origin := Vector2(enemy["pos"])
+				_set_enemy_position(enemy, _move_actor(origin, step, float(enemy["radius"]), int(enemy["id"])))
+				enemy["last_motion"] = Vector2(enemy["pos"]) - origin
+				enemy["is_moving"] = not Vector2(enemy["last_motion"]).is_zero_approx()
+			elif update_locomotion and advance_end > 0.0 and elapsed <= advance_end:
 				# Locomotion runs on alternate ticks, so the step is doubled to keep the
 				# authored world distance correct. Omitting this is the half-speed trap
 				# that dodge_strike sat in for several versions.
@@ -7882,6 +7927,12 @@ func _update_enemies(dt: float, update_locomotion: bool = true) -> void:
 			_observe_capture(enemy, action, elapsed)
 			if elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]) and not bool(action["hit_done"]):
 				_resolve_enemy_melee_tick(enemy, elapsed)
+			if action.has("reference_chain_at") and elapsed >= float(action["reference_chain_at"]):
+				action.erase("reference_chain_at")
+				if _continue_enemy_melee(enemy, action):
+					_update_enemy_bucket_membership(enemy)
+					enemies[index] = enemy
+					continue
 		elif kind == "charge" and elapsed >= float(action["startup"]) and elapsed <= float(action["active_end"]):
 			var charge_origin := Vector2(enemy["pos"])
 			var charge_delta := Vector2(action["direction"]) * float(action.get("speed", 340.0)) * enemy_dt
@@ -8826,9 +8877,11 @@ func _stalled_recovery_direction(enemy: Dictionary, desired: Vector2) -> Vector2
 		basis = Vector2.RIGHT if int(enemy["id"]) % 2 == 0 else Vector2.LEFT
 	return _local_avoidance_direction(enemy, basis.normalized())
 
+func _enemy_base_move_speed(enemy: Dictionary) -> float:
+	return float(CombatCatalogScript.enemy_fact(String(enemy["kind"]), "move_speed"))
+
 func _enemy_move_speed(enemy: Dictionary) -> float:
-	var kind := String(enemy["kind"])
-	var speed := float(CombatCatalogScript.enemy_fact(kind, "move_speed"))
+	var speed := _enemy_base_move_speed(enemy)
 	if float(Dictionary(enemy.get("conditions",{})).get("snared",0.0))>0.0: speed *= float(AbilityCatalogScript.ADOPTED_DISCIPLINES["trapper"]["slow_scale"])
 	# The Captain's invisible x1.14 aura is gone. What replaces it is the Chanter's
 	# Quickening -- same idea, but you can see which enemies have it and you can end it
@@ -9248,6 +9301,9 @@ func _werewolf_stalk_action(enemy: Dictionary, direction: Vector2) -> Dictionary
 	result["label"] = "lateral_stalk"
 	result["travel_cap"] = 160.0
 	return result
+
+func _continue_enemy_melee(_enemy: Dictionary, _action_state: Dictionary) -> bool:
+	return false
 
 func _resolve_enemy_melee_tick(enemy: Dictionary, elapsed: float) -> void:
 	var action: Dictionary = enemy["action"]
@@ -10381,7 +10437,8 @@ func _is_evasive() -> bool:
 	if String(player_action["kind"]) not in ["dodge", "vault"]:
 		return false
 	var elapsed := float(player_action["elapsed"])
-	return elapsed >= float(player_action.get("evade_start", 0.08)) and elapsed <= float(player_action.get("evade_end", 0.38))
+	var evade_end := float(player_action.get("evade_end", 0.38))
+	return elapsed >= float(player_action.get("evade_start", 0.08)) and (elapsed < evade_end if player_action.has("reference_travel") else elapsed <= evade_end)
 
 func _is_perfect_dodge() -> bool:
 	return false

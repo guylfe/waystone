@@ -1,6 +1,24 @@
 extends "res://scripts/core/run_state.gd"
 const Regions = preload("res://scripts/campaign/campaign_regions.gd")
-const REGION_SAVE_VERSION := 1
+const PlayerProfiles = preload("res://scripts/campaign/campaign_player_profiles.gd")
+const EnemyProfiles = preload("res://scripts/campaign/campaign_enemy_profiles.gd")
+const REGION_SAVE_VERSION := 2
+const COMBAT_STYLES := ["default", "slow", "fast"]
+const COMPARISON_WEAPONS := {
+	"warrior": "greatsword",
+	"rogue_acrobat": "dagger",
+	"rogue_sharpshooter": "dagger",
+	"mage_elementalist": "straight_sword",
+}
+const COMPARISON_TECHNIQUES := {
+	"dagger": ["knife_cut_in", "knife_cut_out", "knife_rising_cut", "knife_falling_cut"],
+	"straight_sword": ["opening_cut", "reverse_cut", "diagonal_cut"],
+	"greatsword": ["heavy_chop", "heavy_cleave", "reverse_cut"],
+}
+# The matched Polearm and the same Windbreak seats retain comparable terrain.
+const WINDBREAK_ROSTERS := {"slow": ["shield", "blade"], "fast": ["blade", "knife"]}
+var combat_style := "default"
+var _reference_enemies: Dictionary = {}
 const SAVE_PATH := "user://waystone-regional-campaign.save"
 var loading_demo := true
 var restoring_demo := false
@@ -25,6 +43,8 @@ func _create_floor_boundary(shapes: Array) -> RefCounted:
 	return FloorBoundaryScript.new(shapes, true)
 
 func start_run(a:String,b:String,c:int=-1,d:String="encounter",e:String="energy",f:bool=false,g:Dictionary={}) -> void:
+	if not COMBAT_STYLES.has(combat_style): combat_style = "default"
+	_reference_enemies.clear()
 	loading_demo=true
 	route_released=false
 	if not restoring_demo:
@@ -35,13 +55,251 @@ func start_run(a:String,b:String,c:int=-1,d:String="encounter",e:String="energy"
 	loading_demo=false
 	if not restoring_demo: _update_exploration(true)
 
+func inspired_combat() -> bool:
+	return combat_style == "slow" or combat_style == "fast"
+
+func comparison_weapon() -> String:
+	return String(COMPARISON_WEAPONS[loadout_id]) if inspired_combat() else player_weapon_frame
+
+func _comparison_player_profile() -> Dictionary:
+	return PlayerProfiles.profile(combat_style, comparison_weapon()) if inspired_combat() else {}
+
+func _comparison_clock() -> float:
+	# Match neutral reference seconds at the board's execution rate. A live
+	# Frost condition still slows these actions through the shared personal clock.
+	return EXECUTION_PLAYBACK_RATE * _tempo_from_attributes(player_attributes)
+
+func current_move_speed() -> float:
+	if not inspired_combat(): return super.current_move_speed()
+	var speed := float(_comparison_player_profile()["move_speed"]) / _comparison_clock()
+	return speed * (EXHAUSTED_MOVE_SCALE if player_is_exhausted() else 1.0) * _terrain_speed_scale(player_pos)
+
+func committed_move_distance(requested: float = MOVE_RANGE) -> float:
+	return float(_comparison_player_profile()["step_distance"]) if inspired_combat() else super.committed_move_distance(requested)
+
+func begin_streamed_move(direction: Vector2, distance: float = MOVE_RANGE) -> bool:
+	var began := super.begin_streamed_move(direction, distance)
+	if began and inspired_combat(): player_action["reference_travel"] = true
+	return began
+
+func _reference_roll() -> Dictionary:
+	if not inspired_combat(): return {}
+	var profile := _comparison_player_profile()
+	var clock := _comparison_clock()
+	var duration := float(profile["roll_duration"]) * clock
+	var evade_end := float(profile["iframe_end"]) * clock
+	var move_end := float(profile["roll_move_end"]) * clock
+	return {
+		"duration": duration, "move_start": 0.0, "move_end": move_end,
+		"evade_start": float(profile["iframe_start"]) * clock, "evade_end": evade_end,
+		"vulnerable_recovery_start": evade_end,
+		"speed": float(profile["roll_distance"]) / move_end,
+		"dodge_style": combat_style, "reference_travel": true,
+	}
+
+func player_uses_ranged_basic_attack() -> bool:
+	return not inspired_combat() and super.player_uses_ranged_basic_attack()
+
+func commit_available() -> bool:
+	return inspired_combat() or super.commit_available()
+
+func full_combo_raw_cost() -> float:
+	if not inspired_combat(): return super.full_combo_raw_cost()
+	return Array(_comparison_player_profile()["attacks"]).size() * _basic_attack_energy_cost()
+
+func request_attack(target: Vector2, simulate_immediately: bool = true) -> bool:
+	if not inspired_combat(): return super.request_attack(target, simulate_immediately)
+	return _begin_comparison_attack(target - player_pos, false, simulate_immediately)
+
+func request_direct_attack(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
+	if not inspired_combat(): return super.request_direct_attack(direction, simulate_immediately, held)
+	if not _begin_comparison_attack(direction, false, simulate_immediately): return false
+	direct_attack_uses_total += 1
+	return true
+
+func request_combo(direction: Vector2, simulate_immediately: bool = true, held: bool = false) -> bool:
+	if not inspired_combat(): return super.request_combo(direction, simulate_immediately, held)
+	# The inherited primary target input uses this entry point for a melee press.
+	return _begin_comparison_attack(direction, false, simulate_immediately)
+
+func request_commit_combo(target_id: int, simulate_immediately: bool = true) -> bool:
+	if not inspired_combat(): return super.request_commit_combo(target_id, simulate_immediately)
+	var target := _enemy_by_id(target_id)
+	if target.is_empty() or int(target["hp"]) <= 0 or not _enemy_on_current_layer(target) or not enemy_visible_to_player(target) or not is_visible(Vector2(target["pos"])): return false
+	return request_campaign_combo(Vector2(target["pos"]) - player_pos, simulate_immediately)
+
+func request_campaign_combo(direction: Vector2, simulate_immediately: bool = true) -> bool:
+	return inspired_combat() and _begin_comparison_attack(direction, true, simulate_immediately)
+
+func _player_basic_attack_definition(direction: Vector2) -> Dictionary:
+	if not inspired_combat(): return super._player_basic_attack_definition(direction)
+	var definition := _comparison_strike(_comparison_player_profile()["attacks"][0], 0, 0.0)
+	definition["duration"] = definition["end"]
+	definition["step"] = 0
+	return definition
+
+func _comparison_strike(source: Dictionary, index: int, phase_start: float, continues: bool = false) -> Dictionary:
+	var clock := _comparison_clock()
+	var startup := float(source["startup"]) * clock
+	var finish := phase_start + float(source["duration"]) * clock
+	var next_swing := phase_start + float(source["chain_at"]) * clock
+	var active_end := phase_start + float(source["active_end"]) * clock
+	var contact_travel := float(source["advance_distance"])
+	var contact_travel_time := phase_start + float(source["advance_at"]) * clock
+	var root_motion := PackedVector2Array([
+		Vector2(phase_start, 0.0),
+		Vector2(contact_travel_time, contact_travel),
+		Vector2(next_swing, float(source["travel_at_chain"])),
+	])
+	if not continues: root_motion.append(Vector2(finish, float(source["travel_at_move"])))
+	var techniques: Array = COMPARISON_TECHNIQUES[comparison_weapon()]
+	var damage := int(super._player_basic_attack_definition(player_facing)["damage_min"])
+	return {
+		"startup": phase_start + startup, "active_end": active_end,
+		"end": finish, "link": next_swing if continues else active_end,
+		"reach": float(source["reach"]), "advance_distance": contact_travel,
+		"energy_cost": _basic_attack_energy_cost(), "damage_min": damage, "damage_max": damage,
+		"posture": player_attack_posture if player_weapon_frame != "bow" else 1.0,
+		"technique": techniques[index % techniques.size()],
+		"pose_start": phase_start, "pose_end": next_swing if continues else finish,
+		"root_motion": root_motion,
+	}
+
+func _begin_comparison_attack(direction: Vector2, full_combo: bool, simulate_immediately: bool) -> bool:
+	if not _can_start_basic_attack(): return false
+	var attacks: Array = _comparison_player_profile()["attacks"]
+	var phases: Array[Dictionary] = []
+	var phase_start := 0.0
+	var cost := 0.0
+	var count := attacks.size() if full_combo else 1
+	for index in count:
+		var phase := _comparison_strike(attacks[index], index, phase_start, index + 1 < count)
+		phases.append(phase)
+		cost += float(phase["energy_cost"])
+		phase_start = float(phase["link"])
+	if not _spend_energy(cost): return false
+	_break_player_combo()
+	player_facing = player_facing if direction.is_zero_approx() else direction.normalized()
+	var first := phases[0]
+	var last := phases[-1]
+	player_action = _action("combo" if full_combo else "attack", float(last["end"]), player_facing)
+	player_action.merge(first, true)
+	player_action.merge({
+		"technique_id": first["technique"], "posture_damage": first["posture"], "combo_step": 0,
+		"reference_travel": true,
+	}, true)
+	if full_combo:
+		player_action.merge({
+			"phases": phases, "full_combo_commit": true, "commit_paid_cost": _last_energy_spend,
+			"combo_length": phases.size(), "committed_phase": 0, "phase_index": -1,
+			"combo_instance_id": _next_combo_instance_id,
+		}, true)
+		_next_combo_instance_id += 1
+		_apply_counterstep_to_combo(player_action)
+		player_action["startup"] = phases[0]["startup"]
+		player_action["posture_damage"] = phases[0]["posture"]
+	else:
+		_apply_counterstep_to_action(player_action)
+	_stamp_battle_flow(player_action)
+	_apply_action_poise(player_action)
+	_annotate_player_action("comparison_combo" if full_combo else "comparison_attack")
+	player_action["weapon_frame"] = comparison_weapon()
+	_emit_sound(player_pos, 350.0)
+	_set_message("Combo committed." if full_combo else "Attack committed.")
+	if simulate_immediately: _simulate_until_ready()
+	else: _streamed_action_cpu_usec = 0
+	return true
+
 func _install_layout(layout:Dictionary) -> void:
 	var regional := Regions.generate(run_seed)
 	regional_variant = regional.regional_variant
 	set_pieces = regional.set_pieces
 	crossings = regional.crossings
 	lifts = regional.lifts
+	if inspired_combat():
+		var seats: Array = regional.encounters[201]
+		var roster: Array = WINDBREAK_ROSTERS[combat_style]
+		for index in seats.size():
+			seats[index]["kind"] = roster[index]
 	super._install_layout(regional)
+
+func _comparison_enemy_profile(kind: String) -> Dictionary:
+	if not inspired_combat(): return {}
+	if not _reference_enemies.has(kind):
+		_reference_enemies[kind] = EnemyProfiles.profile(combat_style, kind)
+	return _reference_enemies[kind]
+
+func _enemy_base_move_speed(enemy: Dictionary) -> float:
+	var profile := _comparison_enemy_profile(String(enemy["kind"]))
+	if profile.is_empty(): return super._enemy_base_move_speed(enemy)
+	return float(profile["move_speed"])
+
+func _choose_enemy_action(enemy: Dictionary) -> void:
+	var kind := String(enemy["kind"])
+	var profile := _comparison_enemy_profile(kind)
+	if profile.is_empty():
+		super._choose_enemy_action(enemy)
+		return
+	var opener: Dictionary = profile["attacks"][0]
+	var position := Vector2(enemy["pos"])
+	var offset := player_pos - position
+	var distance := offset.length()
+	var direction := offset / distance if distance > 0.01 else Vector2.DOWN
+	var strike_distance := float(opener["distance"])
+	var can_see := _has_line_of_sight(position, player_pos)
+	enemy["facing"] = direction
+	var ward := _shield_ward(enemy) if kind == "shield" else {}
+	var can_strike := kind != "shield" or _shield_wants_to_strike(enemy, can_see and distance <= SHIELD_GUARD_RADIUS, not ward.is_empty())
+	if can_strike and can_see and distance <= strike_distance + STRIKE_COMMIT_BAND:
+		_begin_comparison_enemy_attack(enemy, opener, direction, 0, Array(profile["chain_chances"]).size())
+		_clear_melee_intent(enemy)
+		if kind == "shield": enemy["patience"] = float(enemy.get("patience_max", 0.0))
+		return
+	var outward := -direction
+	var target := player_pos + outward * strike_distance
+	var flanking := false
+	if not ward.is_empty():
+		target = _shield_station(Vector2(ward["pos"]))
+	elif kind == "knife" and combat_style == "fast":
+		target = _knife_approach_target(enemy, strike_distance)
+		flanking = not bool(enemy.get("knife_flank_abandoned", false))
+	enemy["action"] = _enemy_move_action(enemy, target, 0.32 if flanking else 0.48)
+	# A flank must reach its own bearing. Direct approaches stop at the
+	# commitment radius, then check line of sight again before striking.
+	if flanking:
+		enemy["action"]["intent"] = "knife_flank"
+	enemy["intended_strike_distance"] = strike_distance if ward.is_empty() and not flanking and can_see else 0.0
+
+func _begin_comparison_enemy_attack(enemy: Dictionary, source: Dictionary, direction: Vector2, index: int, chain_count: int) -> void:
+	var clock := EXECUTION_PLAYBACK_RATE * float(enemy.get("personal_tempo", 1.0))
+	var option := source.duplicate()
+	for field in ["startup", "active_end", "duration", "advance_end"]:
+		option[field] = float(source[field]) * clock
+	var action := _intent_melee_action(option, direction)
+	action["reference_travel"] = true
+	action["comparison_strike"] = index
+	action["ability_id"] = "%s_%s_%d" % [combat_style, enemy["kind"], index + 1]
+	if index < chain_count:
+		action["reference_chain_at"] = float(source["chain_at"]) * clock
+	enemy["facing"] = direction
+	enemy["action"] = action
+
+func _continue_enemy_melee(enemy: Dictionary, action: Dictionary) -> bool:
+	if death_pending or int(enemy["hp"]) <= 0 or stealth_remaining > 0.0 or String(enemy["awareness"]) != "alerted": return false
+	var profile := _comparison_enemy_profile(String(enemy["kind"]))
+	var index := int(action["comparison_strike"])
+	var followup: Dictionary = profile["attacks"][index + 1]
+	var position := Vector2(enemy["pos"])
+	var offset := player_pos - position
+	var distance := offset.length()
+	if distance > float(followup["distance"]) + STRIKE_COMMIT_BAND or not _has_line_of_sight(position, player_pos): return false
+	if rng.randf() >= float(profile["chain_chances"][index]): return false
+	_finalise_capture_record(enemy, action)
+	_record_enemy_action_event(enemy, "completed", action)
+	var direction := offset / distance if distance > 0.01 else Vector2(enemy["facing"])
+	_begin_comparison_enemy_attack(enemy, followup, direction, index + 1, Array(profile["chain_chances"]).size())
+	_record_enemy_action_event(enemy, "committed", enemy["action"])
+	return true
 
 func _respawn_enemies() -> void:
 	var retired := {}
@@ -201,7 +459,8 @@ func _build_save_payload() -> Dictionary:
 	payload["player_spells"] = player_spells.duplicate()
 	payload["selected_spell"] = selected_spell
 	payload["demo_route_released"]=route_released
-	payload["regional_campaign"] = {"version": REGION_SAVE_VERSION, "guardians": defeated_guardians.duplicate(),
+	var regional_version := REGION_SAVE_VERSION if inspired_combat() else 1
+	payload["regional_campaign"] = {"version": regional_version, "combat_style": combat_style, "guardians": defeated_guardians.duplicate(),
 		"crossings": operated_crossings.duplicate(), "lifts": lift_memory.duplicate(true), "tick": _simulation_tick_index}
 	return payload
 
@@ -225,6 +484,13 @@ func load_run(path: String = "") -> bool:
 		protected_save = true
 		_set_message("This Campaign save needs a newer build.")
 		return false
+	var saved_style := String(regional.get("combat_style", "default"))
+	if not COMBAT_STYLES.has(saved_style):
+		protected_save = true
+		_set_message("This Campaign save uses an unsupported combat style.")
+		return false
+	var previous_style := combat_style
+	combat_style = saved_style
 	defeated_guardians = Dictionary(regional.get("guardians", {})).duplicate()
 	operated_crossings = Dictionary(regional.get("crossings", {})).duplicate()
 	lift_memory = Dictionary(regional.get("lifts", {})).duplicate(true)
@@ -256,6 +522,7 @@ func load_run(path: String = "") -> bool:
 	loading_demo=false
 	restoring_demo=false
 	protected_save = not ok and FileAccess.file_exists(path)
+	if not ok: combat_style = previous_style
 	return ok
 
 func save_run(path: String = "") -> bool:

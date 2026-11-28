@@ -59,11 +59,13 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 	var id := String(action.get("technique_id", "diagonal_cut"))
 	var definition := technique(id)
 	var motion := String(definition["motion"])
-	var elapsed := float(action.get("elapsed", 0.0))
-	var startup := maxf(0.001, float(action.get("startup", 0.35)))
-	var active_end := maxf(startup + 0.001, float(action.get("active_end", startup + 0.25)))
-	var duration := maxf(active_end + 0.001, float(action.get("duration", active_end + 0.3)))
-	var active := elapsed >= startup and elapsed <= active_end
+	var origin_time := float(action.get("pose_start", 0.0))
+	var elapsed := float(action.get("elapsed", 0.0)) - origin_time
+	var startup := maxf(0.001, float(action.get("startup", origin_time + 0.35)) - origin_time)
+	var active_end := maxf(startup + 0.001, float(action.get("active_end", origin_time + startup + 0.25)) - origin_time)
+	var duration := maxf(active_end + 0.001, float(action.get("pose_end", action.get("duration", origin_time + active_end + 0.3))) - origin_time)
+	var active := elapsed >= startup and (elapsed < active_end if action.has("reference_travel") else elapsed <= active_end)
+	var recovering := elapsed >= active_end if action.has("reference_travel") else elapsed > active_end
 	var active_progress := clampf((elapsed - startup) / (active_end - startup), 0.0, 1.0)
 	var windup_progress := clampf(elapsed / startup, 0.0, 1.0)
 	var recovery_progress := clampf((elapsed - active_end) / (duration - active_end), 0.0, 1.0)
@@ -79,7 +81,7 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 		# collision uses the entire sector below rather than this instantaneous line.
 		var angle := start_angle - 0.24 * (1.0 - windup_progress)
 		if active: angle = lerpf(start_angle, end_angle, active_progress)
-		elif elapsed > active_end: angle = lerpf(end_angle, end_angle + 0.12, recovery_progress)
+		elif recovering: angle = lerpf(end_angle, end_angle + 0.12, recovery_progress)
 		var blade_direction := direction.rotated(angle)
 		var blade_start := origin + blade_direction * 24.0
 		var blade_end := origin + blade_direction * reach
@@ -95,12 +97,12 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 			"weapon_start": blade_start,
 			"weapon_end": blade_end,
 			"order_origin": origin,
-			"effect_alpha": 1.0 if active else maxf(0.0, 1.0 - recovery_progress * 4.0) if elapsed > active_end else 0.0,
+			"effect_alpha": 1.0 if active else maxf(0.0, 1.0 - recovery_progress * 4.0) if recovering else 0.0,
 		})
 	elif motion == "thrust":
 		var extension := lerpf(0.24, 0.42, windup_progress)
 		if active: extension = lerpf(0.42, 1.0, active_progress)
-		elif elapsed > active_end: extension = lerpf(1.0, 0.46, recovery_progress)
+		elif recovering: extension = lerpf(1.0, 0.46, recovery_progress)
 		var spear_start := origin + direction * 22.0
 		var spear_end := origin + direction * reach * extension
 		spear_end = _clip_segment_to_walls(spear_start, spear_end, walls)
@@ -108,7 +110,7 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 	elif motion == "bite":
 		var bite_extension := lerpf(0.45, 0.62, windup_progress)
 		if active: bite_extension = lerpf(0.62, 1.0, active_progress)
-		elif elapsed > active_end: bite_extension = lerpf(1.0, 0.5, recovery_progress)
+		elif recovering: bite_extension = lerpf(1.0, 0.5, recovery_progress)
 		var bite_center := origin + direction * reach * bite_extension
 		var clipped_bite := _clip_segment_to_walls(origin, bite_center, walls)
 		if clipped_bite.distance_to(bite_center) > 0.01: bite_center = clipped_bite - direction * thickness
@@ -116,7 +118,7 @@ static func pose(action: Dictionary, origin: Vector2, facing: Vector2, walls: Ar
 	else:
 		var smash_extension := lerpf(0.28, 0.40, windup_progress)
 		if active: smash_extension = lerpf(0.40, 0.76, active_progress)
-		elif elapsed > active_end: smash_extension = lerpf(0.76, 0.46, recovery_progress)
+		elif recovering: smash_extension = lerpf(0.76, 0.46, recovery_progress)
 		var smash_center := origin + direction * reach * smash_extension
 		var clipped_smash := _clip_segment_to_walls(origin, smash_center, walls)
 		if clipped_smash.distance_to(smash_center) > 0.01: smash_center = clipped_smash - direction * thickness

@@ -833,6 +833,7 @@ The current leaning is forced construction in both Expedition and Campaign, with
 - Leveling remains available outside active combat in Expedition.
 - Campaign leveling and major retraining occur at Waystones or appropriate safe sites.
 - Differences in access points do not create different actor, combat, track, or proficiency rules.
+- The regional Campaign comparison uses shared actor rules with alternate movement, light attack, combo, roll, and selected infantry profiles. [Campaign comparison runtime](campaign-combat-comparison.md)
 
 ## 13. Explicitly deferred decisions
 
