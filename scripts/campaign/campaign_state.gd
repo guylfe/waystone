@@ -232,7 +232,7 @@ func _comparison_enemy_profile(kind: String) -> Dictionary:
 func _enemy_base_move_speed(enemy: Dictionary) -> float:
 	var profile := _comparison_enemy_profile(String(enemy["kind"]))
 	if profile.is_empty(): return super._enemy_base_move_speed(enemy)
-	return float(profile["move_speed"])
+	return float(profile["move_speed"]) / (EXECUTION_PLAYBACK_RATE * float(enemy.get("personal_tempo", 1.0)))
 
 func _choose_enemy_action(enemy: Dictionary) -> void:
 	var kind := String(enemy["kind"])

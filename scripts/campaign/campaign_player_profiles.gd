@@ -3,6 +3,7 @@ extends RefCounted
 ## For evidence, projection assumptions and field semantics, see docs/campaign-player-reference.md.
 
 const FPS := 30.0
+const JOG_SPEED := {"slow": 260.0, "fast": 401.2}
 
 # start, active end, same-hand continuation, free movement (all in 30 Hz ticks),
 # planar reach, root advance near contact, root advance at continuation, root advance at free movement, then the tick of the sampled near-contact advance.
@@ -50,7 +51,7 @@ static func profile(style: String, weapon: String) -> Dictionary:
 		else:
 			strikes.append(_dark_souls_strike(weapon, index, row))
 	return {
-		"move_speed": 401.2 if fast else 260.0, "step_distance": 34.0,
+		"move_speed": float(JOG_SPEED[style]), "step_distance": 34.0,
 		"roll_distance": 331.6 if fast else 245.0,
 		"roll_duration": (22.0 if fast else 33.0) / FPS,
 		"roll_move_end": (22.0 if fast else 20.0) / FPS,

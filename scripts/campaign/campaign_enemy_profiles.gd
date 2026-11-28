@@ -6,6 +6,9 @@ extends RefCounted
 const Catalog = preload("res://scripts/core/combat_catalog.gd")
 const UNITS_PER_REFERENCE_UNIT := 100.0
 const EVENT_HZ := 30.0
+const PlayerProfiles = preload("res://scripts/campaign/campaign_player_profiles.gd")
+# Calibrated pursuit pace relative to the player jog on unobstructed level ground.
+const PURSUIT_FRACTION := {"blade": 0.88, "knife": 1.10, "shield": 0.65, "polearm": 0.78}
 
 # Each window gives first active tick, end of activity, earliest continuation,
 # and free recovery in 30 Hz notation. Only the Fast startup ticks are measured.
@@ -97,5 +100,5 @@ static func profile(style: String, kind: String) -> Dictionary:
 	return {
 		"attacks": attacks,
 		"chain_chances": phrase.chain_chances.duplicate(),
-		"move_speed": float(Catalog.enemy_fact(kind, "move_speed")),
+		"move_speed": float(PlayerProfiles.JOG_SPEED[style]) * float(PURSUIT_FRACTION[kind]),
 	}

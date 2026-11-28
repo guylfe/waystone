@@ -10,7 +10,7 @@ Regional Campaign uses `CampaignEnemyProfiles.profile(style, kind)`. Use `slow` 
 | `chain_chances` | Conditional probabilities, one per transition. Test once at the preceding attack's `chain_at`. Continue only while the target is in range and in sight. Interruption, death or a failed chance roll ends the phrase. The last attack takes its full recovery. |
 | Per attack `distance`, `reach`, `advance_distance` | Center distance for commitment in Waystone, weapon extent from the moving actor origin and authorized forward travel respectively. Use collision for committed travel. |
 | Per attack `startup`, `active_end`, `duration`, `chain_at`, `advance_end` | Seconds from this swing's start during unfrozen playback. Campaign converts these to the attacker's local clock once when committing the move. |
-| `move_speed` | Existing per-kind Waystone approach speed in units per simulation second. Both comparison styles use the same speed for a given kind. |
+| `move_speed` | Calibrated neutral pursuit speed in planar units per real second during active play. Campaign converts once for playback and personal tempo. |
 
 ## Where to compare
 
@@ -67,7 +67,7 @@ The world projection uses **100 Waystone planar units per reference metre**, mat
 
 Attack-specific root-motion tracks and weapon endpoint trajectories were unavailable for these enemies. The ER reach study publishes a player-weapon motion breakdown. Its character is c0000. Applying those tracks to c4311 would misidentify the performer. All weapon extents and attacker travel in this table are therefore **Waystone estimates**. They give the spear a long point and short step, charge the Slow Shield's longer strike distance to body movement, and let an on-axis stationary player be reached from the commitment boundary. Walls can shorten the travel. The Slow timing, both styles' active widths, chain points and free recoveries are also **Waystone estimates**. The values are chosen around a visible commitment, a separate attack on each continuation and a recovery the player can spend. Fast can have a deliberately delayed finisher. [Reach study and its source character](https://github.com/Banon-Labs/er-mods-rs/blob/72de5aed9deadab00f14efc1c42053599aa88b7e/docs/er-mechanics/reach.md) · [Full per-strike data](../scripts/campaign/campaign_enemy_profiles.gd)
 
-Each profile reuses the kind's own base movement, damage, HP and posture rules. The two style names identify reference sets. No global enemy-speed ratio was measured. Gameplay clocks and collision stay with the regular Campaign. Independent feel judgments require play.
+The selected AI records establish approach goals but do not give a reliable neutral walking speed. For this test, pursuit is calibrated against each style’s player jog (260 or 401.2 units/s). Shield advances at 65% of that pace, Polearm at 78%, Blade at 88%, and Knife at 110%. These fractions preserve the roles of the screening shield and pursuing knife and are Waystone estimates. A player can widen the gap against the shield on open ground; the knife can gain on a straight retreat. Damage, HP and posture retain the existing Waystone rules. The two style names identify reference sets. No global enemy-speed ratio was measured. Gameplay clocks and collision stay with the regular Campaign. Independent feel judgments require play.
 
 ## Verification
 
